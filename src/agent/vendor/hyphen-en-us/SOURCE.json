@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/hyphenation/tex-hyphen",
+  "commit": "5684c0f51c0b81133db2efbe60a408b4155a3ff5",
+  "upstreamDirectory": "hyph-utf8/tex/generic/hyph-utf8/patterns/txt/",
+  "licenseSource": "hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-en-us.tex",
+  "licenseSourceGitBlob": "bd9b757d89074e3e11b590311ce13ba6667544aa",
+  "license": "LicenseRef-Kuiken",
+  "licenseSha256": "0cf036759a4fb63a3d0bdb919f0dacbe137e225cb6f8f268d2928e368a8c1731",
+  "inputs": [
+    {
+      "path": "hyph-en-us.pat.txt",
+      "sourceGitBlob": "f69e835d9dacea688fdc51956ea9243b9d042e51",
+      "bytes": 31489,
+      "sha256": "0f57318b878b132547ae92db39a6e1d1cf2a05d9008874955d6ecb910007a463"
+    },
+    {
+      "path": "hyph-en-us.hyp.txt",
+      "sourceGitBlob": "b87163d4425b7b5b7e2d9f170e486131988706c4",
+      "bytes": 169,
+      "sha256": "5e785c27e151f878c312991d937b5582615b77737ab30bac413d5967d6aa21da"
+    }
+  ],
+  "generator": "tools/compile-hyphens.mjs",
+  "generatorSha256": "26b3321fd19f114ca9abdf5380c8f7b34e6ce9ffe5c519946d006690e71e3a2b",
+  "policy": "Complete pinned data in a static prefix trie, with original MIT Rapier traversal and matcher; en and en-US ASCII words. Other regional English, non-ASCII words and other languages use the native offline hyphenator.",
+  "files": [
+    {
+      "output": "patterns.js",
+      "outputBytes": 32776,
+      "outputSha256": "c92bcc1b9ca62aaffd4b46190c25e15386e3218b33bb07aaefe325159aa97b7e"
+    }
+  ]
+}

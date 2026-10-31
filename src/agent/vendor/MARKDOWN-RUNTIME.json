@@ -1,0 +1,136 @@
+{
+  "format": "rapier-markdown-vendor/1",
+  "description": "Existing pinned parser and plugins; upstream bytes and license texts unchanged.",
+  "runtime": {
+    "path": "agent/vendor/markdown-runtime.mjs",
+    "prefix": "// MIT; exact embedded Rapier vendor source (tools/entities-vendor.mjs --write). See NOTICE.txt.\n// One lazy constructor serves named browser/worker imports and the default Node facade.\nlet owned = null;\nexport function markdownItConstructor() {\n  if (!owned) {\nconst exports = {}; const module = {exports};\n",
+    "suffix": "\n    owned = module.exports;\n  }\n  return owned;\n}\n",
+    "bodyBytes": 94470,
+    "bodySha256": "09d16498c075e83b0ba986dab07e83f0850f601f6f7551bd4aaf79d3167f7bc4"
+  },
+  "files": [
+    {
+      "path": "agent/vendor/markdown-runtime.mjs",
+      "bytes": 94829,
+      "sha256": "147b86b69ee4d0b1237a793b09300342e8c14d149c9e84bb0bea5ed2fa431998"
+    },
+    {
+      "path": "agent/vendor/markdown-plugins.mjs",
+      "bytes": 24196,
+      "sha256": "0081e0e557379cdf908b652124e82e2456e965af365a65464a610b867d350008"
+    },
+    {
+      "path": "agent/vendor/MARKDOWNIT.json",
+      "bytes": 18685,
+      "sha256": "2c42169e3233c6cb2b7e31cdefa83dde78e4ba05ed995805e749070db8c76ff4"
+    },
+    {
+      "path": "agent/vendor/BROWSER-ENTITIES.json",
+      "bytes": 1344,
+      "sha256": "9b2b9db3a8bfc2a90c54a703da8cd08c65eed62de85dc16fc334f59ed95347b8"
+    },
+    {
+      "path": "agent/vendor/markdown-plugins.json",
+      "bytes": 1585,
+      "sha256": "c52a02dd0946e150d4023199ccbd9f1afa93b008797ee5b2c325d9fcd249d4ee"
+    },
+    {
+      "path": "agent/vendor/NOTICE.txt",
+      "bytes": 2774,
+      "sha256": "05a252057f4eed3ba3b4149d404294f3a9bfb059f9bfde14d57128005acbe8ca"
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/markdown-it-LICENSE.txt",
+      "bytes": 1073,
+      "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/entities-LICENSE.txt",
+      "bytes": 1260,
+      "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/linkify-it-LICENSE.txt",
+      "bytes": 1058,
+      "sha256": "95e3f7f0e81e9b4940cdfaa1956aaff5e4dfd2fb1565041e7c78eb9a606f23e3"
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/mdurl-LICENSE.txt",
+      "bytes": 2303,
+      "sha256": "6b6a356c4337e2446841f30f3cdf7e7023af8c5260b5e347c0f987b9f6aa2644"
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/uc.micro-LICENSE.txt",
+      "bytes": 1077,
+      "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/punycode.js-LICENSE-MIT.txt",
+      "bytes": 1077,
+      "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+    }
+  ],
+  "licenses": [
+    {
+      "path": "agent/vendor/markdown-licenses/markdown-it-LICENSE.txt",
+      "source": {
+        "scope": "source",
+        "path": "LICENSE",
+        "bytes": 1073,
+        "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+      }
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/entities-LICENSE.txt",
+      "source": {
+        "scope": "dependencies",
+        "path": "entities/LICENSE",
+        "bytes": 1260,
+        "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
+      }
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/linkify-it-LICENSE.txt",
+      "source": {
+        "scope": "dependencies",
+        "path": "linkify-it/LICENSE",
+        "bytes": 1058,
+        "sha256": "95e3f7f0e81e9b4940cdfaa1956aaff5e4dfd2fb1565041e7c78eb9a606f23e3"
+      }
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/mdurl-LICENSE.txt",
+      "source": {
+        "scope": "dependencies",
+        "path": "mdurl/LICENSE",
+        "bytes": 2303,
+        "sha256": "6b6a356c4337e2446841f30f3cdf7e7023af8c5260b5e347c0f987b9f6aa2644"
+      }
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/uc.micro-LICENSE.txt",
+      "source": {
+        "scope": "dependencies",
+        "path": "uc.micro/LICENSE.txt",
+        "bytes": 1077,
+        "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+      }
+    },
+    {
+      "path": "agent/vendor/markdown-licenses/punycode.js-LICENSE-MIT.txt",
+      "source": {
+        "scope": "dependencies",
+        "path": "punycode.js/LICENSE-MIT.txt",
+        "bytes": 1077,
+        "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+      }
+    }
+  ],
+  "plugins": {
+    "path": "agent/vendor/markdown-plugins.mjs",
+    "prefix": "// Exact pinned plugin bodies; the caller supplies their runtime context. See NOTICE.txt and markdown-plugins.json.\nexport function createMarkdownPlugins(Math) {\nif (!Math || typeof Math.ceil !== 'function' || typeof Math.random !== 'function') throw new TypeError('Markdown plugins need a Math context.');\nconst root = {};\n{\nconst globalThis = root, window = root, global = root, self = root;\nconst exports = undefined, module = undefined, define = undefined;\n",
+    "suffix": "\n}\nreturn Object.freeze(root);\n}\n",
+    "bodyBytes": 23702,
+    "bodySha256": "78e105dbba1e97275141f92253b776a8261c18e20b78f3bf40a6d22873f6b100"
+  }
+}

@@ -1,0 +1,75 @@
+# Inline application code, verified optional plugins and offline Workers.
+# Keep this origin-trial token and the HTML meta token together when renewing.
+/*
+  Content-Security-Policy: default-src 'none'; frame-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; img-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:*; media-src 'self' blob: https:; font-src data:; connect-src 'self' https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://mcp.rapier.website wss://mcp.rapier.website; worker-src 'self' blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), geolocation=(), microphone=(self)
+  Origin-Agent-Cluster: ?1
+  Origin-Trial: AtFuTRsj1SOJpqIO0IrTpfvZjWjm61v47tsWw+RpPlMP3J1ZpZr895WYl81B5uRkO6X9sjAtQN/yp0SrhKNZ9QkAAABheyJvcmlnaW4iOiJodHRwczovL3JhcGllci53ZWJzaXRlOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==
+
+# Google's Picker for plain files on Drive (notes/drive-picker.mjs): its own page and policy, never the editor's.
+/drive-picker.html
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' https://apis.google.com https://www.gstatic.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src https: data:; frame-src https://docs.google.com https://drive.google.com https://content.googleapis.com; connect-src https://apis.google.com https://www.googleapis.com https://content.googleapis.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex
+
+# Plain files on a WebDAV server or an S3 bucket (notes/plain-relay.mjs): framed by Rapier's own page only. It may reach
+# an HTTPS host, and narrows itself to the one in its address before any request.
+/plain-storage.html
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; connect-src https:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+  X-Robots-Tag: noindex
+
+# Rapier Sync's sign-in returns (tools/app-links.mjs): one inline script, no request of its own. Headers match the
+# address asked for, so the /sync/* paths _redirects answers with this page carry the same policy.
+/sync-return.html
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex
+
+/sync/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex
+
+# The editor runtime the site's pages load (tools/door-assets.mjs): named by its hash, so it never changes.
+/rapier-editor-*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+# The embeddable copies are for other sites' frames: the site's own page is the one a search engine lists.
+/embed/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; frame-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; img-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:*; media-src 'self' blob: https:; font-src data:; connect-src 'self' https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://mcp.rapier.website wss://mcp.rapier.website; worker-src 'self' blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors https: http://localhost:* http://127.0.0.1:*
+  X-Robots-Tag: noindex
+
+# Matching rules combine headers; remove the inherited cache policy before setting this one.
+/embed/rapier.html
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/embed/rapier-reader.html
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/.well-known/ai-catalog.json
+  Content-Type: application/ai-catalog+json
+  Access-Control-Allow-Origin: *
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/docs/*.md
+  Content-Type: text/markdown; charset=utf-8
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+
+/llms-full.txt
+  Content-Type: text/plain; charset=utf-8

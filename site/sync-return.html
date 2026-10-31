@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Rapier Sync</title>
+<!-- Where Dropbox, OneDrive and Cloudflare send Rapier Sync's sign-in (tools/app-links.mjs). A verified App Link opens the
+     app before this page loads. If it shows anyway, the sign-in's one-time code leaves the address bar at once and only
+     the "open rapier sync" link, addressed to that one app, carries it on. -->
+<style>
+:root { color-scheme: light dark; --ink: #000; --page: #fff; --row: color-mix(in srgb, var(--ink) 10%, var(--page)); }
+@media (prefers-color-scheme: dark) { :root { --ink: #fff; --page: #000; } }
+html, body { margin: 0; background: var(--page); color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
+main { max-width: 36rem; margin: 0 auto; padding: 32px 16px; }
+p { margin: 0 0 16px; }
+a { display: flex; align-items: center; min-height: 52px; padding: 0 16px; background: var(--row); color: var(--ink); text-decoration: none;
+  font: 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .08em; }
+a:hover { background: color-mix(in srgb, var(--ink) 18%, var(--page)); }
+a[hidden] { display: none; }
+</style>
+</head>
+<body>
+<main><p id="said">Rapier Sync finishes this sign-in.</p><a id="open" hidden>open rapier sync</a></main>
+<script>
+(() => {
+  const query = location.search, path = location.pathname, said = document.getElementById('said'), open = document.getElementById('open');
+  if (query) history.replaceState(null, '', path);
+  if (!/^\/sync\/(dropbox|onedrive|cloudflare)$/.test(path) || !query) { said.textContent = 'Start the sign-in again in Rapier Sync.'; return; }
+  if (!/\bAndroid\b/.test(navigator.userAgent)) { said.textContent = 'Open this sign-in on the phone that has Rapier Sync.'; return; }
+  open.href = 'intent://' + location.host + path + query + '#Intent;scheme=https;package=app.rapier.sync;end';
+  open.hidden = false;
+})();
+</script>
+</body>
+</html>

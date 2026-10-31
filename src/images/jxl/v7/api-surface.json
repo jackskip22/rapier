@@ -1,0 +1,846 @@
+{
+  "schema": 1,
+  "version": "8.0.1",
+  "packageExports": {
+    ".": {
+      "runtime": "./dist/index.mjs",
+      "types": "./types/index.d.mts",
+      "values": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "prepare",
+        "supported"
+      ],
+      "declaredValues": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "prepare",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./animation": {
+      "runtime": "./dist/animation.mjs",
+      "types": "./types/animation.d.mts",
+      "values": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "prepare",
+        "supported"
+      ],
+      "declaredValues": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "prepare",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./capture": {
+      "runtime": "./dist/capture.mjs",
+      "types": "./types/capture.d.mts",
+      "values": [
+        "capture",
+        "configureWasm",
+        "prepare",
+        "supported"
+      ],
+      "declaredValues": [
+        "capture",
+        "configureWasm",
+        "prepare",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./codec": {
+      "runtime": "./dist/codec.mjs",
+      "types": "./types/codec.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./decode": {
+      "runtime": "./dist/decode.mjs",
+      "types": "./types/decode.d.mts",
+      "values": [
+        "configureWasm",
+        "decode",
+        "prepare",
+        "supported"
+      ],
+      "declaredValues": [
+        "configureWasm",
+        "decode",
+        "prepare",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./format": {
+      "runtime": "./dist/format.mjs",
+      "types": "./types/format.d.mts",
+      "values": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "format",
+        "prepare",
+        "supported"
+      ],
+      "declaredValues": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "format",
+        "prepare",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./jpeg": {
+      "runtime": "./dist/jpeg.mjs",
+      "types": "./types/jpeg.d.mts",
+      "values": [
+        "configureWasm",
+        "prepare",
+        "recompress",
+        "restore",
+        "supported"
+      ],
+      "declaredValues": [
+        "configureWasm",
+        "prepare",
+        "recompress",
+        "restore",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./metadata": {
+      "runtime": "./dist/metadata.mjs",
+      "types": "./types/metadata.d.mts",
+      "values": [
+        "edit",
+        "header",
+        "inspect",
+        "stream"
+      ],
+      "declaredValues": [
+        "edit",
+        "header",
+        "inspect",
+        "stream"
+      ]
+    },
+    "./package.json": {
+      "runtime": "./package.json",
+      "values": []
+    },
+    "./polyfill": {
+      "runtime": "./dist/polyfill.mjs",
+      "types": "./types/polyfill.d.mts",
+      "values": [
+        "install",
+        "ready",
+        "supportsJXL"
+      ],
+      "declaredValues": [
+        "install",
+        "ready",
+        "supportsJXL"
+      ]
+    },
+    "./snapdom": {
+      "runtime": "./dist/snapdom.mjs",
+      "types": "./types/snapdom.d.mts",
+      "values": [
+        "jxl",
+        "supported"
+      ],
+      "declaredValues": [
+        "jxl",
+        "supported"
+      ]
+    },
+    "./upload": {
+      "runtime": "./dist/upload.mjs",
+      "types": "./types/upload.d.mts",
+      "values": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "prepare",
+        "supported"
+      ],
+      "declaredValues": [
+        "capture",
+        "configureWasm",
+        "encode",
+        "prepare",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./wasm": {
+      "runtime": "./dist/wasm.mjs",
+      "types": "./types/wasm.d.mts",
+      "values": [
+        "default"
+      ],
+      "declaredValues": [
+        "default"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    }
+  },
+  "options": {
+    "capture": [
+      "fidelity",
+      "maxPixels",
+      "onProgress",
+      "readAs",
+      "signal"
+    ],
+    "codec.config": [
+      "helpers",
+      "maxPendingBytes",
+      "maxPendingJobs",
+      "maxPixels",
+      "webgpu",
+      "workerFactory",
+      "workerStartupTimeout"
+    ],
+    "codec.helpers": [
+      "count",
+      "memoryBytes"
+    ],
+    "decode": [
+      "applyOrientation",
+      "colorSpace",
+      "format",
+      "maxBoxes",
+      "maxDimension",
+      "maxFrames",
+      "maxInputBytes",
+      "maxMetadataBytes",
+      "maxPixels",
+      "maxTotalSamples",
+      "onProgress",
+      "planes",
+      "renderSpotColors",
+      "signal",
+      "unpremultiplyAlpha"
+    ],
+    "edit": [
+      "allowBufferedFrameEnds",
+      "chunkSize",
+      "compress",
+      "compression",
+      "exif",
+      "extended",
+      "fragmentOrder",
+      "frameStarts",
+      "iccBitLength",
+      "jumb",
+      "level",
+      "maxBoxes",
+      "maxInputBytes",
+      "minorVersion",
+      "xmp"
+    ],
+    "encode": [
+      "effort",
+      "features",
+      "fidelity",
+      "maxPixels",
+      "onProgress",
+      "readAs",
+      "signal",
+      "webgpu"
+    ],
+    "encode.features": [
+      "coefficientOrders",
+      "level",
+      "lfFrames",
+      "noise",
+      "progressive",
+      "quantization",
+      "transforms",
+      "upsampling",
+      "upsamplingWeights"
+    ],
+    "encode.fidelity": [
+      "butteraugli",
+      "butteraugli3",
+      "exact",
+      "quality",
+      "ssimulacra2"
+    ],
+    "format": [
+      "atlas",
+      "atlasMode",
+      "atlasSearch",
+      "baseError",
+      "coefficientOrders",
+      "colorEncoding",
+      "colorSpace",
+      "data",
+      "deltaPredictor",
+      "effort",
+      "extraChannels",
+      "fidelity",
+      "groupSize",
+      "height",
+      "icc",
+      "iccCompression",
+      "intensityTarget",
+      "intrinsicSize",
+      "level",
+      "lfFrames",
+      "maxColorError",
+      "maxDeltaEntries",
+      "maxDimension",
+      "maxPaletteColors",
+      "maxPixels",
+      "maxTransformBytes",
+      "noise",
+      "onProgress",
+      "orientation",
+      "paletteColors",
+      "paletteMode",
+      "passes",
+      "patches",
+      "predictor",
+      "preserveEdges",
+      "preset",
+      "preview",
+      "progressive",
+      "protectedMask",
+      "quantization",
+      "quantizationAdjustment",
+      "regions",
+      "screenEffort",
+      "signal",
+      "splines",
+      "squeeze",
+      "toneMapping",
+      "transferFunction",
+      "transforms",
+      "undither",
+      "upsampling",
+      "upsamplingWeights",
+      "weightedPredictor",
+      "width"
+    ],
+    "format.kinds": [
+      "atlas",
+      "channels",
+      "graphics",
+      "hybrid",
+      "layers",
+      "palette",
+      "patch-composition",
+      "patches",
+      "photo",
+      "profile",
+      "splines"
+    ],
+    "inspect": [
+      "maxBoxes",
+      "maxDimension",
+      "maxInputBytes",
+      "maxMetadataBytes",
+      "maxPixels"
+    ],
+    "inspect.details": [
+      "layout",
+      "metadata"
+    ],
+    "jpeg.recompress": [
+      "effort",
+      "icc",
+      "maxPixels",
+      "onProgress",
+      "signal"
+    ],
+    "jpeg.restore": [
+      "maxPixels",
+      "onProgress",
+      "signal"
+    ],
+    "metadata.stream": [
+      "chunkSize",
+      "level",
+      "maxBoxes",
+      "maxBytes",
+      "signal"
+    ],
+    "snapdom.plugin": [
+      "capture",
+      "encode",
+      "maxError",
+      "prepare"
+    ],
+    "snapdom.toJxl": [
+      "maxError",
+      "onProgress",
+      "quality",
+      "signal"
+    ]
+  },
+  "typeFiles": [
+    "types/animation.d.mts",
+    "types/capture.d.mts",
+    "types/codec.d.mts",
+    "types/codec/animation-atlas.d.mts",
+    "types/codec/animation.d.mts",
+    "types/codec/channels.d.mts",
+    "types/codec/container-advanced.d.mts",
+    "types/codec/container-stream.d.mts",
+    "types/codec/decode.d.mts",
+    "types/codec/delta-palette.d.mts",
+    "types/codec/graphics.d.mts",
+    "types/codec/hybrid.d.mts",
+    "types/codec/icc.d.mts",
+    "types/codec/index.d.mts",
+    "types/codec/jpeg.d.mts",
+    "types/codec/layers.d.mts",
+    "types/codec/metadata.d.mts",
+    "types/codec/patches.d.mts",
+    "types/codec/photo-advanced.d.mts",
+    "types/codec/photo.d.mts",
+    "types/codec/splines.d.mts",
+    "types/codec/writer.d.mts",
+    "types/decode.d.mts",
+    "types/format.d.mts",
+    "types/index.d.mts",
+    "types/jpeg.d.mts",
+    "types/metadata.d.mts",
+    "types/polyfill.d.mts",
+    "types/snapdom.d.mts",
+    "types/types.d.mts",
+    "types/upload.d.mts",
+    "types/wasm.d.mts"
+  ],
+  "typeOptions": {
+    "types/codec.d.mts#QueueConfig": [
+      "module"
+    ],
+    "types/codec/animation-atlas.d.mts#AnimationAtlasOptions": [
+      "atlas",
+      "atlasMode",
+      "atlasSearch"
+    ],
+    "types/codec/animation-atlas.d.mts#AtlasSearchOptions": [
+      "maxEntries",
+      "maxPixels",
+      "minUses",
+      "strategy",
+      "tileSize"
+    ],
+    "types/codec/animation.d.mts#AnimationOptions": [
+      "effort",
+      "filter",
+      "lossless",
+      "photo",
+      "progress",
+      "signal"
+    ],
+    "types/codec/channels.d.mts#ChannelOptions": [
+      "colorEncoding",
+      "colorSpace",
+      "groupSize",
+      "height",
+      "icc",
+      "iccCompression",
+      "intensityTarget",
+      "intrinsicSize",
+      "level",
+      "maxDimension",
+      "maxTransformBytes",
+      "orientation",
+      "passes",
+      "predictor",
+      "preview",
+      "progressive",
+      "quality",
+      "squeeze",
+      "toneMapping",
+      "transferFunction",
+      "transforms",
+      "upsampling",
+      "upsamplingWeights",
+      "weightedPredictor",
+      "width"
+    ],
+    "types/codec/container-advanced.d.mts#ContainerBounds": [
+      "maxBoxes",
+      "maxBytes"
+    ],
+    "types/codec/container-advanced.d.mts#ContainerWriteOptions": [
+      "extended",
+      "level"
+    ],
+    "types/codec/container-advanced.d.mts#ReframeOptions": [
+      "allowBufferedFrameEnds",
+      "chunkSize",
+      "fragmentOrder",
+      "frameStarts",
+      "iccBitLength",
+      "minorVersion"
+    ],
+    "types/codec/container-stream.d.mts#ContainerOptions": [
+      "chunkSize",
+      "maxBoxes",
+      "maxBytes",
+      "signal"
+    ],
+    "types/codec/container-stream.d.mts#ContainerStreamOptions": [
+      "level"
+    ],
+    "types/codec/decode.d.mts#DecodeAsyncOptions": [
+      "threads"
+    ],
+    "types/codec/decode.d.mts#DecodeColorTarget": [
+      "gamma",
+      "primaries",
+      "renderingIntent",
+      "space",
+      "transferFunction",
+      "whitePoint"
+    ],
+    "types/codec/decode.d.mts#DecodeLimits": [
+      "maxBoxes",
+      "maxDimension",
+      "maxFeatureBytes",
+      "maxFeatureWork",
+      "maxFrames",
+      "maxInputBytes",
+      "maxMetadataBytes",
+      "maxModularWork",
+      "maxPixels",
+      "maxRetainedSamples",
+      "maxSamples",
+      "maxTotalSamples"
+    ],
+    "types/codec/decode.d.mts#DecodeOptions": [
+      "applyOrientation",
+      "colorSpace",
+      "format",
+      "planes",
+      "renderSpotColors",
+      "unpremultiplyAlpha"
+    ],
+    "types/codec/delta-palette.d.mts#DeltaPaletteOptions": [
+      "colorSpace",
+      "deltaPredictor",
+      "groupSize",
+      "maxDeltaEntries",
+      "maxPaletteColors",
+      "paletteMode",
+      "screenEffort"
+    ],
+    "types/codec/graphics.d.mts#GraphicsOptions": [
+      "maxColorError",
+      "paletteColors",
+      "preserveEdges",
+      "preset",
+      "protectedMask",
+      "undither"
+    ],
+    "types/codec/hybrid.d.mts#HybridOptions": [
+      "colorSpace",
+      "effort",
+      "orientation",
+      "progressive",
+      "quality",
+      "regions"
+    ],
+    "types/codec/icc.d.mts#ProfileOptions": [
+      "colorEncoding",
+      "effort",
+      "icc",
+      "iccCompression",
+      "level",
+      "toneMapping"
+    ],
+    "types/codec/index.d.mts#EncodeOptions": [
+      "alphaPremultiplied",
+      "bitDepth",
+      "colorSpace",
+      "filter",
+      "icc",
+      "iccCompression",
+      "intensityTarget",
+      "photo",
+      "quality",
+      "sampleFormat",
+      "transferFunction"
+    ],
+    "types/codec/index.d.mts#Limits": [
+      "edge",
+      "pixels"
+    ],
+    "types/codec/jpeg.d.mts#TranscodeOptions": [
+      "effort",
+      "icc",
+      "iccCompression"
+    ],
+    "types/codec/layers.d.mts#LayerOptions": [
+      "preview"
+    ],
+    "types/codec/metadata.d.mts#CompressedMetadataOptions": [
+      "compress",
+      "compression"
+    ],
+    "types/codec/metadata.d.mts#MetadataOptions": [
+      "exif",
+      "jumb",
+      "maxBoxes",
+      "maxBytes",
+      "xmp"
+    ],
+    "types/codec/metadata.d.mts#MetadataReadOptions": [
+      "decompress",
+      "maxBoxes",
+      "maxBytes",
+      "maxDecodedBytes"
+    ],
+    "types/codec/patches.d.mts#PatchCompositionOptions": [
+      "preview"
+    ],
+    "types/codec/patches.d.mts#PatchOptions": [
+      "atlas",
+      "baseError",
+      "colorSpace",
+      "data",
+      "effort",
+      "height",
+      "level",
+      "orientation",
+      "patches",
+      "width"
+    ],
+    "types/codec/photo-advanced.d.mts#AdvancedPhotoOptions": [
+      "coefficientOrders",
+      "extraChannels",
+      "level",
+      "lfFrames",
+      "noise",
+      "orientation",
+      "progressive",
+      "quantization",
+      "transforms",
+      "upsampling",
+      "upsamplingWeights"
+    ],
+    "types/codec/photo.d.mts#PhotoOptions": [
+      "effort"
+    ],
+    "types/codec/splines.d.mts#SplineOptions": [
+      "effort",
+      "filter",
+      "level",
+      "orientation",
+      "quality",
+      "quantizationAdjustment",
+      "splines"
+    ],
+    "types/codec/splines.d.mts#SplineStrokeOptions": [
+      "colorXYB",
+      "quantizationAdjustment",
+      "sigma"
+    ],
+    "types/codec/writer.d.mts#ClusterOptions": [
+      "maxClusters",
+      "newClusterCost"
+    ],
+    "types/codec/writer.d.mts#ImageHeaderOptions": [
+      "alphaPremultiplied",
+      "bitDepth",
+      "colorData",
+      "colorSpace",
+      "exponentBits",
+      "iccData",
+      "intensityTarget",
+      "orientation",
+      "toneData",
+      "transferFunction",
+      "transformData",
+      "xyb"
+    ],
+    "types/codec/writer.d.mts#LosslessOptions": [
+      "shape"
+    ],
+    "types/codec/writer.d.mts#LossyOptions": [
+      "contexts",
+      "large",
+      "palette",
+      "quality",
+      "small",
+      "totals"
+    ],
+    "types/codec/writer.d.mts#LZ77Config": [
+      "lengthConfig",
+      "minLength",
+      "minSymbol"
+    ],
+    "types/codec/writer.d.mts#UintConfig": [
+      "lsb",
+      "msb",
+      "split",
+      "splitToken"
+    ],
+    "types/format.d.mts#FormatOptions": [
+      "effort",
+      "fidelity"
+    ],
+    "types/format.d.mts#KindOptions": [
+      "atlas",
+      "channels",
+      "graphics",
+      "hybrid",
+      "layers",
+      "palette",
+      "patches",
+      "photo",
+      "profile",
+      "splines"
+    ],
+    "types/polyfill.d.mts#PolyfillOptions": [
+      "decode",
+      "document",
+      "force",
+      "maxDecodedBytes",
+      "maxInputBytes",
+      "onError",
+      "probeURL",
+      "root",
+      "rootMargin",
+      "workerFactory",
+      "workers"
+    ],
+    "types/snapdom.d.mts#JxlExportOptions": [
+      "maxError",
+      "quality"
+    ],
+    "types/snapdom.d.mts#JxlPluginOptions": [
+      "capture",
+      "encode",
+      "maxError",
+      "prepare"
+    ],
+    "types/types.d.mts#AnimationOptions": [
+      "effort",
+      "features",
+      "fidelity"
+    ],
+    "types/types.d.mts#CaptureOptions": [
+      "fidelity",
+      "readAs"
+    ],
+    "types/types.d.mts#CodecConfig": [
+      "count",
+      "helpers",
+      "maxPendingBytes",
+      "maxPendingJobs",
+      "maxPixels",
+      "memoryBytes",
+      "webgpu",
+      "workerFactory",
+      "workerStartupTimeout"
+    ],
+    "types/types.d.mts#EncodeOptions": [
+      "effort",
+      "features",
+      "fidelity",
+      "maxPixels",
+      "readAs",
+      "webgpu"
+    ],
+    "types/types.d.mts#InspectOptions": [
+      "decompress",
+      "details"
+    ],
+    "types/types.d.mts#JobOptions": [
+      "maxPixels",
+      "onProgress",
+      "signal"
+    ],
+    "types/types.d.mts#JPEGOptions": [
+      "effort",
+      "icc"
+    ],
+    "types/types.d.mts#SampleDescription": [
+      "alphaPremultiplied",
+      "bitDepth",
+      "colorSpace",
+      "extraChannels",
+      "icc",
+      "intensityTarget",
+      "orientation",
+      "sampleFormat",
+      "transferFunction"
+    ],
+    "types/types.d.mts#UploadOptions": [
+      "effort",
+      "fidelity",
+      "maxPixels",
+      "readAs",
+      "webgpu"
+    ]
+  },
+  "errorCodes": [
+    "JXL_ABORTED",
+    "JXL_CLOSED",
+    "JXL_DECODE",
+    "JXL_DIMENSIONS",
+    "JXL_INPUT",
+    "JXL_INTERNAL",
+    "JXL_JPEG",
+    "JXL_LIMIT",
+    "JXL_MEMORY",
+    "JXL_OPTIONS",
+    "JXL_PLATFORM",
+    "JXL_RECONSTRUCTION",
+    "JXL_TARGET",
+    "JXL_UNSUPPORTED",
+    "JXL_WASM",
+    "JXL_WEBGPU",
+    "JXL_WORKER",
+    "JXL_WORKER_CSP",
+    "JXL_WORKER_TIMEOUT"
+  ]
+}

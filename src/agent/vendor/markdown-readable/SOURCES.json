@@ -1,0 +1,253 @@
+{
+  "format": "rapier-markdown-readable/1",
+  "description": "The pinned markdown-it 15.0.3 compiled unminified from its published sources, as the page's copy is, with its runtime dependencies and plugins as published, for the installed helpers. Written by tools/markdown-readable-vendor.mjs; licences in agent/vendor/NOTICE.txt and agent/vendor/markdown-licenses/.",
+  "packages": [
+    {
+      "name": "markdown-it",
+      "version": "15.0.3",
+      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz",
+      "integrity": "sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ=="
+    },
+    {
+      "name": "entities",
+      "version": "8.1.0",
+      "tarball": "https://registry.npmjs.org/entities/-/entities-8.1.0.tgz",
+      "integrity": "sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA=="
+    },
+    {
+      "name": "linkify-it",
+      "version": "6.1.0",
+      "tarball": "https://registry.npmjs.org/linkify-it/-/linkify-it-6.1.0.tgz",
+      "integrity": "sha512-wJ/TwpSDTLepCrQoYWYIExIKg5Zchex2Nn5yk2mFnB+6PtdkHtyLx742md9csRjjOnGkKIS/RrbY7l8D6gT9Vw=="
+    },
+    {
+      "name": "mdurl",
+      "version": "2.1.0",
+      "tarball": "https://registry.npmjs.org/mdurl/-/mdurl-2.1.0.tgz",
+      "integrity": "sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg=="
+    },
+    {
+      "name": "uc.micro",
+      "version": "3.0.0",
+      "tarball": "https://registry.npmjs.org/uc.micro/-/uc.micro-3.0.0.tgz",
+      "integrity": "sha512-U3PppEkleoTnIfi8BozMx3yju3qc/L6SwqWo2Sw+54PX+PX0q9I+r1Um5HCmqD7n9VDX5/v3vQH/AjA6deDdtw=="
+    },
+    {
+      "name": "punycode.js",
+      "version": "2.3.1",
+      "tarball": "https://registry.npmjs.org/punycode.js/-/punycode.js-2.3.1.tgz",
+      "integrity": "sha512-uxFIHU0YlHYhDQtV4R9J6a52SLx28BCjT+4ieh7IGbgwVJWO+km431c4yRlREUAsAmt/uMjQUyQHNEPf0M39CA=="
+    },
+    {
+      "name": "markdown-it-task-lists",
+      "version": "2.1.1",
+      "tarball": "https://registry.npmjs.org/markdown-it-task-lists/-/markdown-it-task-lists-2.1.1.tgz",
+      "integrity": "sha512-TxFAc76Jnhb2OUu+n3yz9RMu4CwGfaT788br6HhEDlvWfdeJcLUsxk1Hgw2yJio0OXsxv7pyIPmvECY7bMbluA=="
+    },
+    {
+      "name": "markdown-it-footnote",
+      "version": "4.0.0",
+      "tarball": "https://registry.npmjs.org/markdown-it-footnote/-/markdown-it-footnote-4.0.0.tgz",
+      "integrity": "sha512-WYJ7urf+khJYl3DqofQpYfEYkZKbmXmwxQV8c8mO/hGIhgZ1wOe7R4HLFNwqx7TjILbnC98fuyeSsin19JdFcQ=="
+    },
+    {
+      "name": "markdown-it-mark",
+      "version": "4.0.0",
+      "tarball": "https://registry.npmjs.org/markdown-it-mark/-/markdown-it-mark-4.0.0.tgz",
+      "integrity": "sha512-YLhzaOsU9THO/cal0lUjfMjrqSMPjjyjChYM7oyj4DnyaXEzA8gnW6cVJeyCrCVeyesrY2PlEdUYJSPFYL4Nkg=="
+    },
+    {
+      "name": "markdown-it-sup",
+      "version": "2.0.0",
+      "tarball": "https://registry.npmjs.org/markdown-it-sup/-/markdown-it-sup-2.0.0.tgz",
+      "integrity": "sha512-5VgmdKlkBd8sgXuoDoxMpiU+BiEt3I49GItBzzw7Mxq9CxvnhE/k09HFli09zgfFDRixDQDfDxi0mgBCXtaTvA=="
+    },
+    {
+      "name": "markdown-it-emoji",
+      "version": "3.1.0",
+      "tarball": "https://registry.npmjs.org/markdown-it-emoji/-/markdown-it-emoji-3.1.0.tgz",
+      "integrity": "sha512-NhmMEH2ywduD4Nty1E8uB5NqfLhAT1VR0dyvoJyStKOqCzbZmVdn/+8wj7zpDsb/fLBikpCPsWwxqKlvMmbz4g=="
+    },
+    {
+      "name": "markdown-it-abbr",
+      "version": "2.0.0",
+      "tarball": "https://registry.npmjs.org/markdown-it-abbr/-/markdown-it-abbr-2.0.0.tgz",
+      "integrity": "sha512-of7C8pXSjXjDojW4neNP+jD7inUYH/DO0Ca+K/4FUEccg0oHAEX/nfscw0jfz66PJbYWOAT9U8mjO21X5p6aAw=="
+    },
+    {
+      "name": "markdown-it-ins",
+      "version": "4.0.0",
+      "tarball": "https://registry.npmjs.org/markdown-it-ins/-/markdown-it-ins-4.0.0.tgz",
+      "integrity": "sha512-sWbjK2DprrkINE4oYDhHdCijGT+MIDhEupjSHLXe5UXeVr5qmVxs/nTUVtgi0Oh/qtF+QKV0tNWDhQBEPxiMew=="
+    },
+    {
+      "name": "markdown-it-deflist",
+      "version": "4.0.0",
+      "tarball": "https://registry.npmjs.org/markdown-it-deflist/-/markdown-it-deflist-4.0.0.tgz",
+      "integrity": "sha512-06186ZWDwNLg638THD70MxBeFrDMF0+nL7IWU/qwCGHGOcUIm4MTYXbfjpv0ooWnVjkSnAjW8msKaOQmNRfY6Q=="
+    }
+  ],
+  "build": {
+    "path": "markdown-it.mjs",
+    "package": "markdown-it",
+    "map": "dist/markdown-it.mjs.map",
+    "imports": {
+      "mdurl": "./mdurl/index.mjs",
+      "uc.micro": "./uc.micro.mjs",
+      "entities": "./entities.mjs",
+      "linkify-it": "./linkify-it.mjs",
+      "punycode.js": "./punycode.mjs"
+    }
+  },
+  "copies": [
+    {
+      "path": "linkify-it.mjs",
+      "package": "linkify-it",
+      "from": "build/index.mjs",
+      "imports": {
+        "uc.micro": "./uc.micro.mjs"
+      }
+    },
+    {
+      "path": "uc.micro.mjs",
+      "package": "uc.micro",
+      "from": "build/index.mjs"
+    },
+    {
+      "path": "punycode.mjs",
+      "package": "punycode.js",
+      "from": "punycode.es6.js"
+    },
+    {
+      "path": "entities/decode-codepoint.mjs",
+      "package": "entities",
+      "from": "dist/decode-codepoint.js"
+    },
+    {
+      "path": "mdurl/index.mjs",
+      "package": "mdurl",
+      "from": "index.mjs"
+    },
+    {
+      "path": "mdurl/lib/decode.mjs",
+      "package": "mdurl",
+      "from": "lib/decode.mjs"
+    },
+    {
+      "path": "mdurl/lib/encode.mjs",
+      "package": "mdurl",
+      "from": "lib/encode.mjs"
+    },
+    {
+      "path": "mdurl/lib/format.mjs",
+      "package": "mdurl",
+      "from": "lib/format.mjs"
+    },
+    {
+      "path": "mdurl/lib/parse.mjs",
+      "package": "mdurl",
+      "from": "lib/parse.mjs"
+    }
+  ],
+  "plugins": [
+    {
+      "package": "markdown-it-task-lists",
+      "from": "dist/markdown-it-task-lists.js"
+    },
+    {
+      "package": "markdown-it-footnote",
+      "from": "dist/markdown-it-footnote.js"
+    },
+    {
+      "package": "markdown-it-mark",
+      "from": "dist/markdown-it-mark.js"
+    },
+    {
+      "package": "markdown-it-sup",
+      "from": "dist/markdown-it-sup.js"
+    },
+    {
+      "package": "markdown-it-emoji",
+      "from": "dist/markdown-it-emoji-light.js"
+    },
+    {
+      "package": "markdown-it-abbr",
+      "from": "dist/markdown-it-abbr.js"
+    },
+    {
+      "package": "markdown-it-ins",
+      "from": "dist/markdown-it-ins.js"
+    },
+    {
+      "package": "markdown-it-deflist",
+      "from": "dist/markdown-it-deflist.js"
+    }
+  ],
+  "files": [
+    {
+      "path": "entities.mjs",
+      "bytes": 50594,
+      "sha256": "7914d95849325717065db7db37b8fcd6f8ffaaa3aa481f1bde687209f844da38"
+    },
+    {
+      "path": "entities/decode-codepoint.mjs",
+      "bytes": 948,
+      "sha256": "d80628653e792234aca25c5b431523753af5c827339140d38e265d726a136579"
+    },
+    {
+      "path": "linkify-it.mjs",
+      "bytes": 16516,
+      "sha256": "9e2b21808450980d055f1cc159293c32eb0eecc205fe19b67ded4d7fee08aca6"
+    },
+    {
+      "path": "markdown-it.mjs",
+      "bytes": 111298,
+      "sha256": "73c4a1041d82dddb670375e9889bc91492c0c1c150c2c8f33267cfb3790c5d05"
+    },
+    {
+      "path": "markdown-plugins.mjs",
+      "bytes": 45734,
+      "sha256": "0a935c55fb20f684271d32f37819d0811ca0772c2e9cd4b1822aab2507525555"
+    },
+    {
+      "path": "markdown-runtime.mjs",
+      "bytes": 110,
+      "sha256": "8ce7c709299538e10b844b7f051dd784b67f0515efdd4bd167be13e0deb97f5b"
+    },
+    {
+      "path": "mdurl/index.mjs",
+      "bytes": 200,
+      "sha256": "8ea430f1f8a107f529e2dac519d2f18e71ec9befe6f23f78bf6510cf86d3f9a0"
+    },
+    {
+      "path": "mdurl/lib/decode.mjs",
+      "bytes": 2692,
+      "sha256": "6a854a029a7211a14575cbb43922734fa8a11be28a00e184463848582a349d6a"
+    },
+    {
+      "path": "mdurl/lib/encode.mjs",
+      "bytes": 1697,
+      "sha256": "65aa62a0e96659b9bb53ab0b4e64d5917be86e964e2f121dfce21e30a88448cb"
+    },
+    {
+      "path": "mdurl/lib/format.mjs",
+      "bytes": 465,
+      "sha256": "ac3695720223d7e38b1a8c061c8615b8a74b2dd56f383d3029db073430322ea6"
+    },
+    {
+      "path": "mdurl/lib/parse.mjs",
+      "bytes": 6205,
+      "sha256": "ac8f5a5a4a68f2c03f4624f672a5c28b425e0ddd52b8483d6c2b9a60056dcc81"
+    },
+    {
+      "path": "punycode.mjs",
+      "bytes": 5921,
+      "sha256": "ad32ca11244584756cc645b69679cb0df608428443f081f20bbad269afd15ff1"
+    },
+    {
+      "path": "uc.micro.mjs",
+      "bytes": 6384,
+      "sha256": "17ece0a12a868a21119fd68dad490664cc5f7e116102ec939f586bf203a977cb"
+    }
+  ]
+}

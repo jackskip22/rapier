@@ -1,0 +1,423 @@
+{
+  "bundle": "rapier-math-2.7.0.js",
+  "packageBundle": "dist/rapier-math.js",
+  "version": "2.7.0",
+  "license": "MIT AND LicenseRef-GUST-Font-License",
+  "bytes": 742684,
+  "gzipBytes": 421702,
+  "sha256": "cb1c935e84744d41d516c03607a8383ff801ecfc6acdfd63b2eb38be0bc20d80",
+  "sha384": "1rjhOOw690Mr3aVXwRTPlwQO2atMrWHY8Rm3nZ+SZRrm5mB9HK5FkY6ZWCDYtgzv",
+  "sources": [
+    {
+      "file": "math/font.js",
+      "packageFile": "src/math/font.js",
+      "bytes": 446505,
+      "sha256": "5ee3578742901833510a218359eb54254a68d1cf737493aa65d49cecb437c2fb"
+    },
+    {
+      "file": "math/symbols.js",
+      "packageFile": "src/math/symbols.js",
+      "bytes": 9419,
+      "sha256": "d75cb3a8400671542f150c95e429c77fb23cf1c47438329f164e5ac258e4d684"
+    },
+    {
+      "file": "math/parser.js",
+      "packageFile": "src/math/parser.js",
+      "bytes": 127337,
+      "sha256": "83bd49b4efe6d323bdcac45966e5248cf73abe3857a608d2277c313c7e720850"
+    },
+    {
+      "file": "math/source.js",
+      "packageFile": "src/math/source.js",
+      "bytes": 3668,
+      "sha256": "201b50285f0dd641b3927287fc045bd5659846ddd1b495f93a5a5bd7785dd6e0"
+    },
+    {
+      "file": "math/variants.js",
+      "packageFile": "src/math/variants.js",
+      "bytes": 2099,
+      "sha256": "70f24563442ef4c92e01a6c9de0ec5c1537d919c867122a971f01159e67e4ceb"
+    },
+    {
+      "file": "math/layout.js",
+      "packageFile": "src/math/layout.js",
+      "bytes": 58681,
+      "sha256": "8ec4c3e25f65afc026d856e6f046e8822de1eae815456e967a39b9f4df61f99c"
+    },
+    {
+      "file": "math/fallbacks.js",
+      "packageFile": "src/math/fallbacks.js",
+      "bytes": 8214,
+      "sha256": "ff572ad147f348508ee966de9936efb996283b7978bee909bf9a208bcd46456c"
+    },
+    {
+      "file": "math/responsive.js",
+      "packageFile": "src/math/responsive.js",
+      "bytes": 14297,
+      "sha256": "bee3db7af7349fb9561d9f3606e754bbb7a712fe9a35dac7a9a634038eb4c41b"
+    },
+    {
+      "file": "math/api.js",
+      "packageFile": "src/math/api.js",
+      "bytes": 5140,
+      "sha256": "978d47e0721e2d07f951f638bf37fb502decaf94df379435b3b4902284e93815"
+    },
+    {
+      "file": "math/browser.js",
+      "packageFile": "src/math/browser.js",
+      "bytes": 10946,
+      "sha256": "3c163cbe795a6be2781295b10fc41bd8e94248c3bbee521abff43d03fbefbc5d"
+    },
+    {
+      "file": "math/mathml.js",
+      "packageFile": "src/math/mathml.js",
+      "bytes": 34551,
+      "sha256": "271f46dbb28eae4204958e16c293a8f859ffe1877c3a1fc2a8cc6c45175e82cd"
+    },
+    {
+      "file": "math/semantic-api.js",
+      "packageFile": "src/math/semantic-api.js",
+      "bytes": 449,
+      "sha256": "973773cfc5f1066215c9ae4598515e6744dc74789ee5d9d5c1c6fec5058c6c2c"
+    },
+    {
+      "file": "math/combined.js",
+      "packageFile": "src/math/combined.js",
+      "bytes": 649,
+      "sha256": "1291d53911fc91c7f544862bc41b1a23909748208d781e79d93fa35ff8618a22"
+    },
+    {
+      "file": "math/classic.js",
+      "packageFile": "src/math/classic.js",
+      "bytes": 269,
+      "sha256": "ecc0aabe977198d013ebcbcfd739910e55cbb28303af5db97eb31333d7de4189"
+    }
+  ],
+  "recipe": [
+    {
+      "file": "math/build-font.py",
+      "packageFile": "src/math/build-font.py",
+      "bytes": 32590,
+      "sha256": "f596533a50fe378c3c98478ff49b97e96c808065fbf20ee9597cfa7cf078f4bc"
+    },
+    {
+      "file": "math/FONT-SOURCE.md",
+      "packageFile": "docs/font-source.md",
+      "bytes": 12702,
+      "sha256": "7d0d20d5982b5d4378a29aea803199df5f7618f88670f2c3b25545f7932db23d"
+    },
+    {
+      "file": "math/FONT-LICENSE.txt",
+      "packageFile": "src/math/FONT-LICENSE.txt",
+      "bytes": 21695,
+      "sha256": "fb1f153e363d003180781b4a043f34ab76d17f1c338de9229c40149b52cfdf2f"
+    },
+    {
+      "file": "math/package-verify.mjs",
+      "packageFile": "tests/verify.mjs",
+      "bytes": 4012,
+      "sha256": "aa63a05672e66ff643a29ac02654d718b468dada08bf40a545e333d47546e6c3"
+    },
+    {
+      "file": "tools/build-math.mjs",
+      "packageFile": "src/tools/build-math.mjs",
+      "bytes": 10967,
+      "sha256": "11c6f7d5ab962d24ff70a5497c23ccefd624f1add20b8840d8bb0c6f085ecbf9"
+    },
+    {
+      "file": "math/LICENSE-MIT",
+      "packageFile": "src/math/LICENSE-MIT",
+      "bytes": 1071,
+      "sha256": "a3bc5d619ab9159f4eef2924e48dfb935556f4bc163f5ea61610b66a5915de70"
+    },
+    {
+      "file": "math/adoption-verify.mjs",
+      "packageFile": "tests/adoption.mjs",
+      "bytes": 15517,
+      "sha256": "02e22c51e0c71de1fe992b3fddde04e2e2cfc482d1c05aa1467a1c97c7d63b58"
+    },
+    {
+      "file": "math/package-build.mjs",
+      "packageFile": "src/math/package-build.mjs",
+      "bytes": 1252,
+      "sha256": "d5a3562438e4e5f92796186b53d29afe71cd8f2266b65ef77b6e44e459598e79"
+    },
+    {
+      "file": "math/package-layout.mjs",
+      "packageFile": "src/math/package-layout.mjs",
+      "bytes": 925,
+      "sha256": "72e90f365ff6ccf9741ab12a3bd9d7466389f1794c24b73dc86c831743923d36"
+    },
+    {
+      "file": "math/package-check.mjs",
+      "packageFile": "tests/check.mjs",
+      "bytes": 8983,
+      "sha256": "6d3e59543bcfeba05f15bd0db166da8572ca760c40c9049c02bb50f51bd64bd5"
+    },
+    {
+      "file": "math/package-readme.mjs",
+      "packageFile": "src/math/package-readme.mjs",
+      "bytes": 2458,
+      "sha256": "ed03aa38d7ed3d01fbab6836d2827ee0b2565bca4e998af7172e2da940611495"
+    },
+    {
+      "file": "math/README.md",
+      "packageFile": "docs/api.md",
+      "bytes": 24062,
+      "sha256": "59963d4156549530b73d15d2dc66d4f7cec108e4767856785605e71fe1f6162a"
+    },
+    {
+      "file": "math/CHANGELOG.md",
+      "packageFile": "CHANGELOG.md",
+      "bytes": 389,
+      "sha256": "621ffa760f4ebeb72c7882e46caf8c8cb815abde50cd98d123da5a34ea105397"
+    },
+    {
+      "file": "math/SEMANTICS.md",
+      "packageFile": "docs/semantics.md",
+      "bytes": 18282,
+      "sha256": "98984313665984aaa29fd816cc7b79691deac7450d5d76b8e7dc0f79b575e2cf"
+    },
+    {
+      "file": "math/semantic-verify.mjs",
+      "packageFile": "tests/semantics.mjs",
+      "bytes": 27911,
+      "sha256": "73b3a3525f419d03464f12fd82a430437da28dec623f0c0f655232f69b3bd72d"
+    },
+    {
+      "file": "math/typeset-verify.mjs",
+      "packageFile": "tests/typeset.mjs",
+      "bytes": 60474,
+      "sha256": "89ca0989f33f8bd798ad308812da6e00c27f3d1cdafd887421dd3027fd277168"
+    }
+  ],
+  "components": [
+    {
+      "name": "Latin Modern Math",
+      "version": "1.959",
+      "license": "LicenseRef-GUST-Font-License",
+      "source": "https://mirror.apps.cam.ac.uk/pub/tex-archive/fonts/lm-math/opentype/latinmodern-math.otf",
+      "sha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f",
+      "copyright": "Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details."
+    },
+    {
+      "name": "Latin Modern Mono",
+      "version": "2.004",
+      "license": "LicenseRef-GUST-Font-License",
+      "source": "https://ftp.riken.jp/CTAN/fonts/lm/fonts/opentype/public/lm/lmmono10-regular.otf",
+      "sha256": "22deb6d3be3ffcb40b33f0e010afb256c677d97c2a2bdee1f5740cdc97751558",
+      "copyright": "Copyright 2003, 2009 B. Jackowski and J. M. Nowacki (on behalf of TeX users groups). This work is released under the GUST Font License --  see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.",
+      "note": "Monospace text outlines and advances; complete license in math-font-LICENSE.txt"
+    },
+    {
+      "name": "Latin Modern Math Italic10 Regular",
+      "version": "2.003",
+      "license": "LicenseRef-GUST-Font-License",
+      "source": "https://ftp.riken.jp/CTAN/fonts/lm/fonts/type1/public/lm/lmmi10.pfb",
+      "sha256": "c24662506b402f3e0033cc75eb746eb490a1b7477e6b3ef52053f5025ec0fc57",
+      "copyright": "Copyright 2003--2009 by B. Jackowski and J.M. Nowacki (on behalf of TeX USERS GROUPS).",
+      "note": "Small arrow hook outline; the composer supplies its advance; complete license in math-font-LICENSE.txt"
+    }
+  ],
+  "font": {
+    "name": "Latin Modern Math",
+    "version": "1.959",
+    "license": "LicenseRef-GUST-Font-License",
+    "licenseName": "GUST Font License",
+    "source": "https://mirror.apps.cam.ac.uk/pub/tex-archive/fonts/lm-math/opentype/latinmodern-math.otf",
+    "sourceSha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f",
+    "copyright": "Copyright 2012--2014 for Latin Modern Math OTF by B. Jackowski, P. Strzelczyk and P. Pianowski (on behalf of TeX users groups). This work is released under the GUST Font License -- see http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt for details.",
+    "licenseSource": "https://mirror.apps.cam.ac.uk/pub/tex-archive/fonts/lm-math/doc/GUST-FONT-LICENSE.txt",
+    "licenseFile": "math/FONT-LICENSE.txt",
+    "licenseSha256": "fb1f153e363d003180781b4a043f34ab76d17f1c338de9229c40149b52cfdf2f",
+    "licenseBytes": 21695
+  },
+  "adoption": [
+    {
+      "file": "math/delimiters.mjs",
+      "packageFile": "dist/delimiters.mjs",
+      "bytes": 1945,
+      "sha256": "2847d23ba78534b32348d5e642ded601e4f6fd9c41e10d80c46955d440d24eba"
+    },
+    {
+      "file": "math/markdown-rules.mjs",
+      "packageFile": "dist/markdown-rules.mjs",
+      "bytes": 6000,
+      "sha256": "f0e8fd1e899c99e90293088dd17d4ed14d3ef9a3a1e6558d13f7ce66999ba67d"
+    },
+    {
+      "file": "math/reuse.mjs",
+      "packageFile": "dist/reuse.mjs",
+      "bytes": 5590,
+      "sha256": "fe3f9d669429cf7635d4c11fbd7f74b955d2a1f9130ffcc206fbf2d9c031152f"
+    },
+    {
+      "file": "math/integration.mjs",
+      "packageFile": "dist/integration.mjs",
+      "bytes": 5627,
+      "sha256": "932ec8827f4127313289a8823d4399594fba8c969c9a67ea326b3d8e830879ff"
+    },
+    {
+      "file": "math/markdown-it.mjs",
+      "packageFile": "dist/markdown-it.mjs",
+      "bytes": 2836,
+      "sha256": "043d93226f051923f87bbe424ffe997e30b3feee0f51a74456adaf399d8da07c"
+    },
+    {
+      "file": "math/rehype.mjs",
+      "packageFile": "dist/rehype.mjs",
+      "bytes": 3185,
+      "sha256": "e10dc1c2e2d5ec6dc50774639e3ba1897c111885b50e1129dd5ed8a1b393d73b"
+    },
+    {
+      "file": "math/stream.mjs",
+      "packageFile": "dist/stream.mjs",
+      "bytes": 3795,
+      "sha256": "955eb703796d5ca11d35859c3aa9dcebeea143b02e2cc4e65df219c6a6263baf"
+    },
+    {
+      "file": "math/accessible.mjs",
+      "packageFile": "dist/accessible.mjs",
+      "bytes": 1214,
+      "sha256": "e56c5ca4571b618053ba33d40eafd39aa3149b007c3e54f0650f884eafc3ebad"
+    },
+    {
+      "file": "math/accessible.css",
+      "packageFile": "dist/accessible.css",
+      "bytes": 270,
+      "sha256": "ef27e900c08490d36b7c933bcd585b362f8813700cd9f3d728956b8c21d40b42"
+    },
+    {
+      "file": "math/mathml.d.ts",
+      "packageFile": "dist/mathml.d.ts",
+      "bytes": 291,
+      "sha256": "2e9eaad52c9c7ad764db55fd2c95fa7cec434cec865d368c934925f59f9abe31"
+    },
+    {
+      "file": "math/combined.d.ts",
+      "packageFile": "dist/combined.d.ts",
+      "bytes": 286,
+      "sha256": "5f3837d9bb0c095365a387ce88ae0c4bccd538ba75d08152a2a540c51278d7d7"
+    },
+    {
+      "file": "math/accessible.d.ts",
+      "packageFile": "dist/accessible.d.ts",
+      "bytes": 582,
+      "sha256": "d2d2285c084c19b87dae6c1a538b4711233dffd50098fa08bac3b8d41aa43cd3"
+    },
+    {
+      "file": "math/index.d.ts",
+      "packageFile": "dist/index.d.ts",
+      "bytes": 2768,
+      "sha256": "b27762ec22161f6492d3e5101fb6e6b34e6d2e81f978e0ca2ceb69ca38e69166"
+    },
+    {
+      "file": "math/classic.d.ts",
+      "packageFile": "dist/classic.d.ts",
+      "bytes": 349,
+      "sha256": "0415467509e356a5372caa0778586242de8cc0405aaa5b9db62b231d2f81de39"
+    },
+    {
+      "file": "math/delimiters.d.ts",
+      "packageFile": "dist/delimiters.d.ts",
+      "bytes": 479,
+      "sha256": "db74cfb4fdd6d87e7f47a5de8ee3a4b78f409a4fe3cd2edeaa8e77660a489617"
+    },
+    {
+      "file": "math/integration.d.ts",
+      "packageFile": "dist/integration.d.ts",
+      "bytes": 1029,
+      "sha256": "8f69318a973d37f8491799c12c28ce66e9512e7f1b09009fa0601be86bdea649"
+    },
+    {
+      "file": "math/markdown-it.d.ts",
+      "packageFile": "dist/markdown-it.d.ts",
+      "bytes": 693,
+      "sha256": "b4bf25c7a72ebb30876b66a4ce21ce293eeae3f08b8ea7962c4589a1aa7f4b80"
+    },
+    {
+      "file": "math/rehype.d.ts",
+      "packageFile": "dist/rehype.d.ts",
+      "bytes": 560,
+      "sha256": "be3d05097c37c72cff12b46503cadfcf24efac396cb4398707136aa267f0a827"
+    },
+    {
+      "file": "math/stream.d.ts",
+      "packageFile": "dist/stream.d.ts",
+      "bytes": 2162,
+      "sha256": "1e74da8185bbc55d6987ecaa4806a4215f5f893f49590c400c70edcb2c5c1f87"
+    },
+    {
+      "file": "math/examples/semantic.mjs",
+      "packageFile": "examples/semantic.mjs",
+      "bytes": 675,
+      "sha256": "dc126ece12227c92d12d247bb76ab1bcb5a04849fade307f2725b1da75070f17"
+    },
+    {
+      "file": "math/examples/accessible.html",
+      "packageFile": "examples/accessible.html",
+      "bytes": 1339,
+      "sha256": "c8d493fe7e66e299ebd90568153b2c44ba1fab31c934056ba233a06697523c9f"
+    },
+    {
+      "file": "math/examples/accessible.mjs",
+      "packageFile": "examples/accessible.mjs",
+      "bytes": 2077,
+      "sha256": "3c2963704cc43b92f66313b27d46c9d30678aa147c853e1b84343f3dd69b3eac"
+    },
+    {
+      "file": "math/examples/formula.mjs",
+      "packageFile": "examples/formula.mjs",
+      "bytes": 619,
+      "sha256": "43e3708d50737d1eac74f5132146838b58b733c5b0315b50d6eecd594ecb9e7d"
+    },
+    {
+      "file": "math/examples/markdown.mjs",
+      "packageFile": "examples/markdown.mjs",
+      "bytes": 1119,
+      "sha256": "2ee7597f3f8197dccb49996bfa5a4be4050523bd80159972fd26bbf4f68f4a5d"
+    },
+    {
+      "file": "math/examples/stream.mjs",
+      "packageFile": "examples/stream.mjs",
+      "bytes": 1439,
+      "sha256": "cf993bf0f0f74585533e2513398a75c66824776268ad235bc4e609e7b9179078"
+    },
+    {
+      "file": "math/examples/unified.mjs",
+      "packageFile": "examples/unified.mjs",
+      "bytes": 1710,
+      "sha256": "a937ec8c1652b7f15f5cc8bf77346c74293bcd60b965a95355c4acd8da395f70"
+    },
+    {
+      "file": "math/examples/browser.html",
+      "packageFile": "examples/browser.html",
+      "bytes": 566,
+      "sha256": "c671541b4a3f1a4cb9e2b2ef2945778db825590f08a11ad48b768d132b5df96f"
+    },
+    {
+      "file": "math/examples/browser.mjs",
+      "packageFile": "examples/browser.mjs",
+      "bytes": 945,
+      "sha256": "569e66078bce60debc6aeb4d70efa3fdc67eabdf9b349822f1a7117a28311235"
+    },
+    {
+      "file": "math/examples/react.tsx",
+      "packageFile": "examples/react.tsx",
+      "bytes": 899,
+      "sha256": "bfcbeb5219ce776a9c33f841c0aad222be9b6ceddffe0eb89f344bed170e0765"
+    },
+    {
+      "file": "math/examples/worker.mjs",
+      "packageFile": "examples/worker.mjs",
+      "bytes": 370,
+      "sha256": "1e9de25f8b636d14d065b0d2b2febbeeed9600fc595a12c09f94ba58f3791de6"
+    },
+    {
+      "file": "math/examples/README.md",
+      "packageFile": "examples/README.md",
+      "bytes": 2881,
+      "sha256": "97d7028dc1707b309abd073e59c98f94727ba89aa00177e69ed31b0720ba4d91"
+    }
+  ]
+}

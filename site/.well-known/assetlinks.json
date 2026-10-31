@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.rapier.sync",
+      "sha256_cert_fingerprints": [
+        "REPLACE-WITH-RAPIER-SYNC-PLAY-APP-SIGNING-SHA-256"
+      ]
+    }
+  }
+]

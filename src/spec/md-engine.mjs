@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: MIT
+
+const NEWLINES = /\r\n?/g, NULLS = /\0/g;
+
+function lineScanner(Base, Token) {
+  function StateBlock(src, md, env, tokens) {
+    this.bMarks = []; this.eMarks = []; this.tShift = []; this.sCount = []; this.bsCount = [];
+    this.blkIndent = 0; this.line = 0; this.lineMax = 0; this.tight = false; this.listIndent = -1;
+    this.parentType = 'root'; this.level = 0; this.Token = Token;
+    this.src = src; this.md = md; this.env = env; this.tokens = tokens;
+    const length = src.length;
+    for (let start = 0; start < length;) {
+      let at = start, indent = 0, offset = 0;
+      for (; at < length; at++) {
+        const code = src.charCodeAt(at);
+        if (code === 0x20) offset++;
+        else if (code === 0x09) offset += 4 - offset % 4;
+        else break;
+        indent++;
+      }
+      if (at === length) break;
+      let end = src.indexOf('\n', at);
+      if (end < 0) end = length;
+      this.bMarks.push(start); this.eMarks.push(end); this.tShift.push(indent); this.sCount.push(offset); this.bsCount.push(0);
+      start = end + 1;
+    }
+    this.bMarks.push(length); this.eMarks.push(length); this.tShift.push(0); this.sCount.push(0); this.bsCount.push(0);
+    this.lineMax = this.bMarks.length - 1;
+  }
+  StateBlock.prototype = Base.prototype;
+  return StateBlock;
+}
+
+function backticks(state, silent) {
+  const start = state.pos, src = state.src;
+  if (src.charCodeAt(start) !== 0x60) return false;
+  const max = state.posMax;
+  let pos = start + 1;
+  while (pos < max && src.charCodeAt(pos) === 0x60) pos++;
+  const marker = src.slice(start, pos), length = marker.length, runs = state.backticks;
+  const scanned = state.backticksScanned;
+  if (!scanned || pos < scanned || (runs[length] ?? -1) >= pos) {
+    let matchStart, matchEnd = pos;
+    while ((matchStart = src.indexOf('`', matchEnd)) !== -1 && matchStart < max) {
+      matchEnd = matchStart + 1;
+      while (src.charCodeAt(matchEnd) === 0x60) matchEnd++;
+      if (matchEnd > max) break;
+      const run = matchEnd - matchStart;
+      if (run === length) {
+        if (!silent) {
+          const token = state.push('code_inline', 'code', 0);
+          token.markup = marker;
+          let content = src.slice(pos, matchStart).replace(/\n/g, ' ');
+          if (content.startsWith(' ') && content.endsWith(' ') && /[^ ]/.test(content)) content = content.slice(1, -1);
+          token.content = content;
+        }
+        state.pos = matchEnd;
+        return true;
+      }
+      if (!(runs[run] >= matchStart)) runs[run] = matchStart;
+    }
+    if (matchStart === -1 && (!scanned || pos < scanned)) state.backticksScanned = pos;
+  }
+  if (!silent) state.pending += marker;
+  state.pos = pos;
+  return true;
+}
+
+const CLEAN_WEB_LINK = /^https?:\/\/([a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})*)(?:\/[A-Za-z0-9\-._~/]*)?$/;
+function cleanWebLink(url) {
+  const match = CLEAN_WEB_LINK.exec(url);
+  return match !== null && match[1].length <= 255;
+}
+
+function releasedState(state, md) {
+  for (const key of Object.keys(state)) {
+    const value = state[key];
+    if (typeof value === 'string') state[key] = '';
+    else if (typeof value === 'function') state[key] = released;
+    else if (value !== null && typeof value === 'object' && value !== md) state[key] = Array.isArray(value) ? [] : {};
+  }
+  return state;
+}
+function released() {}
+function sampleTokens(tokens) {
+  const kept = new Map();
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (!kept.has(token.type)) kept.set(token.type, token);
+    const children = token.children;
+    if (children) for (let at = 0; at < children.length; at++) {
+      const child = children[at];
+      if (!kept.has(child.type)) kept.set(child.type, child);
+    }
+  }
+  return kept;
+}
+
+function keepClasses(md) {
+  const anchors = {core: null, block: null, inline: null, tokens: null};
+  const finish = (state, tokens) => {
+    anchors.core = releasedState(state, md);
+    if (anchors.block) releasedState(anchors.block, md);
+    if (anchors.inline) releasedState(anchors.inline, md);
+    anchors.tokens = sampleTokens(tokens);
+  };
+  const release = (owner, key) => Object.getPrototypeOf(owner)[key] === owner[key];
+  if (release(md, 'parse') && release(md, 'parseInline')) {
+    md.parse = function (src, env) {
+      if (typeof src !== 'string') throw new Error('Input data should be a String');
+      const state = new this.core.State(src, this, env);
+      this.core.process(state);
+      const tokens = state.tokens;
+      finish(state, tokens);
+      return tokens;
+    };
+    md.parseInline = function (src, env) {
+      const state = new this.core.State(src, this, env);
+      state.inlineMode = true;
+      this.core.process(state);
+      const tokens = state.tokens;
+      finish(state, tokens);
+      return tokens;
+    };
+  }
+  if (release(md.block, 'parse')) md.block.parse = function (src, md, env, outTokens) {
+    if (!src) return;
+    const state = new this.State(src, md, env, outTokens);
+    this.tokenize(state, state.line, state.lineMax);
+    anchors.block = state;
+  };
+  if (release(md.inline, 'parse')) md.inline.parse = function (str, md, env, outTokens) {
+    const state = new this.State(str, md, env, outTokens);
+    this.tokenize(state);
+    const rules = this.ruler2.getRules(''), length = rules.length;
+    for (let index = 0; index < length; index++) rules[index](state);
+    anchors.inline = state;
+  };
+}
+
+export function tuneMarkdownEngine(md) {
+  if (md.__rapierEngineTuned) return md;
+  md.__rapierEngineTuned = true;
+  md.core.ruler.at('normalize', state => {
+    let src = state.src;
+    if (src.indexOf('\r') >= 0) src = src.replace(NEWLINES, '\n');
+    if (src.indexOf('\0') >= 0) src = src.replace(NULLS, '�');
+    state.src = src;
+  });
+  const BaseBlock = md.block.State;
+  md.block.State = lineScanner(BaseBlock, new BaseBlock('', md, {}, []).Token);
+  md.inline.ruler.at('backticks', backticks);
+  const normalizeLink = md.normalizeLink;
+  md.normalizeLink = url => cleanWebLink(url) ? url : normalizeLink.call(md, url);
+  keepClasses(md);
+  return md;
+}

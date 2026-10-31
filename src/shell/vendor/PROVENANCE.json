@@ -1,0 +1,165 @@
+{
+  "what": "The vendor libraries the page executes as classic scripts, packed by tools/build.mjs (VENDOR_GROUPS). Published modern builds are kept byte for byte; source builds record the exact package/source, compiler, target and rebuild recipe. The build refuses a file whose bytes or SHA-256 differ from this record. The digests here are the identities the packed spans carry.",
+  "movedFrom": "These bytes once lived only as the packed groups inside rapier.html, and every build re-read its own output to pack them again.",
+  "files": {
+    "turndown-7.2.4.es2024.min.js": {
+      "package": "turndown",
+      "version": "7.2.4",
+      "path": "tools/build-import-vendors.mjs; shell/vendor/source/turndown-7.2.4/SOURCE.json",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 10463,
+      "sha256": "3290b5aec1114d1523ca99aef6d5a07e5825cdabd9193fb765186856411cb741",
+      "tarball": "https://registry.npmjs.org/turndown/-/turndown-7.2.4.tgz",
+      "integrity": "sha512-I8yFsfRzmzK0WV1pNNOA4A7y4RDfFxPRxb3t+e3ui14qSGOxGtiSP6GjeX+Y6CHb7HYaFj7ECUD7VE5kQMZWGQ==",
+      "gitHead": "fb7a865ef5eba4081dfd4e20a894a61ef7a2edca",
+      "build": {
+        "compiler": "esbuild",
+        "version": "0.28.2",
+        "target": "es2024",
+        "strict": "inside IIFE",
+        "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
+        "npmLockSha256": "fa1f70a5a0db1ac0490f9201be45689bad0c487b6be2731406db4051f972544c"
+      },
+      "note": "Source from the published package gitHead, with native block scope. The HTML parser import selects globalThis.DOMParser; conversion rules are unchanged.",
+      "gzipBytes": 4032
+    },
+    "markdown-it-task-lists-2.1.1.min.js": {
+      "package": "markdown-it-task-lists",
+      "version": "2.1.1",
+      "path": "dist/markdown-it-task-lists.min.js",
+      "license": "ISC (agent/vendor/NOTICE.txt)",
+      "bytes": 2702,
+      "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+    },
+    "markdown-it-footnote-4.0.0.min.js": {
+      "package": "markdown-it-footnote",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-footnote.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 5624,
+      "sha256": "d6fee58a3b56c5742fa18f3e01f1d317cc99975683ebd39c9195cb2aff0c2e42"
+    },
+    "markdown-it-mark-4.0.0.min.js": {
+      "package": "markdown-it-mark",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-mark.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 1621,
+      "sha256": "68a50a0e42702e482f403eaa7f36446341313dfa6b4c502bc4f4b689a2caa203"
+    },
+    "markdown-it-sup-2.0.0.min.js": {
+      "package": "markdown-it-sup",
+      "version": "2.0.0",
+      "path": "dist/markdown-it-sup.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 965,
+      "sha256": "6c81de84d54484f1a37c58277db9cc0a92623253159e360ae99246ff08203236"
+    },
+    "markdown-it-emoji-3.1.0-light.min.js": {
+      "package": "markdown-it-emoji",
+      "version": "3.1.0",
+      "path": "dist/markdown-it-emoji-light.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 6394,
+      "sha256": "9f8f1ddfeec004d6e0e4f707ab5d268a3d8d935aaa7068a19712aaafa58e58bb"
+    },
+    "markdown-it-abbr-2.0.0.min.js": {
+      "package": "markdown-it-abbr",
+      "version": "2.0.0",
+      "path": "dist/markdown-it-abbr.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 2419,
+      "sha256": "a8866f434296fbb46e6800bbb5356f2472472b3fd10bd5471951dc48daefdcac"
+    },
+    "markdown-it-ins-4.0.0.min.js": {
+      "package": "markdown-it-ins",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-ins.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 1601,
+      "sha256": "7a04eeab0d2b25e1d6fe6710ce781710d9d40ac2773cb57ec1f06f2252add11a"
+    },
+    "markdown-it-deflist-4.0.0.min.js": {
+      "package": "markdown-it-deflist",
+      "version": "4.0.0",
+      "path": "dist/markdown-it-deflist.min.js",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 2376,
+      "sha256": "ac514a9a3e285269b6c0381ec7f6a8488982095e07d2268356d4fb657bf16cd7"
+    },
+    "gpu-lexer-0.0.4.js": {
+      "package": "gpu-lexer",
+      "version": "0.0.4",
+      "author": "Shu Ding",
+      "path": "dist/index.js (the package's default entry, the tree model)",
+      "license": "MIT (the package's LICENSE, Copyright (c) 2026 Shu Ding; agent/vendor/NOTICE.txt)",
+      "note": "The upstream module's trailing `export{nB as parse}` is replaced by `globalThis.RapierGpuLexer=Object.freeze({highlight:nB})` so the file runs as a classic script like every other vendor library here; Rapier keeps calling it `highlight`. The file's own first comment says so. Nothing else differs.",
+      "bytes": 60879,
+      "sha256": "5a6dc742101ca150e97b03b9a6d815c8519cfe8868047d6ddf04991c79fd62e7"
+    },
+    "rapier-math-2.7.0.js": {
+      "package": "rapier-math",
+      "version": "2.7.0",
+      "path": "tools/build-math.mjs; math/; shell/math-resources.json",
+      "license": "MIT AND LicenseRef-GUST-Font-License (math/LICENSE-MIT; math/FONT-LICENSE.txt)",
+      "bytes": 742684,
+      "sha256": "cb1c935e84744d41d516c03607a8383ff801ecfc6acdfd63b2eb38be0bc20d80"
+    },
+    "acorn-8.19.0.modern.js": {
+      "package": "acorn",
+      "version": "8.19.0",
+      "path": "tools/build-acorn.mjs; shell/vendor/acorn/PROVENANCE.json",
+      "license": "MIT (agent/vendor/NOTICE.txt)",
+      "bytes": 100487,
+      "sha256": "d1ef1e8d60e976445a4a38d64fd0794e8e0545c936926d55e6f6776a5384eb79",
+      "source": "https://github.com/acornjs/acorn",
+      "tag": "8.19.0",
+      "commit": "0e0ece7cc7202624d4aca531be4b515b0114b5d0",
+      "build": {
+        "esbuild": "0.28.2",
+        "target": "es2022",
+        "minify": true,
+        "strictIIFE": true,
+        "nativeIntrinsics": [
+          "Object.hasOwn",
+          "Array.isArray"
+        ],
+        "browserRegExp": "tools/acorn-engine-regexp.mjs; unchanged engine grammar and Acorn Unicode-table rule"
+      },
+      "note": "Native class/accessor source, with Rapier’s existing browser RegExp grammar and Unicode-table admission unchanged; full agent build retains the upstream validator."
+    },
+    "dompurify-3.4.17.es2024.min.js": {
+      "package": "dompurify",
+      "version": "3.4.17",
+      "path": "tools/build-import-vendors.mjs; shell/vendor/source/dompurify-3.4.17/SOURCE.json",
+      "license": "Apache-2.0 OR MPL-2.0 (the notice is the file's own first comment)",
+      "bytes": 28402,
+      "sha256": "71a80fcb398ce9d3b320ac2a9b46ffee2ab9dd0750aaa6a400d1d6b214838d20",
+      "tarball": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz",
+      "integrity": "sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==",
+      "gitHead": "a77a3e78b59f72fa4d1c83f22e121ad9cc7d3575",
+      "build": {
+        "compiler": "esbuild",
+        "version": "0.28.2",
+        "target": "es2024",
+        "strict": "inside IIFE",
+        "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
+        "npmLockSha256": "fa1f70a5a0db1ac0490f9201be45689bad0c487b6be2731406db4051f972544c"
+      },
+      "note": "Published TypeScript source compiled without Babel; selects native Object.freeze/seal, Reflect.apply/construct and BigInt/Symbol. Captured intrinsics and all sanitizer, DOM, clobbering, capability and hook logic are unchanged.",
+      "gzipBytes": 11018
+    },
+    "markdown-it-15.0.3.es2022.umd.js": {
+      "package": "markdown-it",
+      "version": "15.0.3",
+      "path": "src/index.ts (unchanged release source, ES2022 bundle)",
+      "license": "MIT (agent/vendor/NOTICE.txt; linkify-it inside it)",
+      "bytes": 144327,
+      "sha256": "ab352b33693b8a4c88c0c0a977f12b30df9aa42bc163f73e59397939e397182a",
+      "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz",
+      "integrity": "sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==",
+      "build": "tools/markdown-it-vendor.mjs",
+      "provenance": "agent/vendor/MARKDOWNIT.json"
+    }
+  }
+}

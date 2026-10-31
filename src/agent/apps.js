@@ -1,0 +1,2804 @@
+(() => {
+  'use strict';
+  if (globalThis.RAPIER_APPS_HOST !== true || window.RapierMcpApp) return;
+
+  const VERSION = '2026-01-26';
+  const STRANDED_DRAFT_LIMIT = 8;
+  const pending = new Map(), listeners = new AbortController();
+  const nonce = crypto.randomUUID();
+  let nextId = 0, origin = null, initialized = false, closed = false, closing = false;
+  let host, capabilities = {}, context = {}, token = '', base = null, incoming = null;
+  let version = 0, incomingVersion = 0, presentationBlocked = false;
+  let dirty = false, flight = null, switching = false;
+  let lastFailure = null, composeTimer = 0, coalesceUntil = 0;
+  const COMPOSING_IDLE_MS = 4000;
+  let editEpoch = 0, lastEdit = 0, composing = false, contextEditing = false, contextEditingAt = 0;
+  let staleContexts = 0, staleRevision = null, staleStuck = false;
+  let running = null, timer = 0, failures = 0, connecting = null, notice, modeButton;
+  const LIVE_CHECK_MS = 60000, LIVE_HTTP_MS = 600000, LIVE_CATCH_UP_MS = 60000, QUIET_DELAYS = [1500, 5000, 15000, 30000];
+  const TYPING_CONTEXT_MS = 15000, SETTLED_CONTEXT_MS = 4000;
+  let liveNotice = null, syncedNotice = null, syncWanted = Infinity, catchUpAt = Infinity, lastSyncAt = 0, quietSyncs = 0;
+  let timerAt = Infinity, checkTimer = 0, checkSentAt = 0, liveReady = '';
+  let contextSentAt = 0, contextSentBusy = false, contextLeaseMs = 0, httpContextAt = Date.now();
+  let unsubscribe, observer, locked = [], status = 'opening';
+  let importRunning = false, uploadRunning = false, homeDialog, fileDialog, homeRequested = false;
+  let boundFile = null, fileOpenEpoch = 0, pendingFileResult = null;
+  let receiveSequence = 0, latestOpenSequence = 0, deferredOpen = null;
+  const fileHydrations = new Map(), fileAttempts = new Map(), hydratedFiles = new Set(), fileBindings = new Map();
+  const editorKeys = new Map(), editorTransports = new Map();
+  const liveBindings = new Map();
+  let liveJoin = null;
+  let editorActivity = '';
+  let contextFlight = null, contextTimer = 0, contextExpiryTimer = 0, contextEpoch = 0, contextSequence = 0, contextFailures = 0;
+  let contextQueued = false, contextAck = null, contextIssue = '', unsubscribeContext;
+  const pendingDrawingReceipts = new Map();
+  let modelFlight = null, modelQueued = false, modelAvailable = true, modelFailures = 0, modelSent = '';
+  let viewFlight = null, visualFlight = null, exportFlight = null, exportWork = null, materialFlight = null;
+  const editorRequests = new Map();
+  let editorFlight = null, editorResolving = false;
+  let openingSwitch = false;
+  let hostWork = null;
+  let imageSupportNoticeStarted = false;
+  let withheld = false;
+  const pairedId = window.parent === window && typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string' &&
+    /^ws_[A-Za-z0-9_-]{43}$/.test(globalThis.RAPIER_PAIRED_DOCUMENT) ? globalThis.RAPIER_PAIRED_DOCUMENT : null;
+  let shareable = '', pairDialog = null;
+  let agentAccess = null;
+  let strandedDrafts = [];
+  const viewed = new Set();
+
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const same = (a, b) => !!a && !!b && a.documentId === b.documentId && a.text === b.text &&
+    a.filename === b.filename && a.docKind === b.docKind;
+  const actId = row => row.remoteTransactionId || row.id;
+  const documentMetadata = value => ({filename: value.filename, docKind: value.docKind});
+  function canonicalActs(value) {
+    if (!Array.isArray(value?.journal)) throw new Error('CANONICAL_HISTORY_UNAVAILABLE');
+    const ids = new Map(value.journal.map(row => [row.id, actId(row)]));
+    const reference = id => ids.get(id) || id;
+    return value.journal.map(row => ({id: actId(row), baseRevision: row.baseRevision, revision: row.revision,
+      author: {...row.author}, operation: row.operation, createdAt: row.createdAt ?? null,
+      ...(row.label !== undefined ? {label: row.label} : {}),
+      ...(row.affectedBlockIds ? {affectedBlockIds: row.affectedBlockIds.slice()} : {}),
+      ...(row.turnId ? {turnId: row.turnId} : {}),
+      ...(row.sourceTransactionId ? {sourceTransactionId: reference(row.sourceTransactionId)} : {}),
+      ...(row.sourceTransactionIds?.length ? {sourceTransactionIds: row.sourceTransactionIds.map(reference)} : {}),
+      ...(row.reverts ? {reverts: reference(row.reverts)} : {}), ...(row.reapplies ? {reapplies: reference(row.reapplies)} : {}),
+      splices: row.splices.map(splice => ({pos: splice.pos, removed: splice.removed, inserted: splice.inserted})),
+      ...(row.metadata ? {metadata: structuredClone(row.metadata)} : {}),
+      ...(Object.hasOwn(row, 'authored') ? {authored: structuredClone(row.authored)} : {})}));
+  }
+  function localSuffix(local, acknowledged) {
+    const rows = canonicalActs(local), known = new Set((acknowledged.journal || []).map(actId));
+    const first = rows.findIndex(row => !known.has(row.id));
+    if (first < 0) return [];
+    const suffix = rows.slice(first);
+    if (suffix.some(row => known.has(row.id))) throw new Error('CANONICAL_HISTORY_DIVERGED');
+    return suffix;
+  }
+  function acknowledged(local, value = base) {
+    if (!same(local, value)) return false;
+    try {
+      const ids = new Set(local.journal.map(actId));
+      return localSuffix(local, value).length === 0 && (value.journal || []).every(row => ids.has(actId(row)));
+    }
+    catch (_) { return false; }
+  }
+  function replayLocalActs(before, rows, expected) {
+    let text = before.text, metadata = documentMetadata(before), revision = rows[0]?.baseRevision;
+    for (const row of rows) {
+      if (row.baseRevision !== revision || row.revision !== revision + 1) throw new Error('CANONICAL_HISTORY_DIVERGED');
+      text = RapierLedger._rapierTransformSplices(text, row.splices);
+      metadata = RapierLedger._rapierTransformMetadata(metadata, row.metadata);
+      if (text === null || !metadata) throw new Error('CANONICAL_HISTORY_DIVERGED');
+      revision = row.revision;
+    }
+    if (expected && (text !== expected.text || metadata.filename !== expected.filename || metadata.docKind !== expected.docKind))
+      throw new Error('CANONICAL_HISTORY_DIVERGED');
+    return {text, ...metadata};
+  }
+  const validToken = value => typeof value === 'string' && (/^rpr_[A-Za-z0-9_-]{43}$/.test(value) || value === pairedId);
+  const snapshot = value => object(value) && typeof value.documentId === 'string' &&
+    value.documentId.length > 0 && value.documentId.length <= 256 && Number.isSafeInteger(value.revision) &&
+    value.revision >= 0 && typeof value.text === 'string' && typeof value.filename === 'string' &&
+    value.filename.length <= 512 && ['markdown', 'text', 'code'].includes(value.docKind);
+  const visible = () => document.visibilityState !== 'hidden';
+  const contextBusy = () => contextEditing && Date.now() - contextEditingAt < 3000;
+  const editing = () => composing || contextBusy() || Date.now() - lastEdit < 1500;
+  const metadata = result => object(result?._meta?.rapier) ? result._meta.rapier : {};
+  const toolData = result => metadata(result).open || result?.structuredContent;
+  const viewVersion = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const canImport = () => typeof window.openai?.selectFiles === 'function' &&
+    typeof window.openai?.getFileDownloadUrl === 'function';
+  const canUpload = () => typeof window.openai?.uploadFile === 'function';
+  const activeFile = () => boundFile?.document === token && boundFile.documentId === base?.documentId ? boundFile.store : null;
+  const fileDirty = () => !!activeFile() && (activeFile().pending || !activeFile().isSaved(base.text));
+  const filePreserved = local => !activeFile() || (!activeFile().pending && (activeFile().isSaved(local.text) ||
+    (boundFile.savedCopy?.text === local.text && boundFile.savedCopy.filename === local.filename)));
+
+  function post(message) {
+    if (closed || pairedId) return;
+    if (origin === null && (message.method !== 'ui/initialize' || pending.get(message.id)?.method !== 'ui/initialize')) throw new Error('HOST_UNBOUND');
+    window.parent.postMessage({jsonrpc: '2.0', ...message}, origin ?? '*');
+  }
+
+  function request(method, params, timeout = 20000) {
+    if (closed) return Promise.reject(new Error('CLOSED'));
+    if (pairedId) return method === 'tools/call' ? pageCall(params, timeout) : Promise.reject(new Error('HOST_UNAVAILABLE'));
+    const id = `${nonce}:${++nextId}`;
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error('TIMEOUT'));
+      }, timeout);
+      pending.set(id, {resolve, reject, timeoutId, method});
+      try { post({id, method, params}); }
+      catch (error) { clearTimeout(timeoutId); pending.delete(id); reject(error); }
+    });
+  }
+
+  async function pageCall(params, timeout) {
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(globalThis.RAPIER_DOOR, {method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'error', signal: controller.signal,
+        headers: {'Content-Type': 'application/json', Accept: 'application/json', 'MCP-Protocol-Version': '2025-11-25'},
+        body: JSON.stringify({jsonrpc: '2.0', id: `${nonce}:${++nextId}`, method: 'tools/call', params})});
+      const body = await response.json();
+      if (!object(body) || object(body.error) || !object(body.result)) throw Object.assign(new Error('HOST_REQUEST_FAILED'), {code: body?.error?.code});
+      return body.result;
+    } catch (error) {
+      throw error?.name === 'AbortError' ? new Error('TIMEOUT') : error;
+    } finally { clearTimeout(timer); }
+  }
+
+  async function editorCall(params, timeout = 20000) {
+    const transport = editorTransports.get(params.arguments?.document);
+    if (!transport) throw new Error('EDITOR_UNBOUND');
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(transport.url, {method: 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: controller.signal,
+        headers: {'Content-Type': 'application/json', Accept: 'application/json', Authorization: 'Bearer ' + transport.ticket, 'MCP-Protocol-Version': '2025-11-25'},
+        body: JSON.stringify({jsonrpc: '2.0', id: `${nonce}:${++nextId}`, method: 'tools/call', params})});
+      const body = await response.json();
+      if (!response.ok || body.error || !object(body.result)) throw new Error('EDITOR_REQUEST_FAILED');
+      return body.result;
+    } finally { clearTimeout(timer); }
+  }
+
+  function editorKeyFor(document) {
+    if (pairedId) return document === pairedId && typeof globalThis.RAPIER_EDITOR_KEY === 'string' ? globalThis.RAPIER_EDITOR_KEY : '';
+    return editorKeys.get(document) || '';
+  }
+
+  function rememberEditorKey(result, document = toolData(result)?.document) {
+    const meta = metadata(result);
+    if (!result?.isError && validToken(document) && (pairedId ? document === pairedId : meta.editorDocument === document) &&
+        typeof meta.live?.url === 'string' && typeof meta.live?.key === 'string') liveBindings.set(document, meta.live);
+    if (result?.isError || !validToken(document) || meta.editorDocument !== document ||
+        typeof meta.editorKey !== 'string' || !meta.editorKey.length || meta.editorKey.length > 512) return;
+    if (pairedId) {
+      if (document === pairedId) globalThis.RAPIER_EDITOR_KEY = meta.editorKey;
+    } else {
+      editorKeys.set(document, meta.editorKey);
+      if (typeof meta.editorTransport?.url === 'string' && typeof meta.editorTransport?.ticket === 'string') {
+        const url = new URL(meta.editorTransport.url);
+        if (url.pathname === '/editor' && !url.username && !url.password && !url.search && !url.hash &&
+            (url.protocol === 'https:' || url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) editorTransports.set(document, meta.editorTransport);
+      }
+    }
+  }
+
+  function joinedLive() {
+    const current = window.Rapier?.live?.status();
+    return current?.active && current.documentId === base?.documentId ? current : null;
+  }
+
+  const LIVE_OFFLINE_MS = 8000, LIVE_RETRY_MS = 60000;
+  let liveDownSince = 0, liveRetryAt = 0;
+
+  let heldLedger = null;
+  function holdBaseLedger() {
+    if (!base || heldLedger?.base === base || _rapierSourceText() !== base.text) return;
+    const ledger = _rapierLedgerCapture();
+    if (ledger?.head.revision === base.revision) heldLedger = {base, ledger};
+  }
+
+  async function joinLive() {
+    const link = liveBindings.get(token);
+    if (!link || !base || flight || Date.now() < liveRetryAt || globalThis.RapierWorkerExecution.workerStartupRefused('rapier-live')) return false;
+    if (liveJoin) return liveJoin;
+    const documentId = base.documentId;
+    holdBaseLedger();
+    const held = heldLedger?.base === base ? heldLedger.ledger : null;
+    liveJoin = window.Rapier.live.join({...link, documentId, filename: base.filename,
+      baseline: {documentId, gen: base.revision, source: base.text, ...(held ? {ledger: held} : {})}}).then(value =>
+      value?.documentId === documentId && base?.documentId === documentId).finally(() => { liveJoin = null; });
+    return liveJoin;
+  }
+
+  function recordEditorActivity(event) {
+    if (event?.isTrusted === true && base && token && !closed && !closing && !switching && visible()) editorActivity = token;
+  }
+
+  function call(name, args, timeout, human = false, exportKey) {
+    if (!initialized || !object(capabilities.serverTools)) return Promise.reject(new Error('HOST_UNAVAILABLE'));
+    const own = globalThis.RapierAgentCatalog?.getTool?.(name)?.visibility?.includes('app') ||
+      (human && (['comments.write', 'comments.read', 'document.read'].includes(name) || name === 'comparison.present' && args?.action === 'close'));
+    const editorKey = own ? (name === 'document.export_ack' && exportKey ? exportKey : editorKeyFor(args?.document)) : '';
+    const run = async () => {
+      const visual = name === 'document.visual_ack' ? globalThis.RapierAgentVisual.visualAcknowledgement(args) : null;
+      const wire = visual?.arguments || args;
+      const params = {name, arguments: editorKey ? {...wire, editorKey} : wire};
+      if (editorKey && !pairedId) params._meta = {'rapier/editorKey': editorKey};
+      if (visual) params._meta = {...params._meta, 'rapier/visual': visual.metadata};
+      if (editorKey && editorActivity === args?.document && ['document.commit', 'document.human_context'].includes(name)) {
+        params._meta = {...params._meta, 'rapier/editorActivity': true};
+        editorActivity = '';
+      }
+      const result = own && !pairedId ? await editorCall(params, timeout) : await request('tools/call', params, timeout);
+      rememberEditorKey(result, args?.document);
+      return result;
+    };
+    return !own && host?.trackInvocation ? host.trackInvocation(name, args, run, crypto.randomUUID()) : run();
+  }
+
+  function finishHostWork() {
+    const current = hostWork;
+    hostWork = null;
+    current?.();
+  }
+
+  function beginHostWork(params) {
+    finishHostWork();
+    if (!host?.trackInvocation || !token || params?.arguments?.document !== token) return;
+    const done = new Promise(resolve => { hostWork = resolve; });
+    void host.trackInvocation('agent', params.arguments,
+      () => done, crypto.randomUUID()).catch(() => {});
+  }
+
+  function button(label, action, className = '') {
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.textContent = label;
+    element.className = className;
+    element.addEventListener('click', event => Promise.resolve().then(() => action(event)).catch(failed), {signal: listeners.signal});
+    return element;
+  }
+
+  function setStatus(value) {
+    status = value;
+    if (['unavailable', 'expired', 'unsupported', 'detached', 'unpaired'].includes(value)) {
+      cancelEditorRequests('editor_unavailable', {forget: true});
+      cancelMaterial('editor_unavailable', {forget: true});
+      cancelExport('editor_unavailable');
+    } else if (value === 'offline') {
+      cancelEditorRequests('editor_unavailable', {waitingOnly: true});
+    }
+    if (value === 'ready') void explainImageSupport();
+    if (!notice) return;
+    const strandedText = strandedDrafts.length === 1 ? 'A draft from a document you switched away from is unsaved'
+      : strandedDrafts.length > 1 ? `${strandedDrafts.length} drafts from documents you switched away from are unsaved` : '';
+    const fileIssue = activeFile()?.issue;
+    const fileText = {
+      conflict: 'The ChatGPT file also changed. Your draft is safe here.',
+      read_only: 'This file is read only. Save your edits as a new file.',
+      unversioned: 'This host cannot protect concurrent file edits. Save a new file.',
+      unconfirmed: 'The file save is not confirmed. Your draft is safe here.',
+      too_large: 'This draft exceeds the host’s file size limit. Download a copy.'
+    }[fileIssue] || '';
+    const text = {
+      opening: 'Opening document', reconnecting: 'Reconnecting', offline: 'Connection interrupted',
+      unpaired: 'This browser is not paired with the document',
+      unavailable: 'Document unavailable', expired: 'This editor session has expired. Open the document again from your assistant’s link',
+      unsupported: 'This host cannot connect to Rapier', detached: 'This document is open elsewhere',
+      coalescing: 'Saving once a minute while this document changes fast',
+      blocked: 'This update needs attention',
+      comparison_changed: 'The comparison changed. Review it again.', comparison_refused: 'This comparison needs another look.'
+    }[value] || strandedText || fileText;
+    notice.hidden = !text;
+    notice.firstElementChild.textContent = text || '';
+    notice.children[1].hidden = !['reconnecting', 'offline', 'opening', 'blocked', 'unpaired'].includes(value);
+    notice.children[2].hidden = !fileIssue;
+    notice.children[3].hidden = !base || !(['offline', 'unavailable', 'unsupported', 'detached', 'blocked', 'expired', 'unpaired'].includes(value) || strandedDrafts.length > 0 || fileIssue);
+    document.documentElement.dataset.rapierSync = value;
+    publishModelContext();
+  }
+
+  async function explainImageSupport() {
+    if (imageSupportNoticeStarted) return;
+    imageSupportNoticeStarted = true;
+    const images = globalThis.RapierEmbeddedImages;
+    if (!images || await images.whenJxlDisplayKnown() || closed) return;
+    const panel = document.createElement('aside');
+    panel.className = 'rapier-app-image-notice';
+    panel.setAttribute('aria-labelledby', 'rapier-app-image-notice-title');
+    const title = document.createElement('strong');
+    title.id = 'rapier-app-image-notice-title';
+    title.textContent = 'Update to see every picture';
+    const explanation = document.createElement('p');
+    explanation.textContent = 'This browser is too old to show JPEG XL pictures, so some pictures and paintings may look blank. They are safe in your document.';
+    const schedule = document.createElement('p');
+    schedule.textContent = 'Update your browser or app to see them.';
+    panel.append(title, explanation, schedule, button('Got it', () => panel.remove()));
+    (document.getElementById('toast-root') || document.body).append(panel);
+    notifySize();
+  }
+
+  function mountUi() {
+    const style = document.createElement('style');
+    style.textContent = `
+      .rapier-app-notice{pointer-events:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;background:var(--color-surface-2);color:var(--color-text);font:var(--text-sm)/1.5 var(--font-mono)}
+      .rapier-app-notice[hidden]{display:none}.rapier-app-notice>span{flex:1 1 auto}.rapier-app-notice button{text-transform:uppercase;letter-spacing:var(--track-caps-ui)}
+      .rapier-app-notice button{font:inherit;color:inherit;background:var(--color-surface-hover);border:0;border-radius:0;min-height:48px;padding:8px 14px;cursor:pointer}
+      .rapier-app-image-notice{pointer-events:auto;width:min(440px,calc(100vw - 32px));box-sizing:border-box;padding:20px;background:var(--color-bg);color:var(--color-text);font:inherit}
+      .rapier-app-image-notice strong{font-size:1.05em}.rapier-app-image-notice p{margin:12px 0;line-height:1.5}
+      .rapier-app-image-notice button{font:inherit;text-transform:uppercase;color:var(--color-accent-foreground,#fff);background:var(--color-accent);border:0;border-radius:0;padding:12px 16px;cursor:pointer}
+      .rapier-app-pop{z-index:300}.rapier-app-pop p{margin:0 0 var(--space-4);line-height:1.5}.rapier-app-pop input{flex:0 0 auto;width:100%;height:48px;box-sizing:border-box;margin:0 0 var(--space-4);background:var(--color-surface-2);font-family:var(--font-mono)}
+      .rapier-app-pair-code{font:var(--fw-medium) 3.5rem/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase}
+      #top-actions{position:relative}
+      .rapier-app-fullscreen{position:absolute;inset-block-start:100%;inset-inline-end:0;background:color-mix(in srgb,var(--color-bg) 50%,transparent);border-radius:0}
+      html{height:var(--rapier-app-height,560px);overflow:hidden;scroll-behavior:auto}
+      body{height:100%;min-height:0;overflow:hidden}
+      .editor-area,.compare-mode{min-height:0;overscroll-behavior-y:auto;margin-block-end:max(var(--native-inset-bottom,0px),var(--rapier-keyboard-occlusion,0px))}
+
+    `;
+    document.head.append(style);
+    notice = document.createElement('div');
+    notice.className = 'rapier-app-notice';
+    notice.setAttribute('role', 'region');
+    notice.setAttribute('aria-label', 'Document connection');
+    const label = document.createElement('span');
+    label.setAttribute('role', 'status');
+    label.setAttribute('aria-live', 'polite');
+    notice.append(label, button('Retry', retry), button('Review', reviewHostFile), button('Copy draft', downloadDraft));
+    (document.getElementById('toast-root') || document.body).append(notice);
+
+    modeButton = button('', () => requestDisplayMode(context.displayMode === 'fullscreen' ? 'inline' : 'fullscreen'), 'icon-btn rapier-app-fullscreen');
+    modeButton.hidden = true;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const [key, value] of Object.entries({width: '22', height: '22', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'})) svg.setAttribute(key, value);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5');
+    svg.append(path);
+    modeButton.append(svg);
+    document.getElementById('top-actions')?.append(modeButton);
+    const homeButton = button('', showHome, 'icon-btn');
+    homeButton.setAttribute('aria-label', 'Documents');
+    homeButton.title = 'Documents';
+    const homeSvg = svg.cloneNode(false), homePath = path.cloneNode(false);
+    homePath.setAttribute('d', 'M3 9l9-7 9 7v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9m6 12v-9h6v9');
+    homeSvg.append(homePath);
+    homeButton.append(homeSvg);
+    if (!pairedId) document.getElementById('top-actions')?.append(homeButton);
+    lock();
+    setStatus(status);
+  }
+
+  function lock() {
+    for (const child of document.body.children) {
+      if (['SCRIPT', 'STYLE'].includes(child.tagName) || child === notice || child === pairDialog || child.id === 'toast-root' || child.inert) continue;
+      child.inert = true;
+      locked.push(child);
+    }
+  }
+
+  function unlock() {
+    for (const element of locked) element.inert = false;
+    locked = [];
+  }
+
+  function updateFrameLayout() {
+    const dimensions = context.containerDimensions || {};
+    const fixed = context.displayMode === 'fullscreen' || Number.isFinite(dimensions.height);
+    const height = Number.isFinite(dimensions.maxHeight) && dimensions.maxHeight > 0
+      ? Math.min(560, dimensions.maxHeight) : 560;
+    document.documentElement.style.setProperty('--rapier-app-height', fixed ? '100dvh' : `${height}px`);
+  }
+
+  function updateContext(value) {
+    if (!object(value)) return;
+    for (const key of ['theme', 'displayMode', 'availableDisplayModes', 'containerDimensions', 'safeAreaInsets',
+      'styles', 'locale', 'timeZone', 'platform', 'deviceCapabilities']) {
+      if (Object.hasOwn(value, key)) context[key] = value[key];
+    }
+    if (context.theme === 'light' || context.theme === 'dark') {
+      document.body.classList.toggle('light', context.theme === 'light');
+      document.documentElement.style.colorScheme = context.theme;
+    }
+    updateFrameLayout();
+    document.documentElement.dataset.rapierHostPlatform = typeof context.platform === 'string' ? context.platform : '';
+    document.documentElement.dataset.rapierHostTouch = context.deviceCapabilities?.touch === true ? '1' :
+      context.deviceCapabilities?.touch === false ? '0' : '';
+    if (modeButton) {
+      const mode = context.displayMode === 'fullscreen' ? 'inline' : 'fullscreen';
+      modeButton.hidden = !Array.isArray(context.availableDisplayModes) || !context.availableDisplayModes.includes(mode);
+      modeButton.setAttribute('aria-label', mode === 'fullscreen' ? 'Expand editor' : 'Exit fullscreen');
+      modeButton.title = modeButton.getAttribute('aria-label');
+      modeButton.querySelector('path').setAttribute('d', mode === 'fullscreen'
+        ? 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5' : 'M3 8h5V3m8 0v5h5M3 16h5v5m8 0v-5h5');
+    }
+    if (notice) notice.children[3].textContent = object(capabilities.downloadFile) ? 'Download draft' : 'Copy draft';
+    updateSafeArea();
+    if (initialized) notifySize();
+  }
+
+  function updateSafeArea() {
+    const insets = object(context.safeAreaInsets) ? context.safeAreaInsets : window.openai?.safeArea?.insets;
+    const style = document.documentElement.style;
+    let changed = false;
+    for (const edge of ['top', 'right', 'bottom', 'left']) {
+      const value = insets?.[edge], property = `--native-inset-${edge}`;
+      const next = Number.isFinite(value) && value >= 0 ? `${value}px` : '';
+      if (style.getPropertyValue(property) === next) continue;
+      if (next) style.setProperty(property, next);
+      else style.removeProperty(property);
+      changed = true;
+    }
+    if (changed) window.dispatchEvent(new Event('rapier:native-insets'));
+  }
+
+  let lastSize = '';
+  function notifySize() {
+    if (!initialized || closed || context.displayMode === 'fullscreen' || Number.isFinite(context.containerDimensions?.height)) return;
+    const height = Math.round(document.documentElement.getBoundingClientRect().height);
+    if (height > 0 && height !== lastSize) {
+      lastSize = height;
+      post({method: 'ui/notifications/size-changed', params: {height}});
+    }
+  }
+
+  async function requestDisplayMode(mode) {
+    if (!['inline', 'fullscreen'].includes(mode) || !context.availableDisplayModes?.includes(mode)) return false;
+    const result = await request('ui/request-display-mode', {mode});
+    if (['inline', 'fullscreen'].includes(result?.mode)) updateContext({displayMode: result.mode});
+    return result?.mode === mode;
+  }
+
+  function sourceRange(value, length) {
+    return object(value) && Number.isSafeInteger(value.start) && Number.isSafeInteger(value.end) &&
+      value.start >= 0 && value.end >= value.start && value.end <= length ? {start: value.start, end: value.end,
+        ...(typeof value.objectId === 'string' ? {objectId: value.objectId} : {})} : null;
+  }
+
+  function contextRanges(captured, source) {
+    if (!captured || captured.documentId !== source.documentId ||
+        typeof captured.text !== 'string' || typeof source.text !== 'string') return null;
+    let splices;
+    try {
+      splices = RapierLiveMerge.sourceSplices(captured.text, source.text).reverse().map(row =>
+        ({pos: row.at, removed: captured.text.slice(row.at, row.at + row.remove), inserted: row.insert}));
+    } catch (_) { return null; }
+    const move = value => {
+      const range = sourceRange(value, captured.text.length);
+      const moved = range && sourceRange(RapierLedger.transportTouchedInterval(range.start, range.end, splices), source.text.length);
+      return moved && {...moved, ...(range.objectId ? {objectId: range.objectId} : {})};
+    };
+    return {selection: move(captured.context?.selection), focus: move(captured.context?.focus)};
+  }
+
+  function contextChanged(event) {
+    contextEpoch++;
+    if (typeof event?.editing === 'boolean') { contextEditing = event.editing; contextEditingAt = Date.now(); }
+    if (event?.editing === true) { cancelMaterial('human_edit_in_progress'); cancelExport('human_edit_in_progress'); }
+    contextQueued = true;
+    contextFailures = 0;
+    clearTimeout(contextTimer);
+    if (!closed && !switching && initialized && base) contextTimer = setTimeout(() => void publishHumanContext(), 80);
+    void publishModelContext();
+  }
+
+  async function publishHumanContext(release = false) {
+    clearTimeout(contextTimer);
+    if (contextFlight) {
+      contextQueued = true;
+      if (release) { await contextFlight; return publishHumanContext(true); }
+      return contextFlight;
+    }
+    if (!release && editorContextBusy()) { contextQueued = true; return false; }
+    if (closed || !initialized || !token || !base || (!release && switching)) return false;
+    if (!release && joinedLive() && visible()) {
+      const wait = contextWait(Date.now(), editing(), contextSentBusy, contextSentAt, lastEdit);
+      if (wait > 0) { contextQueued = true; contextTimer = setTimeout(() => void publishHumanContext(), wait); return false; }
+    }
+    const documentToken = token, epoch = contextEpoch;
+    let source = base;
+    contextQueued = false;
+    contextFlight = (async () => {
+      let captured;
+      if (!release) {
+        try { captured = await host.humanContext(); }
+        catch (_) { captured = {ok: false}; }
+      }
+      if (token !== documentToken || closed) return false;
+      if (epoch === contextEpoch && typeof captured?.context?.editing === 'boolean') { contextEditing = captured.context.editing; contextEditingAt = Date.now(); }
+      const active = !release && !closing && visible();
+      const live = joinedLive();
+      const atLive = !!live && live.pending === 0 && !flight && !composing && captured?.ok === true &&
+        captured.documentId === source.documentId && typeof captured.text === 'string';
+      if (atLive) source = {...source, revision: live.gen, text: captured.text};
+      const exact = captured?.ok === true && same(captured, source) && (atLive || !dirty) && !flight && !composing;
+      const busy = active && (!exact || editing() || captured?.context?.editing === true);
+      const args = {document: documentToken, expectedRevision: source.revision, contextId: nonce,
+        sequence: ++contextSequence, visible: active, editing: busy};
+      if (active && captured?.documentId === source.documentId && ['formatted', 'source', 'notes'].includes(captured?.context?.view)) args.view = captured.context.view;
+      if (active && captured?.documentId === source.documentId && Number.isSafeInteger(captured?.context?.navigationSequence)) args.navigationSequence = captured.context.navigationSequence;
+      if (active && exact) {
+        const receipts = new Map((captured?.context?.drawingReceipts || []).map(row => [row.transactionId, row]));
+        for (const row of pendingDrawingReceipts.values()) if (row.documentId === source.documentId) receipts.set(row.transactionId, row);
+        if (receipts.size) args.drawingReceipts = [...receipts.values()];
+        if (Array.isArray(captured.context?.objects)) args.objects = captured.context.objects;
+      }
+      const ranges = active && contextRanges(captured, source);
+      if (ranges) Object.assign(args, ranges);
+      if (active && exact && captured.context?.drawing?.open) {
+        args.drawing = {...captured.context.drawing};
+        if (args.drawing.recipe) {
+          const recipe = JSON.stringify(globalThis.RapierKernel.disclosedRecipe(args.drawing.recipe)), limits = globalThis.RapierKernel.LIMITS;
+          args.drawing.recipeDigest = globalThis.RapierKernel.drawingRecipeDigest(args.drawing.recipe);
+          if (new TextEncoder().encode(recipe).byteLength > limits.authorityBytes) {
+            delete args.drawing.recipe;
+            args.drawing.recipeUnavailable = 'target_over_edit_budget';
+          } else {
+            const held = contextAck?.drawing, occurrence = args.drawing.occurrence, priorOccurrence = held?.occurrence;
+            const sameOccurrence = !occurrence && !priorOccurrence || occurrence && priorOccurrence &&
+              occurrence.start === priorOccurrence.start && occurrence.end === priorOccurrence.end && occurrence.reference === priorOccurrence.reference;
+            if (contextAck?.documentId === source.documentId && contextAck.revision === source.revision && held?.recipeReference === true &&
+                held.session === args.drawing.session && held.surfaceGeneration === args.drawing.surfaceGeneration &&
+                held.assetGeneration === args.drawing.assetGeneration && held.recipeDigest === args.drawing.recipeDigest && sameOccurrence) {
+              delete args.drawing.recipe;
+              args.drawing.recipeReference = true;
+            }
+          }
+        }
+      }
+      if (active && typeof host.editorContext === 'function') {
+        const editor = host.editorContext();
+        if (object(editor?.preferences)) args.editor = {preferences: editor.preferences};
+      }
+      const {document: ignored, ...socketArgs} = args;
+      let result = live?.custody ? await globalThis.RapierLiveCustody?.context(args) : null;
+      if (!result && live && !live.custody && Date.now() - httpContextAt < LIVE_HTTP_MS) result = await _rapierLive.doorContext?.(socketArgs);
+      if (!result) { result = await call('document.human_context', args, 5000); httpContextAt = Date.now(); }
+      contextSentAt = Date.now(); contextSentBusy = busy;
+      if (token !== documentToken || closed) return false;
+      if (result.structuredContent?.reason === 'human_context_recipe_required' || result.structuredContent?.code === 'HUMAN_CONTEXT_RECIPE_REQUIRED') {
+        contextAck = null; contextQueued = true; contextIssue = ''; contextFailures = 0;
+        return false;
+      }
+      if (result.isError) {
+        contextIssue = result.structuredContent?.code === 'HUMAN_CONTEXT_STALE' ? 'stale' : 'unavailable';
+        captureIncoming(result);
+        if (contextIssue === 'stale' && live?.custody) { schedule(250); return false; }
+        if (contextIssue === 'stale' && live) syncWanted = Date.now();
+        else if (contextIssue === 'stale') {
+          staleContexts = staleRevision === source.revision ? staleContexts + 1 : 1;
+          staleRevision = source.revision;
+          if (staleContexts >= 3 && base === source) {
+            staleStuck = true; contextFailures = 3;
+            setStatus('offline');
+            return false;
+          }
+        }
+        schedule(0);
+        return false;
+      }
+      contextFailures = 0;
+      staleContexts = 0; staleRevision = null;
+      if (staleStuck) { staleStuck = false; if (status === 'offline' && !failures) setStatus('ready'); }
+      const receipt = result.structuredContent;
+      if (receipt?.acknowledged !== true || receipt.contextId !== nonce || receipt.sequence !== args.sequence) return false;
+      contextLeaseMs = Number.isFinite(receipt.contextExpiresAt) ? receipt.contextExpiresAt - Date.now() : 0;
+      for (const row of args.drawingReceipts || []) if (pendingDrawingReceipts.get(row.transactionId) === row) pendingDrawingReceipts.delete(row.transactionId);
+      contextIssue = '';
+      const drawingAck = args.drawing && {...args.drawing, recipeReference: !!(args.drawing.recipe || args.drawing.recipeReference)};
+      if (drawingAck) delete drawingAck.recipe;
+      contextAck = {documentId: source.documentId, revision: source.revision, epoch,
+        selection: receipt.revision === source.revision ? args.selection || null : null,
+        focus: receipt.revision === source.revision ? args.focus || null : null,
+        visible: active, editing: busy, ...(drawingAck ? {drawing: drawingAck} : {})};
+      clearTimeout(contextExpiryTimer);
+      if (Number.isFinite(receipt.contextExpiresAt)) contextExpiryTimer = setTimeout(() => {
+        contextAck = null;
+        void publishModelContext();
+      }, Math.max(0, Math.min(contextLeaseMs > 120000 ? 600000 : 15000, receipt.contextExpiresAt - Date.now())));
+      void publishModelContext();
+      return true;
+    })().catch(() => { contextIssue = 'unavailable'; contextFailures++; void publishModelContext(); return false; }).finally(() => {
+      contextFlight = null;
+      if (!closed && !closing && !switching && initialized && base && contextFailures < 3 && visible()) {
+        contextTimer = setTimeout(() => void publishHumanContext(), contextQueued ? 80 :
+          contextLeaseMs > 120000 ? Math.min(300000, contextLeaseMs / 2) : 5000);
+      }
+    });
+    return contextFlight;
+  }
+
+  function modelContext() {
+    if (!base) return null;
+    const unsent = dirty || !!flight || composing;
+    const current = !withheld && !unsent && visible() && contextAck?.visible && contextAck.revision === base.revision &&
+      contextAck.epoch === contextEpoch;
+    const selection = current ? contextAck.selection : null, focus = current ? contextAck.focus : null;
+    return {document: withheld ? null : token, agentsDisconnected: withheld, documentId: base.documentId, revision: base.revision, filename: base.filename,
+      docKind: base.docKind, visible: visible(), dirty: unsent, selection, focus,
+      file: activeFile() ? {name: activeFile().file.name, writable: activeFile().resource.writable,
+        saved: !fileDirty(), conflict: activeFile().issue === 'conflict'} : null,
+      comparison: base.compare ? {id: base.compare.id, changes: base.compare.changes.length} : null};
+  }
+
+  async function publishModelContext() {
+    if (!initialized || closed || switching || !modelAvailable || !base) return;
+    if (modelFlight) { modelQueued = true; return modelFlight; }
+    const value = modelContext(), signature = JSON.stringify(value);
+    if (signature === modelSent) return;
+    modelQueued = false;
+    modelFlight = request('ui/update-model-context', {structuredContent: {rapier: value}, content: [{type: 'text',
+      text: value.dirty ? 'The person has unsaved edits; edit after they sync.' :
+        'The person\'s view of the Rapier document; selection is a source range. Use read for current text and its revision before editing.',
+      _meta: {'openai/title': value.filename ? 'Rapier: ' + value.filename : 'Rapier document'}}]}, 5000)
+      .then(() => { modelSent = signature; modelFailures = 0; })
+      .catch(error => { if (error?.code === -32601 || ++modelFailures >= 3) modelAvailable = false; })
+      .finally(() => { modelFlight = null; if (modelQueued) void publishModelContext(); });
+    return modelFlight;
+  }
+
+  async function acknowledgeView() {
+    const sent = viewFlight;
+    if (!sent || sent.status !== 'expired' && (dirty || flight || composing)) return;
+    const result = await call('document.view_ack', sent);
+    if (viewFlight === sent) viewFlight = null;
+    captureIncoming(result);
+    schedule(0);
+  }
+
+  async function presentVisual(local, expected) {
+    const intent = base?.visualIntent;
+    if (!intent || intent.status !== 'pending' || intent.revision !== base.revision || intent.documentId !== base.documentId) {
+      visualFlight = null;
+      return;
+    }
+    if (!visualFlight || visualFlight.visualId !== intent.id) {
+      const target = {document: token, documentId: base.documentId, revision: base.revision};
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), Math.max(0, intent.expiresAt - Date.now()));
+      let fact;
+      try {
+        fact = typeof host.inspectVisual === 'function'
+          ? await host.inspectVisual({...intent, signal: controller.signal}, expected)
+          : {outcome: 'refused', reason: 'capture_unavailable'};
+      } catch (_) { fact = {outcome: 'refused', reason: 'capture_unavailable'}; }
+      finally { clearTimeout(timeout); }
+      if (token !== target.document || closed || closing || switching) return;
+      const current = await host.snapshot();
+      if (dirty || composing || !same(current, local) || current.generation !== local.generation ||
+          current.revision !== local.revision || base.revision !== target.revision) fact = {outcome: 'refused', reason: 'document_changed'};
+      visualFlight = {document: target.document, visualId: intent.id, expectedRevision: target.revision,
+        fact: {...fact, documentId: target.documentId, revision: target.revision, scope: intent.scope}};
+    }
+    const sent = visualFlight;
+    const result = await call('document.visual_ack', sent);
+    if (visualFlight === sent) visualFlight = null;
+    captureIncoming(result);
+  }
+
+  function cancelExport(reason) {
+    exportFlight = null;
+    const row = exportWork;
+    if (!row) return;
+    row.reason ||= reason;
+    clearTimeout(row.timer); clearTimeout(row.renewTimer);
+    row.controller.abort();
+  }
+
+  const exportCurrent = row => exportWork === row && row.active && !row.controller.signal.aborted && !closed && !closing && !switching &&
+    visible() && !dirty && !composing && editEpoch === row.editEpoch && token === row.document &&
+    base?.documentId === row.documentId && base.revision === row.revision;
+  const exportSnapshot = (row, value) => same(value, row.local) && value.generation === row.local.generation && value.revision === row.local.revision;
+  function armExport(row, retry = false) {
+    clearTimeout(row.timer); clearTimeout(row.renewTimer);
+    if (exportWork !== row || !row.active) return;
+    if (!exportCurrent(row)) return cancelExport(row.reason || 'document_changed');
+    const remaining = row.expiresAt - Date.now();
+    if (remaining <= 0) return cancelExport('export_expired');
+    row.timer = setTimeout(() => { if (exportWork === row) cancelExport('export_expired'); }, remaining);
+    if (row.expiresAt < row.deadline) row.renewTimer = setTimeout(() => void renewExport(row),
+      row.sequence === 0 && !retry ? 0 : retry ? Math.min(1000, remaining) : Math.min(30000, Math.max(1, Math.floor(remaining / 3))));
+  }
+
+  async function renewExport(row) {
+    if (exportWork !== row || !row.active) return;
+    if (!exportCurrent(row)) return cancelExport(row.reason || 'document_changed');
+    let retry = false;
+    try {
+      const local = await host.snapshot();
+      if (exportWork !== row || !row.active) return;
+      if (!exportCurrent(row) || !exportSnapshot(row, local)) return cancelExport('document_changed');
+      row.renewedFrom ??= row.expiresAt;
+      const result = await call('document.export_ack', {document: row.document, exportId: row.id, expectedRevision: row.revision,
+        fact: {...row.identity, outcome: 'pending', expiresAt: row.renewedFrom, leaseSequence: row.sequence}},
+        Math.max(1, Math.min(10000, row.expiresAt - Date.now())), false, row.editorKey);
+      if (!exportCurrent(row)) return;
+      const current = await host.snapshot();
+      if (exportWork !== row || !row.active) return;
+      if (!exportCurrent(row) || !exportSnapshot(row, current)) return cancelExport('document_changed');
+      const value = toolData(result);
+      if (result.isError || value?.outcome !== 'pending' || value.exportId !== row.id ||
+          !Number.isSafeInteger(value.leaseExpiresAt) || value.leaseExpiresAt <= Date.now() || value.leaseExpiresAt > row.deadline ||
+          value.leaseSequence !== row.sequence || value.deadline !== row.deadline) return cancelExport(value?.reason || 'export_expired');
+      row.expiresAt = value.leaseExpiresAt; row.renewedFrom = null; row.sequence++;
+    } catch (_) { retry = true; }
+    finally { if (exportWork === row && row.active && !row.controller.signal.aborted) armExport(row, retry); }
+  }
+
+  async function presentExport(local, expected) {
+    const intent = base?.exportIntent;
+    if (!intent || intent.status !== 'pending' || intent.revision !== base.revision || intent.documentId !== base.documentId) {
+      cancelExport('export_expired');
+      return;
+    }
+    if (exportWork) return;
+    if (!exportFlight || exportFlight.exportId !== intent.id) {
+      const target = {document: token, documentId: base.documentId, revision: base.revision};
+      const controller = new AbortController();
+      const identity = {documentId: target.documentId, revision: target.revision, format: intent.format,
+        ...(intent.part ? {part: intent.part.sha256} : {})};
+      const row = {id: intent.id, ...target, local, identity, controller, editEpoch, editorKey: editorKeyFor(token), active: true, sequence: 0,
+        expiresAt: intent.expiresAt, deadline: intent.deadline};
+      exportWork = row;
+      let fact, abort;
+      const canceled = new Promise(resolve => {
+        abort = () => resolve({outcome: 'refused', reason: row.reason || 'cancelled'});
+        controller.signal.addEventListener('abort', abort, {once: true});
+      });
+      armExport(row);
+      try {
+        const rendered = () => {row.active = false; clearTimeout(row.timer); clearTimeout(row.renewTimer);};
+        const rendering = Promise.resolve().then(() => controller.signal.aborted
+          ? {outcome: 'refused', reason: row.reason || 'cancelled'} : typeof host.exportDocument === 'function'
+            ? host.exportDocument({...intent, signal: controller.signal}, expected)
+            : {outcome: 'refused', reason: 'editor_unavailable'}).then(value => {rendered(); return value;}, error => {rendered(); throw error;});
+        fact = await Promise.race([canceled, rendering]);
+      } catch (_) { fact = {outcome: 'refused', reason: 'export_unavailable'}; }
+      finally {
+        row.active = false;
+        clearTimeout(row.timer); clearTimeout(row.renewTimer);
+        controller.signal.removeEventListener('abort', abort);
+        if (exportWork === row) exportWork = null;
+      }
+      if (token !== target.document || closed || closing || switching) return;
+      const current = await host.snapshot();
+      if (dirty || composing || !same(current, local) || current.generation !== local.generation ||
+          current.revision !== local.revision || base.revision !== target.revision || base.exportIntent?.id !== row.id)
+        fact = {outcome: 'refused', reason: 'document_changed'};
+      else if (controller.signal.aborted || !visible()) fact = {outcome: 'refused', reason: row.reason || 'cancelled'};
+      exportFlight = {document: target.document, editorKey: row.editorKey, exportId: intent.id, expectedRevision: target.revision,
+        fact: {...fact, ...identity}};
+    }
+    const sent = exportFlight;
+    const result = await call('document.export_ack', sent, 60000, false, sent.editorKey);
+    if (exportFlight === sent) exportFlight = null;
+    captureIncoming(result);
+  }
+
+  const materialIdentity = row => ({kind: 'material', documentId: row.documentId, revision: row.revision, job: row.job});
+  const materialRefusal = (row, reason) => ({...materialIdentity(row), outcome: 'refused',
+    reason: /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(reason || '') ? reason : 'material_unavailable'});
+  const materialIntentMatches = (row, source) => source?.documentId === row.documentId && source.revision === row.revision &&
+    source.materialIntent?.status === 'pending' && source.materialIntent.id === row.id && source.materialIntent.job === row.job &&
+    source.materialIntent.documentId === row.documentId && source.materialIntent.revision === row.revision;
+
+  function endMaterialDrawingTurn(reason) {
+    if (typeof host?.closeAgentDrawingTurn === 'function') void host.closeAgentDrawingTurn(reason);
+  }
+
+  function cancelMaterial(reason, {forget = false} = {}) {
+    const row = materialFlight;
+    if (!row) return;
+    row.cancelReason ||= reason;
+    row.controller.abort();
+    if (row.args?.fact.outcome === 'ok') {
+      if (row.dispatched) {
+        row.settled = true; row.args = null; row.request = null; row.local = null;
+        clearTimeout(row.timer);
+      }
+      else row.args = {...row.args, fact: materialRefusal(row, row.cancelReason)};
+    }
+    if (reason === 'material_request_expired') {
+      clearTimeout(row.timer);
+      row.settled = true; row.request = null; row.local = null; row.args = null;
+    }
+    if (forget) {
+      clearTimeout(row.timer);
+      row.request = null; row.local = null; row.args = null;
+      materialFlight = null;
+    }
+    if (reason === 'material_request_expired' || reason === 'document_changed' ||
+        (reason === 'material_request_replaced' && base?.materialIntent?.status !== 'pending'))
+      endMaterialDrawingTurn(reason);
+  }
+
+  function pauseMaterial() {
+    const row = materialFlight;
+    if (!row || row.settled || row.dispatched || row.cancelReason) return;
+    cancelMaterial('editor_unavailable', {forget: true});
+  }
+
+  function reconcileMaterial() {
+    const row = materialFlight;
+    if (row && (row.document !== token || !materialIntentMatches(row, incoming || base)))
+      cancelMaterial('material_request_replaced', {forget: true});
+  }
+
+  async function acknowledgeMaterial(row) {
+    if (materialFlight !== row || row.sending || row.settled || !row.args) return;
+    if (closed || closing || switching || openingSwitch || row.document !== token) {
+      cancelMaterial('editor_unavailable', {forget: true}); return;
+    }
+    if (row.expiresAt <= Date.now()) {
+      cancelMaterial('material_request_expired');
+      row.settled = true; row.args = null; row.request = null; row.local = null;
+      return;
+    }
+    if (!visible()) { pauseMaterial(); return; }
+    row.sending = true;
+    try {
+      if (row.args.fact.outcome === 'ok') {
+        const current = await host.snapshot();
+        if (materialFlight !== row || row.settled || !row.args) return;
+        if (!visible()) { pauseMaterial(); return; }
+        if (row.controller.signal.aborted || dirty || composing || editing() ||
+            !same(current, row.local) || current.revision !== row.local.revision || current.generation !== row.local.generation ||
+            current.drawing?.busy?.human || !materialIntentMatches(row, incoming || base) ||
+            !globalThis.RapierKernel.materialMatches(row.request, {...current, revision: row.revision}, current.drawing))
+          cancelMaterial('document_changed');
+      }
+      if (materialFlight !== row || row.settled || !row.args) return;
+      if (closed || closing || switching || openingSwitch || row.document !== token || !materialIntentMatches(row, incoming || base)) {
+        cancelMaterial('material_request_replaced', {forget: true}); return;
+      }
+      const sent = row.args;
+      row.dispatched = true;
+      const result = await call('document.material_ack', sent, 20000);
+      if (materialFlight !== row) return;
+      captureIncoming(result);
+      if (result?.isError) {
+        const data = result.structuredContent;
+        if (data?.outcome === 'uncertain' || ['WORKSPACE_UNAVAILABLE', 'WORKSPACE_UNACKNOWLEDGED'].includes(data?.code))
+          throw new Error('MATERIAL_ACK_UNCONFIRMED');
+        if (data?.code) ensureResult(result);
+      } else if (result?.structuredContent?.outcome !== 'ok' || result.structuredContent.materialId !== row.id)
+        throw new Error('INVALID_MATERIAL_ACK');
+      row.settled = true;
+      clearTimeout(row.timer);
+      row.args = null; row.request = null; row.local = null;
+      schedule(0);
+    } catch (error) {
+      if (materialFlight === row && !row.settled) failed(error);
+    } finally { row.sending = false; }
+  }
+
+  function presentMaterial(local, expected) {
+    const intent = base?.materialIntent;
+    if (!visible() || !intent || intent.status !== 'pending' || intent.documentId !== base.documentId || intent.revision !== base.revision) return;
+    if (materialFlight) { void acknowledgeMaterial(materialFlight); return; }
+    const row = {id: intent.id, job: intent.job, document: token, documentId: intent.documentId, revision: intent.revision,
+      expiresAt: intent.expiresAt, request: intent, local, controller: new AbortController(), cancelReason: '',
+      args: null, sending: false, dispatched: false, settled: false};
+    materialFlight = row;
+    row.timer = setTimeout(() => { if (materialFlight === row) cancelMaterial('material_request_expired'); },
+      Math.max(0, intent.expiresAt - Date.now()));
+    void (async () => {
+      let fact;
+      try {
+        fact = typeof host.prepareMaterial === 'function'
+          ? await host.prepareMaterial({...intent, signal: row.controller.signal}, expected)
+          : materialRefusal(row, 'material_unavailable');
+      } catch (_) { fact = materialRefusal(row, 'material_unavailable'); }
+      if (materialFlight !== row || row.settled) return;
+      row.args = {document: row.document, expectedRevision: row.revision, materialId: row.id,
+        fact: fact?.outcome === 'ok' && !row.cancelReason
+          ? {...materialIdentity(row), outcome: 'ok', value: fact.value}
+          : materialRefusal(row, row.cancelReason || fact?.reason)};
+      await acknowledgeMaterial(row);
+      if (row.args?.fact?.outcome === 'refused') endMaterialDrawingTurn(row.args.fact.reason || 'material_refused');
+    })();
+  }
+
+  function editorContextBusy() {
+    return editorResolving || !!editorFlight || [...editorRequests.values()].some(row => row.initial || row.later);
+  }
+
+  function editorUnavailable(row, reason) {
+    return {kind: 'editor', documentId: row.documentId, revision: row.revision, operation: row.operation,
+      receipt: {id: row.id, status: 'unavailable', ...(row.preference ? {preference: row.preference} : {action: row.action}), reason}};
+  }
+
+  function queueEditorReceipt(row, fact, initial = false) {
+    if (editorRequests.get(row.id) !== row || row.document !== token || closed ||
+        fact?.documentId !== row.documentId || fact.revision !== row.revision || fact.operation !== row.operation ||
+        fact.receipt?.id !== row.id || !['applied', 'waiting', 'done', 'declined', 'unavailable'].includes(fact.receipt.status)) return false;
+    const captured = {...fact, receipt: {...fact.receipt}, ...(fact.file ? {file: {...fact.file}} : {})};
+    if (initial) { row.initial = captured; row.status = captured.receipt.status; }
+    else row.later = captured;
+    clearTimeout(contextTimer);
+    schedule(0);
+    return true;
+  }
+
+  function forgetEditorRequest(row, reason) {
+    editorRequests.delete(row.id);
+    if (editorFlight?.row === row) editorFlight = null;
+    host?.cancelEditorRequest?.(row.id, reason);
+    row.controller.abort();
+  }
+
+  function editorReceiptStatus(row) {
+    return row.later?.receipt.status || row.initial?.receipt.status || row.status;
+  }
+
+  function cancelEditorRequests(reason, {forget = false, waitingOnly = false} = {}) {
+    for (const row of editorRequests.values()) {
+      const status = editorReceiptStatus(row);
+      if (waitingOnly && !['resolving', 'waiting'].includes(status)) continue;
+      if (forget) { forgetEditorRequest(row, reason); continue; }
+      row.cancelReason = reason;
+      const cancelled = host?.cancelEditorRequest?.(row.id, reason);
+      row.controller.abort();
+      if (editorReceiptStatus(row) === 'waiting' && !cancelled) queueEditorReceipt(row, editorUnavailable(row, reason));
+    }
+  }
+
+  function reconcileEditorRequests() {
+    const intent = base?.editorIntent;
+    for (const row of editorRequests.values()) {
+      if (row.document !== token || row.documentId !== base?.documentId) forgetEditorRequest(row, 'document_changed');
+      else if (['resolving', 'waiting'].includes(editorReceiptStatus(row)) && (!intent || intent.id !== row.id ||
+          intent.documentId !== row.documentId || intent.revision !== row.revision || intent.expiresAt <= Date.now())) {
+        forgetEditorRequest(row, 'editor_request_unavailable');
+      }
+      else if (row.acknowledged && !row.initial && !row.later && row.status !== 'applied' && base.editorIntent?.id !== row.id) {
+        forgetEditorRequest(row, 'editor_request_unavailable');
+      }
+    }
+  }
+
+  async function acknowledgeEditor() {
+    if (editorResolving) return false;
+    if (!editorFlight) {
+      for (const row of editorRequests.values()) {
+        const slot = row.initial ? 'initial' : row.acknowledged && row.later ? 'later' : null;
+        if (!slot) continue;
+        editorFlight = {row, slot, fact: row[slot], args: {document: row.document,
+          expectedRevision: row.revision, editorId: row.id, fact: row[slot]}};
+        break;
+      }
+    }
+    const sent = editorFlight;
+    if (!sent) return true;
+    const {row} = sent;
+    if (row.document !== token || row.documentId !== base?.documentId || closed) {
+      forgetEditorRequest(row, 'document_changed');
+      return false;
+    }
+    clearTimeout(contextTimer);
+    if (contextFlight) await contextFlight;
+    clearTimeout(contextTimer);
+    if (editorFlight !== sent) return false;
+    const result = await call('document.editor_ack', sent.args, 5000);
+    if (editorFlight !== sent) return false;
+    captureIncoming(result);
+    if (result?.isError) {
+      const data = result.structuredContent;
+      if (data?.outcome === 'uncertain' || ['WORKSPACE_UNAVAILABLE', 'WORKSPACE_UNACKNOWLEDGED'].includes(data?.code)) throw new Error('EDITOR_ACK_UNCONFIRMED');
+      forgetEditorRequest(row, data?.reason || 'editor_request_unavailable');
+      if (data?.code) ensureResult(result);
+    } else {
+      if (result?.structuredContent?.editorId !== row.id || !object(result.structuredContent.receipt)) throw new Error('INVALID_EDITOR_ACK');
+      if (row[sent.slot] === sent.fact) row[sent.slot] = null;
+      row.acknowledged = true;
+      row.status = result.structuredContent.receipt.status;
+      editorFlight = null;
+    }
+    contextChanged();
+    schedule(0);
+    return true;
+  }
+
+  async function presentEditor(expected) {
+    const intent = base?.editorIntent;
+    if (!intent || !['pending', 'waiting'].includes(intent.status) || intent.documentId !== base.documentId || intent.revision !== base.revision) return;
+    if (editorRequests.has(intent.id)) return;
+    const row = {id: intent.id, document: token, documentId: intent.documentId, revision: intent.revision,
+      operation: intent.operation, preference: intent.preference, action: intent.action, status: 'resolving',
+      controller: new AbortController(), initial: null, later: null, acknowledged: false};
+    if (row.preference) for (const prior of editorRequests.values()) {
+      if (prior.preference === row.preference && prior.status === 'applied') forgetEditorRequest(prior, 'editor_request_replaced');
+    }
+    editorRequests.set(row.id, row);
+    editorResolving = true;
+    clearTimeout(contextTimer);
+    let fact;
+    try {
+      if (contextFlight) await contextFlight;
+      clearTimeout(contextTimer);
+      fact = typeof host.resolveEditorRequest === 'function'
+        ? await host.resolveEditorRequest({...intent, signal: row.controller.signal}, expected,
+          {onReceipt: value => queueEditorReceipt(row, value)})
+        : editorUnavailable(row, 'editor_unavailable');
+    } catch (_) { fact = editorUnavailable(row, 'editor_unavailable'); }
+    finally { editorResolving = false; }
+    if (editorRequests.get(row.id) !== row) return;
+    if (row.cancelReason && !['applied', 'done'].includes(fact?.receipt?.status)) fact = editorUnavailable(row, row.cancelReason);
+    if (!queueEditorReceipt(row, fact, true)) queueEditorReceipt(row, editorUnavailable(row, 'editor_unavailable'), true);
+    await acknowledgeEditor();
+  }
+
+  async function presentDrawing(expected) {
+    const intent = base?.collaboration?.drawingIntent;
+    if (!intent || !['pending', 'replaying'].includes(intent.status) || intent.documentId !== base.documentId || intent.revision !== base.revision ||
+        typeof host.presentDrawing !== 'function' || intent.contextId && intent.contextId !== nonce) return;
+    const documentToken = token;
+    const keepReceipt = value => {
+      if (token !== documentToken || closed || closing || switching || value?.transactionId !== intent.transactionId || value.documentId !== intent.documentId) return;
+      pendingDrawingReceipts.set(value.transactionId, value);
+      contextChanged();
+      schedule(0);
+    };
+    const expanded = globalThis.RapierKernel.expandDrawingIntent(intent, base);
+    const result = expanded ? await host.presentDrawing(expanded, {...expected,
+      ...(Number.isSafeInteger(intent.navigationSequence) ? {expectedNavigationSequence: intent.navigationSequence} : {})}, {
+      onReceipt: keepReceipt
+    }) : {transactionId: intent.transactionId, documentId: intent.documentId, status: 'unavailable',
+      reason: 'drawing_history_unavailable', presentation: {status: 'unavailable'}};
+    keepReceipt(result);
+    if (token === documentToken && !closed) await publishHumanContext();
+  }
+
+  let askSignature = '';
+  function announceAsk() {
+    const signature = JSON.stringify([base?.askIntent?.id || null, base?.messagesQueued || 0]);
+    if (signature === askSignature) return;
+    askSignature = signature;
+    if (typeof window._rapierAgentBarRender === 'function') window._rapierAgentBarRender();
+  }
+
+  async function sendMessage(text, referent) {
+    if (!base || closed || withheld || typeof text !== 'string' || !text.trim()) return {outcome: 'refused', reason: 'message_unavailable'};
+    const result = await call('document.human_message', {
+      document: token, text: text.slice(0, 2000),
+      ...(referent && typeof referent === 'object' ? {referent} : {}),
+    });
+    captureIncoming(result);
+    const value = toolData(result);
+    announceAsk();
+    schedule(0);
+    return object(value) ? value : {outcome: 'refused', reason: 'message_unavailable'};
+  }
+
+  async function presentCollaboration() {
+    reconcileEditorRequests();
+    reconcileMaterial();
+    if (!base || closed || closing || switching || !visible() || dirty || flight ||
+        incoming || editing()) return;
+    if (editorContextBusy()) { await acknowledgeEditor(); return; }
+    if (viewFlight) { await acknowledgeView(); return; }
+    const local = await host.snapshot();
+    if (!acknowledged(local)) { dirty = true; contextChanged(); return; }
+    const expected = {expectedDocumentId: local.documentId, expectedRevision: local.revision,
+      expectedText: local.text, expectedGeneration: local.generation};
+    if (base.materialIntent?.status === 'pending') { presentMaterial(local, expected); return; }
+    if (base.exportIntent?.status === 'pending') { await presentExport(local, expected); return; }
+    if (base.editorIntent) { await presentEditor(expected); return; }
+    if (base.visualIntent?.status === 'pending') { await presentVisual(local, expected); return; }
+    if (['pending', 'replaying'].includes(base.collaboration?.drawingIntent?.status)) { await presentDrawing(expected); return; }
+    const intent = base.viewIntent;
+    if (!intent || intent.status !== 'pending' || intent.revision !== base.revision || viewed.has(intent.id)) return;
+    const documentToken = token;
+    let ended = null;
+    const result = await host.applyView(intent, expected, base, {onPointResult: receipt => {
+      if (documentToken !== token || closed || closing || switching || base?.viewIntent?.id !== intent.id) return;
+      ended = receipt;
+      if (!viewed.has(intent.id)) return;
+      viewFlight = {document: documentToken, expectedRevision: base.revision, viewId: intent.id,
+        status: 'expired', reason: receipt.reason || 'pointer_expired'};
+      schedule(0);
+    }});
+    if (dirty || composing || !acknowledged(await host.snapshot())) return;
+    if (!result?.ok && (result?.outcome === 'yielded' || ['document_not_settled', 'foreground_hand_wins', 'human_edit_in_progress'].includes(result?.reason))) return;
+    viewed.add(intent.id);
+    if (viewed.size > 64) viewed.delete(viewed.values().next().value);
+    viewFlight = {document: token, expectedRevision: base.revision, viewId: intent.id,
+      status: ended ? 'expired' : result?.ok ? 'presented' : 'refused',
+      ...(ended ? {reason: ended.reason || 'pointer_expired'} : result?.ok ? (result.reason ? {reason: String(result.reason).slice(0, 128)} : {}) : {reason: String(result?.reason || 'view_unavailable').slice(0, 128)})};
+    await acknowledgeView();
+  }
+
+  function noticeSyncAt(heard, synced, live, now) {
+    if (!heard) return [Infinity, false];
+    if (!synced || heard.agent !== synced.agent || heard.waiting !== synced.waiting) return [now, false];
+    let at = Infinity, lazy = false;
+    if (heard.version !== synced.version || heard.revision !== synced.revision) {
+      lazy = heard.revision > synced.revision && heard.version - synced.version === heard.revision - synced.revision &&
+        !!live && live.pending === 0 && live.gen >= heard.revision;
+      at = lazy ? now + LIVE_CATCH_UP_MS : now;
+    }
+    if (Number.isFinite(heard.expiry) && heard.expiry >= synced.at && heard.expiry + 50 < at) { at = Math.max(now, heard.expiry + 50); lazy = false; }
+    return [at, lazy];
+  }
+
+  function contextWait(now, typing, sentBusy, sentAt, editedAt) {
+    if (!sentBusy) return 0;
+    return Math.max(0, typing ? sentAt + TYPING_CONTEXT_MS - now : Math.min(sentAt + TYPING_CONTEXT_MS, editedAt + SETTLED_CONTEXT_MS) - now);
+  }
+
+  function liveFallbackDelay(now = Date.now()) {
+    const live = joinedLive();
+    if (!live || live.state === 'live' || live.state === 'syncing') { liveDownSince = 0; return Infinity; }
+    liveDownSince ||= now;
+    return Math.max(0, liveDownSince + LIVE_OFFLINE_MS - now);
+  }
+
+  function quietDelay(live, now) {
+    return live ? Math.max(0, Math.min(syncWanted, catchUpAt, lastSyncAt + LIVE_HTTP_MS) - now) : QUIET_DELAYS[Math.min(quietSyncs, QUIET_DELAYS.length - 1)];
+  }
+
+  function schedule(delay = 1500) {
+    clearTimeout(timer); timer = 0; timerAt = Infinity;
+    if (closed || closing || switching || failures >= 5 || !initialized || !visible()) {
+      return;
+    }
+    timerAt = Date.now() + delay;
+    timer = setTimeout(() => { timer = 0; timerAt = Infinity; void cycle(); }, delay);
+  }
+
+  function scheduleBy(delay) {
+    if (running) return;
+    if (!timer || Date.now() + delay < timerAt) schedule(delay);
+  }
+
+  function heardNotice(heard) {
+    if (!base || !heard || heard.documentId !== base.documentId) return;
+    if (exportWork && heard.version >= version && (heard.revision !== exportWork.revision || heard.waiting === 0))
+      cancelExport(heard.revision !== exportWork.revision ? 'document_changed' : 'export_expired');
+    liveNotice = heard; checkSentAt = 0;
+    const [at, lazy] = noticeSyncAt(heard, syncedNotice, joinedLive(), Date.now());
+    if (lazy) catchUpAt = Math.min(catchUpAt, at); else syncWanted = Math.min(syncWanted, at);
+    const next = Math.min(syncWanted, catchUpAt);
+    if (Number.isFinite(next)) scheduleBy(Math.max(0, next - Date.now()));
+  }
+
+  function ensureLiveCheck() {
+    if (checkTimer || closed) return;
+    checkTimer = setTimeout(() => {
+      checkTimer = 0;
+      if (closed || !visible() || !joinedLive()) return;
+      if (checkSentAt && Date.now() - checkSentAt > 10000) { syncWanted = Date.now(); scheduleBy(0); }
+      checkSentAt = Date.now();
+      _rapierLive.check?.();
+      ensureLiveCheck();
+    }, LIVE_CHECK_MS);
+  }
+
+  function humanEdit() {
+    editEpoch++;
+    lastEdit = Date.now();
+    quietSyncs = 0;
+    if (base) dirty = true;
+    cancelEditorRequests('document_changed', {waitingOnly: true});
+    cancelMaterial('document_changed');
+    cancelExport('document_changed');
+    publishModelContext();
+    contextChanged();
+    schedule(500);
+  }
+
+  function failed(error) {
+    if (closed) return;
+    failures++;
+    lastFailure = {code: String(error?.message || 'UNKNOWN').slice(0, 64), at: Date.now()};
+    if (error?.message === 'HOST_UNAVAILABLE' || error?.message === 'PROTOCOL_VERSION') {
+      setStatus('unsupported');
+      return;
+    }
+    if (['CANONICAL_HISTORY_UNAVAILABLE', 'CANONICAL_HISTORY_DIVERGED', 'CANONICAL_ACT_REBASE_CONFLICT',
+      'DOCUMENT_METADATA_CHANGED'].includes(error?.message)) {
+      failures = 5;
+      setStatus('blocked');
+      return;
+    }
+    setStatus(failures >= 5 ? 'offline' : 'reconnecting');
+    schedule(Math.min(30000, 1500 * 2 ** (failures - 1)));
+  }
+
+  function ensureResult(result) {
+    if (!object(result)) throw new Error('INVALID_RESULT');
+    if (!result.isError) return true;
+    const code = result.structuredContent?.code;
+    const latest = metadata(result).snapshot, latestVersion = viewVersion(result.structuredContent?.version);
+    if (snapshot(latest) && latestVersion !== null && (!base || latest.documentId === base.documentId)) {
+      incoming = latest;
+      incomingVersion = latestVersion;
+    }
+    if (code === 'REVISION_CONFLICT') {
+      setStatus('comparison_changed');
+      return false;
+    }
+    if (['CANONICAL_ACT_REBASE_CONFLICT', 'INVALID_CANONICAL_ACTS', 'DOCUMENT_METADATA_CHANGED',
+      'DRAFT_BASE_UNAVAILABLE', 'COMMIT_RECEIPT_EXPIRED'].includes(code)) {
+      failures = 5;
+      setStatus('blocked');
+      return false;
+    }
+    if (code === 'DOCUMENT_UNAVAILABLE') {
+      failures = 5;
+      setStatus('unavailable');
+      return false;
+    }
+    if (code === 'SAVES_COALESCED') {
+      coalesceUntil = Date.now() + Math.min(60000, Math.max(1000, Number(result.structuredContent?.retryAfter) * 1000 || 60000));
+      setStatus('coalescing');
+      schedule(coalesceUntil - Date.now());
+      return false;
+    }
+    if (code === 'PAIRING_REQUIRED') {
+      failures = 5;
+      setStatus('unpaired');
+      return false;
+    }
+    if (code === 'HUMAN_AUTHORITY_REQUIRED') {
+      failures = 5;
+      setStatus('expired');
+      return false;
+    }
+    throw new Error('TOOL_ERROR');
+  }
+
+  async function hydrateHostFile(result, file) {
+    const data = toolData(result), initial = metadata(result).snapshot, hydration = metadata(result).fileHydration;
+    if (!object(capabilities.experimental?.['openai/resource']) || !snapshot(initial) || !validToken(data.document) ||
+        !hydration?.id || !['pending', 'complete', 'superseded'].includes(hydration.status)) throw new Error('FILE_HOST_UNAVAILABLE');
+    const epoch = ++fileOpenEpoch;
+    pendingFileResult = result;
+    const work = (async () => {
+      let attempt = fileAttempts.get(data.document);
+      if (!attempt) {
+        const resource = await globalThis.RapierHostFiles.readHostFile(request, file, globalThis.RapierAgentCatalog.MAX_TEXT_BYTES);
+        attempt = {resource, args: {document: data.document, expectedRevision: hydration.baseRevision,
+          text: resource.text, filename: file.name, docKind: /\.(?:md|markdown)$/i.test(file.name) ? 'markdown' : 'text',
+          hydration_id: hydration.id, commitId: hydration.id}};
+        fileAttempts.set(data.document, attempt);
+      }
+      const {resource} = attempt;
+      if (closed || closing || epoch !== fileOpenEpoch) return null;
+      const committed = hydration.status === 'pending' ? await call('document.commit', attempt.args) : result;
+      const value = metadata(committed).currentSnapshot || metadata(committed).snapshot;
+      if (committed.isError || !snapshot(value) || value.documentId !== initial.documentId) throw new Error('FILE_OPEN_CONFLICT');
+      if (closed || closing || epoch !== fileOpenEpoch) return null;
+      const store = globalThis.RapierHostFiles.createHostFileBinding({request, file, resource,
+        baselineVerified: value.text === resource.text,
+        maxBytes: globalThis.RapierAgentCatalog.MAX_TEXT_BYTES, changed: () => { setStatus(status); void publishModelContext(); }});
+      fileBindings.set(data.document, {document: data.document, documentId: value.documentId, store});
+      hydratedFiles.add(data.document);
+      fileAttempts.delete(data.document);
+      pendingFileResult = null;
+      return {...committed, structuredContent: {...toolData(committed), document: data.document,
+        created: data.created === true, resumed: data.resumed === true, outcome: data.outcome,
+        hydration: {status: hydration.status === 'pending' ? 'complete' : hydration.status, destination: 'host_file'}}};
+    })();
+    fileHydrations.set(data.document, work);
+    try { return await work; }
+    catch (error) { if (epoch !== fileOpenEpoch) return null; throw error; }
+    finally {
+      fileHydrations.delete(data.document);
+      if (epoch !== fileOpenEpoch) fileAttempts.delete(data.document);
+    }
+  }
+
+  function adoptHostFile() {
+    if (boundFile?.document === token) return;
+    const previous = boundFile;
+    boundFile = fileBindings.get(token) || null;
+    fileBindings.delete(token);
+    if (previous) {
+      previous.store.dispose();
+      void request('resources/unsubscribe', {uri: previous.store.file.resourceUri}).catch(() => {});
+    }
+    if (boundFile) {
+      const current = boundFile;
+      void request('resources/subscribe', {uri: current.store.file.resourceUri}).catch(() => {});
+      void refreshHostFile(current).catch(() => {});
+    }
+  }
+
+  async function saveHostFile() {
+    const store = activeFile();
+    if (!store) return true;
+    const documentToken = token;
+    if (!await host.prepareSave() || activeFile() !== store || token !== documentToken) return false;
+    const local = await host.snapshot();
+    if (activeFile() !== store || token !== documentToken || !host.isSavePrepared(local.text) || !acknowledged(local) || dirty || flight || composing) return false;
+    try { await store.save(local.text); }
+    catch (_) { setStatus(status); return false; }
+    const current = await host.snapshot();
+    return activeFile() === store && token === documentToken && same(local, current) && store.isSaved(current.text);
+  }
+
+  async function refreshHostFile(binding = boundFile) {
+    if (!binding || binding !== boundFile || closed || closing) return;
+    try {
+      await binding.store.refresh();
+      if (binding !== boundFile || closed) return;
+      if (binding.store.incoming) {
+        if (running) await running;
+        if (binding === boundFile && !closed && !closing && !switching && !editing()) {
+          await useHostFileVersion(binding.store, binding.store.incoming, true);
+        }
+        setStatus(status);
+      }
+    } catch (_) {
+      if (binding === boundFile && !closed) host.notify('The ChatGPT file could not be refreshed. Your draft is still here.', 'info');
+    }
+  }
+
+  async function useHostFileVersion(store, resource, onlyIfUnedited = false) {
+    if (!resource || activeFile() !== store || resource !== store.incoming || switching || closed || closing) return false;
+    cancelMaterial('document_changed');
+    cancelExport('document_changed');
+    if (!await flush()) return false;
+    const local = await host.snapshot(), currentBase = base;
+    if (activeFile() !== store || resource !== store.incoming || !same(local, currentBase) || dirty || composing) return false;
+    if (onlyIfUnedited && (local.text !== store.resource.text || editing())) return false;
+    clearTimeout(timer);
+    switching = true;
+    lock();
+    try {
+      const draft = {...local, text: resource.text};
+      delete draft.journal;
+      const adopted = await host.replaceDocument(draft, {expectedDocumentId: local.documentId,
+        expectedRevision: local.revision, expectedText: local.text});
+      if (adopted?.outcome !== 'applied') return false;
+      store.accept(resource);
+      dirty = true;
+      await commit();
+      return !dirty && !flight;
+    } finally {
+      switching = false;
+      unlock();
+      contextChanged();
+      schedule();
+      resumeOpen();
+    }
+  }
+
+  function reviewHostFile() {
+    const store = activeFile();
+    if (!store || closed || closing || switching) return;
+    fileDialog?.close();
+    const resource = store.incoming, boxes = [];
+    const act = (label, action, pop = 'affirm') => {
+      const box = button(label, async event => {
+        if (event?.isTrusted !== true || activeFile() !== store) return;
+        for (const child of boxes) child.disabled = true;
+        try { if (await action(event)) sheet.close(); }
+        finally { for (const child of boxes) child.disabled = false; }
+      });
+      box.dataset.pop = pop;
+      boxes.push(box);
+      return box;
+    };
+    act(object(capabilities.downloadFile) ? 'Download draft' : 'Copy draft', downloadDraft);
+    if (canUpload()) act('Save to ChatGPT Files', uploadCurrent);
+    if (resource) {
+      act('Keep my version', () => keepMyVersion(store, resource));
+      act('Use file version', () => useHostFileVersion(store, resource), 'destructive');
+    } else act('Retry save', saveHostFile);
+    const keep = button('Keep editing', () => sheet.close());
+    keep.dataset.pop = 'cancel';
+    boxes.push(keep);
+    const sheet = fileDialog = host.sheet({title: store.file.name, words: resource
+      ? 'The file changed outside this editor. Keep my version replaces the file and keeps its version for Copy draft; Use file version replaces this draft.'
+      : 'Your draft is safe in this editor. Save a new copy to ChatGPT Files or download it, or retry saving the original.',
+      body: [boxes], onEscape: current => current.close(), onClose: () => { if (fileDialog === sheet) fileDialog = null; }});
+  }
+
+  async function keepMyVersion(store, resource) {
+    if (!await flush() || activeFile() !== store || store.incoming !== resource) return false;
+    if (typeof resource.text === 'string') {
+      const name = store.file.name, record = {text: resource.text, filename: name, docKind: /\.(?:md|markdown)$/i.test(name) ? 'markdown' : 'text', delivered: false};
+      strandedDrafts.push(record);
+      record.delivered = !!(object(capabilities.downloadFile) && await exportFile(new Blob([resource.text], {type: 'text/plain;charset=utf-8'}), name));
+    }
+    if (!store.accept(resource)) return false;
+    return saveHostFile();
+  }
+
+  function resumeOpen() {
+    if (!deferredOpen || switching || openingSwitch || closed || closing) return;
+    const next = deferredOpen;
+    deferredOpen = null;
+    void receive(next.result, next.sequence).catch(failed);
+  }
+
+  async function receive(result, sequence = ++receiveSequence) {
+    let data = toolData(result);
+    if (!object(data)) return;
+    rememberEditorKey(result);
+    const opened = !result.isError && (data.created === true && data.outcome === 'created' || data.resumed === true && data.outcome === 'resumed') && validToken(data.document);
+    if (opened) {
+      if (sequence > latestOpenSequence && pendingFileResult && toolData(pendingFileResult)?.document !== data.document) {
+        pendingFileResult = null;
+        fileOpenEpoch++;
+      }
+      latestOpenSequence = Math.max(latestOpenSequence, sequence);
+    }
+    if (switching || openingSwitch || closing) {
+      if (opened && (!deferredOpen || sequence >= deferredOpen.sequence)) deferredOpen = {result, sequence};
+      return;
+    }
+    if (opened && sequence < latestOpenSequence) return;
+    if (fileHydrations.has(data.document)) return;
+    const file = globalThis.RapierHostFiles?.fileInput(metadata(result).hostFile);
+    if (file && !hydratedFiles.has(data.document) && !result.isError) {
+      result = await hydrateHostFile(result, file);
+      if (!result) return;
+      data = toolData(result);
+      if (sequence < latestOpenSequence || closed || closing) {
+        fileBindings.get(data.document)?.store.dispose();
+        fileBindings.delete(data.document);
+        return;
+      }
+      if (switching || openingSwitch) { deferredOpen = {result, sequence}; return; }
+    }
+    if (metadata(result).home === true && !base) homeRequested = true;
+    if (!token && validToken(data.document)) token = data.document;
+    if (data.document && data.document !== token) {
+      if (base && opened) {
+        await switchDocument(data, result);
+      }
+      return;
+    }
+    if (base && data.documentId && data.documentId !== base.documentId) return;
+    if (result.isError) {
+      captureIncoming(result);
+      schedule(0);
+      return;
+    }
+    captureIncoming(result);
+    schedule(0);
+  }
+
+  function captureIncoming(result) {
+    const data = toolData(result);
+    if (!object(data)) return;
+    const meta = metadata(result);
+    const value = meta.currentSnapshot || meta.snapshot;
+    const nextVersion = viewVersion(meta.currentSnapshot ? data.currentVersion : data.version);
+    if (nextVersion !== null && nextVersion >= version && snapshot(value) &&
+        (!base || value.documentId === base.documentId) && (!incoming || nextVersion >= incomingVersion)) {
+      incoming = value;
+      incomingVersion = nextVersion;
+      if (materialFlight) {
+        if (!materialIntentMatches(materialFlight, value)) cancelMaterial('material_request_replaced', {forget: true});
+        else if (materialFlight.local && !same(value, materialFlight.local)) cancelMaterial('document_changed');
+      }
+      if (exportWork && (!same(value, exportWork.local) ||
+          value.revision !== exportWork.revision || value.exportIntent?.id !== exportWork.id || value.exportIntent.status !== 'pending' || value.agentAccess === false))
+        cancelExport('document_changed');
+      learnAccess(value);
+    }
+  }
+
+  function learnAccess(value) {
+    if (typeof value?.agentAccess === 'boolean') { agentAccess = value.agentAccess; withheld = !value.agentAccess; }
+  }
+
+  let firstAgentReport = null, heldIncoming = null;
+  async function loadIncoming(force = false, expected = null, immediate = false) {
+    const value = incoming, nextVersion = incomingVersion;
+    if (!value || (base && (value.revision < base.revision || nextVersion < version))) { incoming = null; return; }
+    if (!force && base && (dirty || flight || composing || contextBusy() || (!immediate && editing()))) return;
+    const epoch = editEpoch;
+    const local = expected || await host.snapshot();
+    if (!snapshot(local)) throw new Error('INVALID_EDITOR_STATE');
+    const live = joinedLive();
+    if (live && (live.pending || live.gen !== value.revision || local.text !== value.text)) return;
+    if (!live && !force && base && !acknowledged(local)) { dirty = true; return; }
+    if (epoch !== editEpoch) return;
+    if (base && local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
+    const result = await host.replaceDocument(value, {
+      expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text, expectedMetadata: documentMetadata(local)
+    });
+    if (result?.outcome !== 'applied') {
+      if (live && (result?.reason === 'draw_session_open' || result?.reason === 'drawing_busy')) { heldIncoming = value; return; }
+      if (result?.sourceApplied === true && acknowledged(await host.snapshot(), value)) {
+        base = value;
+        version = nextVersion;
+      }
+      dirty = !!base && !acknowledged(await host.snapshot());
+      if (['conflict', 'yielded'].includes(result?.outcome) || result?.reason === 'draw_session_open' || result?.reason === 'drawing_busy') return;
+      failures = 5;
+      setStatus('blocked');
+      return;
+    }
+    base = value;
+    version = nextVersion;
+    adoptHostFile();
+    if (incoming === value) incoming = null;
+    dirty = !acknowledged(await host.snapshot());
+    if (!dirty) holdBaseLedger();
+    if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
+    presentationBlocked = result.comparison?.ok === false;
+    unlock();
+    failures = 0;
+    setStatus(presentationBlocked ? 'comparison_refused' : 'ready');
+    if (liveBindings.has(token)) void joinLive().catch(failed);
+    contextChanged();
+    if (homeRequested) { homeRequested = false; showHome(); }
+  }
+
+  async function sync(force = false) {
+    const args = {document: token}, heard = liveNotice, started = Date.now();
+    if (base && !force) { args.afterRevision = base.revision; args.afterVersion = version; }
+    const result = joinedLive()?.custody && await globalThis.RapierLiveCustody?.sync(args) || await call('document.sync', args);
+    if (!ensureResult(result)) return false;
+    lastSyncAt = started;
+    if (heard) syncedNotice = {...heard, at: started};
+    if (liveNotice === heard) syncWanted = catchUpAt = Infinity;
+    quietSyncs = result.structuredContent?.unchanged === true ? quietSyncs + 1 : 0;
+    if (base) host.noteRemoteCall?.(result.structuredContent?.agent); else firstAgentReport = result.structuredContent?.agent;
+    const value = metadata(result).snapshot;
+    const nextVersion = viewVersion(result.structuredContent?.version);
+    if (snapshot(value) && nextVersion !== null && (!base || value.documentId === base.documentId)) {
+      captureIncoming(result);
+    }
+    else if (result.structuredContent?.unchanged !== true) throw new Error('MISSING_SNAPSHOT');
+    failures = 0;
+    return true;
+  }
+
+  async function commit() {
+    if (joinedLive()) {
+      if (!await window.Rapier.live.flush()) return;
+      dirty = false; continuation = null;
+      await sync(true); await loadIncoming(false, null, true);
+      return;
+    }
+    if (!flight) {
+      const local = await host.snapshot();
+      if (!snapshot(local) || local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
+      const suffix = localSuffix(local, base);
+      replayLocalActs(base, suffix, local);
+      if (!suffix.length) { dirty = false; return; }
+      const acts = suffix.slice(0, 1024), submitted = replayLocalActs(base, acts);
+      flight = {args: {document: token, expectedRevision: base.revision, ...submitted, acts, commitId: crypto.randomUUID()},
+        submitted, journal: [...(base.journal || []), ...acts]};
+    }
+    const sent = flight.args;
+    const result = await call('document.commit', sent);
+    if (!ensureResult(result)) return;
+    const meta = metadata(result), value = meta.snapshot;
+    const nextVersion = viewVersion(result.structuredContent?.version);
+    if (!snapshot(value) || nextVersion === null || value.documentId !== base.documentId || value.revision < sent.expectedRevision) throw new Error('MISSING_SNAPSHOT');
+    const local = await host.snapshot();
+    if (!snapshot(local) || local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return; }
+    const {mergeSource, replay} = RapierLiveMerge;
+    const remote = value.draftEdits, client = value.draftClient;
+    if (!Array.isArray(remote) || remote.some(row => typeof row.client !== 'string' || !Array.isArray(row.splices)) ||
+        typeof client !== 'string' || !client || !Array.isArray(value.journal) ||
+        replay(sent.text, remote) !== value.text) throw new Error('MISSING_COMMIT_EDITS');
+    const later = localSuffix(local, flight);
+    replayLocalActs(flight.submitted, later, local);
+    let beforeText = sent.text, text = value.text, nextRemote = remote, nextMetadata = documentMetadata(value), revision = value.revision;
+    const journal = value.journal.slice(), canonical = row => ({transaction: row, splices: row.splices,
+      ...(Object.hasOwn(row, 'authored') ? {authored: row.authored} : {})});
+    let initialSource = value.text;
+    for (let index = journal.length - 1; index >= 0; index--) initialSource = RapierLedger._rapierTransformSplices(initialSource, journal[index].splices, true);
+    for (const row of later) {
+      const authored = row.authored ?? RapierLedger.authoredPlacement(beforeText, row.splices,
+        RapierLedger.authoredBasis(local.journal.slice(0, local.journal.findIndex(entry => actId(entry) === row.id)).map(entry => ({...entry, transaction: {id: actId(entry)}}))));
+      const submittedIds = local.journal.slice(0, local.journal.findIndex(entry => actId(entry) === row.id)).map(actId),
+        transported = journal.some(entry => !submittedIds.includes(actId(entry)));
+      const proved = RapierLedger.transposeAuthored(initialSource, journal.map(canonical), {...canonical(row), authored}, submittedIds);
+      if (proved.submittedBefore !== beforeText || proved.submitted !== RapierLedger._rapierTransformSplices(beforeText, row.splices))
+        throw new Error('CANONICAL_ACT_REBASE_CONFLICT');
+      const merged = {...proved, remote: proved.against.flatMap(record => record.splices.map(splice => ({client: 'act:' + record.transaction.id,
+        splices: [{at: splice.pos, remove: splice.removed.length, insert: splice.inserted}]})))};
+      nextMetadata = RapierLedger._rapierTransformMetadata(nextMetadata, row.metadata);
+      if (!nextMetadata) throw new Error('DOCUMENT_METADATA_CHANGED');
+      beforeText = RapierLedger._rapierTransformSplices(beforeText, row.splices);
+      text = merged.text; nextRemote = merged.remote;
+      const turnBaseRevision = row.turnId ? journal.find(entry => entry.turnId === row.turnId &&
+        entry.author?.kind === row.author.kind && entry.author?.id === row.author.id)?.turnBaseRevision ?? revision : null;
+      journal.push({...row, actor: row.author.kind, principal: row.author.id, transport: 'platform',
+        baseRevision: revision, revision: ++revision, splices: merged.splices, ...((row.authored || transported) ? {authored} : {}),
+        ...(row.turnId ? {turnBaseRevision} : {})});
+    }
+    const adopted = {...value, text, ...nextMetadata, revision, journal};
+    const sameHistory = JSON.stringify(canonicalActs(local)) === JSON.stringify(canonicalActs(adopted));
+    if (!same(local, adopted) || !sameHistory) {
+      const applied = await host.replaceDocument(adopted, {expectedDocumentId: local.documentId,
+        expectedRevision: local.revision, expectedText: local.text, expectedMetadata: documentMetadata(local)});
+      if (applied?.outcome !== 'applied') {
+        dirty = true;
+        if (!['conflict', 'yielded'].includes(applied?.outcome) && applied?.reason !== 'draw_session_open' && applied?.reason !== 'drawing_busy') { failures = 5; setStatus('blocked'); }
+        return;
+      }
+    }
+    base = value;
+    version = nextVersion;
+    flight = null;
+    if (incoming && incomingVersion <= version) incoming = null;
+    if (!incoming) { incoming = value; incomingVersion = version; }
+    if (snapshot(meta.currentSnapshot) && meta.currentSnapshot.documentId === base.documentId &&
+        viewVersion(result.structuredContent?.currentVersion) > version) {
+      incoming = meta.currentSnapshot;
+      incomingVersion = result.structuredContent.currentVersion;
+    }
+    dirty = !acknowledged(await host.snapshot());
+    if (!dirty) holdBaseLedger();
+    if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
+    failures = 0;
+    setStatus('ready');
+    contextChanged();
+  }
+
+  function cycle(force = false) {
+    if (running) return running;
+    if (closed || switching || !initialized || !token || !host || (!force && (!visible() || failures >= 5))) return Promise.resolve(false);
+    if (!editorKeyFor(token)) return Promise.resolve(false);
+    running = (async () => {
+      if (viewFlight?.status === 'expired') await acknowledgeView();
+      await acknowledgeEditor();
+      heldIncoming = null;
+      if (!base) {
+        if (!incoming && !await sync()) return false;
+        await loadIncoming(false, null, force);
+        if (base && firstAgentReport) { host.noteRemoteCall?.(firstAgentReport); firstAgentReport = null; }
+      } else if (liveBindings.has(token)) {
+        const joined = await joinLive().catch(() => false);
+        let live = joined ? joinedLive() : null;
+        if (live && live.state !== 'live' && live.state !== 'syncing') {
+          liveDownSince ||= Date.now();
+          if (Date.now() - liveDownSince >= LIVE_OFFLINE_MS) {
+            await window.Rapier.live.leave?.();
+            liveDownSince = 0; liveRetryAt = Date.now() + LIVE_RETRY_MS; live = null;
+          }
+        } else liveDownSince = 0;
+        if (live) {
+          dirty = live.pending > 0;
+          if (force && dirty) { if (!await window.Rapier.live.flush()) return false; dirty = false; }
+          const now = Date.now();
+          if (live.custody || force || now >= syncWanted || now >= catchUpAt && !editing() || now - lastSyncAt >= LIVE_HTTP_MS) {
+            if (!await sync(force)) return false;
+            await loadIncoming(false, null, force);
+            for (let waited = 0; force && incoming && incoming !== heldIncoming && (joinedLive()?.gen ?? Infinity) < incoming.revision &&
+              waited < 3000; waited += 100) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              await loadIncoming(false, null, force);
+            }
+          } else if (incoming) await loadIncoming(false, null, force);
+          ensureLiveCheck();
+        } else {
+          const stalled = window.Rapier?.live?.status?.();
+          if ((stalled?.state === 'stopped' || stalled?.error) && !stalled?.joining && stalled?.state !== 'connecting')
+            window.Rapier.live.leave?.();
+          const local = await host.snapshot();
+          if (local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return false; }
+          dirty = !acknowledged(local);
+          if (flight || dirty) {
+            if (composing) return false;
+            if (Date.now() < coalesceUntil) { schedule(coalesceUntil - Date.now()); return false; }
+            await commit();
+            if (!dirty && incoming) await loadIncoming(false, null, force);
+          } else if (!editing() || force) {
+            if (!await sync()) return false;
+            await loadIncoming(false, null, force);
+          }
+          if (!joined && status === 'ready') setStatus('reconnecting');
+        }
+      } else {
+        const local = await host.snapshot();
+        if (local.documentId !== base.documentId) { failures = 5; setStatus('detached'); return false; }
+        dirty = !acknowledged(local);
+        if (flight || dirty) {
+          if (composing) return false;
+          if (Date.now() < coalesceUntil) { schedule(coalesceUntil - Date.now()); return false; }
+          await commit();
+          if (!dirty && incoming) await loadIncoming(false, null, force);
+        } else if (!editing() || force) {
+          if (!await sync()) return false;
+          await loadIncoming(false, null, force);
+        }
+      }
+      await presentCollaboration();
+      announceAsk();
+      if (base && !dirty && !flight) await saveHostFile();
+      return !!base && !dirty && !flight && (!incoming || incoming === heldIncoming);
+    })().catch(error => { failed(error); return false; }).finally(() => {
+      running = null;
+      publishModelContext();
+      const live = !!joinedLive(), now = Date.now();
+      const delay = failures ? Math.min(30000, 1500 * 2 ** (failures - 1)) : editorContextBusy() ? 0 : dirty ? Math.max(500, coalesceUntil - now) :
+        live && now >= catchUpAt ? 5000 : quietDelay(live, now);
+      schedule(failures ? delay : Math.min(delay, liveFallbackDelay(now)));
+    });
+    return running;
+  }
+
+  async function flush() {
+    clearTimeout(timer);
+    if (running) await running;
+    return cycle(true);
+  }
+
+  async function retry() {
+    if (pairedId && status === 'unpaired') { location.reload(); return; }
+    if (pairedId && staleStuck && !dirty && !flight && !composing && !(joinedLive()?.pending > 0)) { location.reload(); return; }
+    staleStuck = false; staleContexts = 0;
+    failures = 0;
+    contextFailures = 0;
+    if (!initialized) await connect();
+    if (pendingFileResult && !fileHydrations.size) await receive(pendingFileResult);
+    contextChanged();
+    await flush();
+  }
+
+  async function invokeOperation(name, args = {}, human = false) {
+    const tool = globalThis.RapierAgentCatalog?.TOOLS?.find(entry => entry.name === name) || (human ? globalThis.RapierAgentCatalog?.getHumanOperation(name) : null);
+    if (!tool) throw new Error('UNKNOWN_TOOL');
+    globalThis.RapierAgentCatalog.validateInput(tool.inputSchema, args);
+    const target = {document: token, documentId: base?.documentId};
+    const current = () => !!base && token === target.document && base.documentId === target.documentId && !closed && !closing && !switching;
+    if (!current()) return {isError: true, structuredContent: {outcome: 'refused', reason: 'document_changed'}};
+    if (!await flush()) return {isError: true, structuredContent: {outcome: 'refused', reason: 'unsent_draft'}};
+    if (!current()) return {isError: true, structuredContent: {outcome: 'refused', reason: 'document_changed'}};
+    const local = await host.snapshot();
+    if (!current() || !acknowledged(local) || dirty || flight || composing) {
+      return {isError: true, structuredContent: {outcome: 'refused', reason: 'document_changed'}};
+    }
+    clearTimeout(timer);
+    running = (async () => {
+      const result = await call(name, {...args, document: target.document, operation_id: crypto.randomUUID()}, undefined, human);
+      if (!result.isError) {
+        await receive(result);
+        if (incoming) await loadIncoming();
+      }
+      return result;
+    })().finally(() => { running = null; schedule(); });
+    return running;
+  }
+
+  function invoke(name, args = {}) { return invokeOperation(name, args); }
+
+  async function invokeComment(name, args, event) {
+    if (!(event instanceof Event) || event.isTrusted !== true || !['comments.write', 'comments.read', 'document.read'].includes(name)) {
+      return {isError: true, structuredContent: {outcome: 'refused', reason: 'human_authority_required'}};
+    }
+    return invokeOperation(name, args, true);
+  }
+
+  async function openDocument(args = {}, {admission = () => true} = {}) {
+    const catalog = globalThis.RapierAgentCatalog;
+    catalog.validateInput(catalog.getTool('open').inputSchema, args);
+    if (pairedId) { host.notify('This page edits one document. Ask your assistant to open another.', 'info'); return false; }
+    if (Object.hasOwn(args, 'document') || Object.hasOwn(args, 'file') || switching || closing || closed || fileHydrations.size) return false;
+    cancelEditorRequests('document_changed', {waitingOnly: true});
+    cancelMaterial('document_changed');
+    cancelExport('document_changed');
+    if (base && !await flush()) return false;
+    if (base) await saveHostFile();
+    if (!base && token) return false;
+    const local = await host.snapshot();
+    if (!admission() || (base && !acknowledged(local)) || !filePreserved(local) || dirty || flight) return false;
+    clearTimeout(timer);
+    switching = true;
+    lock();
+    setStatus('opening');
+    running = (async () => {
+      await publishHumanContext(true);
+      const result = await call('open', args);
+      const value = metadata(result).snapshot, nextVersion = viewVersion(toolData(result)?.version);
+      const nextToken = toolData(result)?.document;
+      if (result.isError || !snapshot(value) || nextVersion === null || !validToken(nextToken)) throw new Error('OPEN_FAILED');
+      const replaced = await host.replaceDocument(value, {
+        expectedDocumentId: local.documentId, expectedRevision: local.revision, expectedText: local.text, expectedMetadata: documentMetadata(local)
+      });
+      if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
+      cancelEditorRequests('document_changed', {forget: true});
+      cancelMaterial('document_changed', {forget: true});
+      cancelExport('document_changed');
+      token = nextToken;
+      base = value;
+      version = nextVersion;
+      adoptHostFile();
+      incoming = null;
+      contextAck = null;
+      viewFlight = null;
+      visualFlight = null;
+      exportFlight = null;
+      viewed.clear();
+      presentationBlocked = replaced.comparison?.ok === false;
+      dirty = !acknowledged(await host.snapshot());
+      if (!dirty) holdBaseLedger();
+      if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
+      failures = 0;
+      setStatus(presentationBlocked ? 'comparison_refused' : 'ready');
+      homeDialog?.close();
+      return !dirty;
+    })().catch(error => { failed(error); return false; }).finally(() => {
+      switching = false;
+      running = null;
+      unlock();
+      publishModelContext();
+      contextChanged();
+      schedule();
+      resumeOpen();
+    });
+    return running;
+  }
+
+  async function switchDocument(data, result) {
+    if (openingSwitch || switching || closed) return false;
+    const value = metadata(result).snapshot;
+    const nextVersion = viewVersion(toolData(result)?.version);
+    const nextToken = data.document;
+    if (!snapshot(value) || nextVersion === null || !validToken(nextToken) || !base || value.documentId === base.documentId) return false;
+    openingSwitch = true;
+    cancelMaterial('document_changed');
+    cancelExport('document_changed');
+    try {
+      let notice = '';
+      cancelEditorRequests('document_changed', {waitingOnly: true});
+      const before = await host.snapshot();
+      if (dirty || flight || !acknowledged(before)) {
+        dirty = true;
+        await flush();
+      }
+      const fileSaved = await saveHostFile();
+      const settled = await host.snapshot();
+      const outgoing = settled;
+      if (dirty || flight || !acknowledged(settled) || (!fileSaved && !filePreserved(settled))) {
+        const record = {text: settled.text, filename: settled.filename, docKind: settled.docKind, delivered: false};
+        strandedDrafts.push(record);
+        const sent = object(capabilities.downloadFile) && await exportFile(new Blob([settled.text], {type: 'text/plain;charset=utf-8'}), settled.filename);
+        record.delivered = !!sent;
+        while (strandedDrafts.length > STRANDED_DRAFT_LIMIT) {
+          const dropIndex = strandedDrafts.findIndex(entry => entry.delivered);
+          if (dropIndex === -1) break;
+          strandedDrafts.splice(dropIndex, 1);
+        }
+        notice = sent ? `Switched to a new document. Your unsent changes to “${settled.filename}” were downloaded first.`
+          : `Switched to a new document. Your unsent changes to “${settled.filename}” are kept -- use Copy draft to recover them.`;
+      } else {
+        notice = base.filename ? `Switched to a new document. “${base.filename}” was saved.` : 'Switched to a new document.';
+      }
+      clearTimeout(timer);
+      switching = true;
+      lock();
+      setStatus('opening');
+      let replaced = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        replaced = await host.replaceDocument(value, {
+          expectedDocumentId: outgoing.documentId, expectedRevision: outgoing.revision, expectedText: outgoing.text, expectedMetadata: documentMetadata(outgoing)
+        });
+        if (replaced?.outcome === 'applied' || !['yielded', 'conflict'].includes(replaced?.outcome)) break;
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+      if (replaced?.outcome !== 'applied') throw new Error('OPEN_REFUSED');
+      cancelEditorRequests('document_changed', {forget: true});
+      cancelMaterial('document_changed', {forget: true});
+      cancelExport('document_changed');
+      token = nextToken;
+      base = value;
+      version = nextVersion;
+      adoptHostFile();
+      incoming = null;
+      contextAck = null;
+      viewFlight = null;
+      visualFlight = null;
+      exportFlight = null;
+      viewed.clear();
+      presentationBlocked = replaced.comparison?.ok === false;
+      dirty = !acknowledged(await host.snapshot());
+      if (!dirty) holdBaseLedger();
+      if (!dirty && !(await host.acknowledge(base))?.ok) dirty = true;
+      failures = 0;
+      setStatus(presentationBlocked ? 'comparison_refused' : 'ready');
+      homeDialog?.close();
+      host.notify(notice, 'info');
+      return true;
+    } catch (error) {
+      failed(error);
+      return false;
+    } finally {
+      openingSwitch = false;
+      switching = false;
+      unlock();
+      publishModelContext();
+      contextChanged();
+      schedule();
+      resumeOpen();
+    }
+  }
+
+  async function saveCurrent(options = {}) {
+    const documentToken = token;
+    let saved = false, outcome = 'pending';
+    if (options.signal?.aborted) outcome = 'cancelled';
+    else if (base && (!await host.prepareSave() || token !== documentToken)) outcome = 'pending';
+    else if (base && options.forceSaveAs === true) {
+      const binding = boundFile;
+      const local = await host.snapshot();
+      if (token === documentToken && boundFile === binding && host.isSavePrepared(local.text)) {
+        const accepted = await exportFile(new Blob([local.text], {type: 'text/plain;charset=utf-8'}), local.filename);
+        if (accepted) rememberFileCopy(binding, local);
+        outcome = accepted ? 'dispatched' : 'cancelled';
+      }
+    } else if (base) {
+      saved = await flush();
+      saved = token === documentToken && await saveHostFile() && saved;
+      saved = saved && !dirty && !flight && acknowledged(await host.snapshot());
+      outcome = saved ? 'confirmed' : 'pending';
+    }
+    const local = host && base ? await host.snapshot() : null;
+    const receipt = Object.freeze({status: outcome, saved, confirmed: saved, verified: saved,
+      filename: local?.filename || '', documentAuthority: local?.documentId || '',
+      generation: local?.generation ?? 0, documentRevision: local?.revision ?? 0});
+    return options.returnReceipt === true ? receipt : saved;
+  }
+
+  async function closeComparison(event) {
+    if (event?.isTrusted !== true || !base?.compare || switching || dirty || flight) return false;
+    const target = {document: token, documentId: base.documentId, compareId: base.compare.id};
+    if (!await flush() || target.document !== token || target.documentId !== base.documentId || target.compareId !== base.compare?.id) return false;
+    const result = await call('comparison.present', {document: token, action: 'close', compare_id: target.compareId, operation_id: crypto.randomUUID()}, undefined, true);
+    if (target.document !== token || !ensureResult(result)) return false;
+    if (!await sync(true)) return false;
+    await loadIncoming(false, null, true);
+    contextChanged();
+    return result.structuredContent?.closed === true;
+  }
+
+  async function exportFile(blob, filename) {
+    if (!object(capabilities.downloadFile)) return false;
+    const resource = {uri: `rapier://export/${encodeURIComponent(filename || 'document.txt')}`, mimeType: blob.type || 'application/octet-stream'};
+    if (/^text\//.test(resource.mimeType)) resource.text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(await blob.arrayBuffer());
+    else {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+      resource.blob = btoa(binary);
+    }
+    const result = await request('ui/download-file', {contents: [{type: 'resource', resource}]});
+    return object(result) && result.isError !== true;
+  }
+
+  function recentHostFiles() {
+    let records = [];
+    try { records = JSON.parse(localStorage.getItem('rapier.apps.recent-files:' + origin) || '[]'); } catch (_) {}
+    const privateRecords = window.openai?.widgetState?.privateContent?.rapierRecentFiles;
+    if (Array.isArray(privateRecords)) records = [...(Array.isArray(records) ? records : []), ...privateRecords];
+    const unique = new Map();
+    for (const value of Array.isArray(records) ? records : []) {
+      if (object(value) && typeof value.fileId === 'string' && value.fileId && typeof value.fileName === 'string' && value.fileName) {
+        unique.set(value.fileId, {fileId: value.fileId, fileName: value.fileName,
+          mimeType: typeof value.mimeType === 'string' ? value.mimeType : 'text/plain'});
+      }
+    }
+    return [...unique.values()];
+  }
+
+  function rememberHostFile(file) {
+    const records = recentHostFiles().filter(value => value.fileId !== file.fileId);
+    records.unshift({fileId: file.fileId, fileName: file.fileName, mimeType: file.mimeType || 'text/plain'});
+    try { localStorage.setItem('rapier.apps.recent-files:' + origin, JSON.stringify(records)); } catch (_) {}
+    const api = window.openai;
+    if (typeof api?.setWidgetState === 'function') {
+      const state = object(api.widgetState) ? api.widgetState : {};
+      try {
+        void Promise.resolve(api.setWidgetState({...state,
+          privateContent: {...(object(state.privateContent) ? state.privateContent : {}), rapierRecentFiles: records}})).catch(() => {});
+      } catch (_) {}
+    }
+  }
+
+  function showHome() {
+    if (closed || closing || switching) return false;
+    if (homeDialog?.open) return true;
+    homeDialog?.close();
+    const actions = [button('New document', async () => { await openDocument({text: '', filename: 'untitled.md', docKind: 'markdown'}); })];
+    if (canImport()) actions.push(button('Open from ChatGPT Files', async event => { if (await importFile(event)) sheet.close(); }));
+    actions.push(button('Open from device', async event => { if (await openLocalFile(event)) sheet.close(); }));
+    if (base && canUpload()) actions.push(button('Save to ChatGPT Files', uploadCurrent));
+    const back = button(base ? 'Back to document' : 'Close', () => sheet.close());
+    back.dataset.pop = 'cancel';
+    const records = recentHostFiles(), body = [];
+    if (records.length && typeof window.openai?.getFileDownloadUrl === 'function') {
+      const heading = document.createElement('p');
+      heading.style.cssText = 'margin:0 0 var(--space-4);line-height:1.5';
+      heading.textContent = 'Recently opened or saved';
+      body.push(actions, heading, [...records.map(file => button(file.fileName, async event => { if (await importFile(event, file)) sheet.close(); })), back]);
+    } else body.push([...actions, back]);
+    const sheet = homeDialog = host.sheet({title: 'Your documents', body, onEscape: current => current.close(),
+      onClose: () => { if (homeDialog === sheet) homeDialog = null; }});
+    return true;
+  }
+
+  async function openLocalFile(event) {
+    if (!(event instanceof Event) || event.isTrusted !== true || importRunning || switching || closed || closing) return false;
+    importRunning = true;
+    const openedToken = token;
+    try {
+      const input = document.createElement('input');
+      input.type = 'file';
+      const file = await new Promise(resolve => {
+        input.addEventListener('change', () => resolve(input.files?.[0] || null), {once: true});
+        input.addEventListener('cancel', () => resolve(null), {once: true});
+        input.click();
+      });
+      if (!file || closed || closing || token !== openedToken) return false;
+      const loaded = await host.readFile(file, file.name);
+      if (!loaded || closed || closing || token !== openedToken) return false;
+      const opened = await openDocument({text: loaded.text, filename: loaded.filename, ...(loaded.docKind ? {docKind: loaded.docKind} : {})},
+        {admission: () => token === openedToken && host.importCurrent(loaded)});
+      if (opened && loaded.importSummary) host.acceptImport(loaded);
+      return opened;
+    } finally { importRunning = false; }
+  }
+
+  async function uploadCurrent(event) {
+    if (!(event instanceof Event) || event.isTrusted !== true || !canUpload() || !base || switching || closed || closing || uploadRunning) return false;
+    uploadRunning = true;
+    const openedToken = token, binding = boundFile;
+    try {
+      const local = await host.snapshot();
+      if (openedToken !== token || closed || closing || switching || local.documentId !== base?.documentId) return false;
+      const mimeType = local.docKind === 'markdown' ? 'text/markdown' : 'text/plain';
+      const result = await window.openai.uploadFile(new File([local.text], local.filename, {type: mimeType}), {library: true});
+      if (typeof result?.fileId !== 'string' || !result.fileId) throw new Error('FILE_UPLOAD_UNCONFIRMED');
+      rememberHostFile({fileId: result.fileId, fileName: local.filename, mimeType});
+      rememberFileCopy(binding, local);
+      if (!closed) {
+        const current = await host.snapshot();
+        host.notify(openedToken === token && same(local, current)
+          ? 'A copy was uploaded to ChatGPT. It is saved in Files when your file library is available.'
+          : 'The captured version was uploaded to ChatGPT. Your newer edits are still here.', 'info');
+      }
+      return true;
+    } catch (_) {
+      if (!closed) host.notify('The upload was not confirmed. Your draft is still here; try again or download a copy.', 'error');
+      return false;
+    } finally { uploadRunning = false; }
+  }
+
+  async function importFile(event, selected = null) {
+    if (!(event instanceof Event) || !event.isTrusted || (!selected && !canImport()) ||
+        typeof window.openai?.getFileDownloadUrl !== 'function' || importRunning || switching || closed || closing) return false;
+    importRunning = true;
+    const openedToken = token;
+    const controller = new AbortController();
+    let timeout;
+    try {
+      const files = selected ? [selected] : await window.openai.selectFiles();
+      if (!Array.isArray(files) || !files.length) return false;
+      if (files.length !== 1) {
+        host.notify('Choose one file to open.', 'info');
+        return false;
+      }
+      const file = files[0];
+      if (typeof file.fileId !== 'string' || !file.fileId || typeof file.fileName !== 'string' || !file.fileName) throw new Error('FILE_INVALID');
+      const link = await window.openai.getFileDownloadUrl({fileId: file.fileId});
+      const url = new URL(link?.downloadUrl);
+      if (url.protocol !== 'https:' || url.username || url.password) throw new Error('FILE_INVALID');
+      const allowedOrigins = Array.isArray(globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS) ? globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS : [];
+      if (!allowedOrigins.includes(url.origin)) throw new Error('FILE_ORIGIN_REFUSED');
+      timeout = setTimeout(() => controller.abort(), 20000);
+      const response = await fetch(url.href, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: controller.signal});
+      if (!response.ok || !response.body) throw new Error('FILE_UNAVAILABLE');
+      const limit = globalThis.RapierAgentCatalog.MAX_TEXT_BYTES;
+      if (Number(response.headers.get('content-length')) > limit) throw new Error('FILE_TOO_LARGE');
+      const reader = response.body.getReader(), parts = [];
+      let bytes = 0;
+      for (;;) {
+        const row = await reader.read();
+        if (row.done) break;
+        bytes += row.value.byteLength;
+        if (bytes > limit) { await reader.cancel(); throw new Error('FILE_TOO_LARGE'); }
+        parts.push(row.value);
+      }
+      clearTimeout(timeout);
+      const loaded = await host.readFile(new Blob(parts, {type: file.mimeType || 'application/octet-stream'}), file.fileName);
+      if (!loaded || token !== openedToken || switching || closed || closing) return false;
+      const opened = await openDocument({text: loaded.text, filename: loaded.filename, ...(loaded.docKind ? {docKind: loaded.docKind} : {})},
+        {admission: () => token === openedToken && host.importCurrent(loaded)});
+      if (opened && loaded.importSummary) host.acceptImport(loaded);
+      if (opened) {
+        rememberHostFile(file);
+        host.notify('Opened an editable copy. Save to ChatGPT Files keeps a new file in ChatGPT.', 'info');
+      }
+      return opened;
+    } catch (error) {
+      if (!closed && error?.name !== 'AbortError') host.notify(error?.rapierImport ? 'Import failed: ' + error.message : error?.message === 'FILE_TOO_LARGE' ? 'That file is too large. Open a file under 64 MiB.' :
+        'That file could not be opened. Try downloading it and opening the local copy.', 'error');
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+      importRunning = false;
+    }
+  }
+
+  function retireStrandedDraft(stranded) {
+    if (!stranded) return;
+    const index = strandedDrafts.indexOf(stranded);
+    if (index === -1) return;
+    strandedDrafts.splice(index, 1);
+    setStatus(status);
+  }
+
+  function rememberFileCopy(binding, local) {
+    if (binding && boundFile === binding && binding.documentId === local.documentId) {
+      binding.savedCopy = {text: local.text, filename: local.filename};
+    }
+  }
+
+  async function downloadDraft() {
+    const stranded = strandedDrafts[0];
+    const binding = stranded ? null : boundFile;
+    const local = stranded || await host.snapshot();
+    const delivered = () => { rememberFileCopy(binding, local); retireStrandedDraft(stranded); };
+    if (object(capabilities.downloadFile)) {
+      const sent = await exportFile(new Blob([local.text], {type: 'text/plain;charset=utf-8'}), local.filename);
+      if (sent) delivered();
+      return sent;
+    }
+    try {
+      await navigator.clipboard.writeText(local.text);
+      delivered();
+    }
+    catch (_) {
+      const field = document.createElement('textarea');
+      field.className = 'navigator-outline-filter';
+      field.readOnly = true;
+      field.value = local.text;
+      field.setAttribute('aria-label', 'Draft text. Select all and copy.');
+      field.setAttribute('autofocus', '');
+      field.style.cssText = 'width:100%;height:40vh;padding-block:var(--space-2);resize:vertical;font-family:var(--font-mono)';
+      const sheet = host.sheet({title: 'Copy your draft', body: [field, [button('I copied it', () => { delivered(); sheet.close(); })]],
+        onEscape: current => current.close()});
+      field.select();
+    }
+  }
+
+  async function disconnectAgents(event) {
+    if (event?.isTrusted !== true || !base || switching || closed) return false;
+    const target = {document: token, documentId: base.documentId};
+    const unseal = globalThis.RapierDoorIdentity?.unsealForEditor;
+    if (!editorKeyFor(target.document) || typeof unseal !== 'function') { host.notify('This editor cannot disconnect agents here.', 'info'); return false; }
+    cancelEditorRequests('editor_unavailable', {waitingOnly: true});
+    cancelMaterial('editor_unavailable');
+    cancelExport('editor_unavailable');
+    if (!await flush()) { host.notify('Finish the current edit, then try again.', 'info'); return false; }
+    if (token !== target.document || base?.documentId !== target.documentId || switching || closed || closing) return false;
+    clearTimeout(timer);
+    switching = true;
+    cancelEditorRequests('editor_unavailable', {forget: true});
+    cancelMaterial('editor_unavailable', {forget: true});
+    cancelExport('editor_unavailable');
+    lock();
+    try {
+      const editorKey = editorKeyFor(target.document);
+      const result = await call('document.rotate_capability', {document: target.document});
+      if (result?.isError || result?.structuredContent?.rotated !== true) {
+        if (result?.structuredContent?.code === 'DOCUMENT_UNAVAILABLE' || result?.structuredContent?.code === 'HUMAN_AUTHORITY_REQUIRED') ensureResult(result);
+        else host.notify('Agents could not be disconnected. Try again.', 'error');
+        return false;
+      }
+      const next = await unseal(editorKey, result.structuredContent.sealed);
+      if (!validToken(next)) {
+        failures = 5;
+        setStatus('unavailable');
+        host.notify('The new capability could not be read. Copy your draft.', 'error');
+        return false;
+      }
+      rememberEditorKey(result, pairedId || next);
+      withheld = true;
+      if (Number.isSafeInteger(result.structuredContent.version)) version = result.structuredContent.version;
+      if (agentAccess !== null) agentAccess = false;
+      if (pairedId) {
+        shareable = next;
+        modelSent = '';
+        host.notify('Agents disconnected. Share the document to let one back in.', 'success');
+        return true;
+      }
+      if (boundFile?.document === target.document && boundFile.documentId === target.documentId) boundFile.document = next;
+      token = next;
+      modelSent = '';
+      host.notify('Agents disconnected. Share the document to let one back in.', 'success');
+      return true;
+    } finally {
+      switching = false;
+      unlock();
+      contextChanged();
+      schedule(0);
+      resumeOpen();
+    }
+  }
+
+  async function reconnectAgents(target, event) {
+    if (agentAccess !== false) return true;
+    const current = () => !closed && !closing && !switching && !openingSwitch && !!base && token === target.document && base.documentId === target.documentId;
+    if (event?.isTrusted !== true || !current() || !await flush() || !current()) return false;
+    const result = await call('document.connect_agents', {document: target.document,
+      expectedRevision: base.revision, expectedVersion: version, operation_id: crypto.randomUUID()});
+    if (!current() || !ensureResult(result)) return false;
+    captureIncoming(result);
+    return agentAccess === true;
+  }
+
+  async function shareDocument(event) {
+    if (event?.isTrusted !== true || !base || !withheld || closed) return false;
+    return new Promise(resolve => {
+      const pop = housePop('rapier-app-share-title', 'Share with an agent');
+      const text = document.createElement('p');
+      text.textContent = (agentAccess === null ? 'An agent that receives this workspace ID'
+        : 'An agent on one of your approved connections that receives this workspace ID')
+        + ' can read and edit the document until you disconnect agents again.';
+      const field = document.createElement('input');
+      field.type = 'text';
+      field.readOnly = true;
+      field.className = 'navigator-outline-filter';
+      field.value = pairedId ? shareable : token;
+      field.setAttribute('aria-label', 'Workspace ID');
+      let settled = false;
+      const finish = outcome => { if (settled) return; settled = true; pop.overlay.remove(); resolve(outcome); };
+      pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') finish(false); }, {signal: listeners.signal});
+      const target = {document: token, documentId: base.documentId};
+      if (object(capabilities.message)) pop.row.append(popButton('send to chat', 'affirm', async event => {
+        try {
+          if (!await reconnectAgents(target, event)) return;
+          await request('ui/message', {role: 'user', content: [{type: 'text', text: 'Rapier document: ' + token + '\nUse it as the document argument of the Rapier tools.'}]});
+          withheld = false;
+          modelSent = '';
+          contextChanged();
+          host.notify('Sent to chat.', 'info');
+          finish(true);
+        } catch (_) { host.notify('Could not reach the chat.', 'error'); }
+      }));
+      pop.row.append(popButton('copy', 'affirm', async event => {
+        try { if (!await reconnectAgents(target, event)) return; await navigator.clipboard.writeText(field.value); host.notify('Copied.', 'info'); finish(true); }
+        catch (_) { field.focus(); field.select(); host.notify('Select the value and copy it.', 'info'); }
+      }), popButton('done', 'cancel', () => finish(false)));
+      pop.show(text, field);
+    });
+  }
+
+  function housePop(id, heading, extra = '') {
+    const overlay = document.createElement('div');
+    overlay.className = ('settings-overlay restore-modal-overlay open rapier-app-pop ' + extra).trim();
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', id);
+    const panel = document.createElement('div');
+    panel.className = 'settings-panel rapier-pop';
+    panel.style.cssText = 'max-width:420px;margin:auto';
+    const body = document.createElement('div');
+    body.className = 'settings-panel__body';
+    const head = document.createElement('div');
+    head.className = 'navigator-title-row';
+    const title = document.createElement('h2');
+    title.id = id;
+    title.className = 'settings-section__title';
+    title.textContent = heading;
+    head.append(title);
+    const row = document.createElement('div');
+    row.className = 'settings-action-row';
+    row.setAttribute('data-pop-row', '');
+    body.append(head);
+    panel.append(body);
+    overlay.append(panel);
+    const show = (...words) => {
+      body.append(...words, row);
+      document.body.append(overlay);
+      if (typeof globalThis._rapierPopArrange === 'function') globalThis._rapierPopArrange(row);
+      else {
+        const shown = [...row.children].filter(box => !box.hidden);
+        const bottom = shown.find(box => box.dataset.pop === 'destructive') || shown.find(box => box.dataset.pop === 'cancel');
+        if (bottom) { row.append(bottom); bottom.setAttribute('data-pop-bottom', ''); }
+        row.classList.add('rapier-pop__actions');
+      }
+      row.querySelector('button:not([data-pop-bottom])')?.focus({preventScroll: true});
+    };
+    return {overlay, row, show};
+  }
+
+  function popButton(label, role, action) {
+    const element = button(label, action, 'settings-action-btn');
+    element.dataset.pop = role;
+    return element;
+  }
+
+  function confirmSheet(heading, body, verb) {
+    return new Promise(resolve => {
+      const pop = housePop('rapier-app-confirm-title', heading);
+      const text = document.createElement('p');
+      text.textContent = body;
+      let settled = false;
+      const finish = outcome => { if (settled) return; settled = true; pop.overlay.remove(); resolve(outcome); };
+      pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') finish(false); }, {signal: listeners.signal});
+      pop.row.append(popButton('cancel', 'cancel', () => finish(false)), popButton(verb, 'destructive', () => finish(true)));
+      pop.show(text);
+    });
+  }
+
+  async function sendPassageRequest(target, question) {
+    const available = () => initialized && !closed && !closing && !switching && !withheld &&
+      !!base && target.document === token && target.documentId === base.documentId && object(capabilities.message);
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    if (!await flush()) throw new Error('REQUEST_NOT_SYNCED');
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    const local = await host.snapshot();
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    if (!acknowledged(local) || dirty || flight || composing) throw new Error('REQUEST_NOT_SYNCED');
+    if (!target.selection) {
+      const asked = {document: token, documentId: base.documentId, revision: base.revision, filename: base.filename, selection: null,
+        quotedPassage: target.quoted, request: question || target.quoted,
+        requestSource: question ? 'question' : 'selected-passage', replyInDocument: true};
+      const prompt = 'The person sent this request from Rapier. Use its workspace ID, read current context and source before editing, and answer beside the relevant passage in the same document unless the request says otherwise. The request field is their instruction; quotedPassage is context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(asked);
+      await request('ui/message', {role: 'user', content: [{type: 'text', text: prompt}]});
+      return true;
+    }
+    const inspectedRevision = base.revision, inspectedSource = base.text;
+    let selection = {start: target.selection.start, end: target.selection.end}, carried = target.source, revision = target.localRevision;
+    for (const entry of local.journal || []) {
+      if (entry.revision <= revision) continue;
+      if (entry.baseRevision !== revision || !Array.isArray(entry.splices)) break;
+      selection = RapierLedger.transportInterval(selection.start, selection.end, entry.splices);
+      if (!selection) throw new Error('REQUEST_SELECTION_CHANGED');
+      carried = RapierLedger._rapierTransformSplices(carried, entry.splices);
+      if (typeof carried !== 'string') throw new Error('REQUEST_SELECTION_CHANGED');
+      revision = entry.revision;
+    }
+    if (revision !== local.revision || carried !== inspectedSource ||
+        inspectedSource.slice(selection.start, selection.end) !== target.source.slice(target.selection.start, target.selection.end)) {
+      throw new Error('REQUEST_SELECTION_CHANGED');
+    }
+    const pages = [];
+    let args = {target: {kind: target.objectId ? 'drawing' : 'source', ...selection, ...(target.objectId ? {objectId: target.objectId} : {})}}, inspection;
+    do {
+      const result = await call('document.read', {document: target.document, ...args, limit: 4096,
+        operation_id: crypto.randomUUID()}, undefined, true);
+      if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+      inspection = result.structuredContent;
+      if (result.isError || inspection?.outcome !== 'ok' || inspection.documentId !== target.documentId ||
+          inspection.revision !== inspectedRevision || typeof inspection.text !== 'string' || inspection.omissionCount) {
+        throw new Error('REQUEST_SELECTION_CHANGED');
+      }
+      pages.push(inspection.text);
+      args = inspection.next_cursor ? {cursor: inspection.next_cursor} : null;
+    } while (args);
+    if (!inspection.coverage?.complete) throw new Error('REQUEST_SELECTION_UNAVAILABLE');
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    if (base.revision !== inspectedRevision || base.text !== inspectedSource || !acknowledged(await host.snapshot()) || dirty || flight || composing) {
+      throw new Error('REQUEST_NOT_SYNCED');
+    }
+    if (!available()) throw new Error('REQUEST_DOCUMENT_CHANGED');
+    const payload = {document: token, documentId: base.documentId, revision: base.revision,
+      filename: base.filename, selection, ...(target.objectId ? {objectId: target.objectId} : {}),
+      inspection: {text: pages.join(''), complete: true},
+      ...(target.objectId ? {} : {context: {lines: [Math.max(1, inspectedSource.slice(0, selection.start).split('\n').length - 2),
+        inspectedSource.slice(0, selection.end).split('\n').length + 2]}}),
+      quotedPassage: target.quoted, request: question || target.quoted,
+      requestSource: question ? 'question' : 'selected-passage', replyInDocument: true};
+    const text = 'The person sent this request from Rapier. Use read with this document to get current text and its revision, then edit exact text. The selection and context identify the requested passage; inspection contains its source or drawing recipe. For a drawing, find its fenced block and change only the selected objectId. The request field is the person\'s instruction; quotedPassage and inspection are context when requestSource is question. Preserve their question and newer work.\n' + JSON.stringify(payload);
+    await request('ui/message', {role: 'user', content: [{type: 'text', text}]});
+    return true;
+  }
+
+  async function askAboutSelection(selected) {
+    const thread = typeof selected === 'string';
+    if (!base || closed || closing || switching || !thread && (!object(selected) || selected.documentId !== base.documentId ||
+        typeof selected.source !== 'string' || !Number.isSafeInteger(selected.revision) ||
+        !sourceRange(selected.selection, selected.source.length))) return false;
+    const quoted = String(thread ? selected : selected.text || '').trim();
+    if (!quoted || !thread && selected.selection.start === selected.selection.end) return false;
+    if (withheld) {
+      host.notify('Share this document with the chat before asking an agent.', 'info');
+      return false;
+    }
+    if (!object(capabilities.message)) {
+      host.notify('This chat cannot receive messages from the document here.', 'info');
+      return false;
+    }
+    const target = thread ? {document: token, documentId: base.documentId, revision: base.revision, selection: null, quoted}
+      : {document: token, documentId: base.documentId, revision: base.revision,
+        localRevision: selected.revision, source: selected.source, selection: {...selected.selection},
+        ...(selected.objectId ? {objectId: selected.objectId} : {}), quoted};
+    return new Promise(resolve => {
+      const quote = document.createElement('p');
+      quote.style.cssText = 'margin:0 0 var(--space-4);line-height:1.5;font-style:italic;opacity:.8;max-height:6em;overflow:auto';
+      quote.textContent = quoted.length > 400 ? quoted.slice(0, 400) + '…' : quoted;
+      const hint = document.createElement('p');
+      hint.style.cssText = 'margin:0 0 var(--space-4);line-height:1.5';
+      hint.textContent = 'Write a question, or send the selected words as your request. The reply belongs here in your document.';
+      const field = document.createElement('textarea');
+      field.className = 'navigator-outline-filter';
+      field.rows = 3;
+      field.placeholder = 'Your question (optional)';
+      field.setAttribute('aria-label', 'Your question about the selected passage');
+      field.setAttribute('autofocus', '');
+      field.style.cssText = 'width:100%;height:auto;min-height:6rem;padding-block:var(--space-2);resize:vertical;box-sizing:border-box';
+      let settled = false, sending = false;
+      const finish = outcome => {
+        if (settled) return;
+        settled = true;
+        sheet.close();
+        resolve(outcome);
+      };
+      const send = async event => {
+        if (event?.isTrusted !== true || settled || sending) return;
+        sending = true;
+        sendButton.disabled = cancelButton.disabled = field.disabled = true;
+        try {
+          await sendPassageRequest(target, field.value.trim());
+          host.notify('Sent to chat.', 'info');
+          finish(true);
+        } catch (error) {
+          host.notify(error?.message === 'REQUEST_DOCUMENT_CHANGED' ? 'This document is no longer shared here. Close this question and share the document again.' :
+            error?.message === 'REQUEST_NOT_SYNCED' ? 'Your edits have not synced yet. Your question is kept here; try again when the document is ready.' :
+            error?.message === 'REQUEST_SELECTION_CHANGED' ? 'The selected work changed. Your question is kept here; select the current work and ask again.' :
+            error?.message === 'REQUEST_SELECTION_UNAVAILABLE' ? 'This selection cannot be inspected as one editable target. Select a smaller passage and ask again.' :
+            'The chat did not confirm receipt. Your question is kept here; check the chat before sending again.', 'error');
+        } finally {
+          sending = false;
+          sendButton.disabled = cancelButton.disabled = field.disabled = false;
+        }
+      };
+      const sendButton = button('Send', send), cancelButton = button('Cancel', () => finish(false));
+      cancelButton.dataset.pop = 'cancel';
+      field.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void send(event); }
+      });
+      const sheet = host.sheet({title: 'Ask about this passage', body: [quote, hint, field, [sendButton, cancelButton]],
+        onEscape: () => { if (!sending) finish(false); },
+        onClose: () => { if (!settled) { settled = true; resolve(false); } }});
+    });
+  }
+
+  async function teardown(id) {
+    closing = true;
+    cancelEditorRequests('editor_unavailable', {waitingOnly: true});
+    cancelMaterial('editor_unavailable');
+    cancelExport('editor_unavailable');
+    clearTimeout(timer);
+    const saved = await flush();
+    await saveHostFile();
+    const local = base ? await host.snapshot() : null;
+    if ((!saved && (dirty || flight)) || strandedDrafts.length > 0 ||
+        (local && !filePreserved(local)) || switching || uploadRunning || importRunning || fileHydrations.size) {
+      closing = false;
+      contextChanged();
+      resumeOpen();
+      post({id, error: {code: -32000, message: 'Unsent draft remains. Resolve or download it before closing.'}});
+      return;
+    }
+    await publishHumanContext(true);
+    clearTimeout(contextTimer);
+    clearTimeout(contextExpiryTimer);
+    if (boundFile) {
+      await request('resources/unsubscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
+    }
+    const latest = base ? await host.snapshot() : null;
+    if ((latest && (!acknowledged(latest) || !filePreserved(latest))) || dirty || flight ||
+        globalThis.RapierCommentsUI?.keepDraft() === false) {
+      closing = false;
+      if (boundFile) void request('resources/subscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
+      contextChanged();
+      resumeOpen();
+      schedule(0);
+      post({id, error: {code: -32000, message: 'Unsent draft remains. Resolve or download it before closing.'}});
+      return;
+    }
+    boundFile?.store.dispose();
+    cancelEditorRequests('editor_unavailable', {forget: true});
+    cancelMaterial('editor_unavailable', {forget: true});
+    cancelExport('editor_unavailable');
+    post({id, result: {}});
+    closed = true;
+    void globalThis.RapierAgentBrowser?.refresh?.();
+    exportFlight = null;
+    listeners.abort();
+    observer?.disconnect();
+    unsubscribe?.();
+    unsubscribeContext?.();
+    for (const value of pending.values()) { clearTimeout(value.timeoutId); value.reject(new Error('CLOSED')); }
+    pending.clear();
+  }
+
+  function message(event) {
+    if (event.source !== window.parent || event.origin === 'null' || (origin !== null && event.origin !== origin)) return;
+    const value = event.data;
+    if (!object(value) || value.jsonrpc !== '2.0') return;
+    if (Object.hasOwn(value, 'id') && !Object.hasOwn(value, 'method')) {
+      const item = pending.get(value.id);
+      if (!item || (!Object.hasOwn(value, 'result') && !object(value.error))) return;
+      if (item.method === 'ui/initialize' && origin === null) origin = event.origin;
+      pending.delete(value.id);
+      clearTimeout(item.timeoutId);
+      if (value.error) item.reject(Object.assign(new Error('HOST_REQUEST_FAILED'), {code: value.error.code}));
+      else item.resolve(value.result);
+      return;
+    }
+    if (!initialized || typeof value.method !== 'string') return;
+    if (Object.hasOwn(value, 'id')) {
+      if (value.method === 'ping') post({id: value.id, result: {}});
+      else if (value.method === 'ui/resource-teardown') { finishHostWork(); void teardown(value.id).catch(error => {
+        closing = false;
+        post({id: value.id, error: {code: -32000, message: 'The document could not finish saving.'}});
+        failed(error);
+      }); }
+      else post({id: value.id, error: {code: -32601, message: 'Method not supported'}});
+      return;
+    }
+    if (value.method === 'ui/notifications/host-context-changed') updateContext(value.params);
+    else if (value.method === 'notifications/resources/updated' &&
+        typeof value.params?.uri === 'string' && value.params.uri === activeFile()?.file.resourceUri) void refreshHostFile();
+    else if (value.method === 'ui/notifications/tool-result') { finishHostWork(); void receive(value.params).catch(failed); }
+    else if (value.method === 'ui/notifications/tool-input') {
+      if (!token && validToken(value.params?.arguments?.document)) token = value.params.arguments.document;
+      beginHostWork(value.params);
+      schedule(0);
+    } else if (value.method === 'ui/notifications/tool-cancelled') {
+      finishHostWork();
+      cancelEditorRequests('editor_request_unavailable', {waitingOnly: true});
+      if (!base) {
+        failures = 5;
+        setStatus('unavailable');
+      } else if (!closed && !closing) {
+        void flush().then(saved => host.notify(saved
+          ? 'The request behind this view was canceled. Your work here is saved.'
+          : 'The request behind this view was canceled. This document could not be saved just now — it is still open here.',
+          saved ? 'info' : 'error')).catch(() => {});
+      }
+    }
+  }
+
+  function connect() {
+    if (initialized) return Promise.resolve();
+    if (connecting) return connecting;
+    connecting = (async () => {
+      if (pairedId) {
+        capabilities = {serverTools: {}};
+        token = pairedId;
+        const light = matchMedia('(prefers-color-scheme: light)');
+        updateContext({displayMode: 'fullscreen', theme: light.matches ? 'light' : 'dark'});
+        light.addEventListener('change', event => updateContext({theme: event.matches ? 'light' : 'dark'}), {signal: listeners.signal});
+        initialized = true;
+        failures = 0;
+        if (typeof globalThis.RAPIER_EDITOR_KEY !== 'string' && globalThis.RAPIER_EDITOR_ADMISSION) {
+          const admitted = await globalThis.RAPIER_EDITOR_ADMISSION;
+          if (admitted?.admitted === true && typeof admitted.editorKey === 'string' && admitted.editorKey.length <= 512) {
+            globalThis.RAPIER_EDITOR_KEY = admitted.editorKey;
+            globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS = Array.isArray(admitted.fileOrigins) ? admitted.fileOrigins.filter(value => typeof value === 'string') : [];
+          }
+        }
+        if (typeof globalThis.RAPIER_EDITOR_KEY !== 'string') { void pair(); return; }
+        contextChanged();
+        schedule(0);
+        return;
+      }
+      if (window.parent === window) throw new Error('HOST_UNAVAILABLE');
+      const result = await request('ui/initialize', {
+        appInfo: {name: 'Rapier', version: document.querySelector('meta[name="rapier-version"]').content},
+        appCapabilities: {availableDisplayModes: ['inline', 'fullscreen']}, protocolVersion: VERSION
+      }, 10000);
+      if (result?.protocolVersion !== VERSION) throw new Error('PROTOCOL_VERSION');
+      capabilities = object(result.hostCapabilities) ? result.hostCapabilities : {};
+      if (!object(capabilities.serverTools)) throw new Error('HOST_UNAVAILABLE');
+      failures = 0;
+      updateContext(result.hostContext);
+      post({method: 'ui/notifications/initialized', params: {}});
+      initialized = true;
+      void globalThis.RapierAgentBrowser?.refresh?.();
+      notifySize();
+      contextChanged();
+      schedule(0);
+    })().catch(failed).finally(() => { connecting = null; });
+    return connecting;
+  }
+
+  const PAIR_ACTIVE_MS = 180000;
+  function pairDelay(outcome, idleMs) {
+    if (idleMs >= PAIR_ACTIVE_MS) return null;
+    return outcome === 'confirmation_required' ? 10000 : 2000;
+  }
+
+  async function pair() {
+    const pop = housePop('rapier-app-pair-title', 'Pair this browser', 'rapier-app-pairing');
+    const lead = document.createElement('p');
+    lead.textContent = 'Tell your assistant this code.';
+    const code = document.createElement('p');
+    code.className = 'rapier-app-pair-code';
+    code.setAttribute('aria-live', 'polite');
+    code.textContent = '····';
+    const words = document.createElement('p');
+    words.textContent = 'The page will guide you through approving this browser for a day. A code works once and changes every minute.';
+    const ownerApproval = document.createElement('p'), ownerLink = document.createElement('a');
+    ownerLink.textContent = 'Open browser approval';
+    ownerLink.target = '_blank'; ownerLink.rel = 'noopener noreferrer';
+    ownerApproval.append(ownerLink); ownerApproval.hidden = true;
+    let open = true, deciding = false, poll = null, activeAt = Date.now(), wake = null;
+    const close = () => { open = false; wake?.(); pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); };
+    const touched = () => { activeAt = Date.now(); };
+    const rest = ms => new Promise(resolve => { const timer = ms === null ? 0 : setTimeout(resolve, ms); wake = () => { clearTimeout(timer); wake = null; resolve(); }; });
+    document.addEventListener('visibilitychange', () => { if (visible()) { touched(); wake?.(); } }, {signal: listeners.signal});
+    pop.overlay.addEventListener('pointerdown', touched, {signal: listeners.signal});
+    const decide = async decision => {
+      if (!open || deciding) return;
+      deciding = true;
+      allow.disabled = cancel.disabled = true;
+      await poll;
+      let value = null;
+      try { value = (await call('document.pair_status', {document: pairedId, decision}))?.structuredContent; } catch (_) {}
+      if (!open) return;
+      if (decision === 'cancel') { close(); return; }
+      if (value?.outcome === 'paired') { location.reload(); return; }
+      deciding = false;
+      allow.disabled = cancel.disabled = false;
+      lead.textContent = 'Pairing could not finish. Try again.';
+    };
+    const allow = popButton('allow', 'affirm', () => { void decide('allow'); });
+    const cancel = popButton('cancel', 'cancel', () => { void decide('cancel'); });
+    const again = popButton('new code', 'affirm', () => { again.hidden = true; touched(); wake?.(); });
+    allow.hidden = again.hidden = true;
+    pop.row.append(allow, again, cancel);
+    pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); void decide('cancel'); } }, {signal: listeners.signal});
+    pairDialog = pop.overlay;
+    pop.show(lead, code, words, ownerApproval);
+    document.body.prepend(pop.overlay);
+    lock();
+    let last = null;
+    while (open && !closed) {
+      if (deciding) { await new Promise(resolve => setTimeout(resolve, 2000)); continue; }
+      if (!visible()) { await rest(null); continue; }
+      const delay = pairDelay(last?.outcome, Date.now() - activeAt);
+      if (delay === null) {
+        allow.hidden = true;
+        code.textContent = '';
+        lead.textContent = 'This code has expired.';
+        words.textContent = 'Get a new code when you are ready to tell it to your assistant.';
+        if (again.hidden) { again.hidden = false; globalThis._rapierPopArrange?.(pop.row); }
+        await rest(null);
+        continue;
+      }
+      again.hidden = true;
+      poll = call('document.pair_status', {document: pairedId}).then(result => result?.structuredContent).catch(() => null);
+      const value = last = await poll;
+      if (!open) return;
+      if (deciding) continue;
+      ownerApproval.hidden = true;
+      if (value?.outcome === 'owner_confirmation_required') {
+        allow.hidden = true;
+        lead.textContent = 'Approve this browser with Rapier.';
+        words.textContent = 'Open the approval link in the browser where you connected Rapier. Return here once approved.';
+        try {
+          const url = new URL(value.owner_approval_url);
+          if (url.origin === location.origin && ['/d/' + pairedId, '/editor/' + pairedId].includes(url.pathname) && /^\?pair=[a-f0-9]{64}$/.test(url.search) && !url.hash) {
+            ownerLink.href = url.href; ownerApproval.hidden = false;
+          }
+        } catch (_) {}
+      } else if (value?.outcome === 'confirmation_required') {
+        lead.textContent = 'Allow this browser to edit the document?';
+        words.textContent = 'This browser stays connected for a day. Disconnect agents in the document to stop agent access.';
+        if (allow.hidden) {
+          allow.hidden = false;
+          globalThis._rapierPopArrange?.(pop.row);
+          allow.focus({preventScroll: true});
+        }
+      } else if (value?.outcome === 'waiting' && /^[A-Z]{4}$/.test(value.pairingCode)) {
+        allow.hidden = true;
+        code.textContent = value.pairingCode;
+        lead.textContent = 'Tell your assistant this code.';
+        words.textContent = 'The page will guide you through approving this browser for a day. A code works once and changes every minute.';
+      }
+      else if (value?.reason === 'busy') {
+        allow.hidden = true;
+        code.textContent = '';
+        lead.textContent = 'Pairing is busy. Try again in a minute.';
+      }
+      else if (value?.code === 'DOCUMENT_UNAVAILABLE') {
+        code.textContent = '';
+        lead.textContent = 'This document is no longer available.';
+        words.textContent = 'It was deleted or expired. Ask your assistant for a new one.';
+        return;
+      }
+      await rest(pairDelay(value?.outcome, Date.now() - activeAt) ?? 0);
+    }
+  }
+
+  async function openExternalLink(url) {
+    if (!object(capabilities.openLinks)) { window.open(String(url), '_blank', 'noopener,noreferrer'); return true; }
+    try { await request('ui/open-link', {url: String(url)}); return true; }
+    catch (_) { return false; }
+  }
+
+  async function start() {
+    mountUi();
+    host = window.RapierAgentBrowser;
+    if (!host) throw new Error('EDITOR_UNAVAILABLE');
+    if (!pairedId) window.addEventListener('message', message, {signal: listeners.signal});
+    window.addEventListener('openai:set_globals', event => {
+      if (Object.hasOwn(event.detail?.globals || {}, 'safeArea')) {
+        updateContext({safeAreaInsets: event.detail.globals.safeArea?.insets || {}});
+      }
+    }, {signal: listeners.signal});
+    updateSafeArea();
+    const blockBeforeOpen = event => {
+      if (base && !switching) return;
+      if (event.type === 'keydown' && (event.key === 'Tab' ||
+          ((notice.contains(event.target) || pairDialog?.contains(event.target) || homeDialog?.contains(event.target) || fileDialog?.contains(event.target)) &&
+            !event.ctrlKey && !event.metaKey && ['Enter', ' '].includes(event.key)))) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    for (const type of ['keydown', 'beforeinput', 'cut', 'paste', 'drop']) {
+      window.addEventListener(type, blockBeforeOpen, {capture: true, signal: listeners.signal});
+    }
+    const options = {capture: true, signal: listeners.signal};
+    for (const type of ['pointerdown', 'keydown', 'beforeinput', 'compositionend']) document.addEventListener(type, recordEditorActivity, options);
+    document.addEventListener('beforeinput', event => { if (event.isTrusted) humanEdit(); }, options);
+    const composeIdle = () => { clearTimeout(composeTimer); composeTimer = setTimeout(() => { if (composing) { composing = false; humanEdit(); } }, COMPOSING_IDLE_MS); };
+    document.addEventListener('compositionstart', event => { if (event.isTrusted) { composing = true; composeIdle(); humanEdit(); } }, options);
+    document.addEventListener('compositionupdate', event => { if (event.isTrusted && composing) composeIdle(); }, options);
+    document.addEventListener('compositionend', event => { if (event.isTrusted) { clearTimeout(composeTimer); composing = false; humanEdit(); } }, options);
+    document.addEventListener('visibilitychange', () => {
+      contextChanged();
+      if (visible()) quietSyncs = 0;
+      if (visible()) schedule(0);
+      else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); pauseMaterial(); cancelExport('editor_unavailable'); clearTimeout(timer); void publishHumanContext(true); void flush(); }
+    }, {signal: listeners.signal});
+    document.addEventListener('rapier:live-changed', event => heardNotice(event.detail), {signal: listeners.signal});
+    document.addEventListener('rapier:live-state', event => {
+      const value = event.detail;
+      if (value?.documentId && value.documentId !== base?.documentId) return;
+      const healthy = value?.state === 'live' || value?.state === 'syncing';
+      const key = value?.active && value.ready && healthy ? value.client + ':' + value.documentId : '';
+      const wasReady = !!liveReady;
+      if (key && key !== liveReady && base && value.documentId === base.documentId) {
+        liveReady = key; checkSentAt = 0; contextChanged();
+      } else if (!key) liveReady = '';
+      if (base && value?.documentId === base.documentId && liveBindings.has(token)) {
+        const delay = joinedLive() ? liveFallbackDelay() : wasReady ? 0 : Infinity;
+        if (!failures && Number.isFinite(delay)) scheduleBy(delay);
+      }
+    }, {signal: listeners.signal});
+    window.addEventListener('pagehide', () => {
+      cancelEditorRequests('editor_unavailable', {forget: true});
+      cancelMaterial('editor_unavailable', {forget: true});
+      cancelExport('editor_unavailable');
+    }, {signal: listeners.signal});
+    window.addEventListener('beforeunload', event => { if (dirty || flight || strandedDrafts.length > 0 || fileDirty() || uploadRunning || fileHydrations.size) { event.preventDefault(); event.returnValue = ''; } }, {signal: listeners.signal});
+    unsubscribe = host.subscribe(event => { if (event?.actor === 'human') humanEdit(); });
+    unsubscribeContext = host.subscribeContext(contextChanged);
+    observer = new ResizeObserver(notifySize);
+    observer.observe(document.documentElement);
+    await connect();
+    if (host.ready) await host.ready;
+  }
+
+  window.RapierMcpApp = Object.freeze({
+    flush, retry, invoke, invokeComment, sendMessage, openDocument, saveCurrent, closeComparison, requestDisplayMode, exportFile, importFile, uploadCurrent, showHome, askAboutSelection, openExternalLink, disconnectAgents, shareDocument,
+    hostOrigin: () => closed ? null : origin,
+    hostLocale: () => (typeof context.locale === 'string' || typeof context.timeZone === 'string') ?
+      Object.freeze({locale: context.locale || null, timeZone: context.timeZone || null}) : null,
+    get status() { return Object.freeze({state: status, documentId: base?.documentId || null, revision: base?.revision ?? null, version,
+      dirty: dirty || !!flight || fileDirty(),
+      file: activeFile() ? Object.freeze({name: activeFile().file.name, writable: activeFile().resource.writable,
+        saved: !fileDirty(), issue: activeFile().issue}) : null,
+      agentsDisconnected: withheld, switching,
+      ask: base?.askIntent ? Object.freeze({id: base.askIntent.id, question: base.askIntent.question}) : null, messagesQueued: base?.messagesQueued || 0, canDownload: object(capabilities.downloadFile), canImport: canImport(), canUpload: canUpload(),
+      failure: lastFailure ? Object.freeze({...lastFailure}) : null}); }
+  });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { void start().catch(failed); }, {once: true});
+  else void start().catch(failed);
+})();

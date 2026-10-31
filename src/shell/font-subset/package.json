@@ -1,0 +1,10 @@
+{
+  "name": "rapier-font-subset-build",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
+    "harfbuzzjs": "1.6.3"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "rapier-import-vendor-build",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "esbuild": "0.28.2"
+  }
+}

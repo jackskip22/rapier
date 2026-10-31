@@ -1,0 +1,10 @@
+{
+  "name": "rapier-jxl",
+  "description": "JPEG XL encoding and decoding in pure JavaScript. Separate entries for image uploads, photography tools and single-file apps.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {"type": "git", "url": "git+https://github.com/jackskip22/rapier-jxl.git"},
+  "homepage": "https://github.com/jackskip22/rapier-jxl#readme",
+  "bugs": {"url": "https://github.com/jackskip22/rapier-jxl/issues"},
+  "keywords": ["jpeg-xl", "jxl", "jpegxl", "encoder", "image-compression", "lossless", "lossy", "jpeg", "hdr", "webassembly", "browser"]
+}

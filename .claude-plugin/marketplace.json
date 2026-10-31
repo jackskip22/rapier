@@ -1,0 +1,15 @@
+{
+  "name": "rapier",
+  "owner": {
+    "name": "Jack Skipworth",
+    "url": "https://rapier.website"
+  },
+  "description": "Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.",
+  "plugins": [
+    {
+      "name": "rapier",
+      "source": "./plugin",
+      "description": "Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant."
+    }
+  ]
+}

@@ -1,0 +1,5854 @@
+import {cloneSource} from './clone-source.mjs';
+import {htmlFence, htmlRemoved, retiredPosterSplices} from '../spec/html-blocks.mjs';
+import {sha256, sha256Parts} from '../kit/ledger/hash.mjs';
+import {sourceFacts as textFacts} from '../kit/ledger/source.mjs';
+import {dataOmissions} from '../spec/md-assets.mjs';
+import {jsonText, jsonValueParts, admitOwnedJson, isOwnedJson} from './json-value.mjs';
+import {readBase} from '../kit/ledger/carried.mjs';
+import {agentActorId} from '../kit/ledger/format.mjs';
+import {transportInterval, transportTouchedInterval} from '../kit/ledger/merge.mjs';
+import {authoredSourceReader} from '../kit/ledger/transport.mjs';
+// Rapier shared document kernel. SPDX-License-Identifier: AGPL-3.0-only.
+import { parseWill, willTransition, willOffsetBefore as markerOffsetBefore, willMarkerOf, willRegionsIn, willTouchesMarker, willGovern, willIntentOf, stripOneTerminator } from './will.mjs';
+import { diff } from '../packages/rapier-diff/index.mjs';
+import { summary as summarize } from '../packages/rapier-diff/summary.mjs';
+import { outlineMarkdown, structureMarkdown } from './markdown.mjs';
+import { changedReferenceRegion, changedWillFraming } from './references.mjs';
+import { retireDeletedImageDefinitions, documentAssets, markdownParser, normalizeLabel, createAsset, appendAsset, appendAssetText, escapeImageAlt, decodeDataImage, inspectSVG, editSVGNodes } from '../images/assets.mjs';
+import { RAPIER_DRAW_PAPERS, RAPIER_DRAW_NIB_DEFAULT, RAPIER_DRAW_SMOOTH_DEFAULT, _rapierDrawNormalizeAgentRecipe, _rapierDrawRecipeFault, _rapierDrawAdmitRecipe, _rapierDrawAssetGeneration, _rapierDrawMergeAgentRecipe, _rapierDrawUndoRecipe, _rapierDrawRecipeDelta, _rapierDrawBuildSVG, _rapierDrawTextAlternative, _rapierDrawNextAssetName, _rapierDrawApplyShapesPatch, _rapierDrawReadRecipeFromSVGText, _rapierDrawFigureFault } from '../draw/core.mjs';
+import { applyOperations } from '../draw/edit.mjs';
+import {hasRefraction} from '../draw/refraction-rendition.mjs';
+import {requiredRefractionScopes} from '../draw/core.mjs';
+import { parseLayout } from '../layout/markdown.mjs';
+import { getTool as getSurfaceTool, PAGE_TOOLS, validateInput, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS } from './catalog.mjs';
+import {getTool as getOperation} from './operation-contracts.mjs';
+import {guideResult} from './guide.mjs';
+import {textHead, textBytes, textTargets, textScope, exactMatches, textContext, excerptRow, planTextChanges, fencedBlocks, blockText, projectSegments, sourcePosition, expandedChanges, keptRangesAfterSplice} from './text-surface.mjs';
+const getTool = name => getSurfaceTool(name) || getOperation(name);
+import { FIND_KINDS } from './structure-request.mjs';
+import { _rapierTransformSplices as transformSplices, _rapierMetadataDelta as metadataDelta, _rapierTransformMetadata as transformMetadata, _rapierHasHistoryEffect as hasHistoryEffect, _rapierHistoryEffects as historyEffects, _rapierValidMetadata as validMetadata } from '../kit/ledger/journal-records.mjs';
+import { pairMarkers, pairInkSpans, scanInkMarkers, hasInkMarker } from '../spec/md-marks.mjs';
+import { markdownSourcePositions } from '../spec/md-source.mjs';
+import {parseComments, commentThreads, commentAnchor, commentSourceRange, commentSplices, writeComments, commentSummary, commentChanges, commentSpliceParts, commentUndoSplice, commentRestoreSplice, imageCommentTarget} from './comments.mjs';
+import {visualRequest, visualResult} from './visual.mjs';
+import {paintUndoPlan, paintUndoChanges} from './paint-undo.mjs';
+import {readPainting} from './paint-summary.mjs';
+export {paintUndoChanges};
+import {historyProjection, sourceBefore, selectiveUndo} from '../kit/ledger/history.mjs';
+import {EDITOR_TOOL_ACTIONS, editorRequest, editorResult, editorContext as projectEditorContext} from './editor.mjs';
+import {TOOL_RESULT_BYTES, PAGE_RESULT_BYTES, resultBytes, boundedResult, modelReply} from './page-result.mjs';
+import {editPassage} from './edit-passage.mjs';
+export {PAGE_RESULT_BYTES, resultBytes, boundedResult, modelReply};
+import {materialRequest, materialDescription, materialMatches, admitMaterialResult} from './material.mjs';
+import {waterActionsFault, waterPaperById, waterProFeature} from '../draw/water-data.mjs';
+import {journalOperations} from '../kit/ledger/journal-records.mjs';
+
+export { transformSplices };
+export { materialMatches, admitMaterialResult };
+
+export const showTarget = input => input.target || (input.view ? 'view' : input.question ? 'ask' : input.preference !== undefined ? 'preferences'
+  : input.close || input.compare_id ? 'comparison' : input.code !== undefined ? 'pair' : input.note ? 'note' : input.words !== undefined ? 'pointer'
+  : input.act || input.turn_id || input.name !== undefined && input.text !== undefined ? 'comparison' : 'passage');
+export const REVISION_FORMS = 'Pass revision as the integer read or open returned (a decimal string of it also works), or, while a drawing is live, the exact "n:hash" string read returned.';
+export function revisionNumber(value) {
+  if (Number.isSafeInteger(value) && value >= 0) return value;
+  const match = typeof value === 'string' && /^(0|[1-9]\d{0,15})(?::[0-9a-f]{64})?$/.exec(value);
+  return match && Number.isSafeInteger(Number(match[1])) ? Number(match[1]) : null;
+}
+export function exportFilename(filename, format) {
+  const carried = /\.rapier\.html$/i.exec(filename);
+  if (format === 'markdown') return carried ? (filename.slice(0, carried.index) || 'document') + '.md' : filename;
+  if (format === 'html' && carried) return filename;
+  const suffix = format === 'html' ? '.rapier.html' : '.' + (format === 'page' ? 'html' : format);
+  const stem = carried ? filename.slice(0, carried.index) || 'document' : format === 'html' ? filename.replace(/\.(md|markdown|txt)$/i, '') : filename.replace(/\.[a-z0-9]+$/i, '') || 'document';
+  return [...stem].slice(0, MAX_FILENAME_CHARS - suffix.length).join('') + suffix;
+}
+
+export function exportFidelity(format, docKind = 'markdown') {
+  const representation = {markdown: 'source', html: 'offline-editor', txt: 'plain-text', page: 'rendered-page', docx: 'word', pdf: 'pdf'}[format];
+  return {representation, sourceEmbedded: ['html', 'page', 'docx', 'pdf'].includes(format),
+    ...(format === 'txt' ? docKind === 'markdown' ? {projection: 'copy-as-text', images: 'descriptions-and-urls', formatting: 'text-markers', addsFinalNewline: true}
+      : {projection: 'source', addsFinalNewline: false} : {}),
+    ...(format === 'page' ? {html: 'sanitized', images: 'embedded-bytes', code: 'highlighted',
+      equations: 'rendered-svg', mermaid: 'rendered-svg', layout: 'responsive', scripts: 'document-runtime'} : {}),
+    ...(format === 'pdf' ? {textLayer: 'searchable-unicode'} : {})};
+}
+
+export function admitExportArtifact(request, fact) {
+  if (!fact || fact.documentId !== request.documentId || fact.revision !== request.revision || fact.format !== request.format ||
+      (request.part?.sha256 ?? null) !== ((typeof fact.part === 'string' ? fact.part : fact.part?.sha256) ?? null))
+    return {reason: 'document_changed'};
+  if (fact.outcome !== 'ok') {
+    const reason = typeof fact.reason === 'string' ? fact.reason.slice(0, 128) : 'export_unavailable';
+    return {reason, ...(reason === 'export_too_large' ? {limitBytes: MAX_EXPORT_BYTES} : {}),
+      ...(typeof fact.picture === 'string' && fact.picture ? {picture: fact.picture.slice(0, 256), alt: typeof fact.alt === 'string' ? fact.alt.slice(0, 256) : ''} : {})};
+  }
+  const artifact = fact.artifact, mimeType = request.format === 'docx'
+    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : request.format === 'page' ? 'text/html' : 'application/pdf';
+  if (!artifact || artifact.mimeType !== mimeType || artifact.filename !== exportFilename(request.filename, request.format) || typeof artifact.data !== 'string')
+    return {reason: 'export_artifact_invalid'};
+  if (artifact.data.length > Math.ceil(MAX_EXPORT_BYTES / 3) * 4) return {reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES};
+  if (artifact.data.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(artifact.data)) return {reason: 'export_artifact_invalid'};
+  let data;
+  try { data = atob(artifact.data); } catch { return {reason: 'export_artifact_invalid'}; }
+  if (data.length > MAX_EXPORT_BYTES) return {reason: 'export_too_large', limitBytes: MAX_EXPORT_BYTES, byteLength: data.length};
+  if (request.format === 'docx' ? !data.startsWith('PK\x03\x04') : request.format === 'page' ? !/^<!doctype html>/i.test(data) : !data.startsWith('%PDF-')) return {reason: 'export_artifact_invalid'};
+  if (request.format === 'page') {
+    try { new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(data, char => char.charCodeAt(0))); }
+    catch { return {reason: 'export_artifact_invalid'}; }
+  }
+  if (request.format === 'pdf' && (!Number.isSafeInteger(artifact.pages) || artifact.pages < 1)) return {reason: 'export_artifact_invalid'};
+  return {name: artifact.filename, mimeType, bytes: Uint8Array.from(data, char => char.charCodeAt(0)), fidelity: exportFidelity(request.format),
+    ...(Number.isSafeInteger(artifact.pages) ? {pages: artifact.pages} : {}),
+    ...(Array.isArray(artifact.issues) ? {issues: artifact.issues.slice(0, 32).filter(row => row && typeof row.code === 'string').map(row => ({code: row.code.slice(0, 128),
+      ...(typeof row.severity === 'string' ? {severity: row.severity.slice(0, 32)} : {}), ...(Number.isSafeInteger(row.count) && row.count >= 0 ? {count: row.count} : {}),
+      ...(typeof row.message === 'string' ? {message: row.message.slice(0, 512)} : {})}))} : {})};
+}
+
+export const LIMITS = Object.freeze({
+  documentBytes: 64 * 1024 * 1024, editChars: 262144, drawingWorkChars: 786432, edits: 16,
+  readChars: 4096, resultBytes: TOOL_RESULT_BYTES, handles: 64, refs: 128, cursors: 64,
+  authorityBytes: 1024 * 1024, lifetimeMs: 300000, retryMs: 24 * 60 * 60 * 1000,
+  compareBytes: 8 * 1024 * 1024, compareLines: 100000, compareChanges: 1200,
+  humanContexts: 8, presenceMs: 15000, principals: 16, invocationKeys: 256,
+  drawAlt: 240,
+});
+const encoder = new TextEncoder();
+const clone = cloneSource;
+const bytes = value => encoder.encode(value).byteLength;
+const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+export const HINTS = {
+  query_invalid: 'Use at most 512 Unicode characters. Source word/code searches need words; empty comparison or Markdown-kind queries list items.',
+  case_sensitive_not_applicable: 'case_sensitive applies only to source word searches; omit it with kind or comparison scope.',
+  within_not_applicable: 'within narrows source searches only; omit it for comparison scope.',
+  draw_create_patch_conflict: 'Create with figures or recipe; shapes patches require an edit target with recipe_handle.',
+  context_has_no_block: 'This handle touches no source block. Omit target.context_handle to append before image definitions, or read an existing paragraph and use its handle to create after that block.',
+  draw_recipe_figures_conflict: 'Send recipe or figures, not both.',
+  draw_edit_recipe_conflict: 'Edit with recipe, shapes or operations; omit figures and do not combine recipe with shapes.',
+  draw_direction_conflict: 'Use the same direction in the call and recipe, or omit the call direction.',
+  draw_edit_empty: 'Supply alt, recipe, a nonempty shapes patch or operations for the inspected drawing.',
+  compare_byte_limit: 'The two sources exceed the ' + (LIMITS.compareBytes / 1024 / 1024) + ' MiB comparison limit; compare smaller documents.',
+  compare_line_limit: 'Keep the two comparison sources within ' + LIMITS.compareLines + ' combined lines.',
+  compare_too_complex: 'Compare fewer unrelated line changes, or show a smaller retained act.',
+  compare_change_limit: 'A comparison holds at most ' + LIMITS.compareChanges + ' change regions; compare fewer differences or a smaller retained act.',
+  return_unavailable: 'Return links belong to hosted workspaces; here use export to deliver an independent file.',
+  pairing_hosted_only: 'Pairing a browser belongs to hosted workspaces; this editor needs no pairing.',
+  save_unavailable: 'This host has no bound save destination; use export for an independent file.',
+  object_layout_dropped: 'Keep the object\'s md-layout:v1 line after its fence, or edit that line alone to change or remove placement.',
+  context_missing: 'This handle is unknown here or was consumed; read again for a fresh handle.',
+  context_expired: 'This reference has expired. For read, omit since. Otherwise, repeat the original discovery call for a fresh ref or handle.',
+  context_has_no_block: 'Read a nonempty source block and use its handle to place the drawing after that block, or omit context_handle to append.',
+  cursor_missing: 'This page cursor is unknown here or was consumed; repeat the original read, search or listing without a cursor.',
+  block_missing: 'No block has this id. read {as:"outline"} lists the headings and fences; a fence\'s id is on its opening line.',
+  heading_missing: 'No heading has this title; candidates lists close ones. read {as:"outline"} lists every heading.',
+  reference_missing: 'This ref is unknown here; read {as:"outline"} or read {query} again for a fresh ref.',
+  document_replaced: 'The document was replaced; read again before editing.',
+  document_changed: 'The document changed since this handle was read; read again and resend.',
+  foreground_hand_wins: 'The person is editing this range; wait for their hand to settle, then resend the same edit.',
+  invocation_key_collision: 'This operation already has a receipt; inspect the current document before starting another operation.',
+  target_changed: 'The passage changed since it was read; read again and resend.',
+  draw_surface_changed: 'The settled drawing changed; read its current occurrence again before editing.',
+  operation_retry_expired: 'The retry receipt has expired. Inspect the current document before starting another operation.',
+  context_handle_wrong_kind: 'This handle is not for this call: edit with a handle from read, read a comparison with a change handle, edit a drawing with its recipe_handle.',
+  authority_mismatch: 'This handle or ref belongs to another caller; obtain your own with read.',
+  change_missing: 'No such change; read lists changes since your last successful observation or supplied cursor.',
+  compare_not_open: 'No comparison is open; use show with target:comparison and text or an act.',
+  edits_overlap: 'Two edits cover the same text; merge them into one edit.',
+  batch_too_large: 'Send fewer edits in one call.',
+  draw_shape_limit: 'A drawing holds 1 to 128 shapes; send fewer.',
+  draw_alt_required: 'Give alt, a short caption of the drawing.',
+  draw_requires_markdown: 'Drawings live in Markdown documents only.',
+  draw_create_patch_conflict: 'Create with figures and alt first; shapes patches need target kind edit and recipe_handle from a complete drawing read.',
+  comment_anchor_missing: 'The on words are not in the document; quote exact words from a fresh read, or omit on to comment on the whole document.',
+  comment_anchor_ambiguous: 'The on words occur more than once; quote more of the passage so they occur once.',
+  act_and_turn_conflict: 'Pass act or turn_id, not both.',
+  act_or_turn_required: 'Pass act (from edit) or turn_id.',
+  note_fields_and_changes: 'With note, send fields or changes, not both.',
+  draw_session_open: 'The person has a drawing open in Draw; ask them to finish it with Done, then try again.',
+  revision_unknown: 'This document has not reached that revision; pass revision exactly as your latest read or open returned it.',
+  paint_strokes_invalid: 'Read the paint guide. A paint figure uses kind, id and seed with strokes, or mode water with paper and actions; geometry belongs in path points, not figure x/y/w/h.',
+  paint_kept_recipe_changed: 'Read the current block and keep its native material markers. To continue a layer, use shapes.replace with its id and new strokes or Water actions; shapes.add starts a new layer.',
+  material_request_expired: 'The material request expired without commitment. Once a visible editor is available, reread the target and use a new operation_id; Water also needs WebGPU.',
+  paint_history_full: 'This layer has reached its editable history limit. Continue on a new layer with shapes.add.',
+  paint_layer_full: 'This layer has reached its image size limit. Continue on a new layer with shapes.add.',
+  paint_mode_mismatch: 'Use mode:water and actions for a Water layer, or strokes for a Paint layer. Add a new layer with shapes.add to use another mode.',
+  paint_sheet_invalid: 'Read the drawing again for its current material, or add a new layer with shapes.add.',
+  paint_sample_unavailable: 'Material sampling is unavailable in this editor. Read the drawing recipe for its pigment and paper settings.',
+  paint_sample_invalid: 'Sample an existing Paint or Water layer at a point in its drawing coordinates.',
+  water_webgpu_unavailable: 'Water needs WebGPU in the active editor. The drawing is unchanged.',
+  water_pro_unavailable: 'Specialty pigments, Pro papers and Trace are only in the Android app, which agents cannot reach. Use the standard pigments and papers. The drawing is unchanged.',
+  WATER_BUDGET: 'This Water operation exceeds the live material budget. Use a smaller stroke or a new layer; the drawing is unchanged.',
+  WATER_REPLAY_BUDGET: 'This Water journal is full. Continue on a new layer; the drawing is unchanged.',
+  WATER_GPU_MEMORY: 'The graphics device could not allocate this Water operation. Use a smaller layer; the drawing is unchanged.',
+  WATER_GPU_FAILED: 'The graphics device refused this Water operation. The drawing is unchanged; reopen the editor before retrying.',
+  WATER_DEVICE_LOST: 'The Water graphics device is no longer available. The drawing is unchanged; reopen the editor before retrying.',
+  paint_replay_unavailable: 'This turn cannot be replayed separately from the retained material. The current drawing is unchanged.',
+  figures_invalid: 'Each figure names a kind from kinds and the fields the tool description lists for it.',
+  recipe_invalid: 'Send figures, or a recipe exactly as read returned it.',
+  target_over_edit_budget: 'Read the block, then edit it with shapes or operations instead of a whole recipe.',
+  document_law: 'The Will protects the source range named by start and end; keep it and edit another passage.',
+  human_edit_in_progress: 'The person is editing; wait for their input to settle, then read and retry.',
+  visual_render_unavailable: 'The page could not draw this as a picture; it may be showing the source. Read the text, or ask the person for the formatted view with show {target:"view", view:"formatted"}.',
+  editor_not_present: 'No editor is paired with this document. Share editor_url; if the person reads you a code, send show {target:"pair", code}. Or deliver a file with export.',
+  editor_unavailable: 'Open the paired Rapier editor and keep it visible for painting, sampling, visual inspection, Word or PDF. Without an editor, export markdown, html or txt.',
+  export_render_limit: 'This document is too large for the worker to write as txt or page; export markdown or html, or open it in Rapier for Word or PDF.',
+  export_render_unavailable: 'This host could not write the txt or page file; export markdown or html instead.',
+  presentation_already_pending: 'A reveal is already pending; check its view status with read before another.',
+  wait_already_pending: 'One wait at a time; the earlier wait must finish first.',
+  notes_folder_unreadable: 'Notes could not answer just now; try again later.',
+  notes_not_read: 'Read the whole note first, then write against its current source.',
+  notes_changed: 'The note changed after your read. Read it again before writing.',
+  notes_open: 'The live note is unavailable to this call. Read its current source before writing.',
+  notes_history_unavailable: 'The note\'s History could not retain the current words. The note is unchanged.',
+  world_changed: 'The document changed during the call; call again.',
+  kind_not_applicable: 'Code kinds search code, Markdown kinds search Markdown, and an open comparison takes no kind; search words with no kind.',
+  outline_changed: 'The document changed during the call; read {as:"outline"} again.',
+  search_changed: 'The document changed during the call; read {query} again.',
+  read_snapshot_changed: 'The document changed during the call; read again.',
+  comment_missing: 'Read the rapier-comment blocks for current thread ids before replying or resolving.',
+  comments_record: 'That range holds the document\'s comment threads; edit the text around it, and edit its rapier-comment blocks for discussions.',
+  comment_text_invalid: 'Send a nonempty comment of at most 4096 UTF-8 bytes.',
+  comment_anchor_invalid: 'Read the exact passage or drawing again, then use that handle and an existing object id.',
+  comments_appendix_unavailable: 'Finish the unclosed Markdown block at the end of the document before adding a comment.',
+};
+const FIGURE_KINDS = Object.freeze(['rect', 'ellipse', 'circle', 'triangle', 'diamond', 'hexagon', 'cylinder', 'subroutine', 'asymmetric', 'text', 'line', 'arrow', 'group', 'paint']);
+const failure = (reason, outcome = 'refused', detail = {}) => ({ outcome, reason, ...(HINTS[reason] && !Object.hasOwn(detail, 'hint') ? { hint: HINTS[reason] } : {}), ...detail });
+const recipeInvalid = fault => failure('recipe_invalid', 'invalid', fault ? { field: fault.field, hint: 'The recipe was refused at ' + fault.field + ': send it as document.read returned it, or with the values the tool description lists for it.' } : {});
+const accepted = value => ({ outcome: 'ok', ...value });
+function paragraphBreakAround(source, position) {
+  const before = source.slice(0, position), after = source.slice(position);
+  const eol = /\r\n|\r|\n/.exec(source)?.[0] || '\n';
+  const prefix = before && !/(?:\r\n|\r(?!\n)|\n){2}$/.test(before) ? (/[\r\n]$/.test(before) && !(before.endsWith('\r') && eol === '\n') ? eol : eol + eol) : '';
+  const suffix = after && !/^(?:\r\n|\r(?!\n)|\n){2}/.test(after) ? (/^[\r\n]/.test(after) && !(after.startsWith('\n') && eol === '\r') ? eol : eol + eol) : '';
+  return { prefix, suffix };
+}
+function lineEndingAt(source, end) {
+  let probe = end;
+  while (probe > 0 && (source[probe - 1] === '\n' || source[probe - 1] === '\r')) probe--;
+  const start = source.lastIndexOf('\n', probe - 1) + 1;
+  return { start, text: source.slice(start, probe), atLineEnd: end === probe || end === source.length || /[\r\n]/.test(source[end] || '') };
+}
+function atFenceBlockEnd(source, end) {
+  try {
+    const facts = outlineMarkdown(source, { limit: 0 }, markdownParser());
+    const blocks = facts.blocks?.entries || [];
+    return blocks.some(row => {
+      const nl = source.indexOf('\n', row.start);
+      const first = source.slice(row.start, nl < 0 || nl > row.end ? row.end : nl);
+      if (!/^[ \t]{0,3}(?:`{3,}|~{3,})/.test(first)) return false;
+      let contentEnd = row.end;
+      while (contentEnd > row.start && /[\r\n]/.test(source[contentEnd - 1])) contentEnd--;
+      return end === row.end || end === contentEnd;
+    });
+  } catch { return false; }
+}
+function needsParagraphBreakAfter(source, end) {
+  const line = lineEndingAt(source, end);
+  if (!line.atLineEnd || !line.text) return false;
+  const trimmed = line.text.replace(/^[ \t]{0,3}/, '');
+  if (/^>/.test(trimmed)) return true;
+  if (/^(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)/.test(trimmed)) return true;
+  if (/^(?:`{3,}|~{3,})/.test(trimmed)) return atFenceBlockEnd(source, end);
+  return false;
+}
+const safeInt = value => Number.isSafeInteger(value) && value >= 0;
+const bounded = (value, fallback, min, max) => value == null ? fallback : Math.max(min, Math.min(max, Math.floor(Number(value) || min)));
+export const waitTimeout = (value, bound = 120000) => bounded(value, Math.min(20000, bound), 1000, bound);
+const clip = (value, length) => {
+  const text = String(value == null ? '' : value);
+  let end = Math.min(text.length, length);
+
+  if (end && end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800) end--;
+  return text.slice(0, end);
+};
+function agentLabel(value) {
+  if (typeof value !== 'string') return '';
+  return clip(value.trim(), 64);
+}
+
+export function documentKind(filename) {
+  if (/\.rapier\.html$/i.test(String(filename || ''))) return 'markdown';
+  const ext = String(filename || '').split('.').pop().toLowerCase();
+  if (['md', 'markdown', 'mdown', 'mkd'].includes(ext)) return 'markdown';
+  return /^(?:js|mjs|cjs|ts|tsx|jsx|html|htm|css|scss|json|jsonc|py|rs|go|java|kt|kts|c|h|cc|cpp|hpp|cs|swift|rb|php|sh|bash|zsh|sql|yaml|yml|toml|xml|vue|svelte|lua|r|dart|ex|exs|pl|zig)$/.test(ext) ? 'code' : 'text';
+}
+
+function admissibleSnapshotText(value) {
+  if (typeof value !== 'string') return 'text_required';
+  if (value.length > LIMITS.documentBytes || value.length * 3 > LIMITS.documentBytes && textFacts(value).utf8 > LIMITS.documentBytes) return 'text_too_large';
+  if (textFacts(value).controls) return 'text_control_characters';
+  return '';
+}
+
+export function admissibleText(value) {
+  const invalid = admissibleSnapshotText(value);
+  if (invalid) return invalid;
+  return textFacts(value).lone ? 'text_not_utf8_text' : '';
+}
+
+function validName(value) {
+  return validMetadata({filename: value, docKind: 'markdown'});
+}
+
+export function minimalSplice(before, after) {
+  let start = 0, left = before.length, right = after.length;
+  while (start < left && start < right && before.charCodeAt(start) === after.charCodeAt(start)) start++;
+  if (!safeBoundary(before, start) || !safeBoundary(after, start)) start--;
+  while (left > start && right > start && before.charCodeAt(left - 1) === after.charCodeAt(right - 1)) { left--; right--; }
+  if (!safeBoundary(before, left) || !safeBoundary(after, right)) { left++; right++; }
+  return { pos: start, removed: before.slice(start, left), inserted: after.slice(start, right) };
+}
+
+
+function digest(text) {
+  let fnv = 0x811c9dc5, a = 1, b = 0;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    fnv = Math.imul(fnv ^ code, 16777619); a = (a + code) % 65521; b = (b + a) % 65521;
+  }
+  return `${text.length}:${fnv >>> 0}:${((b << 16) | a) >>> 0}`;
+}
+
+const sansView = recipe => { const {view, ...rest} = recipe; return rest; };
+export function canonicalJson(value) { return jsonText(value, true); }
+export function serializeJson(value) { return jsonText(value, false); }
+const canonicalDigest = value => sha256Parts(jsonValueParts(value, true));
+
+function sourceDrawing(text, label) {
+  const asset = documentAssets(text).assets.get(normalizeLabel(label));
+  if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) return null;
+  try {
+    const recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(asset.url)));
+    return recipe ? {asset, recipe} : null;
+  } catch { return null; }
+}
+
+export function verifyDrawingPatch(envelope, beforeText, afterText) {
+  return drawingPatchSource(expandDrawingPatch(envelope, beforeText, afterText), beforeText, afterText);
+}
+
+export function expandDrawingPatch(envelope, beforeText, afterText) {
+  if (!envelope || typeof envelope !== 'object') return null;
+  if (!envelope.sourceReplay) return clone(envelope);
+  try {
+    const {sourceReplay, ...metadata} = envelope;
+    if (typeof beforeText !== 'string' || typeof afterText !== 'string' ||
+        sourceReplay.beforeSha256 !== sha256(beforeText) || sourceReplay.afterSha256 !== sha256(afterText)) return null;
+    const before = sourceDrawing(beforeText, envelope.asset), after = sourceDrawing(afterText, envelope.reference);
+    if (!before || !after || sha256(before.asset.url) !== envelope.assetGeneration) return null;
+    const recipeBefore = sourceReplay.before ? _rapierDrawApplyShapesPatch(before.recipe, sourceReplay.before) : before.recipe;
+    const recipeAfter = sourceReplay.after ? _rapierDrawApplyShapesPatch(after.recipe, sourceReplay.after) : after.recipe;
+    const patch = _rapierDrawRecipeDelta(recipeBefore, recipeAfter);
+    if (!patch) return null;
+    return {...clone(metadata), sourceRecipeBefore: before.recipe, sourceRecipeAfter: after.recipe,
+      recipeBefore, recipeAfter, patch};
+  } catch { return null; }
+}
+
+export function expandJournalDrawingPatch(snapshot, transactionId) {
+  if (!snapshot || typeof snapshot.text !== 'string' || !Array.isArray(snapshot.journal)) return null;
+  try {
+    let after = snapshot.text, revision = snapshot.revision;
+    for (let index = snapshot.journal.length - 1; index >= 0; index--) {
+      const row = snapshot.journal[index];
+      if (!row || row.revision !== revision || !safeInt(row.baseRevision) || row.baseRevision + 1 !== revision) return null;
+      const before = transformSplices(after, row.splices, true);
+      if (before == null) return null;
+      if (row.id === transactionId) {
+        const expanded = expandDrawingPatch(row.drawingPatch, before, after);
+        return drawingPatchSource(expanded, before, after) ? expanded : null;
+      }
+      after = before; revision = row.baseRevision;
+    }
+  } catch { return null; }
+  return null;
+}
+
+export function expandDrawingIntent(intent, snapshot) {
+  if (!intent || intent.documentId !== snapshot?.documentId || !Array.isArray(snapshot.journal)) return null;
+  const entry = snapshot.journal.find(row => row.id === intent.transactionId);
+  if (!entry?.drawingIntent || entry.drawingIntent.documentId !== snapshot.documentId ||
+      entry.drawingIntent.revision !== snapshot.revision || intent.revision !== snapshot.revision ||
+      !['pending', 'replaying'].includes(entry.drawingIntent.status)) return null;
+  if (entry.drawingIntent.patchRequired && !entry.drawingPatch) return null;
+  const drawingPatch = entry.drawingPatch ? expandJournalDrawingPatch(snapshot, entry.id) : null;
+  if (entry.drawingPatch && !drawingPatch) return null;
+  return {...clone(entry.drawingIntent), ...(drawingPatch ? {drawingPatch} : {})};
+}
+
+function compactDrawingPatch(envelope, beforeText, afterText) {
+  const expanded = expandDrawingPatch(envelope, beforeText, afterText);
+  if (!drawingPatchSource(expanded, beforeText, afterText)) return null;
+  const {sourceRecipeBefore, sourceRecipeAfter, recipeBefore, recipeAfter, patch, ...metadata} = expanded;
+  const delta = (from, to) => _rapierDrawRecipeDelta(JSON.parse(canonicalJson(from)), JSON.parse(canonicalJson(to)));
+  const before = delta(sourceRecipeBefore, recipeBefore);
+  const after = delta(sourceRecipeAfter, recipeAfter);
+  if (!before || !after) return null;
+  const compact = {...metadata, sourceReplay: {beforeSha256: sha256(beforeText), afterSha256: sha256(afterText),
+    ...(Object.keys(before).length ? {before} : {}), ...(Object.keys(after).length ? {after} : {})}};
+  const restored = expandDrawingPatch(compact, beforeText, afterText);
+  if (!restored || canonicalJson(restored.recipeBefore) !== canonicalJson(recipeBefore) ||
+      canonicalJson(restored.recipeAfter) !== canonicalJson(recipeAfter) || !drawingPatchSource(restored, beforeText, afterText)) return null;
+  return compact;
+}
+
+function drawingLabelsOwnCaption(beforeAlt, afterAlt, beforeRecipe, afterRecipe) {
+  return (!beforeAlt || beforeAlt === escapeImageAlt(_rapierDrawTextAlternative(beforeRecipe))) &&
+    afterAlt === escapeImageAlt(_rapierDrawTextAlternative(afterRecipe));
+}
+
+function drawingPatchSource(envelope, beforeText, afterText, restoreDefinition = false) {
+  try {
+    if (!envelope || typeof beforeText !== 'string' || typeof afterText !== 'string' ||
+        !envelope.occurrence || !envelope.targetOccurrence) return false;
+    const before = sourceDrawing(beforeText, envelope.asset), after = sourceDrawing(afterText, envelope.reference);
+    if (!before || !after || canonicalJson(before.recipe) !== canonicalJson(envelope.sourceRecipeBefore) ||
+        canonicalJson(after.recipe) !== canonicalJson(envelope.sourceRecipeAfter)) return false;
+    if (envelope.assetGeneration !== sha256(before.asset.url)) return false;
+    const applied = _rapierDrawApplyShapesPatch(envelope.recipeBefore, envelope.patch);
+    const admitted = applied && _rapierDrawAdmitRecipe(applied), expected = _rapierDrawAdmitRecipe(envelope.recipeAfter);
+    if (!admitted || !expected || canonicalJson(admitted) !== canonicalJson(expected)) return false;
+    const occurrence = envelope.occurrence, target = envelope.targetOccurrence;
+    if (![occurrence.start, occurrence.end, target.start, target.end].every(safeInt) ||
+        occurrence.end <= occurrence.start || target.end <= target.start) return false;
+    const oldText = beforeText.slice(occurrence.start, occurrence.end), newText = afterText.slice(target.start, target.end);
+    const oldRef = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\]$/.exec(oldText);
+    const newRef = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\]$/.exec(newText);
+    if (!oldRef || !newRef) return false;
+    const labelsOwnCaption = envelope.undo === true
+      ? drawingLabelsOwnCaption(newRef[1], oldRef[1], after.recipe, before.recipe)
+      : drawingLabelsOwnCaption(oldRef[1], newRef[1], before.recipe, after.recipe);
+    if ((oldRef[1] !== newRef[1] && !labelsOwnCaption) || normalizeLabel(oldRef[2]) !== normalizeLabel(envelope.asset) ||
+        normalizeLabel(newRef[2]) !== normalizeLabel(envelope.reference) ||
+        normalizeLabel(occurrence.reference) !== normalizeLabel(envelope.asset) ||
+        normalizeLabel(target.reference) !== normalizeLabel(envelope.reference)) return false;
+    if (envelope.undo === true) {
+      return drawingPatchSource({...envelope, undo: false, asset: envelope.reference, reference: envelope.asset,
+        occurrence: target, targetOccurrence: occurrence, assetGeneration: sha256(after.asset.url), sourceRecipeBefore: after.recipe, sourceRecipeAfter: before.recipe,
+        recipeBefore: envelope.recipeAfter, recipeAfter: envelope.recipeBefore,
+        patch: _rapierDrawRecipeDelta(envelope.recipeAfter, envelope.recipeBefore)}, afterText, beforeText, true);
+    }
+    if (canonicalJson(envelope.recipeAfter) !== canonicalJson(after.recipe)) return false;
+    const rows = [{pos: occurrence.start, removed: oldText, inserted: newText}];
+    if (envelope.blockId) {
+      const marker = '<!-- rapier-block:' + envelope.blockId + ' rapier-draw -->\n\n';
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(envelope.blockId) || !afterText.slice(0,target.start).endsWith(marker)) return false;
+      if (!beforeText.slice(0,occurrence.start).endsWith(marker)) rows.push({pos:occurrence.start,removed:'',inserted:marker});
+    }
+    let text = transformSplices(beforeText, rows);
+    if (text == null) return false;
+    const retired = imageDeletionSplices(beforeText, text, rows, 'agent');
+    if (retired.length) { text = transformSplices(text, retired); rows.push(...retired); }
+    const asset = {...after.asset, label: envelope.reference, id: normalizeLabel(envelope.reference)};
+    const eol = /^(?:\r\n|\n|\r)/.exec(afterText.slice(after.asset.end))?.[0] || /\r\n|\n|\r/.exec(text)?.[0] || '\n';
+    const appended = appendAssetText(text, asset, eol);
+    const matches = (source, addition = null) => {
+      const comments = commentSplices(beforeText, addition ? rows.concat(addition) : rows);
+      return (comments.length ? transformSplices(source, comments) : source) === afterText;
+    };
+    if (matches(appended.source, appended.added ? {pos: text.length, removed: '', inserted: appended.suffix} : null)) return true;
+    if (!restoreDefinition || !appended.added) return false;
+    let start = after.asset.start;
+    const keptComments = parseComments(text).record, finalComments = parseComments(afterText).record;
+    if (keptComments && finalComments && finalComments.end <= start) start -= finalComments.raw.length - keptComments.raw.length;
+    for (const separator of ['', eol, eol + eol]) {
+      const position = start - separator.length;
+      if (!safeInt(position) || position > text.length) continue;
+      const restored = appendAssetText(text.slice(0, position), asset, eol);
+      if (restored.added && matches(restored.source + text.slice(position),
+        {pos: position, removed: '', inserted: restored.suffix})) return true;
+    }
+    return false;
+  } catch { return false; }
+}
+
+export function receiptStructureEligible(filename) {
+  return /\.(?:[cm]?js|html?)$/i.test(String(filename || '')) && !/\.rapier\.html$/i.test(String(filename || ''));
+}
+
+export function receiptStructureFact(beforeText, afterText, value) {
+  const before = value?.before, after = value?.after;
+  if (!before || !after) return { parse: 'not_checked', reason: value?.reason || 'structure_unavailable' };
+  const groups = rows => {
+    const map = new Map();
+    for (const row of rows) {
+      const key = JSON.stringify([row.kind || '', row.container || '', row.name || '']);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    }
+    return map;
+  };
+  const beforeRows = before.declarations || [], afterRows = after.declarations || [];
+  const beforeMap = groups(beforeRows), afterMap = groups(afterRows);
+  const added = [], removed = [], changed = [];
+  const label = (text, limit) => clip(String(text || ''), limit);
+  const valid = (text, row) => safeInt(row.start) && safeInt(row.end) && row.start <= row.end && row.end <= text.length;
+  const same = (prior, row) => valid(beforeText, prior) && valid(afterText, row) &&
+    beforeText.slice(prior.start, prior.end) === afterText.slice(row.start, row.end);
+  const omissions = [];
+  let skipped = 0;
+  const omit = (reason, count) => {
+    skipped += count;
+    if (!omissions.some(row => row.reason === reason)) omissions.push({domain: 'declarations', reason});
+  };
+  const comparable = before.complete === true && after.complete === true;
+  if (!comparable) {
+    omit('incomplete_declarations', beforeRows.length + afterRows.length);
+  } else for (const id of new Set([...afterMap.keys(), ...beforeMap.keys()])) {
+    const prior = beforeMap.get(id) || [], rows = afterMap.get(id) || [];
+    if (prior.length > 1 || rows.length > 1) {
+      if (prior.length !== rows.length || !rows.every((row, index) => same(prior[index], row)))
+        omit('ambiguous_duplicate_declarations', prior.length + rows.length);
+      continue;
+    }
+    const row = rows[0], previous = prior[0], name = label((row || previous).name || (row || previous).label || id, 128);
+    if (row && !valid(afterText, row) || previous && !valid(beforeText, previous))
+      omit('invalid_declaration_range', prior.length + rows.length);
+    else if (!previous) added.push(name);
+    else if (!row) removed.push(name);
+    else if (!same(previous, row)) changed.push(name);
+  }
+  const introduced = after.status === 'syntax_error' && before.status === 'ok' && before.complete === true;
+  const parse = after.status === 'syntax_error' ? (introduced ? 'introduced_parse_failure' : 'syntax_error')
+    : after.status === 'ok' && after.complete === true ? 'ok' : 'not_checked';
+  const complete = value.complete === true && comparable && omissions.length === 0;
+  omissions.push(...value.omissions || []);
+  return { engine: value.engine || 'acorn@8.19.0',
+    parse, ...(parse === 'not_checked' ? { reason: after.status || 'structure_unavailable' } : {}),
+    complete,
+    added_declarations: added.slice(0, 8), removed_declarations: removed.slice(0, 8), changed_declarations: changed.slice(0, 8),
+    omitted: skipped + Math.max(0, added.length - 8) + Math.max(0, removed.length - 8) + Math.max(0, changed.length - 8),
+    ...(omissions.length ? { omissions: omissions.slice(0, 3).map(row => ({ domain: row.domain, reason: row.reason })) } : {}) };
+}
+
+function historyAuthor(value, kind) {
+  const text = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit &&
+    value.isWellFormed() && !/[\u0000-\u001f\u007f]/.test(value);
+  if (!value || value.kind !== kind || !text(value.id, 160) ||
+      (value.name !== undefined && !text(value.name, 120))) throw new TypeError('history_author_invalid');
+  return {kind, id: value.id, ...(value.name === undefined ? {} : {name: value.name})};
+}
+
+function historyTurn(value) {
+  const fields = {};
+  for (const [key, limit] of [['turnId', 160], ['turnLabel', 120]]) {
+    if (value[key] === undefined) continue;
+    if (typeof value[key] !== 'string' || !value[key].length || value[key].length > limit ||
+        !value[key].isWellFormed() || /[\u0000-\u001f\u007f]/.test(value[key])) throw new TypeError('history_turn_invalid');
+    fields[key] = value[key];
+  }
+  return fields;
+}
+
+function participantIdentity(context = {}, mintId, authors) {
+  const source = typeof context.actor === 'object' ? context.actor.kind : context.actor;
+  const actor = source || 'agent';
+  const principal = String(context.principal || (typeof context.actor === 'object' ? context.actor.id : '') || 'session');
+  if (!['human', 'agent', 'system'].includes(actor) || !principal || principal.length > 160) throw new TypeError('Invalid participant');
+  const hostAgent = actor === 'agent' && typeof context.hostAgent === 'string' ? context.hostAgent : '';
+  if (hostAgent) agentActorId('agent', {name: hostAgent});
+  const agent = agentLabel(context.agent);
+  const identity = JSON.stringify([String(context.transport || 'platform'), actor, principal]);
+  let author = context.author;
+  if (!author) {
+    let id = authors[identity];
+    if (!id) { id = actor === 'human' && principal === 'local' ? 'local' : mintId('author_'); authors[identity] = id; }
+    author = {kind: actor, id, ...(hostAgent || agent ? {name: hostAgent || agent} : {})};
+  }
+  author = historyAuthor(author, actor);
+  return { actor, principal, author, ...historyTurn(context), ...(hostAgent ? {hostAgent} : {}), ...(agent ? {agent} : {}), transport: String(context.transport || 'platform'), requestId: clip(context.requestId || mintId('call_'), 160),
+    invocationKey: clip(context.invocationKey || mintId('key_'), 160) };
+}
+const ownerOf = who => `${who.transport}:${who.actor}:${who.principal}`;
+const sameOwner = (record, who) => record.owner === ownerOf(who);
+
+export function createState({ id, documentId, filename = 'Untitled.md', text = '', docKind, revision = 0, mintId } = {}) {
+  const invalid = admissibleSnapshotText(text);
+  if (invalid || !validName(filename)) throw new TypeError(invalid || 'filename_invalid');
+  const kind = docKind || documentKind(filename);
+  if (!['markdown', 'text', 'code'].includes(kind)) throw new TypeError('document_kind_invalid');
+  const resolvedId = documentId || id || (typeof mintId === 'function' ? mintId('doc_') : null);
+  if (!resolvedId) throw new TypeError('document_id_required');
+  return {
+    documentId: String(resolvedId), revision: safeInt(revision) ? revision : 0,
+    filename, docKind: kind, text, selection: null, focus: null, drawing: null,
+    journal: [], handles: {}, refs: {}, cursors: {}, compare: null, pointers: {},
+    humanContexts: {}, contextSequences: {}, resume: {}, ledgerRoot: null, authorIdentities: {},
+    history: { earliestRevision: safeInt(revision) ? revision : 0, trimmedBytes: 0, complete: true },
+    clock: 0,
+  };
+}
+
+function touchesCommentRecord(text, splices, kind = 'markdown') {
+  const record = text.includes('md-comments:') ? parseComments(text).record : null;
+  if (!record) return false;
+  if (kind !== 'markdown') return true;
+  const changed = transformSplices(text, splices);
+  return changed == null || parseComments(changed).record?.raw !== record.raw;
+}
+
+function regionVerdict(will, splice) {
+  if (will.faults.length) return { law: 'keep', rule: 'before_faulted', faults: willFaults(will) };
+  const start = splice.pos, end = start + splice.removed.length;
+  const marker = willTouchesMarker(will, start, end);
+  if (marker) return { law: marker.law, rule: 'marker_span_touched', ...(safeInt(marker.index) ? { region: marker.index } : {}) };
+  for (const region of willRegionsIn(will, start, end)) {
+    if (region.law === 'keep') return { law: 'keep', rule: 'law_violated', region: region.index };
+    if (region.law !== 'append') continue;
+    if (start < region.start || end > region.end) return { law: 'append', rule: 'law_violated', region: region.index };
+    const before = stripOneTerminator(will.text.slice(region.start, region.end));
+    const after = will.text.slice(region.start, start) + splice.inserted + will.text.slice(end, region.end);
+    if (!stripOneTerminator(after).startsWith(before)) return { law: 'append', rule: 'law_violated', region: region.index };
+  }
+  return null;
+}
+
+export function imageDeletionSplices(before, after, splices, actor = 'human') {
+  const images = retireDeletedImageDefinitions(before, after, splices), posters = retiredPosterSplices(before, after, splices, images);
+  const rows = posters.length ? [...images, ...posters].sort((a, b) => b.pos - a.pos) : images;
+  if (!rows.length || actor !== 'agent') return rows;
+  const will = parseWill(after);
+  return rows.filter(row => !regionVerdict(will, row));
+}
+
+export function inkDeletionSplices(before, after, splices, actor = 'human', markers = null) {
+  if (!scanInkMarkers(before).some(marker => marker.mark?.id != null)) {
+    const raw = scanInkMarkers(after);
+    if (!raw.some((marker, index) => index > 0 && raw[index - 1].end === marker.start)) return [];
+  }
+  return markerDeletionSplices(before, after, splices, actor, 'ink', markers);
+}
+
+
+function markerTextOffsets(markers) {
+  const offsets = new Map();
+  let hidden = 0;
+  for (const marker of markers) {
+    offsets.set(marker.start, marker.start - hidden);
+    hidden += marker.end - marker.start;
+    offsets.set(marker.end, marker.end - hidden);
+  }
+  return offsets;
+}
+
+function semanticMarkers(source, kind) {
+  const markers = scanInkMarkers(source);
+  if (!markers.length) return markers;
+  const positions = markdownSourcePositions(source, markdownParser());
+  return markers.filter(marker => !positions.isText(marker.start) && positions.isComment(marker.start, marker.end));
+}
+
+function markerBroken(before, after, rows, kind) {
+  const beforeMarkers = semanticMarkers(before, kind), afterMarkers = semanticMarkers(after, kind);
+  const was = pairMarkers(before, kind, beforeMarkers).runs;
+  if (!was.length && !rows.some(row => hasInkMarker(row.inserted))) return null;
+  const now = pairMarkers(after, kind, afterMarkers);
+  const boundaries = was.flatMap(run => [{start: run.start, end: run.innerStart, run}, {start: run.innerEnd, end: run.end, run}]).sort((a, b) => a.start - b.start);
+  const pairAt = at => {
+    let low = 0, high = boundaries.length;
+    while (low < high) { const mid = (low + high) >> 1; if (boundaries[mid].end <= at) low = mid + 1; else high = mid; }
+    const boundary = boundaries[low];
+    return boundary && at >= boundary.start ? boundary.run : null;
+  };
+  for (const stray of now.strays) {
+    for (let at = stray.start; at < stray.end; at++) {
+      const from = markerOffsetBefore(rows, at), pair = from >= 0 && pairAt(from);
+      if (pair) return { rule: 'marker_stranded', start: pair.start, end: pair.end };
+    }
+  }
+  const emptyCount = (runs, markers) => {
+    const offsets = kind === 'ink' ? markerTextOffsets(markers) : null;
+    return runs.filter(run => offsets ? offsets.get(run.innerStart) === offsets.get(run.innerEnd) : run.innerStart === run.innerEnd).length;
+  };
+  return emptyCount(now.runs, afterMarkers) > emptyCount(was, beforeMarkers) ? { rule: 'pair_emptied' } : null;
+}
+
+function markerDeletionSplices(before, after, rows, actor, kind, semantic = null) {
+  const markersBefore = semantic?.before ?? semanticMarkers(before, kind);
+  const previous = pairMarkers(before, kind, markersBefore);
+  const beforeOffsets = kind === 'ink' ? markerTextOffsets(markersBefore) : null;
+  const hasWords = (run, offsets) => offsets ? offsets.get(run.innerEnd) > offsets.get(run.innerStart) : run.innerEnd > run.innerStart;
+  const opened = new Set(), closed = new Set();
+  for (const run of previous.runs) if (hasWords(run, beforeOffsets)) { opened.add(run.start); closed.add(run.innerEnd); }
+  if (!opened.size) return [];
+  const unchanged = (start, end) => {
+    const from = markerOffsetBefore(rows, start), last = markerOffsetBefore(rows, end - 1);
+    return from >= 0 && last === from + end - 1 - start && before.slice(from, from + end - start) === after.slice(start, end) ? from : -1;
+  };
+  const markersAfter = semantic?.after ?? semanticMarkers(after, kind);
+  const afterOffsets = kind === 'ink' ? markerTextOffsets(markersAfter) : null;
+  const current = (kind === 'ink' ? pairInkSpans(after, markersAfter) : pairMarkers(after, kind, markersAfter)).runs;
+  const intact = run => opened.has(unchanged(run.start, run.innerStart)) && closed.has(unchanged(run.innerEnd, run.end));
+  let groups = current.filter(run => run.mark?.id == null && !hasWords(run, afterOffsets) && intact(run)).map(run => [run]);
+  if (previous.arrows?.length) {
+    const byId = new Map();
+    for (const run of current) if (run.mark.id != null) {
+      if (!byId.has(run.mark.id)) byId.set(run.mark.id, []);
+      byId.get(run.mark.id).push(run);
+    }
+    for (const arrow of previous.arrows) {
+      if ([arrow.tail, arrow.head].some(run => !hasWords(run, beforeOffsets))) continue;
+      const present = byId.get(arrow.id) || [];
+      const originals = present.filter(run => intact(run) && [arrow.tail.start, arrow.head.start].includes(unchanged(run.start, run.innerStart)));
+      if (originals.length === 2 && originals.every(run => hasWords(run, afterOffsets))) continue;
+      if (present.length === 2 && present[0].mark.kind !== present[1].mark.kind && present.every(run => hasWords(run, afterOffsets))) continue;
+      if (present.length <= 2 && new Set(present.map(run => run.mark.kind)).size === present.length) groups.push(present);
+      else if (originals.length) groups.push(originals);
+    }
+  }
+  const markers = run => [{ start: run.start, end: run.innerStart }, { start: run.innerEnd, end: run.end }];
+  if (groups.length && actor === 'agent') {
+    const will = parseWill(after);
+    groups = groups.filter(group => group.every(run => markers(run).every(marker => !regionVerdict(will,
+      { pos: marker.start, removed: after.slice(marker.start, marker.end), inserted: '' }))));
+  }
+  return groups.flat().flatMap(markers).sort((a, b) => b.start - a.start)
+    .map(marker => ({ pos: marker.start, removed: after.slice(marker.start, marker.end), inserted: '' }));
+}
+
+function pendingAssetSplices(text, drawAssets) {
+  if (!drawAssets?.length) return [];
+  const additions = [];
+  for (const asset of drawAssets) {
+    if (!asset || typeof asset.id !== 'string' || typeof asset.label !== 'string') continue;
+    const current = documentAssets(text);
+    if (current.references[asset.id]?.href === asset.url) continue;
+    const appended = appendAssetText(text, asset);
+    if (appended.added) { additions.push({ pos: text.length, removed: '', inserted: appended.suffix }); text = appended.source; }
+  }
+  return additions;
+}
+
+export function enforceWillReferences(beforeText, afterText, {before = parseWill(beforeText), after = parseWill(afterText),
+  restored = new Map(), bodyOnly = false, referenceCheck} = {}) {
+  const regions = [];
+  for (const region of before.regions) {
+    if (region.law === 'edit') continue;
+    const was = beforeText.slice(region.start, region.end), following = after.regions[region.index];
+    if (!following) return {law: region.law, rule: 'law_violated', region: region.index, ...lawBounds(region)};
+    if (restored.has(region.index)) {
+      const content = region.start + stripOneTerminator(was).length;
+      let from = region.start;
+      for (const row of restored.get(region.index).toSorted((a, b) => a.pos - b.pos)) {
+        if (row.pos > from) regions.push({...region, start: from, end: row.pos, retained: true});
+        from = Math.max(from, row.pos + row.removed.length);
+      }
+      if (from < content) regions.push({...region, start: from, end: content, retained: true});
+      continue;
+    }
+    const length = region.law === 'append' ? stripOneTerminator(was).length : was.length;
+    if (length) regions.push({...region, end: region.start + length});
+  }
+  if (!regions.length) return null;
+  let index;
+  try { index = referenceCheck ? referenceCheck(beforeText, afterText, regions)
+    : changedReferenceRegion(beforeText, afterText, regions, undefined, bodyOnly); }
+  catch (_) { return {law: regions[0].law, rule: 'law_violated', region: regions[0].index, ...lawBounds(before.regions[regions[0].index])}; }
+  const region = regions.find(row => row.index === index);
+  return region ? {law: region.law, rule: 'law_violated', region: region.index, ...lawBounds(before.regions[region.index])} : null;
+}
+
+const lawBounds = region => ({start: region.start, end: region.end});
+const willFaults = will => will.faults.slice(0, 4).map(fault => ({ mode: fault.mode, line: fault.line }));
+export function enforceWill(beforeText, afterText, splices, {docKind = 'markdown', actor = 'agent', restores = null, referenceCheck, markerSplices = splices} = {}) {
+  if (actor !== 'agent' || docKind !== 'markdown') return null;
+  const restored = new Map();
+  const refusal = willTransition(beforeText, afterText, splices, markerSplices, {restores, restored});
+  if (refusal) return refusal;
+  const before = parseWill(beforeText), after = parseWill(afterText);
+  if (!before.present && !after.present) return null;
+  let framed;
+  try { framed = changedWillFraming(beforeText, afterText, before.regions, after.regions); }
+  catch (_) { framed = before.regions.find(region => region.law !== 'edit')?.index ?? null; }
+  if (framed != null) return { law: before.regions[framed].law, rule: 'law_violated', region: framed, ...lawBounds(before.regions[framed]) };
+  return enforceWillReferences(beforeText, afterText, {before, after, restored, referenceCheck});
+}
+
+function overlap(range, splice) {
+  if (!range || !safeInt(range.start) || !safeInt(range.end)) return false;
+  const start = splice.pos, end = start + splice.removed.length;
+  if (range.start === range.end) return start <= range.start && range.start <= end;
+  if (start === end) return range.start < start && start < range.end;
+  return range.start < end && start < range.end;
+}
+
+function safeBoundary(text, offset) {
+  return safeInt(offset) && offset <= text.length && !(offset > 0 && offset < text.length &&
+    (text.charCodeAt(offset - 1) & 0xfc00) === 0xd800 && (text.charCodeAt(offset) & 0xfc00) === 0xdc00);
+}
+
+export function measurementsRequired(op, args = {}) {
+  if (op === 'document.outline') return { structure: { mode: 'outline' } };
+  if (op === 'document.find' && typeof args.kind === 'string' && !args.cursor) {
+    return { structure: { mode: 'find', query: args.query, kind: args.kind, within: args.within || null, offset: 0 } };
+  }
+  return null;
+}
+
+const seated = points => Array.isArray(points) && Array.isArray(points[0]) && Array.isArray(points[1]) && points.length > 1 &&
+  points[0].length === points[1].length && points[0].every((value, index) => value === points[1][index]);
+function inspectPaintRecord(paint) {
+  return paint ? {...paint,
+    ...(Array.isArray(paint.strokes) ? {strokes: paint.strokes.map(stroke => seated(stroke?.points) ? {...stroke, points: stroke.points.slice(1)} : stroke)} : {}),
+    ...(paint.actions ? {actions: {kept: true, count: paint.actions.length}} : {}),
+    ...(paint.replay ? {replay: {kept: true, entries: paint.replay.entries.length}} : {})} : paint;
+}
+export function disclosedRecipe(recipe) {
+  const {renditions, ...source} = recipe;
+  return {...source, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
+    raster: { kept: true, bytes: shape.raster.length, type: shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl' },
+    ...(shape.paint ? {paint: inspectPaintRecord(shape.paint)} : {})})};
+}
+
+const recipeTextDigests = new Map();
+export async function primeRecipeDigest(recipe, digestText) {
+  if (!recipe || typeof recipe !== 'object' || typeof digestText !== 'function') return false;
+  const admitted = _rapierDrawAdmitRecipe(recipe);
+  if (!admitted) return false;
+  const text = canonicalJson(admitted), digest = await digestText(text);
+  if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest)) return false;
+  recipeTextDigests.delete(text); recipeTextDigests.set(text, digest);
+  while (recipeTextDigests.size > 2) recipeTextDigests.delete(recipeTextDigests.keys().next().value);
+  return true;
+}
+const drawingRecipeDigests = [];
+function admittedDrawingRecipeDigest(recipe) {
+  const rasters = [], keepRaster = value => { rasters.push(value); return null; };
+  const metadata = canonicalJson({...recipe, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
+    raster: keepRaster(shape.raster), ...(shape.paint?.replay ? {paint: {...shape.paint, replay: {...shape.paint.replay,
+      baseRaster: keepRaster(shape.paint.replay.baseRaster)}}} : {})})});
+  const at = drawingRecipeDigests.findIndex(row => row.metadata === metadata && row.rasters.length === rasters.length &&
+    row.rasters.every((value, index) => value === rasters[index]));
+  if (at >= 0) {
+    const [row] = drawingRecipeDigests.splice(at, 1); drawingRecipeDigests.push(row);
+    return row.digest;
+  }
+  const text = canonicalJson(recipe), digest = recipeTextDigests.get(text) ?? sha256(text), chars = metadata.length + rasters.reduce((total, value) => total + (value?.length || 0), 0);
+  if (chars <= 32 * 1024 * 1024) {
+    drawingRecipeDigests.push({metadata, rasters, digest, chars});
+    while (drawingRecipeDigests.length > 4 || drawingRecipeDigests.reduce((total, row) => total + row.chars, 0) > 32 * 1024 * 1024)
+      drawingRecipeDigests.shift();
+  }
+  return digest;
+}
+export function drawingRecipeDigest(recipe) {
+  const admitted = _rapierDrawAdmitRecipe(recipe);
+  return admitted ? admittedDrawingRecipeDigest(admitted) : null;
+}
+
+export function createKernel({ state: supplied, host = {}, clock, mintId, invocationJournal: suppliedJournal, inFlight: suppliedInFlight = [] } = {}) {
+  if (typeof clock !== 'function') throw new TypeError('createKernel requires an injected clock');
+  if (typeof mintId !== 'function') throw new TypeError('createKernel requires an injected id minter');
+  let state = supplied ? clone(supplied) : createState({ mintId });
+  if (!state || typeof state.text !== 'string' || !state.documentId || !safeInt(state.revision) ||
+      !Array.isArray(state.journal) || !state.handles || !state.refs || !state.cursors || !state.history ||
+      !state.humanContexts || !state.contextSequences || !state.resume || !state.pointers) {
+    throw new TypeError('Invalid Rapier state');
+  }
+  const participant = context => {
+    if (!state.authorIdentities) state.authorIdentities = {};
+    return participantIdentity(context, mintId, state.authorIdentities);
+  };
+  let queue = Promise.resolve();
+  let outlineCache = null;
+  let imageCache = null;
+  let sourceFacts = null;
+  let waitPending = false;
+  const working = new Map();
+  const presenceKey = who => ownerOf(who) + '\u0000' + (who.agent || '');
+  const carriedWork = suppliedInFlight.map(context => participant(context, mintId)).filter(who => who.actor === 'agent').map(presenceKey);
+  const pendingFacts = new Map();
+  const invocationJournal = new Map(), readJournal = new Map(), spentJournal = new Map();
+  const reading = operation => getTool(operation)?.effect === 'read';
+  const short = value => String(value);
+  const invocationOwner = who => JSON.stringify([who.transport, who.actor, who.principal]);
+  const invocationScope = (key, owner, documentId) => JSON.stringify([owner, documentId, key]);
+  function bound() {
+    while (readJournal.size > LIMITS.invocationKeys) readJournal.delete(readJournal.keys().next().value);
+    const time = Math.max(Number(state.clock) || 0, clock());
+    for (const [scope, record] of invocationJournal) if (record.expiresAt <= time) {
+      invocationJournal.delete(scope);
+      const {key, owner, documentId, operation, settledRevision, expiresAt} = record;
+      spentJournal.set(scope, {key, owner, documentId, operation, settledRevision, expiresAt, digest: short(record.inputDigest)});
+    }
+  }
+  if (Array.isArray(suppliedJournal)) {
+    for (const entry of suppliedJournal) {
+      if (Array.isArray(entry?.spent)) {
+        for (const row of entry.spent) if (Array.isArray(row) && typeof row[0] === 'string' && row[0] &&
+            typeof row[2] === 'string' && typeof row[3] === 'string' && typeof row[4] === 'string' &&
+            typeof row[5] === 'string' && safeInt(row[6])) {
+          const [key, settledRevision, digest, owner, documentId, operation, expiresAt] = row;
+          spentJournal.set(invocationScope(key, owner, documentId), {key, owner, documentId, operation,
+            settledRevision: safeInt(settledRevision) ? settledRevision : 0, digest, expiresAt});
+        }
+        continue;
+      }
+      if (!entry || typeof entry.key !== 'string' || !entry.key || typeof entry.owner !== 'string' ||
+          typeof entry.operation !== 'string' || !entry.documentId || typeof entry.inputDigest !== 'string' || !safeInt(entry.expiresAt)) continue;
+      (reading(entry.operation) ? readJournal : invocationJournal).set(invocationScope(entry.key, entry.owner, entry.documentId),
+        {key: entry.key, owner: entry.owner, operation: entry.operation, documentId: entry.documentId,
+          settledRevision: safeInt(entry.settledRevision) ? entry.settledRevision : 0,
+          output: isOwnedJson(entry.output) ? entry.output : admitOwnedJson(clone(entry.output ?? {})),
+          inputDigest: entry.inputDigest, expiresAt: entry.expiresAt});
+    }
+    bound();
+  }
+  function recordInvocation(key, operation, documentId, output, inputDigest, who) {
+    if (!key) return;
+    const owner = invocationOwner(who), scope = invocationScope(key, owner, documentId);
+    const expiresAt = (invocationJournal.get(scope) || readJournal.get(scope) || spentJournal.get(scope))?.expiresAt ?? now() + LIMITS.retryMs;
+    invocationJournal.delete(scope); readJournal.delete(scope); spentJournal.delete(scope);
+    (reading(operation) ? readJournal : invocationJournal).set(scope,
+      {key, owner, operation, documentId, settledRevision: output.documentRevision, output: admitOwnedJson(clone(output)), inputDigest, expiresAt});
+    bound();
+  }
+  function priorInvocation(key, who) {
+    const scope = invocationScope(key, invocationOwner(who), state.documentId);
+    const whole = invocationJournal.get(scope) || readJournal.get(scope);
+    if (whole) return whole;
+    const spent = spentJournal.get(scope);
+    return spent ? {...spent, spent: true} : null;
+  }
+  function replayOf(prior, name, inputDigest) {
+    if (prior.operation !== name || (prior.spent ? prior.digest !== short(inputDigest) : prior.inputDigest !== inputDigest)) return null;
+    if (prior.spent || !reading(name) && now() >= prior.expiresAt) return stamp(failure('operation_retry_expired', 'refused', {retryExpiresAt: prior.expiresAt}));
+    const output = {...clone(prior.output), replayed: true};
+    if ((name === 'editor.point' || name === 'show') && output.pointerId) {
+      expireCollaboration();
+      const pointer = Object.values(state.pointers).find(row => row.id === output.pointerId);
+      const status = pointer?.status || 'expired';
+      Object.assign(output, {outcome: status, status});
+    }
+    return output;
+  }
+  const invocationCaller = (input, context) => {
+    const named = typeof input?.operation_id === 'string' && input.operation_id.length > 0 && input.operation_id.length <= 256 &&
+      [...input.operation_id].length <= 128 ? input.operation_id : null;
+    return participant(named ? {...context, invocationKey: 'operation_' + sha256(JSON.stringify(named))} : context, mintId);
+  };
+  function recordedInvocation(name, inputDigest, who) {
+    const prior = priorInvocation(who.invocationKey, who);
+    return prior ? replayOf(prior, name, inputDigest) || stamp(failure('invocation_key_collision', 'invalid')) : null;
+  }
+  function replay(name, input = {}, context = {}) {
+    if (documentGuardFailure(context)) return stamp(documentGuardFailure(context));
+    if (context.continues || context.rejectedInvocationKey) return null;
+    const inputDigest = canonicalDigest(input);
+    const who = invocationCaller(input, context);
+    const output = recordedInvocation(name, inputDigest, who);
+    if (name === 'document.observe' && output?.collaboration) {
+      output.collaboration.agentPresence = agentPresence({...who, ...(output.collaboration.agentPresence?.agent ? {agent: output.collaboration.agentPresence.agent} : {})}, false);
+    }
+    return output;
+  }
+  function invocationJournalEntries({readonly = false} = {}) {
+    bound();
+    const shareOwned = record => isOwnedJson(record.output) ? {...record} : clone(record);
+    return (spentJournal.size ? [{spent: [...spentJournal.values()].map(record => [record.key, record.settledRevision,
+      record.digest, record.owner, record.documentId, record.operation, record.expiresAt])}] : [])
+      .concat([...invocationJournal.values(), ...readJournal.values()].map(readonly ? shareOwned : clone));
+  }
+  const current = () => ({ documentId: state.documentId, documentRevision: state.revision, revision: state.revision, representation: 'source' });
+  const stamp = result => ({ ...current(), ...result });
+  const now = () => (state.clock = Math.max(Number(state.clock) || 0, clock()));
+  const cancelled = context => context.signal?.throwIfAborted();
+  const snapshot = () => clone(state);
+
+  function checkContinuation(context, mode) {
+    if (!context?.continues) return null;
+    const record = pendingFacts.get(context.continues);
+    if (!record) return failure('continuation_unknown', 'invalid');
+    if (record.documentId !== state.documentId) return failure('continuation_wrong_document', 'invalid');
+    if (record.mode !== mode) return failure('continuation_wrong_kind', 'invalid');
+    if (record.revision !== state.revision) {
+      pendingFacts.delete(context.continues);
+      return failure('world_changed', 'refused', { expectedRevision: record.revision });
+    }
+    return null;
+  }
+  function worldOrPending(context, mode, requirements, matchExtra) {
+    if (context?.continues) {
+      const bad = checkContinuation(context, mode);
+      if (bad) return { terminal: bad };
+      pendingFacts.delete(context.continues);
+    }
+    const fact = context?.world?.structure;
+    if (fact && fact.mode === mode && fact.revision === state.revision && fact.filename === state.filename &&
+        (!matchExtra || matchExtra(fact))) {
+      return { value: fact.value };
+    }
+    const requestId = mintId('fact_');
+    pendingFacts.set(requestId, { documentId: state.documentId, revision: state.revision, mode });
+    while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
+    return { terminal: { outcome: 'pending', reason: 'surface_fact_required', pending: { kind: 'surface-fact', requestId, requirements } } };
+  }
+
+  function worldHasFact(context, mode) {
+    const fact = context?.world?.structure;
+    return !!(fact && fact.mode === mode && fact.revision === state.revision && fact.filename === state.filename);
+  }
+
+  function expireCollaboration() {
+    const time = now();
+    for (const [key, row] of Object.entries(state.humanContexts)) {
+      if (row.expiresAt <= time) delete state.humanContexts[key];
+    }
+    for (const row of Object.values(state.pointers)) if (row.expiresAt <= time || row.documentId !== state.documentId) row.status = 'expired';
+  }
+
+  function agentPresence(who = null, excludeCurrent = false) {
+    expireCollaboration();
+    const key = who && presenceKey(who);
+    const localWork = who ? working.get(key)?.count || 0 : [...working.values()].reduce((n, row) => n + row.count, 0);
+    const inFlight = Math.max(0, localWork - (excludeCurrent ? 1 : 0)) + (who ? carriedWork.filter(value => value === key).length : carriedWork.length);
+    const pointers = (who ? [state.pointers[key]].filter(Boolean) : Object.values(state.pointers)).map(row => clone(row));
+    const active = inFlight > 0 || pointers.some(row => row.status === 'shown');
+    return who ? {active, inFlight, pointer: pointers[0] ? {id: pointers[0].id, status: pointers[0].status, expiresAt: pointers[0].expiresAt} : null,
+      ...(who.agent ? {agent: who.agent} : {})} : {active, inFlight, pointers};
+  }
+
+  function publishPresence() {
+    if (typeof host.presence === 'function') {
+      try { host.presence(agentPresence()); } catch {}
+    }
+  }
+
+  function pointResult(input, context = {}) {
+    humanParticipant(context);
+    expireCollaboration();
+    const row = Object.values(state.pointers).find(row => row.id === input.pointerId);
+    if (!row) return stamp(failure('pointer_missing', 'target_gone'));
+    if (!['shown', 'expired'].includes(input.status)) return stamp(failure('pointer_status_invalid', 'invalid'));
+    if (row.status !== 'expired') {
+      if (input.status === 'shown') for (const other of Object.values(state.pointers)) if (other !== row && other.status === 'shown') {
+        other.status = 'expired'; other.reason = 'pointer_replaced';
+      }
+      row.status = input.status;
+    }
+    if (input.reason) row.reason = clip(input.reason, 160);
+    publishPresence();
+    return stamp({outcome: row.status, status: row.status, pointerId: row.id, expires_at: row.expiresAt});
+  }
+
+  function continuationContext(will) {
+    const intents = will?.faults.length ? [] : (will?.regions || []).filter(row => row.intent);
+    return {person: {source: 'document', authority: false,
+      intents: intents.map(row => ({region: row.index, law: row.law, start: row.start, end: row.end, text: row.intent, source: 'document', authority: false})),
+      intentsComplete: !will?.faults.length, omittedIntents: 0,
+      intentsRead: {tool: 'document.read', arguments: {target: {kind: 'source'}}}}};
+  }
+
+  function normalizeDrawingReceipts(rows) {
+    return rows.flatMap(row => {
+      const entry = state.journal.find(entry => entry.id === row?.transactionId);
+      if (!entry || (!entry.drawingIntent && !entry.drawingPatch) ||
+          row.documentId != null && row.documentId !== state.documentId ||
+          !['incorporated', 'presentation_deferred', 'unavailable', 'uncertain'].includes(row.status)) return [];
+      const kept = {transactionId: entry.id, documentId: state.documentId, status: row.status,
+        ...(typeof row.reason === 'string' ? {reason: clip(row.reason, 128)} : {})};
+      const presented = row.presentation;
+      const targets = [entry.drawingIntent?.originalOccurrence, entry.drawingIntent?.occurrence, entry.drawingPatch?.targetOccurrence].filter(Boolean);
+      const target = targets.find(target => presented?.occurrence?.start === target.start && presented?.occurrence?.end === target.end &&
+        normalizeLabel(presented?.occurrence?.reference || '') === normalizeLabel(target.reference || entry.drawingIntent?.reference || '')) || targets[0];
+      if (presented != null) {
+        if (!['deferred', 'replaying', 'completed', 'skipped', 'interrupted', 'unavailable'].includes(presented.status)) return [];
+        if (presented.occurrence && (!target || presented.occurrence.start !== target.start || presented.occurrence.end !== target.end ||
+            normalizeLabel(presented.occurrence.reference || '') !== normalizeLabel(target.reference || entry.drawingIntent?.reference || ''))) return [];
+        if (['replaying', 'completed', 'skipped'].includes(presented.status) && (!presented.occurrence ||
+            typeof presented.session !== 'string' || !safeInt(presented.surfaceGeneration))) return [];
+        kept.presentation = {status: presented.status,
+          ...(typeof presented.session === 'string' && presented.session.length <= 128 ? {session: presented.session} : {}),
+          ...(safeInt(presented.surfaceGeneration) ? {surfaceGeneration: presented.surfaceGeneration} : {}),
+          ...(presented.occurrence ? {occurrence: clone(target)} : {})};
+      }
+      return [kept];
+    });
+  }
+
+  function drawingPresentationBinding() {
+    const row = Object.values(state.humanContexts).filter(row => row.visible && row.expiresAt > now() && row.revision === state.revision)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    return row ? {contextId: row.contextId, contextOwner: row.owner, navigationSequence: row.navigationSequence || 0} : null;
+  }
+
+  function pendingDrawingIntent() {
+    const entry = state.journal.find(row => ['pending', 'replaying'].includes(row.drawingIntent?.status));
+    if (!entry) return null;
+    return {...clone(entry.drawingIntent), ...(entry.drawingPatch ? {drawingPatch: clone(entry.drawingPatch)} : {})};
+  }
+
+  function drawingPatchForEntry(entry) {
+    return expandJournalDrawingPatch(state, entry.id);
+  }
+
+  function retireDrawingPresentation(entry, reason) {
+    const intent = entry.drawingIntent;
+    if (!intent || !['pending', 'replaying', 'awaiting_receipt'].includes(intent.status)) return;
+    intent.status = 'unavailable'; intent.reason = reason;
+    entry.drawingReceipt = {transactionId: entry.id, documentId: state.documentId, status: 'unavailable', reason,
+      presentation: {status: 'unavailable', reason}};
+    for (const record of invocationJournal.values()) if (record.output?.act?.id === entry.id) {
+      record.output = admitOwnedJson({...record.output, drawingReceipt: clone(entry.drawingReceipt),
+        ...(record.output.receipt ? {receipt: {...record.output.receipt, presentation: 'unavailable'}} : {})});
+    }
+  }
+
+  function drawingTurnSummary() {
+    const entry = state.journal.findLast(row => row.drawingIntent);
+    const intent = entry?.drawingIntent;
+    return intent ? {transactionId: entry.id, status: intent.status,
+      occurrence: clone(intent.occurrence), reference: intent.reference,
+      presentation: entry.drawingReceipt?.presentation ? clone(entry.drawingReceipt.presentation) : {status: intent.status}} : null;
+  }
+
+  function normalizeDrawing(value) {
+    if (value == null) return null;
+    if (!value || typeof value !== 'object' || value.open !== true || typeof value.session !== 'string' ||
+        !value.session || value.session.length > 128 || !safeInt(value.surfaceGeneration) || value.recipeReference != null) return false;
+    let occurrence = null;
+    if (value.occurrence != null) {
+      const row = value.occurrence;
+      if (!safeBoundary(state.text, row.start) || !safeBoundary(state.text, row.end) || row.end <= row.start ||
+          typeof row.reference !== 'string') return false;
+      const match = DRAW_OCCURRENCE.exec(state.text.slice(row.start, row.end));
+      const asset = documentAssets(state.text).assets.get(normalizeLabel(row.reference));
+      if (!match || normalizeLabel(match[2]) !== normalizeLabel(row.reference) || !asset ||
+          value.assetGeneration !== _rapierDrawAssetGeneration(asset.url)) return false;
+      occurrence = {reference: row.reference, position: row.start, start: row.start, end: row.end,
+        ...(row.blockId != null ? {blockId: String(row.blockId)} : {}),
+        ...(safeInt(row.imageIndex) ? {imageIndex: row.imageIndex} : {})};
+    } else if (value.assetGeneration != null) return false;
+    const result = {open: true, session: value.session, surfaceGeneration: value.surfaceGeneration,
+      assetGeneration: occurrence ? value.assetGeneration : null, occurrence};
+    if (!occurrence && value.held != null) {
+      if (!Array.isArray(value.held) || value.held.length > 8 || !value.held.every(row => row && safeBoundary(state.text, row.start) &&
+          safeBoundary(state.text, row.end) && row.start <= row.end)) return false;
+      result.held = value.held.map(row => ({start: row.start, end: row.end}));
+    }
+    const allowed = ['selectedObjects', 'paintTarget', 'bounds', 'transform', 'transforms', 'busy', 'tool', 'brushes', 'limits'];
+    for (const field of allowed) if (own(value, field)) result[field] = clone(value[field]);
+    if (bytes(JSON.stringify(result)) > LIMITS.authorityBytes) return false;
+    if (value.recipeDigest != null) {
+      if (typeof value.recipeDigest !== 'string' || !/^[a-f0-9]{64}$/.test(value.recipeDigest)) return false;
+      result.recipeDigest = value.recipeDigest;
+    }
+    if (typeof value.recipeUnavailable === 'string') result.recipeUnavailable = clip(value.recipeUnavailable, 128);
+    if (value.recipe != null) {
+      let text;
+      try { text = JSON.stringify(Array.isArray(value.recipe?.shapes) ? disclosedRecipe(value.recipe) : value.recipe); } catch (_) { return false; }
+      const recipe = _rapierDrawAdmitRecipe(value.recipe);
+      if (!recipe) return false;
+      const recipeDigest = admittedDrawingRecipeDigest(recipe);
+      if (result.recipeDigest && result.recipeDigest !== recipeDigest) return false;
+      result.recipeDigest = recipeDigest;
+      if (bytes(text) > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
+      else result.recipe = recipe;
+    }
+    if (Array.isArray(value.receipts)) result.receipts = normalizeDrawingReceipts(value.receipts);
+    if (value.event != null) {
+      const event = value.event;
+      if (event.kind !== 'human' || !safeInt(event.sequence) || event.session !== value.session ||
+          !safeInt(event.surfaceGeneration) || event.surfaceGeneration > value.surfaceGeneration) return false;
+      result.event = {kind: 'human', sequence: event.sequence, session: event.session, surfaceGeneration: event.surfaceGeneration};
+    }
+    return result;
+  }
+
+  function currentDrawing() {
+    const direct = state.drawing && normalizeDrawing(state.drawing);
+    if (direct) return direct;
+    const contexts = Object.values(state.humanContexts).filter(row => row.visible && row.expiresAt > now() &&
+      row.revision === state.revision && row.drawing).sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const row of contexts) { const value = normalizeDrawing(row.drawing); if (value) return value; }
+    return null;
+  }
+
+  function drawingSummary(value = currentDrawing()) {
+    if (!value) return null;
+    const {recipe, ...summary} = value;
+    const result = clone(summary), lists = [
+      [result, 'selectedObjects', 'selectedObjectCount', 'selectedObjectsComplete'],
+      [result.brushes, 'paint', 'paintCount', 'paintComplete'],
+      [result.brushes, 'vector', 'vectorCount', 'vectorComplete'],
+      [result, 'receipts', 'receiptCount', 'receiptsComplete'],
+    ].filter(([owner, field]) => Array.isArray(owner?.[field]));
+    for (const [owner, field, count, complete] of lists) {
+      owner[count] = owner[field].length;
+      owner[field] = owner[field].slice(0, 128);
+      owner[complete] = owner[field].length === owner[count];
+    }
+    while (bytes(JSON.stringify(result)) > LIMITS.resultBytes / 3) {
+      const list = lists.filter(([owner, field]) => owner[field].length)
+        .sort((a, b) => bytes(JSON.stringify(b[0][b[1]])) - bytes(JSON.stringify(a[0][a[1]])))[0];
+      if (!list) return {open: result.open, session: result.session, occurrence: result.occurrence,
+        assetGeneration: result.assetGeneration, surfaceGeneration: result.surfaceGeneration,
+        summaryUnavailable: 'drawing_context_over_budget', ...(result.recipeUnavailable ? {recipeUnavailable: result.recipeUnavailable} : {})};
+      const [owner, field, , complete] = list;
+      owner[field] = owner[field].slice(0, Math.floor(owner[field].length / 2)); owner[complete] = false;
+    }
+    return result;
+  }
+
+  function drawingFor(start, end, assetLabel) {
+    const value = currentDrawing(), row = value?.occurrence;
+    return row && row.start === start && row.end === end && normalizeLabel(row.reference) === normalizeLabel(assetLabel) ? value : null;
+  }
+
+  function drawingBinding(value) {
+    return value?.recipe || value?.recipeDigest ? {drawSession: value.session, surfaceGeneration: value.surfaceGeneration,
+      surfaceRecipeDigest: value.recipeDigest || admittedDrawingRecipeDigest(value.recipe)} : {};
+  }
+
+  function drawBindingFailure(held, range, live) {
+    if (!held.drawSession) return null;
+    if (live === undefined) live = drawingFor(range.start, range.end, held.assetLabel);
+    return !live || live.session !== held.drawSession || live.surfaceGeneration !== held.surfaceGeneration ||
+      (live.recipeDigest || (live.recipe && admittedDrawingRecipeDigest(live.recipe))) !== held.surfaceRecipeDigest
+      ? failure('draw_surface_changed', 'conflict') : null;
+  }
+
+  function collaboration() {
+    expireCollaboration();
+    const contexts = Object.values(state.humanContexts).filter(row => row.visible);
+    const targets = contexts.filter(row => !row.editing && row.revision === state.revision)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    const target = targets.find(row => row.selection || row.focus) || targets[0];
+    const view = contexts.filter(row => row.view).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.view;
+    const editing = contexts.some(row => row.editing);
+    const drawing = drawingSummary();
+    const objects = contexts.filter(row => row.objects && row.revision === state.revision).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.objects;
+    const presence = contexts.length ? { active: true, editing, ...(objects ? {objects: clone(objects)} : {}),
+      ...(view ? {view} : {}),
+      revision: target?.revision ?? state.revision,
+      selection: target?.selection ? clone(target.selection) : null,
+      focus: target?.focus ? clone(target.focus) : null,
+      expiresAt: Math.max(...contexts.map(row => row.expiresAt)),
+      ...(drawing ? {drawing} : {}) } : null;
+    const expiries = contexts.map(row => row.expiresAt);
+    for (const pointer of Object.values(state.pointers)) if (pointer.status !== 'expired') expiries.push(pointer.expiresAt);
+    return { presence, agentPresence: agentPresence(),
+      drawingIntent: pendingDrawingIntent(), nextExpiryAt: expiries.length ? Math.min(...expiries) : null };
+  }
+
+  function objectFacts(rows) {
+    let blocks = []; try {blocks = fencedBlocks(state.text);} catch {}
+    const lines = textTargets(state.text).lines;
+    return rows.map(({start, playing}) => {const block = blocks.find(row => row.start === start); return {line: lines.number(start), ...(block ? {block: block.id} : {}), playing};});
+  }
+
+  function humanParticipant(context) {
+    const who = participant(context, mintId);
+    if (who.actor !== 'human') throw new TypeError('Human authority required');
+    if (safeInt(context.serverNow)) state.clock = Math.max(Number(state.clock) || 0, context.serverNow);
+    return who;
+  }
+
+  function humanContext(input, context = {}) {
+    const who = humanParticipant(context);
+    if (typeof input.contextId !== 'string' || !input.contextId || input.contextId.length > 128 ||
+        !safeInt(input.sequence) || !safeInt(input.expectedRevision) ||
+        typeof input.visible !== 'boolean' || typeof input.editing !== 'boolean' ||
+        input.view != null && !['formatted', 'source', 'notes'].includes(input.view) ||
+        input.navigationSequence != null && !safeInt(input.navigationSequence) ||
+        input.drawingReceipts != null && !Array.isArray(input.drawingReceipts) ||
+        input.objects != null && !(Array.isArray(input.objects) && input.objects.length <= 64 && input.objects.every(row => safeInt(row?.start) && typeof row.playing === 'boolean'))) return stamp(failure('human_context_invalid', 'invalid'));
+    expireCollaboration();
+    const key = ownerOf(who) + ':' + input.contextId, prior = state.humanContexts[key], priorSequence = state.contextSequences[key];
+    if (priorSequence && input.sequence <= priorSequence.sequence) return stamp(accepted({ acknowledged: false, sequence: priorSequence.sequence, expiresAt: prior?.expiresAt || null }));
+    const recordSequence = () => {
+      state.contextSequences[key] = { sequence: input.sequence, at: now() };
+      const entries = Object.entries(state.contextSequences).sort((a, b) => a[1].at - b[1].at);
+      while (entries.length > 64) delete state.contextSequences[entries.shift()[0]];
+    };
+    if (!input.visible) {
+      delete state.humanContexts[key]; recordSequence();
+      return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: null }));
+    }
+    if (input.expectedRevision !== state.revision) return stamp(failure('human_context_stale', 'conflict'));
+    const range = value => value && safeBoundary(state.text, value.start) && safeBoundary(state.text, value.end) && value.start <= value.end
+      ? { start: value.start, end: value.end, ...(typeof value.objectId === 'string' ? {objectId: value.objectId} : {}) } : null;
+    const time = now(), selection = range(input.selection), focus = range(input.focus);
+    const presenceMs = Number.isSafeInteger(host.presenceMs) && host.presenceMs > LIMITS.presenceMs ? host.presenceMs : LIMITS.presenceMs;
+    if ((input.selection != null && !selection) || (input.focus != null && !focus)) return stamp(failure('human_context_range_invalid', 'invalid'));
+    let drawingInput = input.drawing, referencedRecipe = null;
+    if (drawingInput?.recipeReference === true) {
+      const held = prior?.drawing, occurrence = drawingInput.occurrence, priorOccurrence = held?.occurrence;
+      const sameOccurrence = !occurrence && !priorOccurrence || occurrence && priorOccurrence &&
+        occurrence.start === priorOccurrence.start && occurrence.end === priorOccurrence.end && occurrence.reference === priorOccurrence.reference;
+      if (drawingInput.recipe != null || drawingInput.recipeUnavailable != null || !held?.recipe || prior.revision !== input.expectedRevision ||
+          held.session !== drawingInput.session || held.surfaceGeneration !== drawingInput.surfaceGeneration ||
+          held.assetGeneration !== drawingInput.assetGeneration || held.recipeDigest !== drawingInput.recipeDigest || !sameOccurrence)
+        return stamp(failure('human_context_recipe_required', 'conflict'));
+      referencedRecipe = held.recipe;
+      const {recipeReference, ...value} = drawingInput;
+      drawingInput = value;
+    }
+    const drawing = normalizeDrawing(drawingInput);
+    if (drawing === false) return stamp(failure('human_context_drawing_invalid', 'invalid'));
+    if (referencedRecipe) drawing.recipe = referencedRecipe;
+    if (!prior && Object.keys(state.humanContexts).length >= LIMITS.humanContexts) return stamp(failure('human_context_limit'));
+    state.humanContexts[key] = { owner: ownerOf(who), contextId: input.contextId, navigationSequence: input.navigationSequence || 0, sequence: input.sequence, revision: input.expectedRevision,
+      ...(input.view ? {view: input.view} : {}),
+      visible: true, editing: input.editing, selection, focus, drawing, updatedAt: time, expiresAt: time + presenceMs,
+      ...(input.objects?.length ? {objects: input.objects.filter(row => safeBoundary(state.text, row.start)).map(({start, playing}) => ({start, playing}))} : {}) };
+    for (const receipt of normalizeDrawingReceipts([...(input.drawingReceipts || []), ...(drawing?.receipts || [])])) {
+      const entry = state.journal.find(row => row.id === receipt.transactionId), intent = entry?.drawingIntent;
+      if (!intent || intent.contextId !== input.contextId || intent.contextOwner && intent.contextOwner !== ownerOf(who) || !['pending', 'replaying', 'awaiting_receipt', 'superseded'].includes(intent.status)) continue;
+      const status = receipt.presentation?.status;
+      if (['completed', 'skipped', 'interrupted', 'unavailable'].includes(status)) intent.status = status;
+      else if (status === 'replaying' && intent.status !== 'superseded' && intent.status !== 'awaiting_receipt') intent.status = 'replaying';
+      else if (receipt.status === 'unavailable' || receipt.status === 'uncertain') intent.status = receipt.status;
+      entry.drawingReceipt = receipt;
+    }
+    recordSequence();
+    return stamp(accepted({ acknowledged: true, sequence: input.sequence, expiresAt: time + presenceMs }));
+  }
+
+  function imageSpans(text = state.text) {
+    if (imageCache?.text === text) return imageCache.spans;
+    if (!textFacts(text).data) return [];
+    const spans = dataOmissions(text);
+    if (text === state.text) imageCache = { text, spans };
+    return spans;
+  }
+
+  function disclose(text, start = 0, end = text.length) {
+    const spans = imageSpans(text).filter(row => row.start < end && start < row.end);
+    if (!spans.length) return { text: text.slice(start, end), omissions: [] };
+    let at = start, output = '';
+    const omissions = [];
+    for (const row of spans) {
+      const left = Math.max(start, row.start), right = Math.min(end, row.end);
+      output += text.slice(at, left) + `<embedded ${row.type}; ${row.chars} source characters omitted>`;
+      at = right;
+      omissions.push({ domain: 'image_bytes', reason: row.reason || 'embedded_data_uri', start: left, end: right, omitted: right - left,
+        profile: row.profile || 'embedded',
+        ...(row.id ? { id: row.id } : {}), ...(row.width ? { width: row.width, height: row.height, bytes: row.bytes } : {}) });
+    }
+    return { text: output + text.slice(at, end), omissions };
+  }
+
+  const display = (text, limit) => clip(disclose(String(text || '')).text, limit);
+
+  function removedWords(text, start, end, inserted) {
+    const space = at => at <= 0 || at >= text.length || /\s/.test(text[at]) || /\s/.test(text[at - 1]);
+    if (!inserted) {
+      const length = end - start;
+      let left = start, right = start;
+      while (left > 0 && start - left < 64 && text[left - 1] === text[left + length - 1]) left--;
+      while (right + length < text.length && right - start < 64 && text[right] === text[right + length]) right++;
+      for (let at = left; at <= right; at++) if (space(at) && space(at + length)) return [at, at + length];
+      return [start, end];
+    }
+    while (start > 0 && /[^\s]/.test(text[start - 1]) && /[^\s]/.test(text[start] ?? ' ')) start--;
+    while (end < text.length && /[^\s]/.test(text[end]) && /[^\s]/.test(text[end - 1] ?? ' ')) end++;
+    return [start, end];
+  }
+
+  function changePreview(text, start, end, limit) {
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1, lineEnd = text.indexOf('\n', end) < 0 ? text.length : text.indexOf('\n', end);
+    const side = Math.max(0, Math.min(48, Math.floor((limit - (end - start)) / 2)));
+    let from = Math.max(lineStart, start - side), to = Math.min(lineEnd, Math.max(end, end + side));
+    if (from < start) while (from > lineStart && /\S/.test(text[from - 1]) && start - from < side + 24) from--;
+    if (from > lineStart && /\S/.test(text[from - 1])) while (from < start && /\S/.test(text[from])) from++;
+    if (to > end) while (to < lineEnd && /\S/.test(text[to]) && to - end < side + 24) to++;
+    if (to < lineEnd && /\S/.test(text[to])) while (to > end && /\S/.test(text[to - 1])) to--;
+    const shown = disclose(text, from, to).text;
+    return clip((from > lineStart ? '…' + shown.trimStart() : shown) + (to < lineEnd ? '…' : ''), limit);
+  }
+
+  function currentRange(range, who = null) {
+    let end = Math.min(range.end, range.start + LIMITS.readChars);
+    while (!safeBoundary(state.text, end) && end > range.start) end--;
+    const shown = disclose(state.text, range.start, end);
+    const value = {start: range.start, end: range.end, text: shown.text,
+      complete: end === range.end && !shown.omissions.length};
+    if (shown.omissions.length) value.omissions = shown.omissions.slice(0, 8);
+    while (value.text.length && bytes(JSON.stringify({...current(), current: value})) > LIMITS.resultBytes - 1600) {
+      value.text = clip(value.text, Math.floor(value.text.length / 2)); value.complete = false;
+    }
+    if (who && value.complete &&
+        !(state.docKind === 'markdown' && DRAW_OCCURRENCE.test(value.text.trim()))) {
+      const fresh = handle(range.start, range.end, who);
+      if (fresh) Object.assign(value, {handle: fresh.id, expires_in_ms: LIMITS.lifetimeMs});
+    }
+    return {current: value, ...(value.handle
+      ? {hint: 'The passage changed; inspect current.text, then resend the intended edit with current.handle.'} : {})};
+  }
+
+  function prune() {
+    expireCollaboration();
+    for (const key of ['handles', 'refs', 'cursors']) {
+      for (const [id, row] of Object.entries(state[key])) {
+        if (row.used || row.documentId !== state.documentId) delete state[key][id];
+      }
+      const limit = LIMITS[key];
+      const rows = Object.values(state[key]).sort((a, b) => a.createdAt - b.createdAt);
+      while (rows.length > limit) delete state[key][rows.shift().id];
+    }
+    const rows = Object.values(state.handles).sort((a, b) => a.createdAt - b.createdAt);
+    let retained = rows.reduce((sum, row) => sum + bytes(row.text || ''), 0);
+    while (retained > LIMITS.authorityBytes && rows.length) {
+      const row = rows.shift(); retained -= bytes(row.text || ''); delete state.handles[row.id];
+    }
+  }
+
+  function mint(pool, prefix, row, who, id = mintId(prefix)) {
+    const time = now();
+    state[pool][id] = { ...row, id, owner: ownerOf(who), documentId: state.documentId,
+      createdAt: time, expiresAt: time + LIMITS.lifetimeMs };
+    prune();
+    return state[pool][id] || null;
+  }
+
+  function lookup(pool, id, who, consumeExpired = true) {
+    const row = state[pool][String(id || '')];
+    if (!row) return failure(pool === 'handles' ? 'context_missing' : pool === 'cursors' ? 'cursor_missing' : 'reference_missing', 'target_gone');
+    if (!sameOwner(row, who)) return failure('authority_mismatch');
+    if (row.used) return failure('context_replayed');
+    if (now() > row.expiresAt) { if (consumeExpired) delete state[pool][row.id]; return failure('context_expired', 'target_gone'); }
+    if (row.documentId !== state.documentId) return failure('document_replaced', 'target_gone');
+    return row;
+  }
+
+  function changeOf(id) {
+    if (id == null || id === '' || !state.compare) return null;
+    return state.compare.changes.find(row => row.id === String(id)) || null;
+  }
+
+  function since(revision) {
+    if (revision === state.revision) return [];
+    if (!safeInt(revision) || revision > state.revision) return null;
+    const rows = state.journal.filter(row => row.revision > revision).sort((a, b) => a.revision - b.revision);
+    let next = revision;
+    for (const row of rows) {
+      if (row.baseRevision !== next || row.revision !== next + 1) return null;
+      next = row.revision;
+    }
+    return next === state.revision ? rows : null;
+  }
+
+  function relocate(record, who = null) {
+    const entries = since(record.revision);
+    if (!entries) return failure('history_unavailable', 'conflict');
+    let sourceCaller = who && !record.kind && state.handles[record.id] === record && sameOwner(record, who) ? who : null;
+    let range = { start: record.start, end: record.end }, changedBy = null;
+    for (const entry of entries) {
+      const moved = transportInterval(range.start, range.end, entry.splices);
+      if (!moved && changedBy === null) changedBy = entry.actor;
+      if (!moved && entry.actor === 'human') sourceCaller = null;
+      range = moved || transportTouchedInterval(range.start, range.end, entry.splices);
+    }
+    if (!safeBoundary(state.text, range.start) || !safeBoundary(state.text, range.end) || range.end < range.start) {
+      return failure('target_changed', 'conflict');
+    }
+    if (changedBy !== null) return failure(changedBy === 'human' ? 'human_changed_target' : 'target_changed',
+      changedBy === 'human' ? 'yielded' : 'conflict', currentRange(range, sourceCaller));
+    const selected = state.text.slice(range.start, range.end);
+    if ((typeof record.text === 'string' && selected !== record.text) || (record.digest && digest(selected) !== record.digest)) {
+      return failure('target_changed', 'conflict', currentRange(range, sourceCaller));
+    }
+    return { ...range, rebased: record.revision !== state.revision };
+  }
+
+  function retain(entry) {
+    state.journal.push(entry);
+    outlineCache = null;
+    imageCache = null;
+    sourceFacts = null;
+  }
+
+  function appendCommit(text, splices, who, operation, options = {}) {
+    const baseRevision = state.revision, revision = options.revision == null ? baseRevision + 1 : options.revision;
+    const agent = agentLabel(who.agent || options.agent);
+    const tail = splices.at(-1), derived = options.derivedCommentIndex == null && who.actor === 'agent' && state.docKind === 'markdown' && splices.length > 1
+      ? commentSplices(state.text, splices.slice(0, -1))[0] : null;
+    const derivedCommentIndex = options.derivedCommentIndex ?? (derived && tail.pos === derived.pos && tail.removed === derived.removed && tail.inserted === derived.inserted
+      ? splices.length - 1 : null);
+    const entry = {
+      id: options.id || mintId('change_'), baseRevision, revision,
+      actor: who.actor, principal: who.principal, transport: who.transport, owner: ownerOf(who),
+      ...(who.hostAgent ? {hostAgent: who.hostAgent} : {}),
+      operation, requestId: who.requestId, invocationKey: who.invocationKey, label: options.reconciled ? (typeof options.label === 'string' ? clip(options.label, 120) : null) : clip(options.label ?? operation, 120),
+      splices: clone(splices), ...(Object.hasOwn(options, 'authored') ? {authored: clone(options.authored)} : {}), ...(options.metadataDelta ? {metadata: clone(options.metadataDelta)} : {}), author: historyAuthor(options.author || who.author, who.actor),
+      ...(options.reverts ? {reverts: options.reverts} : {}), ...(options.reapplies ? {reapplies: options.reapplies} : {}),
+      createdAt: options.reconciled || Object.hasOwn(options, 'createdAt') ? (safeInt(options.createdAt) ? options.createdAt : null) : now(), sourceTransactionId: options.sourceTransactionId || null,
+      ...(options.turnId ? {turnId: options.turnId,
+        turnBaseRevision: options.turnBaseRevision ?? state.journal.find(row => row.turnId === options.turnId && sameHistoryAuthor(row, who))?.baseRevision ?? baseRevision} : {}),
+      ...(options.sourceTransactionIds?.length ? {sourceTransactionIds: [...options.sourceTransactionIds]} : {}),
+      ...(agent ? {agent} : {}),
+      ...(Array.isArray(options.affectedBlockIds) ? {affectedBlockIds: options.affectedBlockIds.filter(Number.isSafeInteger)} : {}),
+      ...(derivedCommentIndex == null ? {} : {derivedCommentIndex}),
+    };
+    if (options.drawingPresentation) {
+      const requested = options.drawingPresentation, occurrence = requested.occurrence;
+      const found = DRAW_OCCURRENCE.exec(text.slice(occurrence.start, occurrence.end));
+      const asset = documentAssets(text).assets.get(normalizeLabel(requested.reference));
+      if (found && normalizeLabel(found[2]) === normalizeLabel(requested.reference) && asset) {
+        entry.drawingIntent = {...clone(requested), id: entry.id, transactionId: entry.id,
+          documentId: state.documentId, revision, status: requested.contextId ? 'pending' : 'unavailable',
+          ...(options.drawingPatch ? {patchRequired: true} : {}),
+          occurrence: {...occurrence, reference: requested.reference}, originalOccurrence: {...occurrence, reference: requested.reference}, assetGeneration: sha256(asset.url)};
+      }
+    }
+    if (options.drawingPatch) {
+      const retained = compactDrawingPatch(options.drawingPatch, state.text, text);
+      if (retained) entry.drawingPatch = {...clone(retained), transactionId: entry.id};
+      else retireDrawingPresentation(entry, 'drawing_history_unavailable');
+    }
+    for (const [key, pointer] of Object.entries(state.pointers)) if (pointer.status !== 'expired') {
+      pointer.status = 'expired'; pointer.reason = who.actor === 'agent' && key === presenceKey(who) ? 'agent_changed' : 'document_changed';
+    }
+    for (const prior of state.journal) {
+      const intent = prior.drawingIntent;
+      if (!intent || !['pending', 'replaying'].includes(intent.status)) continue;
+      const moved = transportInterval(intent.occurrence.start, intent.occurrence.end, splices);
+      if (!moved) {intent.status = intent.status === 'replaying' ? 'awaiting_receipt' : 'superseded'; continue;}
+      intent.occurrence = {...intent.occurrence, ...moved}; intent.revision = revision;
+    }
+    if (options.metadataDelta) {
+      const nextMetadata = transformMetadata({filename: state.filename, docKind: state.docKind}, options.metadataDelta);
+      if (!nextMetadata) throw new TypeError('metadata_history_invalid');
+      state.filename = nextMetadata.filename; state.docKind = nextMetadata.docKind;
+    }
+    state.text = text; state.revision = revision;
+    if (state.selection) {
+      const moved = transportInterval(state.selection.start, state.selection.end, splices);
+      state.selection = moved ? { ...state.selection, ...moved } : null;
+    }
+    if (state.focus) {
+      const focus = transportInterval(state.focus.start, state.focus.end, splices);
+      state.focus = focus ? { ...state.focus, ...focus } : null;
+    }
+    const moveDrawing = drawing => {
+      if (!drawing?.occurrence) return drawing;
+      const moved = transportInterval(drawing.occurrence.start, drawing.occurrence.end, splices);
+      return moved ? {...drawing, occurrence: {...drawing.occurrence, ...moved, position: moved.start}} : null;
+    };
+    state.drawing = moveDrawing(state.drawing);
+    for (const row of Object.values(state.humanContexts)) {
+      row.drawing = moveDrawing(row.drawing);
+      if (row.revision !== baseRevision) { row.selection = null; row.focus = null; continue; }
+      for (const key of ['selection', 'focus']) if (row[key]) {
+        const move = row.editing ? transportTouchedInterval : transportInterval;
+        const moved = move(row[key].start, row[key].end, splices);
+        row[key] = moved ? {...row[key], ...moved} : null;
+      }
+      row.revision = revision;
+    }
+    retain(entry);
+    if (state.compare && !options.keepCompare) state.compare = null;
+    return entry;
+  }
+
+  function reconcile(incoming, context = { actor: 'human', principal: 'local' }) {
+    if (!incoming || typeof incoming.text !== 'string') throw new TypeError('Snapshot text required');
+    const invalid = admissibleSnapshotText(incoming.text);
+    if (invalid) throw new TypeError(invalid);
+    const filename = incoming.filename == null ? state.filename : incoming.filename;
+    if (!validName(filename)) throw new TypeError('filename_invalid');
+    const nextKind = incoming.docKind || documentKind(filename);
+    if (!['markdown', 'text', 'code'].includes(nextKind)) throw new TypeError('document_kind_invalid');
+    const who = participant(context, mintId);
+    let carriedHistory = null;
+    const admitHistory = (source, revision) => {
+      const known = new Map(state.journal.map(row => [row.revision, row]));
+      let previous = -1;
+      for (const row of incoming.journal) {
+        if (!validSnapshotJournalRow(row) || row.revision <= previous) throw new TypeError('history_invalid');
+        previous = row.revision;
+        const prior = known.get(row.revision);
+        const provenance = row => {const {derivedCommentIndex, ...record} = journalHistory([row]).records[0]; return record;};
+        if (prior && (canonicalJson(provenance(prior)) !== canonicalJson(provenance(row)) ||
+            prior.derivedCommentIndex != null && row.derivedCommentIndex != null && row.derivedCommentIndex !== prior.derivedCommentIndex))
+          throw new TypeError('history_invalid');
+      }
+      const boundary = state.journal[0]?.baseRevision ?? state.revision;
+      const supplied = new Map(incoming.journal.map(row => [row.revision, row]));
+      const retained = state.journal.map(row => row.derivedCommentIndex == null && supplied.get(row.revision)?.derivedCommentIndex != null
+        ? {...row, derivedCommentIndex: supplied.get(row.revision).derivedCommentIndex} : row);
+      const rows = incoming.journal.filter(row => row.revision <= boundary).concat(retained,
+        incoming.journal.filter(row => row.revision > state.revision));
+      const history = {...journalHistory(rows, source, incoming.historyComplete ?? state.history.complete),
+        metadata: {filename, docKind: nextKind}, revision};
+      const proof = historyProjection(history, {from: 0, to: 0});
+      if (!proof.ok) throw new TypeError(proof.reason);
+      if (!validCommentHistory(history, rows)) throw new TypeError('history_invalid');
+      return {rows, proof};
+    };
+    if ((!incoming.documentId || incoming.documentId === state.documentId) && Array.isArray(incoming.journal) &&
+        incoming.revision === state.revision && incoming.text === state.text && filename === state.filename && nextKind === state.docKind)
+      carriedHistory = admitHistory(state.text, state.revision);
+    if (incoming.documentId && incoming.documentId !== state.documentId) {
+      state = createState({ documentId: incoming.documentId, text: incoming.text, filename,
+        docKind: incoming.docKind, revision: incoming.revision, mintId });
+      outlineCache = null; sourceFacts = null;
+    } else if (incoming.text !== state.text || filename !== state.filename || nextKind !== state.docKind || (safeInt(incoming.revision) && incoming.revision !== state.revision)) {
+      const base = state.revision, target = incoming.revision;
+      let evidence = null;
+      if (Array.isArray(incoming.journal) && safeInt(target) && target > base) {
+        const entries = incoming.journal.filter(row => row?.revision > base && row.revision <= target)
+          .sort((a, b) => a.revision - b.revision);
+        let replay = state.text, metadata = {filename: state.filename, docKind: state.docKind}, revision = base, valid = true;
+        for (const row of entries) {
+          if ((!validSnapshotJournalRow(row) && !state.journal.length) || row.baseRevision !== revision || row.revision !== revision + 1) { valid = false; break; }
+          metadata = transformMetadata(metadata, row.metadata);
+          if (!metadata) {valid = false; break;}
+          replay = transformSplices(replay, row.splices);
+          if (replay == null) { valid = false; break; }
+          revision = row.revision;
+        }
+        if (valid && revision === target && replay === incoming.text && metadata.filename === filename && metadata.docKind === nextKind) evidence = entries;
+      }
+      const inferred = evidence ? null : minimalSplice(state.text, incoming.text);
+      if (evidence) {
+        carriedHistory = admitHistory(incoming.text, target);
+        for (const row of evidence) {
+          const actor = participant(row, mintId), text = transformSplices(state.text, row.splices);
+          appendCommit(text, row.splices, actor, row.operation, {...row, metadataDelta: row.metadata, reconciled: true, derivedCommentIndex: null});
+        }
+      } else if (incoming.journal != null || (safeInt(target) && target !== base + 1) ||
+          transformSplices(state.text, [inferred]) !== incoming.text) {
+        // The snapshot is authoritative, not a licence to invent an unencodable undo row.
+        for (const entry of state.journal) retireDrawingPresentation(entry, 'drawing_history_unavailable');
+        state.text = incoming.text; state.revision = safeInt(target) ? target : base + 1;
+        state.journal = []; state.history.earliestRevision = state.revision; state.history.complete = false;
+        state.compare = null; outlineCache = null; sourceFacts = null;
+        for (const [id, cursor] of Object.entries(state.cursors)) if (own(cursor, 'revision')) delete state.cursors[id];
+        for (const row of Object.values(state.humanContexts)) { row.selection = null; row.focus = null; }
+      } else {
+        appendCommit(incoming.text, inferred.removed || inferred.inserted ? [inferred] : [], who,
+          'document.human_edit', { revision: safeInt(target) ? target : base + 1, metadataDelta: metadataDelta(
+            {filename: state.filename, docKind: state.docKind}, {filename, docKind: nextKind}) });
+      }
+    }
+    if (incoming.historyComplete === false) state.history.complete = false;
+    if (own(incoming, 'drawing')) state.drawing = normalizeDrawing(incoming.drawing) || null;
+    if (own(incoming, 'ledgerRoot')) state.ledgerRoot = typeof incoming.ledgerRoot === 'string' ? incoming.ledgerRoot : null;
+    state.filename = filename;
+    state.docKind = nextKind;
+    if (Array.isArray(incoming.journal) && incoming.revision === state.revision) {
+      try {
+        const {rows, proof} = carriedHistory || admitHistory(state.text, state.revision);
+        if (proof.ok) {
+          const records = rows.map(row => {const actor = participant(row, mintId);
+            return {...clone(row), ...actor, owner: ownerOf(actor), createdAt: row.createdAt ?? null, label: row.label ?? null};});
+          const retained = new Map(state.journal.map(row => [row.id, row]));
+          state.journal = records.map(row => {const prior = retained.get(row.id);
+            return prior && canonicalJson(prior.splices) === canonicalJson(row.splices) && canonicalJson(prior.metadata) === canonicalJson(row.metadata) ? {...prior, ...row} : row;});
+          state.history.earliestRevision = proof.earliestRevision; state.history.complete = proof.complete;
+        }
+      } catch (_) { state.history.complete = false; }
+    }
+    for (const field of ['selection', 'focus']) {
+      if (!own(incoming, field)) continue;
+      const row = incoming[field];
+      state[field] = row && safeBoundary(state.text, row.start) && safeBoundary(state.text, row.end) && row.start <= row.end
+        ? { start: row.start, end: row.end, active: row.active === true, ...(typeof row.objectId === 'string' ? {objectId: row.objectId} : {}) } : null;
+    }
+    state.notes = own(incoming, 'notes') && incoming.notes && typeof incoming.notes === 'object' ? { open: incoming.notes.open === true, current: typeof incoming.notes.current === 'string' ? incoming.notes.current : null } : null;
+    if (typeof incoming.closedComparisonId === 'string' && state.compare?.id === incoming.closedComparisonId) {
+      state.compare = null;
+    }
+    if (own(incoming, 'externalComparison')) {
+      const external = incoming.externalComparison;
+      if (!external) {
+        if (state.compare?.hostCompareId) state.compare = null;
+      } else if ((!state.compare || state.compare.hostCompareId) &&
+          typeof external.id === 'string' && typeof external.baseline === 'string' && typeof external.incoming === 'string' &&
+          state.compare?.hostCompareId !== external.id) {
+        const imported = buildComparison(external.baseline, external.incoming, external.name,
+          participant({ actor: 'human', principal: 'local', transport: 'platform' }, mintId));
+        if (!imported.outcome) {
+          imported.hostCompareId = external.id;
+          imported.detached = external.baseline !== state.text && external.incoming !== state.text;
+          state.compare = imported;
+        } else state.compare = null;
+      }
+    }
+    prune();
+    return { ...current(), outcome: 'ok' };
+  }
+
+  const documentGuardFailure = context => typeof context.documentGuard === 'function' && context.documentGuard() !== true
+    ? failure('document_authority_changed', 'refused') : null;
+
+  async function refresh(context, operation) {
+    cancelled(context);
+    const guarded = documentGuardFailure(context); if (guarded) return guarded;
+    if (typeof host.snapshot === 'function') {
+      const value = await host.snapshot({operation}); cancelled(context);
+      const guarded = documentGuardFailure(context); if (guarded) return guarded;
+      if (!value || value.ok === false) return failure(value?.reason || 'document_not_settled');
+      reconcile(value, { actor: 'human', principal: 'local' });
+    }
+    return null;
+  }
+
+  const readSnapshot = () => ({documentId: state.documentId, revision: state.revision,
+    filename: state.filename, docKind: state.docKind, text: state.text});
+  const sameReadSnapshot = snapshot => snapshot?.documentId === state.documentId && snapshot.revision === state.revision &&
+    snapshot.filename === state.filename && snapshot.docKind === state.docKind && snapshot.text === state.text;
+  function snapshotFacts() {
+    if (!sameReadSnapshot(sourceFacts?.snapshot)) sourceFacts = {snapshot: readSnapshot(), sha256: null, will: null, brief: null, surface: null};
+    return sourceFacts;
+  }
+  const sourceSha256 = () => snapshotFacts().sha256 ??= sha256(state.text);
+  const sourceWill = () => state.docKind === 'markdown' ? snapshotFacts().will ??= parseWill(state.text) : null;
+
+  function documentLaw(start, end, will = null) {
+    if (state.docKind !== 'markdown') return {};
+    will ||= sourceWill();
+    if (!will.present) return {};
+    return { law: willGovern(will, start, end), ...(willIntentOf(will, start, end) ? { intent: willIntentOf(will, start, end) } : {}) };
+  }
+
+  function reference(start, end, who, info = {}) {
+    if (!safeBoundary(state.text, start) || !safeBoundary(state.text, end) || end < start) return null;
+    return mint('refs', 'ref_', { start, end, revision: state.revision,
+      digest: digest(state.text.slice(start, end)), ...info }, who);
+  }
+
+  function handleText(start, end) {
+    if (!safeBoundary(state.text, start) || !safeBoundary(state.text, end) || end < start) return null;
+    const text = state.text.slice(start, end);
+    if (text.length > LIMITS.editChars || bytes(text) > LIMITS.authorityBytes ||
+        imageSpans().some(row => row.start < end && start < row.end)) return null;
+    return text;
+  }
+
+  function handle(start, end, who, info = {}, id) {
+    const text = handleText(start, end);
+    if (text === null) return null;
+    return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, ...info }, who, id);
+  }
+
+  function assetDigest(label) {
+    const row = documentAssets(state.text).assets.get(normalizeLabel(label));
+    return row ? digest(row.url) : null;
+  }
+  function storedRecipe(assetLabel) {
+    const row = documentAssets(state.text).assets.get(normalizeLabel(assetLabel));
+    if (!row || !/^data:image\/svg\+xml(?:;base64)?,/i.test(row.url)) return null;
+    try { return _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(row.url))); }
+    catch (_) { return null; }
+  }
+  function drawInspection(assetLabel) {
+    const recipe = storedRecipe(assetLabel);
+    return recipe ? JSON.stringify(recipe) : null;
+  }
+  function drawHandleRefusal(disclosed, fullChars, objectId = null) {
+    const editable = objectId && disclosed != null
+      ? JSON.stringify(JSON.parse(disclosed).shapes.find(shape => shape.id === objectId)) : disclosed;
+    if (editable == null || editable.length > LIMITS.editChars || bytes(editable) > LIMITS.authorityBytes) return 'target_over_edit_budget';
+    return null;
+  }
+  const unavailableEdit = reason => ({edit_unavailable: reason, ...(HINTS[reason] ? {hint: HINTS[reason]} : {})});
+  function drawingEditAvailability(assetLabel, disclosed = null, objectId = null) {
+    const recipe = storedRecipe(assetLabel);
+    if (!recipe) return {};
+    const reason = drawHandleRefusal(disclosed ?? JSON.stringify(disclosedRecipe(recipe)), JSON.stringify(recipe).length, objectId);
+    return reason ? unavailableEdit(reason) : {};
+  }
+  function drawHandle(start, end, assetLabel, who, binding = {}, inspection = null, surfaceRecipeJSON = null, objectId = null, id) {
+    if (!inspection) {
+      const recipe = storedRecipe(assetLabel);
+      if (!recipe) return null;
+      inspection = {text: JSON.stringify(disclosedRecipe(recipe)), fullChars: JSON.stringify(recipe).length};
+    }
+    if (!inspection.textPlan && drawHandleRefusal(inspection.text, inspection.fullChars, objectId)) return null;
+    const text = state.text.slice(start, end);
+    return mint('handles', 'ctx_', { start, end, revision: state.revision, text, used: false, kind: 'draw', assetLabel, assetDigest: assetDigest(assetLabel),
+      ...binding, ...(surfaceRecipeJSON != null ? {recipeJSON: surfaceRecipeJSON} : {}), ...(objectId ? {objectId} : {}) }, who, id);
+  }
+
+  function svgHandle(start, end, nodeIds, assetLabel, who, id) {
+    const text = state.text.slice(start, end);
+    return mint('handles', 'ctx_', {start, end, revision: state.revision, text, used: false,
+      kind: 'svg', nodeIds: [...nodeIds], assetLabel, assetDigest: assetDigest(assetLabel)}, who, id);
+  }
+
+  function svgInspection(assetLabel) {
+    const asset = documentAssets(state.text).assets.get(normalizeLabel(assetLabel));
+    if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) return null;
+    try { return JSON.stringify(inspectSVG(decodeDataImage(asset.url), {nodes: true})); }
+    catch (_) { return null; }
+  }
+
+  const DRAW_OCCURRENCE = /^!\[((?:\\.|[^\]\\])*)\]\[([^\]\r\n]+)\](?:[ \t]*<!--md-layout:v1[^>]*-->)?$/;
+  function drawingPlacement(source, start, raw, assetLabel, standalone = false) {
+    const end = start + raw.length, match = DRAW_OCCURRENCE.exec(raw);
+    if (!match || normalizeLabel(match[2]) !== normalizeLabel(assetLabel) || source.slice(start, end) !== raw) return {placed: false, complete: true};
+    const facts = structureMarkdown({source, kinds: ['image'], within: {start, end}, matchLimit: 1}, markdownParser());
+    const matched = facts.matches?.some(row => row.start === start && row.end === end) === true;
+    if (!matched || !standalone) return {placed: matched, complete: facts.complete === true};
+    const blocks = outlineMarkdown(source, {limit: 0}, markdownParser()).blocks;
+    return {placed: blocks?.entries?.some(row => row.start <= start && row.end >= end &&
+      source.slice(row.start, row.end).trim() === raw) === true, complete: facts.complete === true && blocks?.complete === true};
+  }
+  function drawingAt(start, end) {
+    const slice = state.text.slice(start, end), lead = slice.length - slice.trimStart().length;
+    const match = DRAW_OCCURRENCE.exec(slice.trim());
+    if (!match) return null;
+    const row = documentAssets(state.text).assets.get(normalizeLabel(match[2]));
+    if (!row || !/^data:image\/svg\+xml(?:;base64)?,/i.test(row.url)) return null;
+    let recipe;
+    try { recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(row.url))); }
+    catch (_) { return null; }
+    const occurrence = '![' + match[1] + '][' + match[2] + ']';
+    const targetStart = start + lead, targetEnd = targetStart + occurrence.length;
+    if (recipe) {
+      const live = drawingFor(targetStart, targetEnd, row.label);
+      return {targetStart, targetEnd, draw: {recipeText: JSON.stringify(live?.recipe || recipe), assetLabel: row.label,
+        ...(live ? {drawing: drawingSummary(live), binding: drawingBinding(live)} : {})}};
+    }
+    const inspectionText = svgInspection(row.label);
+    return inspectionText ? {targetStart, targetEnd, svg: {inspectionText, assetLabel: row.label}} : null;
+  }
+
+  function readTarget(input, who) {
+    if ([input.cursor, input.context_handle, input.ref, input.start != null || input.end != null].filter(Boolean).length > 1) {
+      return failure('read_target_ambiguous', 'invalid');
+    }
+    if (input.cursor) {
+      const cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind === 'compare-read') {
+        if (cursor.revision !== state.revision || cursor.compareId !== state.compare?.id) return failure('compare_changed', 'conflict');
+        const change = changeOf(cursor.changeId);
+        return change ? {change, cursor} : failure('change_missing', 'target_gone');
+      }
+      if (!['read', 'draw-read', 'svg-read'].includes(cursor.kind)) return failure('cursor_kind_mismatch');
+      if (cursor.revision !== state.revision) return failure('read_snapshot_changed', 'conflict');
+      if (cursor.kind === 'draw-read') {
+        if (typeof cursor.disclosedText !== 'string') return failure('read_snapshot_changed', 'conflict');
+        const stale = drawBindingFailure(cursor, {start: cursor.targetStart, end: cursor.targetEnd});
+        if (stale) return stale;
+      }
+      return { ...cursor, cursor, ...(cursor.kind === 'draw-read' ? {draw: {assetLabel: cursor.assetLabel, objectId: cursor.objectId || null,
+        binding: {drawSession: cursor.drawSession, surfaceGeneration: cursor.surfaceGeneration, surfaceRecipeDigest: cursor.surfaceRecipeDigest},
+        drawing: drawingSummary(drawingFor(cursor.targetStart, cursor.targetEnd, cursor.assetLabel))}} : {}),
+        ...(cursor.kind === 'svg-read' ? {svg: {inspectionText: cursor.inspectionText, assetLabel: cursor.assetLabel}} : {}) };
+    }
+    if (input.context_handle) {
+      const change = changeOf(input.context_handle);
+      if (change) return { change };
+      const held = lookup('handles', input.context_handle, who);
+      if (held.outcome) return held;
+      const range = relocate(held, who);
+      if (range.outcome) return range;
+      if (['draw', 'svg'].includes(held.kind) && held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+      if (held.kind === 'draw') { const stale = drawBindingFailure(held, range); if (stale) return stale; }
+      const inspectionText = held.kind === 'svg' ? svgInspection(held.assetLabel) : null;
+      if (held.kind === 'svg' && !inspectionText) return failure('target_changed', 'conflict');
+      const recipeText = held.kind === 'draw' ? drawInspection(held.assetLabel) : null;
+      if (held.kind === 'draw' && !recipeText) return failure('target_changed', 'conflict');
+      const drawn = held.kind === 'draw' ? drawingAt(range.start, range.end) || {draw: {recipeText, assetLabel: held.assetLabel}} : null;
+      return { ...range, targetStart: range.start, targetEnd: range.end, offset: range.start, coverage: [],
+        ...(drawn ? {...drawn, draw: {...drawn.draw, objectId: held.objectId || null}} : {}),
+        ...(inspectionText ? {svg: {inspectionText, assetLabel: held.assetLabel}} : {}) };
+    }
+    if (input.ref) {
+      const change = changeOf(input.ref);
+      if (change) return { change };
+      const ref = lookup('refs', input.ref, who);
+      if (ref.outcome) return ref;
+      const range = relocate(ref);
+      if (range.outcome) return range;
+      return { ...range, ref: ref.id, targetStart: range.start, targetEnd: range.end, offset: range.start, coverage: [] };
+    }
+    const length = state.text.length, clamp = at => safeInt(at) ? Math.min(at, length) : at;
+    const start = input.start == null ? 0 : clamp(input.start), end = input.end == null ? length : clamp(input.end);
+    if (!safeBoundary(state.text, start) || !safeBoundary(state.text, end) || end < start) return failure('range_invalid', 'invalid', {length});
+    return { start, end, targetStart: start, targetEnd: end, offset: start, coverage: [], ...(start !== input.start && input.start != null || end !== input.end && input.end != null ? {length} : {}) };
+  }
+
+  async function markdownFacts(context) {
+    if (state.docKind !== 'markdown' || !['md-layout:', '![', 'data:image/'].some(marker => state.text.includes(marker))) return null;
+    return outline(context);
+  }
+
+  function layoutInRange(analysis, start, end) {
+    if (!analysis) return null;
+    const rows = analysis.entries.filter(row => start === end ? row.blockStart <= start && start <= row.blockEnd
+      : row.blockStart < end && start < row.blockEnd);
+    if (!rows.length && analysis.complete) return null;
+    const items = rows.slice(0, 16).map(row => ({ start: row.start, end: row.end, kind: row.kind,
+      ...(row.align ? { align: row.align } : {}), ...(row.width != null ? { width: row.width } : {}),
+      ...(row.wrap ? { wrap: row.wrap } : {}), ...(row.x != null ? { x: row.x } : {}), ...(row.y != null ? { y: row.y } : {}) }));
+    return { standard: 'md-layout:v1', items, total: rows.length, omitted: rows.length - items.length,
+      complete: analysis.complete && rows.length === items.length,
+      ...(!analysis.complete ? { reason: analysis.reason || 'markdown_layout_index_limited' } : {}) };
+  }
+
+  function imagesInRange(analysis, start, end) {
+    if (!analysis) return null;
+    const rows = analysis.entries.filter(row => start === end ? row.blockStart <= start && start <= row.blockEnd
+      : row.blockStart < end && start < row.blockEnd);
+    if (!rows.length && analysis.complete) return null;
+    const items = rows.slice(0, 8).map((row, index) => {
+      const { id, ...rest } = row;
+      return { picture: (index + 1) + ' of ' + rows.length, ...rest };
+    });
+    while (items.length && bytes(JSON.stringify(items)) > 3072) items.pop();
+    return { scope: 'markdown', items, total: rows.length, omitted: rows.length - items.length,
+      complete: analysis.complete && rows.length === items.length,
+      ...(!analysis.complete ? { reason: analysis.reason || 'markdown_image_index_limited' } : {}) };
+  }
+
+  async function readDrawContext(target, input, who, context) {
+    if (input.paintSample && host.ready) await host.ready('drawing');
+    const picture = target.svg || target.draw, imported = !!target.svg, drawing = target.draw?.drawing;
+    const recipeText = picture.inspectionText || picture.recipeText, continuation = !imported && target.cursor;
+    const stored = continuation ? null : JSON.parse(recipeText);
+    const text = continuation ? target.cursor.disclosedText : JSON.stringify(imported ? stored : disclosedRecipe(stored));
+    const fullChars = continuation ? target.cursor.fullChars : recipeText.length;
+    const storedRecipeDigest = continuation ? target.cursor.storedRecipeDigest : drawing?.recipeUnavailable ? drawingRecipeDigest(stored) : null;
+    if (imported && input.objectId) return failure('drawing_object_scope', 'invalid');
+    const objectId = imported ? null : picture.objectId || input.objectId || null;
+    const storedSurface = !imported && objectId && drawing?.recipeUnavailable &&
+      drawing.recipeDigest === storedRecipeDigest;
+    if (input.objectId && picture.objectId && input.objectId !== picture.objectId) return failure('drawing_object_scope', 'invalid');
+    if (objectId && (!continuation || !picture.objectId) && !(stored || JSON.parse(text)).shapes.some(row => row.id === objectId)) {
+      return failure('drawing_object_missing', 'target_gone');
+    }
+    let paintSample = null;
+    if (input.paintSample) {
+      if (imported || objectId && input.paintSample.objectId !== objectId) return failure('drawing_object_scope', 'invalid');
+      if (drawing?.recipeUnavailable) return failure(drawing.recipeUnavailable);
+      const live = drawingFor(target.targetStart, target.targetEnd, picture.assetLabel);
+      const stale = drawBindingFailure({...target.draw.binding, assetLabel: picture.assetLabel},
+        {start: target.targetStart, end: target.targetEnd}, live);
+      if (stale) return stale;
+      const sampled = stored || (target.draw.binding?.drawSession ? live?.recipe : storedRecipe(picture.assetLabel));
+      const shape = sampled?.shapes.find(row => row.id === input.paintSample.objectId && row.recognized === 'paint');
+      if (!shape) return failure('paint_target_invalid', 'invalid');
+      if (typeof host.paintSample !== 'function' && typeof host.material !== 'function') return failure('paint_sample_unavailable');
+      const documentId = state.documentId, revision = state.revision, digest = assetDigest(picture.assetLabel);
+      cancelled(context);
+      try {
+        if (typeof host.material === 'function') {
+          const prepared = await prepareMaterial('sample', {position: 'sample:' + shape.id, shape, point: input.paintSample.point}, context);
+          if (prepared.refusal) return prepared.refusal;
+          paintSample = prepared.value;
+        } else paintSample = await host.paintSample(shape, input.paintSample.point, {signal: context.signal});
+      }
+      catch (error) { cancelled(context); return failure(error?.code || 'paint_sample_invalid', 'invalid'); }
+      cancelled(context);
+      const refreshed = await refresh(context);
+      if (refreshed) return refreshed;
+      if (state.documentId !== documentId || state.revision !== revision || assetDigest(picture.assetLabel) !== digest) return failure('read_snapshot_changed', 'conflict');
+      const changed = drawBindingFailure({...target.draw.binding, assetLabel: picture.assetLabel}, {start: target.targetStart, end: target.targetEnd});
+      if (changed) return changed;
+      if (!target.draw.binding?.drawSession && drawingFor(target.targetStart, target.targetEnd, picture.assetLabel)) return failure('draw_surface_changed', 'conflict');
+      if (!paintSample || typeof paintSample !== 'object' || Array.isArray(paintSample)) return failure('paint_sample_invalid', 'invalid');
+      paintSample = {...paintSample, objectId: shape.id, point: input.paintSample.point.slice()};
+    }
+    const law = documentLaw(target.targetStart, target.targetEnd);
+    const limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
+    const offset = target.cursor ? target.offset : 0;
+    if (!safeBoundary(text, offset)) return failure('range_invalid', 'invalid');
+    let end = Math.min(text.length, offset + limit);
+    while (!safeBoundary(text, end)) end--;
+    const ids = {handle: mintId('ctx_'), cursor: mintId('read_')};
+    const unavailable = (!storedSurface && drawing?.recipeUnavailable) || (imported ? null : drawHandleRefusal(text, fullChars, objectId));
+    const page = fitReadPage(text, offset, end, until => {
+      const complete = until === text.length;
+      return { ...current(), outcome: 'ok', start: target.targetStart, end: target.targetEnd, text: text.slice(offset, until),
+        ...law, ...(objectId ? {objectId} : {}), complete, remaining: text.length - until,
+        kind: imported ? 'svg' : 'drawing', handle: complete && !unavailable ? ids.handle : null,
+        [imported ? 'svg_handle' : 'recipe_handle']: complete && !unavailable ? ids.handle : null,
+        ...(drawing ? {drawing} : {}), ...(paintSample ? {paintSample} : {}),
+        coverage: {disclosed: until, chars: text.length, complete},
+        ...(unavailable ? unavailableEdit(unavailable) : {}),
+        next_cursor: complete ? null : ids.cursor, expires_in_ms: LIMITS.lifetimeMs};
+    });
+    if (!page) return failure('result_over_budget', 'refused', {complete: false});
+    end = page.end;
+    const complete = end === text.length;
+    let surfaceRecipeJSON = null;
+    if (complete && target.draw?.binding?.drawSession) {
+      const live = drawingFor(target.targetStart, target.targetEnd, picture.assetLabel);
+      const stale = drawBindingFailure({...target.draw.binding, assetLabel: picture.assetLabel},
+        {start: target.targetStart, end: target.targetEnd}, live);
+      if (stale) return stale;
+      if (!storedSurface) surfaceRecipeJSON = continuation ? JSON.stringify(live.recipe) : recipeText;
+    }
+    const disclosedHandle = complete && !unavailable ? imported
+      ? svgHandle(target.targetStart, target.targetEnd, stored.nodes.map(node => node.id), picture.assetLabel, who, ids.handle)
+      : drawHandle(target.targetStart, target.targetEnd, picture.assetLabel, who, target.draw.binding, {text, fullChars},
+          surfaceRecipeJSON, objectId, ids.handle) : null;
+    const next = !complete ? mint('cursors', 'read_', {kind: imported ? 'svg-read' : 'draw-read', revision: state.revision,
+      targetStart: target.targetStart, targetEnd: target.targetEnd,
+      ...(imported ? {inspectionText: recipeText} : {disclosedText: text, fullChars, objectId, ...target.draw.binding,
+        ...(storedRecipeDigest ? {storedRecipeDigest} : {})}),
+      assetLabel: picture.assetLabel, offset: end}, who, ids.cursor) : null;
+    const result = {...page.result, handle: disclosedHandle?.id || null,
+      [imported ? 'svg_handle' : 'recipe_handle']: disclosedHandle?.id || null,
+      ...(complete && !disclosedHandle && !unavailable ? unavailableEdit(
+        (imported ? null : drawHandleRefusal(text, fullChars, objectId)) || 'target_over_edit_budget') : {}),
+      next_cursor: next?.id || null};
+    if (bytes(JSON.stringify(result)) > LIMITS.resultBytes) {
+      if (disclosedHandle) delete state.handles[disclosedHandle.id];
+      if (next) delete state.cursors[next.id];
+      return failure('result_over_budget', 'refused', {complete: false});
+    }
+    if (target.cursor) delete state.cursors[target.cursor.id];
+    return result;
+  }
+
+  function fitReadPage(source, start, end, project) {
+    const first = project(end);
+    if (bytes(JSON.stringify(first)) <= LIMITS.resultBytes) return {end, result: first};
+    let low = start, high = end - 1, fitted = null;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      let until = middle;
+      while (until > start && !safeBoundary(source, until)) until--;
+      const result = project(until);
+      if (bytes(JSON.stringify(result)) <= LIMITS.resultBytes) {
+        fitted = {end: until, result}; low = middle + 1;
+      } else high = until - 1;
+    }
+    return fitted && (fitted.end > start || start === end) ? fitted : null;
+  }
+
+  async function readContext(input, who, context) {
+    const snapshot = readSnapshot();
+    let target = readTarget(input, who);
+    if (target.outcome) return target;
+    if (target.change) return input.kind && input.kind !== 'comparison' ? failure('read_kind_mismatch', 'invalid')
+      : input.paintSample ? failure('drawing_object_scope', 'invalid') : readChange({...input, change_id: target.change.id}, who, target.cursor);
+    if (input.kind === 'comparison') return failure('change_missing', 'target_gone');
+    const facts = await markdownFacts(context);
+    if (!sameReadSnapshot(snapshot)) return failure('read_snapshot_changed', 'conflict');
+    if (facts?.outcome) return facts;
+    const layout = facts?.layout, images = facts?.images;
+    if (!target.draw && !target.svg && !target.cursor && ['drawing', 'svg'].includes(input.kind)) {
+      const drawing = drawingAt(target.targetStart, target.targetEnd);
+      if (drawing) target = { ...target, ...drawing, offset: 0, coverage: [] };
+    }
+    const kind = target.svg ? 'svg' : target.draw ? 'drawing' : 'source';
+    if (input.kind && input.kind !== kind) return failure('read_kind_mismatch', 'invalid', {kind});
+    if (target.draw || target.svg) return readDrawContext(target, input, who, context);
+    if (input.objectId || input.paintSample) return failure('drawing_object_scope', 'invalid');
+    const limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars), start = target.offset;
+    let end = Math.min(target.targetEnd, start + limit);
+    while (!safeBoundary(state.text, end)) end--;
+    const hiddenAtEnd = imageSpans().find(row => row.start < end && end < row.end);
+    if (hiddenAtEnd) end = Math.min(target.targetEnd, hiddenAtEnd.end);
+    const ids = {handle: mintId('ctx_'), complete: mintId('ctx_'), comment: mintId('ctx_'), cursor: mintId('read_')};
+    const sha = sourceSha256(), drawing = drawingSummary(), will = sourceWill();
+    const coverageAt = (until, omitted) => {
+      const coverage = [...(target.coverage || []), ...(omitted ? [] : [[start, until]])];
+      let reached = target.targetStart;
+      for (const row of coverage.slice().sort((a, b) => a[0] - b[0])) {
+        if (row[0] > reached) break;
+        reached = Math.max(reached, row[1]);
+      }
+      return {coverage, reached, whole: reached >= target.targetEnd};
+    };
+    const page = fitReadPage(state.text, start, end, until => {
+      const projection = disclose(state.text, start, until), omitted = projection.omissions.length;
+      const {reached, whole} = coverageAt(until, omitted);
+      const canEdit = !omitted && handleText(start, until) !== null;
+      const pageLayout = layoutInRange(layout, start, until), pageImages = imagesInRange(images, start, until);
+      const comment = until === target.targetEnd && !whole && state.docKind === 'markdown' &&
+        imageCommentTarget(state.text, target.targetStart, target.targetEnd);
+      return {...current(), outcome: 'ok', kind: 'source', start, end: until, text: projection.text, ...documentLaw(start, until, will),
+        ...(drawing ? {drawing} : {}), complete: until === target.targetEnd && !omitted, remaining: target.targetEnd - until,
+        ...(omitted ? {omissions: projection.omissions.slice(0, 4), omissionCount: omitted} : {}),
+        ...(pageLayout ? {layout: pageLayout} : {}), ...(pageImages ? {images: pageImages} : {}),
+        sha256: sha, handle: canEdit ? ids.handle : null, ...(target.ref ? {ref: target.ref} : {}),
+        coverage: {disclosed: Math.max(0, reached - target.targetStart), chars: target.targetEnd - target.targetStart, complete: whole},
+        ...(whole && (start !== target.targetStart || until !== target.targetEnd) ? {complete_handle: ids.complete} : {}),
+        ...(comment ? {comment_handle: ids.comment} : {}),
+        ...(!canEdit ? {edit_unavailable: omitted ? 'source_redacted' : 'target_over_edit_budget'} : {}),
+        next_cursor: until < target.targetEnd ? ids.cursor : null, expires_in_ms: LIMITS.lifetimeMs};
+    });
+    if (!page) return failure('result_over_budget', 'refused', {complete: false});
+    end = page.end;
+    const omitted = page.result.omissionCount || 0, {coverage, whole} = coverageAt(end, omitted);
+    const disclosed = !omitted ? handle(start, end, who, {sha256: sha}, ids.handle) : null;
+    const completeHandle = whole && (start !== target.targetStart || end !== target.targetEnd)
+      ? handle(target.targetStart, target.targetEnd, who, {disclosure: 'paged', sha256: sha}, ids.complete) : null;
+    const next = end < target.targetEnd ? mint('cursors', 'read_', {kind: 'read', revision: state.revision,
+      targetStart: target.targetStart, targetEnd: target.targetEnd, offset: end, coverage, ref: target.ref || null}, who, ids.cursor) : null;
+    const commentHandle = page.result.comment_handle ? mint('handles', 'ctx_', {kind: 'image-comment', revision: state.revision,
+      start: target.targetStart, end: target.targetEnd, digest: digest(state.text.slice(target.targetStart, target.targetEnd)), used: false}, who, ids.comment) : null;
+    if (target.cursor) delete state.cursors[target.cursor.id];
+    const result = {...page.result, ...(target.length !== undefined ? {length: target.length} : {}), handle: disclosed && state.handles[disclosed.id] ? disclosed.id : null, next_cursor: next?.id || null};
+    if (completeHandle && state.handles[completeHandle.id]) result.complete_handle = completeHandle.id;
+    else delete result.complete_handle;
+    if (commentHandle) result.comment_handle = commentHandle.id; else delete result.comment_handle;
+    return result;
+  }
+
+  const noNotes = note_ref => accepted({ availability: 'unavailable', reason: 'notes_not_configured',
+    message: 'Notes is not set up on this host.', complete: true, remaining: 0, next_cursor: null,
+    ...(note_ref === undefined ? {notes: []} : {note_ref, found: false, text: null}) });
+  const noNotesWrite = note_ref => failure('notes_not_configured', 'refused', {availability: 'unavailable', ...(note_ref !== undefined ? {note_ref} : {}),
+    message: 'Notes is not set up on this host, so nothing was written.', hint: 'Keep the words in this document with edit, or deliver them with export.'});
+  const unavailableNotes = (got, note_ref) => ['locked', 'unavailable'].includes(got?.availability)
+    ? accepted({availability: got.availability, ...(note_ref ? {note_ref} : {}),
+      ...(typeof got.reason === 'string' ? {reason: clip(got.reason, 128)} : {}),
+      ...(typeof got.hint === 'string' ? {hint: clip(got.hint, 512), message: clip(got.hint, 512)} : {})}) : null;
+  const refusedWrite = value => value && {...value, outcome: 'refused'};
+  const notesRefused = got => got?.refused ? failure(got.refused, got.refused === 'notes_changed' ? 'conflict' : 'refused') : null;
+  async function notesList(input, who, context) {
+    if (typeof host.notesFind !== 'function') return noNotes();
+    let held = null, query = input.query || '';
+    if (input.cursor) {
+      held = lookup('cursors', input.cursor, who);
+      if (held.outcome) return held;
+      if (held.kind !== 'notes-list') return failure('notes_cursor_wrong_kind', 'invalid');
+      if (input.query !== undefined && input.query !== held.query) return failure('notes_cursor_wrong_query', 'invalid');
+      query = held.query;
+    }
+    cancelled(context);
+    const rows = await host.notesFind({query, ...who, signal: context.signal });
+    cancelled(context);
+    if (rows === undefined) return noNotes();
+    const unavailable = unavailableNotes(rows) || notesRefused(rows); if (unavailable) return unavailable;
+    if (!Array.isArray(rows)) return failure('notes_folder_unreadable');
+    const sorted = rows.map(row => ({
+      file: clip(String(row?.file || ''), 256), note_ref: clip(String(row?.note_ref || ''), 256),
+      title: clip(String(row?.title || String(row?.file || '').replace(/\.md$/i, '')), 192),
+      section: clip(String(row?.section || (row?.skill ? 'skills' : 'others')), 64),
+      skill: row?.skill === true || row?.section === 'skills',
+      modified: Number.isFinite(row?.modified) ? row.modified : undefined,
+    })).filter(row => row.file && row.note_ref);
+    sorted.sort((a, b) => {
+      const as = a.skill ? 0 : 1, bs = b.skill ? 0 : 1;
+      if (as !== bs) return as - bs;
+      return a.file.localeCompare(b.file);
+    });
+    const version = digest(JSON.stringify(sorted));
+    let offset = 0;
+    if (held) {
+      if (held.version !== version) return failure('notes_changed', 'conflict');
+      offset = held.offset || 0;
+    }
+    const limit = bounded(input.limit, 32, 1, 64);
+    const page = [];
+    for (let i = offset; i < sorted.length; i++) {
+      const item = {file: sorted[i].file, note_ref: sorted[i].note_ref, title: sorted[i].title, section: sorted[i].section,
+        ...(sorted[i].modified != null ? { modified: sorted[i].modified } : {}) };
+      if (bytes(JSON.stringify({ notes: [...page, item] })) > LIMITS.resultBytes - 1800) break;
+      page.push(item);
+      if (page.length >= limit) break;
+    }
+    const end = offset + page.length;
+    const next = end < sorted.length ? mint('cursors', 'notes_list_', { kind: 'notes-list', offset: end, version, query }, who) : null;
+    if (input.cursor) delete state.cursors[input.cursor];
+    return accepted({ availability: 'available', notes: page, ...(typeof host.notesForeground === 'function' ? {foreground: host.notesForeground()} : {}), complete: end >= sorted.length, remaining: Math.max(0, sorted.length - end), next_cursor: next?.id || null,
+      ...(!sorted.length ? {message: 'Notes has nothing yet.'} : {}) });
+  }
+
+  const noteReads = host.notesReadReceipts instanceof Map ? host.notesReadReceipts : new Map();
+  while (noteReads.size > 64) noteReads.delete(noteReads.keys().next().value);
+  const rememberNote = (who, file, text, controls = null) => {
+    const key = ownerOf(who) + '\u0000' + file;
+    noteReads.delete(key); noteReads.set(key, {source: sha256(text), controls: controls ? JSON.parse(JSON.stringify(controls)) : null});
+    while (noteReads.size > 64) noteReads.delete(noteReads.keys().next().value);
+  };
+  function noteAct(value) {
+    if (value === null) return null;
+    const bounded = (text, limit, empty = false) => typeof text === 'string' && (empty || text.length > 0) &&
+      text.length <= limit && text.isWellFormed() && !/[\u0000-\u001f\u007f]/.test(text);
+    if (!value || !bounded(value.id, 256) || !bounded(value.document_id, 256) ||
+        !safeInt(value.base_revision) || !safeInt(value.revision) || value.revision !== value.base_revision + 1 ||
+        !['human', 'agent', 'system'].includes(value.author?.kind) ||
+        value.author.name !== undefined && !bounded(value.author.name, 120) || !bounded(value.operation, 96) ||
+        value.at !== null && !(typeof value.at === 'string' && Number.isFinite(Date.parse(value.at)) &&
+          new Date(value.at).toISOString() === value.at) ||
+        value.turn_id !== undefined && !bounded(value.turn_id, 160) ||
+        value.label !== undefined && !bounded(value.label, 120, true) ||
+        value.reverses !== undefined && (!Array.isArray(value.reverses) || !value.reverses.length ||
+          value.reverses.some(id => !bounded(id, 256)))) throw new TypeError('notes_act_invalid');
+    return {id: value.id, document_id: value.document_id, base_revision: value.base_revision, revision: value.revision,
+      author: {kind: value.author.kind, ...(value.author.name !== undefined ? {name: value.author.name} : {})},
+      at: value.at, operation: value.operation, ...(value.turn_id !== undefined ? {turn_id: value.turn_id} : {}),
+      ...(value.label !== undefined ? {label: value.label} : {}),
+      ...(value.reverses !== undefined ? {reverses: value.reverses.slice()} : {})};
+  }
+
+  async function notesWrite(input, who, context) {
+    const text = typeof input.text === 'string' ? input.text : '';
+    const invalid = text.trim() ? admissibleText(text) : 'notes_text_required';
+    if (invalid) return failure(invalid, 'invalid');
+    if (typeof host.notesWrite !== 'function') return noNotesWrite(input.target?.note_ref);
+    cancelled(context);
+    const ref = input.target?.kind === 'note' ? input.target.note_ref : '';
+    let got;
+    try { got = await host.notesWrite({text, title: input.title || '', target: input.target, turn_id: input.turn_id, label: input.label,
+      base: ref ? noteReads.get(ownerOf(who) + '\u0000' + ref)?.source : undefined,
+      by: agentLabel(who.agent) || 'An agent', ...who, signal: context.signal, guard: context.notesGuard,
+      writeOpenNote: async (value, options = {}) => {
+        const fresh = await refresh(context);
+        if (fresh) return fresh;
+        options.guard?.();
+        if (!value.binding || value.binding.documentId !== state.documentId || sourceSha256() !== value.base)
+          return failure('notes_changed', 'conflict');
+        const splice = minimalSplice(state.text, value.text);
+        return publicWriteReceipt(await commit(splice.removed || splice.inserted ? [splice] : [], who, context, 'notes.write',
+          {turnId: input.turn_id, label: input.label ?? 'Edit note'}));
+      }}); }
+    catch { return failure('notes_write_unconfirmed', 'uncertain'); }
+    if (got === undefined) return noNotesWrite(ref || undefined);
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_write_unconfirmed', 'uncertain');
+    const blocked = refusedWrite(unavailableNotes(got, ref)) || notesRefused(got); if (blocked) return blocked;
+    if (typeof got?.file !== 'string' || typeof got?.note_ref !== 'string' ||
+        !['applied', 'original_changed', 'created'].every(key => typeof got[key] === 'boolean'))
+      return failure('notes_write_unconfirmed', 'uncertain');
+    let act;
+    try { if (Object.hasOwn(got, 'act')) act = noteAct(got.act); }
+    catch { return failure('notes_write_unconfirmed', 'uncertain'); }
+    if (got.applied && typeof got.saved === 'string') rememberNote(who, got.note_ref, got.saved);
+    return accepted({availability: 'available', file: got.file, note_ref: got.note_ref, applied: got.applied,
+      original_changed: got.original_changed, created: got.created, ...(Object.hasOwn(got, 'act') ? {act} : {}),
+      destination: 'notes_store', ...(typeof got.saved === 'string' ? {revision: sha256(got.saved)} : {}), ...(typeof got.reason === 'string' ? {reason: got.reason} : {})});
+  }
+  async function notesOpen(input, who, context) {
+    if (typeof host.notesOpen !== 'function') return noNotes(input.note_ref);
+    cancelled(context);
+    let got;
+    try {got = await host.notesOpen({...input, ...who, signal: context.signal, guard: context.notesGuard});}
+    catch {return failure('notes_open_unconfirmed', 'uncertain');}
+    if (got === undefined) return noNotes(input.note_ref);
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_open_unconfirmed', 'uncertain');
+    const blocked = unavailableNotes(got, input.note_ref) || notesRefused(got); if (blocked) return blocked;
+    if (got?.opened !== true || got.note_ref !== input.note_ref) return failure(got?.reason || 'notes_open_unconfirmed', got?.opened ? 'uncertain' : 'refused');
+    let refreshed = context.signal?.aborted ? failure('cancelled_after_open') : null;
+    if (!refreshed) {try {refreshed = await refresh(context);} catch {refreshed = failure('notes_open_currentness_unconfirmed');}}
+    return accepted({opened: true, presented: got.presented === true && !context.signal?.aborted, note_ref: got.note_ref, file: got.file,
+      document_binding: got.document_binding, document_access: got.document_access || 'unavailable',
+      ...(refreshed ? {currentness: 'changed', reason: refreshed.reason} : {})});
+  }
+  async function notesRead(input, who, context) {
+    const note_ref = typeof input.note_ref === 'string' ? input.note_ref : '';
+    if (!note_ref) return failure('notes_reference_required', 'invalid');
+    if (typeof host.notesRead !== 'function') return noNotes(note_ref);
+    let cursor = null, selectedVersion = input.version ?? null;
+    if (input.cursor) {
+      cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'notes-read' || cursor.note_ref !== note_ref) return failure('notes_cursor_wrong_kind', 'invalid');
+      if (input.version !== undefined && input.version !== cursor.selectedVersion) return failure('notes_cursor_wrong_version', 'invalid');
+      selectedVersion = cursor.selectedVersion;
+    }
+    cancelled(context);
+    const got = await host.notesRead({ note_ref, ...(selectedVersion === null ? {} : {version: selectedVersion}), ...who, signal: context.signal });
+    cancelled(context);
+    if (got === undefined) return noNotes(note_ref);
+    const unavailable = unavailableNotes(got, note_ref) || notesRefused(got); if (unavailable) return unavailable;
+    if (!got && cursor) return failure('notes_changed', 'conflict');
+    if (!got) return accepted({availability: 'available', note_ref, found: false, text: null, complete: true,
+      remaining: 0, next_cursor: null, reason: 'notes_not_found', message: 'This note is not in Notes. List notes to choose an available note_ref.'});
+    if (got.note_ref !== note_ref || typeof got.text !== 'string') return failure('notes_folder_unreadable');
+    const text = got.text, version = digest(text), controls = selectedVersion === null ? got.controls : null;
+    const controlsVersion = controls ? digest(JSON.stringify(controls)) : null;
+    const fields = controls?.values;
+    const fieldsBytes = fields ? bytes(JSON.stringify(fields)) : 0;
+    if (fieldsBytes > LIMITS.resultBytes - 1800) return failure('notes_fields_too_large');
+    let offset = 0;
+    if (cursor) {
+      if (cursor.version !== version || cursor.controlsVersion !== controlsVersion) return failure('notes_changed', 'conflict');
+      offset = cursor.offset || 0;
+    } else if (Number.isInteger(input.start) && input.start > 0) {
+      offset = Math.min(input.start, text.length);
+    }
+    if (!safeBoundary(text, offset)) return failure('range_invalid', 'invalid');
+    const pageChars = 12288;
+    let end = Math.min(text.length, offset + bounded(input.limit, pageChars, 256, pageChars));
+    if (!safeBoundary(text, end)) end--;
+    let page = text.slice(offset, end);
+    while (bytes(JSON.stringify({ ...current(), outcome: 'ok', note_ref, text: page, start: offset, end })) > LIMITS.resultBytes - 800 - fieldsBytes && page.length) {
+      end = offset + clip(text.slice(offset, end), Math.floor((end - offset) * 0.8)).length;
+      page = text.slice(offset, end);
+    }
+    const complete = end >= text.length;
+    const whole = offset === 0 || cursor?.whole === true;
+    if (complete && whole && selectedVersion === null) rememberNote(who, note_ref, text, controls);
+    const next = !complete ? mint('cursors', 'notes_read_', { kind: 'notes-read', note_ref, offset: end, version, controlsVersion, selectedVersion, whole }, who) : null;
+    if (input.cursor) delete state.cursors[input.cursor];
+    return accepted({ availability: 'available', found: true, revision: sha256(text), note_ref, file: got.file, ...(typeof host.notesForeground === 'function' ? {foreground: host.notesForeground()} : {}), ...(selectedVersion === null ? {} : {version: selectedVersion}), text: page, ...(complete && whole && selectedVersion === null && fields ? {fields} : {}), start: offset, end, complete, remaining: Math.max(0, text.length - end), next_cursor: next?.id || null });
+  }
+
+  async function notesSet(input, who, context) {
+    if (typeof host.notesSet !== 'function') return noNotesWrite(input.note_ref);
+    cancelled(context);
+    let got;
+    const read = noteReads.get(ownerOf(who) + '\u0000' + input.note_ref);
+    try { got = await host.notesSet({...input, ...who, expected: read?.controls ? {...read.controls, source: read.source} : undefined, signal: context.signal, guard: context.notesGuard}); }
+    catch { return failure('notes_set_unconfirmed', 'uncertain'); }
+    if (got === undefined) return noNotesWrite(input.note_ref);
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_set_unconfirmed', 'uncertain');
+    const unavailable = refusedWrite(unavailableNotes(got, input.note_ref)) || notesRefused(got); if (unavailable) return unavailable;
+    if (got?.note_ref !== input.note_ref || !got.changed || !got.previous || typeof got.revision !== 'string' || !/^[a-f0-9]{64}$/.test(got.revision)) return failure('notes_set_unconfirmed', 'uncertain');
+    let act;
+    try { if (Object.hasOwn(got, 'act')) act = noteAct(got.act); }
+    catch { return failure('notes_set_unconfirmed', 'uncertain'); }
+    if (!got.replayed && read?.controls && got.controls) {
+      const controls = JSON.parse(JSON.stringify(read.controls));
+      for (const field of Object.keys(got.changed)) {
+        const group = ['archived', 'trashed'].includes(field) ? 'archiveTrash' : field;
+        controls.values[field] = got.changed[field];
+        if (group !== 'tags') { controls.groups[group] = got.controls.groups[group]; controls.versions[group] = got.controls.versions[group]; }
+      }
+      noteReads.set(ownerOf(who) + '\u0000' + input.note_ref,
+        {source: Object.hasOwn(got.changed, 'tags') ? got.revision : read.source, controls});
+    }
+    return accepted({availability: 'available', note_ref: got.note_ref, file: got.file, revision: got.revision, changed: got.changed, previous: got.previous,
+      ...(Object.hasOwn(got, 'act') ? {act} : {}), ...(got.reminder ? {reminder: got.reminder} : {})});
+  }
+  async function notesUndo(input, who, context) {
+    if (typeof host.notesUndo !== 'function') return failure('notes_undo_unavailable');
+    const noteId = /^notes-controls:(.+):[0-9a-f-]{36}$/.exec(input.act)?.[1];
+    const prefix = ownerOf(who) + '\u0000';
+    const read = [...noteReads].reverse().find(([key, value]) => key.startsWith(prefix) && value.controls?.id === noteId);
+    if (!read) return failure('notes_read_required');
+    const note_ref = read[0].slice(prefix.length), expected = read[1].controls;
+    cancelled(context);
+    let got;
+    try { got = await host.notesUndo({act: input.act, ...who, note_ref, expected, signal: context.signal, guard: context.notesGuard}); }
+    catch { return failure('notes_undo_unconfirmed', 'uncertain'); }
+    const blocked = unavailableNotes(got) || notesRefused(got); if (blocked) return blocked;
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_undo_unconfirmed', 'uncertain');
+    try {
+      if (!got || typeof got.revision !== 'string' || !/^[a-f0-9]{64}$/.test(got.revision) || !got.changed || !got.previous) throw Error('receipt');
+      const act = noteAct(got.act);
+      return accepted({availability: 'available', note_ref: got.note_ref, file: got.file, revision: got.revision, changed: got.changed, previous: got.previous, act});
+    } catch { return failure('notes_undo_unconfirmed', 'uncertain'); }
+  }
+  async function notesHistory(input, who, context) {
+    if (typeof host.notesHistory !== 'function') return noNotes(input.note_ref);
+    let cursor = null;
+    if (input.cursor) {
+      cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'notes-history' || cursor.note_ref !== input.note_ref) return failure('notes_cursor_wrong_kind', 'invalid');
+    }
+    cancelled(context);
+    const got = await host.notesHistory({note_ref: input.note_ref, ...who, signal: context.signal});
+    cancelled(context);
+    if (got === undefined) return noNotes(input.note_ref);
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_set_unconfirmed', 'uncertain');
+    const unavailable = unavailableNotes(got, input.note_ref) || notesRefused(got); if (unavailable) return unavailable;
+    if (!got || !Array.isArray(got.versions)) return failure('notes_history_unavailable');
+    const versions = got.versions;
+    if (versions.some(row => !Number.isSafeInteger(row.version) || row.version < 1 || !Number.isSafeInteger(row.time) || row.time < 0 ||
+      !Number.isSafeInteger(row.size) || row.size < 0 || typeof row.reason !== 'string')) return failure('notes_history_unavailable');
+    const version = digest(JSON.stringify(versions));
+    if (cursor && cursor.version !== version) return failure('notes_changed', 'conflict');
+    const offset = cursor?.offset || 0, limit = bounded(input.limit, 32, 1, 64), page = [];
+    for (let i = offset; i < versions.length && page.length < limit; i++) {
+      const row = versions[i], item = {version: row.version, time: row.time, reason: clip(row.reason, 64), size: row.size, current: row.current === true};
+      if (bytes(JSON.stringify([...page, item])) > LIMITS.resultBytes - 1800) break;
+      page.push(item);
+    }
+    const end = offset + page.length, next = end < versions.length ? mint('cursors', 'notes_history_', {kind: 'notes-history', note_ref: input.note_ref, offset: end, version}, who) : null;
+    if (input.cursor) delete state.cursors[input.cursor];
+    return accepted({availability: 'available', note_ref: input.note_ref, file: got.file, found: got.found === true, versions: page, complete: end >= versions.length,
+      remaining: Math.max(0, versions.length - end), next_cursor: next?.id || null,
+      ...(Number.isSafeInteger(got.tidied) ? {tidied: got.tidied, tidiedAt: got.tidiedAt ?? null} : {})});
+  }
+  async function notesSourceUndo(input, who, context) {
+    cancelled(context);
+    let got;
+    try { got = await host.notesSourceUndo({...input, ...who, signal: context.signal, guard: context.notesGuard}); }
+    catch { return failure('notes_undo_unconfirmed', 'uncertain'); }
+    const blocked = unavailableNotes(got) || notesRefused(got); if (blocked) return blocked;
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_undo_unconfirmed', 'uncertain');
+    try {
+      if (!got || typeof got.file !== 'string' || typeof got.note_ref !== 'string' || typeof got.applied !== 'boolean' ||
+        typeof got.revision !== 'string' || !/^[a-f0-9]{64}$/.test(got.revision)) throw Error('receipt');
+      return accepted({availability: 'available', file: got.file, note_ref: got.note_ref, revision: got.revision,
+        applied: got.applied, act: noteAct(got.act)});
+    } catch { return failure('notes_undo_unconfirmed', 'uncertain'); }
+  }
+  async function notesSync(input, who, context) {
+    if (typeof host.notesSync !== 'function') return noNotesWrite();
+    cancelled(context);
+    let got;
+    try { got = await host.notesSync({action: input.action, ...who, signal: context.signal, guard: context.notesGuard}); }
+    catch { return failure('notes_sync_unconfirmed', 'uncertain'); }
+    if (got === undefined) return noNotesWrite();
+    if (got?.outcome === 'uncertain') return failure(got.reason || 'notes_sync_unconfirmed', 'uncertain');
+    const unavailable = refusedWrite(unavailableNotes(got)) || notesRefused(got); if (unavailable) return unavailable;
+    if (typeof got?.synced !== 'boolean') return failure('notes_sync_failed');
+    return accepted({availability: 'available', action: 'now', synced: got.synced,
+      ...(typeof got.reason === 'string' ? {reason: clip(got.reason, 128)} : {}),
+      ...(typeof got.complete === 'boolean' ? {complete: got.complete} : {}), ...(typeof got.unchanged === 'boolean' ? {unchanged: got.unchanged} : {}),
+      ...(Number.isSafeInteger(got.skipped) ? {skipped: got.skipped} : {}), ...(Number.isSafeInteger(got.missing) ? {missing: got.missing} : {}),
+      ...(Number.isSafeInteger(got.held) ? {held: got.held} : {}), ...(Number.isSafeInteger(got.conflicts) ? {conflicts: got.conflicts} : {}),
+      ...(Number.isSafeInteger(got.backedUpAt) ? {backedUpAt: got.backedUpAt} : {})});
+  }
+
+  async function outline(context) {
+    if (sameReadSnapshot(outlineCache)) return outlineCache.value;
+    const snapshot = readSnapshot(), {text, revision, filename} = snapshot;
+    let value;
+    if (state.docKind === 'markdown') {
+      const rows = typeof host.markdown === 'function' ? await host.markdown({ text, limit: 2048, signal: context.signal }) : outlineMarkdown(text, { limit: 2048 }, markdownParser());
+      value = Array.isArray(rows) ? { entries: rows, engine: 'markdown', complete: true } : { engine: 'markdown', ...rows };
+    } else {
+      const resolved = worldOrPending(context, 'outline', { mode: 'outline', filename, revision });
+      if (resolved.terminal) return resolved.terminal;
+      value = resolved.value;
+    }
+    cancelled(context);
+    if (!sameReadSnapshot(snapshot)) return failure('document_changed', 'conflict');
+    const blockRows = Array.isArray(value?.blocks?.entries) ? value.blocks.entries : [];
+    const blocks = blockRows.filter(row => safeBoundary(text, row.start) && safeBoundary(text, row.end) && row.end > row.start);
+    const layoutRows = (value?.layout?.entries || []).slice(0, 2048);
+    const layouts = layoutRows.flatMap(row => {
+      if (![row.start, row.end, row.blockStart, row.blockEnd].every(offset => safeBoundary(text, offset)) ||
+          row.start < row.blockStart || row.end > row.blockEnd || row.end <= row.start ||
+          !['heading', 'paragraph', 'image'].includes(row.kind)) return [];
+      const layout = parseLayout(text.slice(row.start, row.end));
+      return layout ? [{ start: row.start, end: row.end, blockStart: row.blockStart, blockEnd: row.blockEnd, kind: row.kind, ...layout }] : [];
+    });
+    const headingLayouts = new Map(layouts.filter(row => row.kind === 'heading').map(row => [row.blockStart,
+      { ...(row.align ? { align: row.align } : {}), ...(row.wrap ? { wrap: row.wrap } : {}),
+        ...(row.x != null ? { x: row.x } : {}), ...(row.y != null ? { y: row.y } : {}) }]));
+    const imageLayouts = new Map(layouts.filter(row => row.kind === 'image').map(row => [row.blockStart,
+      { ...(row.align ? { align: row.align } : {}), ...(row.width != null ? { width: row.width } : {}),
+        ...(row.wrap ? { wrap: row.wrap } : {}), ...(row.x != null ? { x: row.x } : {}), ...(row.y != null ? { y: row.y } : {}) }]));
+    const imageRows = (value?.images?.entries || []).slice(0, 2048);
+    const images = imageRows.flatMap(row => {
+      if (![row.blockStart, row.blockEnd].every(offset => safeBoundary(text, offset)) || row.blockEnd <= row.blockStart ||
+          !safeInt(row.index) || !['embedded', 'linked'].includes(row.profile)) return [];
+      return [{ blockStart: row.blockStart, blockEnd: row.blockEnd, index: row.index, alt: display(row.alt, 192), profile: row.profile,
+        ...(typeof row.id === 'string' && row.id.length > 0 && row.id.length <= 999 ? { id: display(row.id, 999) } : {}),
+        ...(typeof row.mime === 'string' && /^image\/[a-z0-9.+-]{1,64}$/.test(row.mime) ? { mime: row.mime } : {}),
+        ...(typeof row.assetStatus === 'string' ? { assetStatus: clip(row.assetStatus, 64) } : {}),
+        ...(safeInt(row.bytes) ? { bytes: row.bytes } : {}),
+        ...(row.drawing === true ? { drawing: true } : {}),
+        ...(row.intrinsic && [row.intrinsic.width, row.intrinsic.height].every(value => safeInt(value) && value > 0 && value <= 16384)
+          ? { intrinsic: { width: row.intrinsic.width, height: row.intrinsic.height } } : {}),
+        ...(imageLayouts.get(row.blockStart) || {}) }];
+    });
+    const sourceRows = (value?.entries || []).filter(row => safeBoundary(text, row.start) && safeBoundary(text, row.end) && row.end >= row.start);
+    const entries = sourceRows.map((row, index) => {
+      let end = safeBoundary(text, row.extentEnd) && row.extentEnd >= row.end ? row.extentEnd : row.end;
+      if (state.docKind === 'markdown') {
+        const next = sourceRows[index + 1];
+        end = next ? next.start : value?.complete === false ? row.end : text.length;
+        while (end > row.start && /\s/.test(text[end - 1])) end--;
+        for (;;) {
+          const start = text.lastIndexOf('\n', end - 1) + 1;
+          const marker = willMarkerOf(text.slice(start, end));
+          if (start <= row.start || !marker || marker.kind === 'near') break;
+          end = start;
+          while (end > row.start && /\s/.test(text[end - 1])) end--;
+        }
+      }
+      const hidden = imageSpans(text).some(span => span.start < row.end && row.start < span.end);
+      return { start: row.start, end, depth: bounded(row.depth ?? row.level, 1, 1, 64),
+        label: hidden ? '<embedded data omitted>' : display(row.label || '', 192),
+        kind: String(row.kind || (state.docKind === 'markdown' ? 'heading' : 'declaration')),
+        ...(headingLayouts.has(row.start) ? { layout: headingLayouts.get(row.start) } : {}) };
+    });
+    value = { entries, engine: value?.engine || null, complete: value?.complete !== false,
+      ...(value?.brief && [value.brief.start, value.brief.end].every(at => safeBoundary(text, at)) && value.brief.end > value.brief.start
+        ? { brief: { start: value.brief.start, end: value.brief.end, complete: value.brief.complete === true } } : {}),
+      ...(state.docKind === 'markdown' ? { blocks: {entries: blocks, complete: value?.blocks?.complete === true && blocks.length === blockRows.length},
+        images: { entries: images, total: Math.max(images.length, Number(value?.images?.total) || 0),
+        assetRecords: safeInt(value?.images?.assetRecords) ? value.images.assetRecords : 0,
+        declaredAssetBytes: safeInt(value?.images?.declaredAssetBytes) ? value.images.declaredAssetBytes : 0,
+        complete: value?.images?.complete === true && images.length === imageRows.length,
+        ...(value?.images?.reason || !value?.images ? { reason: value?.images?.reason || value?.reason || 'markdown_parser_unavailable' } : {}) },
+        layout: { entries: layouts, total: Math.max(layouts.length, Number(value?.layout?.total) || 0),
+          faults: (Array.isArray(value?.layout?.faults) ? value.layout.faults : []).slice(0, 32).flatMap(row => typeof row?.reason === 'string'
+            ? [{ reason: clip(row.reason, 64), ...([row.blockStart, row.blockEnd].every(offset => safeBoundary(text, offset)) && row.blockEnd > row.blockStart ? { blockStart: row.blockStart, blockEnd: row.blockEnd } : {}) }] : []),
+        complete: value?.layout?.complete === true && layouts.length === layoutRows.length,
+        ...(value?.layout?.reason || !value?.layout ? { reason: value?.layout?.reason || value?.reason || 'markdown_parser_unavailable' } : {}) } } : {}),
+      total: Number(value?.total) || entries.length, ...(value?.reason ? { reason: value.reason } : {}) };
+    outlineCache = {...snapshot, value};
+    return value;
+  }
+
+  async function continuationBrief(context, budget) {
+    if (state.docKind !== 'markdown' || !(snapshotFacts().brief ??= /continuation[ \t]+brief/i.test(state.text))) return null;
+    const facts = await outline(context);
+    if (facts.outcome) return facts;
+    const section = facts.brief;
+    if (!section) return null;
+    const start = section.start, sectionEnd = section.end;
+    let end = Math.min(sectionEnd, start + 2048);
+    if (!safeBoundary(state.text, end)) end--;
+    const project = () => {
+      const value = disclose(state.text, start, end);
+      return { source: 'document', authority: false, start, end, sectionEnd, text: value.text,
+        complete: section.complete && end === sectionEnd && !value.omissions.length,
+        remaining: sectionEnd - end, ...(!section.complete ? {reason: 'markdown_work_bound'} : {}),
+        ...(value.omissions.length ? {omissions: value.omissions.slice(0, 4)} : {}) };
+    };
+    let result = project();
+    while (bytes(JSON.stringify(result)) > budget && end > start) {
+      end = start + clip(state.text.slice(start, end), Math.floor((end - start) * 0.75)).length;
+      result = project();
+    }
+    return result;
+  }
+
+  async function getOutline(input, who, context) {
+    const bad = checkContinuation(context, 'outline');
+    if (bad) return bad;
+    const snapshot = readSnapshot(), analysis = await outline(context);
+    if (!sameReadSnapshot(snapshot)) return failure('document_changed', 'conflict');
+    if (context?.continues) pendingFacts.delete(context.continues);
+    if (analysis.outcome) return analysis;
+    let entries = analysis.entries;
+    let offset = 0, within = null;
+    if (input.cursor) {
+      const cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'outline' || cursor.revision !== state.revision) return failure('outline_changed', 'conflict');
+      offset = cursor.offset; within = cursor.within;
+    } else if (input.within) {
+      const ref = lookup('refs', input.within, who);
+      if (ref.outcome) return ref;
+      const range = relocate(ref);
+      if (range.outcome) return range;
+      within = range;
+    }
+    if (within) entries = entries.filter(row => row.start >= within.start && row.end <= within.end);
+    const limit = bounded(input.limit, 24, 1, 32), page = entries.slice(offset, offset + limit);
+    const items = [];
+    for (const row of page) {
+      const item = { ref: reference(row.start, row.end, who, { kind: row.kind, label: row.label })?.id || null,
+        kind: row.kind, depth: row.depth, label: row.label, chars: row.end - row.start,
+        ...(row.layout ? { layout: row.layout } : {}), ...documentLaw(row.start, row.end) };
+      if (bytes(JSON.stringify(items)) + bytes(JSON.stringify(item)) > LIMITS.resultBytes - 1800) {
+        if (item.ref) delete state.refs[item.ref];
+        break;
+      }
+      items.push(item);
+    }
+    const end = offset + items.length;
+    const next = end < entries.length ? mint('cursors', 'outline_', { kind: 'outline', revision: state.revision, offset: end, within }, who) : null;
+    return accepted({ engine: analysis.engine, items, total: within ? entries.length : analysis.total, remaining: entries.length - end,
+      next_cursor: next?.id || null, complete: analysis.complete && !next, omitted: Math.max(0, analysis.total - analysis.entries.length),
+      ...(analysis.reason ? { reason: analysis.reason } : {}) });
+  }
+
+  async function find(input, who, context) {
+    const snapshot = readSnapshot();
+    if (!['source', 'comparison'].includes(input.scope)) return failure('search_scope_required', 'invalid');
+    if (typeof input.query !== 'string' || (!input.query && input.scope !== 'comparison' && !FIND_KINDS.markdown.includes(input.kind)) || (input.query.length > 512 && [...input.query].length > 512) ||
+        /[\uD800-\uDFFF]/u.test(input.query)) return failure('query_invalid', 'invalid');
+    if (input.scope === 'comparison' && !state.compare) return failure('compare_not_open');
+    if (input.scope === 'comparison') {
+      for (const field of ['case_sensitive', 'within', 'kind']) {
+        if (Object.hasOwn(input, field)) return failure(field + '_not_applicable', 'invalid');
+      }
+      return findInComparison(input, who);
+    }
+    if (input.kind && Object.hasOwn(input, 'case_sensitive')) return failure('case_sensitive_not_applicable', 'invalid');
+    if (input.kind && FIND_KINDS.markdown.includes(input.kind) !== (state.docKind === 'markdown')) return failure('kind_not_applicable', 'invalid');
+    let range = { start: 0, end: state.text.length }, offset = 0;
+    const signature = JSON.stringify([input.query, !!input.case_sensitive, input.kind || '', input.within || '']);
+    if (input.within) {
+      const ref = lookup('refs', input.within, who);
+      if (ref.outcome) return ref;
+      range = relocate(ref);
+      if (range.outcome) return range;
+    }
+    if (input.cursor) {
+      const cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'find' || cursor.revision !== state.revision || cursor.signature !== signature) return failure('search_changed', 'conflict');
+      offset = cursor.offset;
+    }
+    const record = state.docKind === 'markdown' && state.text.includes('md-comments:') ? parseComments(state.text).record : null;
+    const outsideRecord = row => !record || row.end <= record.start || row.start >= record.end;
+    let found = [], complete = true, windowed = false, structuralRemaining = 0, sectionEntries = null;
+    const limit = bounded(input.limit, 8, 1, 16);
+    if (input.kind) {
+      const requirements = { mode: 'find', filename: state.filename, docKind: state.docKind, query: input.query, kind: input.kind, within: range, offset };
+      const resolved = worldOrPending(context, 'find', requirements, fact =>
+        fact.query === input.query && fact.kind === input.kind && fact.offset === offset &&
+        JSON.stringify(fact.within) === JSON.stringify(range));
+      if (resolved.terminal) return resolved.terminal;
+      const value = resolved.value;
+      if (value?.reason && !value.matches) return failure(value.reason);
+      found = (value?.matches || []).filter(row => safeBoundary(state.text, row.start) && safeBoundary(state.text, row.end));
+      complete = value?.complete !== false;
+      windowed = value?.windowed === true; structuralRemaining = Number(value?.remaining) || 0;
+      sectionEntries = Array.isArray(value?.entries) ? value.entries.map(row => ({ start: row.start, end: row.extentEnd ?? row.end,
+        label: display(row.label || row.name || '', 192), kind: row.kind || 'declaration' })) : null;
+    } else {
+      const haystack = input.case_sensitive ? state.text : state.text.toLocaleLowerCase('und');
+      const needle = input.case_sensitive ? input.query : input.query.toLocaleLowerCase('und');
+      if (haystack.length !== state.text.length || needle.length !== input.query.length) {
+        const pattern = new RegExp(input.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+        pattern.lastIndex = range.start;
+        for (const match of state.text.matchAll(pattern)) {
+          if (match.index >= range.end) break;
+          const row = { start: match.index, end: match.index + match[0].length };
+          if (row.end <= range.end && outsideRecord(row)) found.push(row);
+          if (found.length >= offset + limit + 1) { complete = false; break; }
+        }
+      } else {
+        let at = range.start;
+        while (at <= range.end) {
+          const start = haystack.indexOf(needle, at);
+          if (start < 0 || start + input.query.length > range.end) break;
+          const row = { start, end: start + input.query.length };
+          if (outsideRecord(row)) found.push(row);
+          at = start + Math.max(1, input.query.length);
+          if (found.length >= offset + limit + 1) { complete = false; break; }
+        }
+      }
+    }
+    if (!sectionEntries && (state.docKind === 'markdown' ||
+        (/\.(?:[cm]?js|html?)$/i.test(state.filename) && worldHasFact(context, 'outline')))) {
+      const mapped = await outline(context);
+      if (mapped.outcome) return mapped;
+      sectionEntries = mapped.entries;
+    }
+    if (!sameReadSnapshot(snapshot)) return failure('read_snapshot_changed', 'conflict');
+    sectionEntries = (sectionEntries || []).filter(row => safeBoundary(state.text, row.start) && safeBoundary(state.text, row.end));
+    if (record) found = found.filter(outsideRecord);
+    const sectionRefs = new Map();
+    const localOffset = windowed ? 0 : offset;
+    const page = found.slice(localOffset, localOffset + limit), matches = [];
+    for (const row of page) {
+      const projected = disclose(state.text, row.start, row.end), held = handle(row.start, row.end, who);
+      let snippetStart = Math.max(range.start, row.start - 64), snippetEnd = Math.min(range.end, row.end + 96);
+      if (!safeBoundary(state.text, snippetStart)) snippetStart--;
+      if (!safeBoundary(state.text, snippetEnd)) snippetEnd++;
+      const item = { matched: projected.text, handle: held?.id || null, start: row.start, end: row.end,
+        snippet: clip(disclose(state.text, snippetStart, snippetEnd).text, 192),
+        handle_scope: 'matched', ...documentLaw(row.start, row.end),
+        ...(projected.omissions.length ? { complete: false, omissions: projected.omissions.slice(0, 2) } : {}) };
+      const section = sectionEntries.filter(entry => entry.start <= row.start && row.end <= entry.end)
+        .sort((a, b) => (a.end - a.start) - (b.end - b.start))[0];
+      let sectionRef = null;
+      if (section) {
+        const key = `${section.start}:${section.end}`;
+        sectionRef = sectionRefs.get(key);
+        if (!sectionRef) {
+          const ref = reference(section.start, section.end, who, { kind: section.kind, label: section.label });
+          if (ref) { sectionRef = { id: ref.id, listed: false }; sectionRefs.set(key, sectionRef); }
+        }
+        if (sectionRef) { item.section_ref = sectionRef.id; item.section = section.label; }
+      }
+      if (bytes(JSON.stringify(matches)) + bytes(JSON.stringify(item)) > LIMITS.resultBytes - 1400) {
+        if (held) delete state.handles[held.id];
+        if (matches.length) {
+          if (sectionRef && !sectionRef.listed) delete state.refs[sectionRef.id];
+          break;
+        }
+        item.handle = null; item.complete = false; item.reason = 'match_over_result_budget';
+        while (item.matched.length && bytes(JSON.stringify(matches)) + bytes(JSON.stringify(item)) > LIMITS.resultBytes - 1400) {
+          item.matched = clip(item.matched, Math.floor(item.matched.length * 0.8));
+        }
+      }
+      matches.push(item);
+      if (sectionRef) sectionRef.listed = true;
+    }
+    const end = offset + matches.length;
+    const more = localOffset + matches.length < found.length || (input.kind ? structuralRemaining > 0 : !complete);
+    const next = more ? mint('cursors', 'find_', { kind: 'find', revision: state.revision, signature, offset: end }, who) : null;
+    return accepted({ scope: 'source', matches, next_cursor: next?.id || null, complete: complete && !more,
+      ...(input.kind && !complete ? { reason: 'structure_bounded' } : {}), ...(matches.length ? { expires_in_ms: LIMITS.lifetimeMs } : {}) });
+  }
+
+  function structureReceipt(beforeText, text, filename, context) {
+    if (!receiptStructureEligible(filename)) return null;
+    const fact = context?.world?.structure;
+    const beforeDigest = digest(beforeText), afterDigest = digest(text);
+    if (!fact || fact.mode !== 'receipt' || fact.filename !== filename ||
+        fact.beforeDigest !== beforeDigest || fact.afterDigest !== afterDigest) {
+      return { parse: 'not_checked', reason: 'structure_unavailable' };
+    }
+    try { return receiptStructureFact(beforeText, text, fact.value); }
+    catch (error) { return { parse: 'not_checked', reason: 'structure_unavailable' }; }
+  }
+
+  function remember(pool, who, value) {
+    pool[ownerOf(who)] = { ...value, at: now() };
+    const entries = Object.entries(pool).sort((a, b) => a[1].at - b[1].at);
+    while (entries.length > LIMITS.principals) delete pool[entries.shift()[0]];
+  }
+
+  function commitGate(splices, who, drawingTarget = null) {
+    expireCollaboration();
+    if (who.actor !== 'agent') return null;
+    if (host.liveSession === true) {
+      const composing = typeof host.liveComposition === 'function' ? host.liveComposition(splices) : null;
+      if (composing) return failure('foreground_hand_wins', 'yielded', {current: composing});
+    }
+    const sameDrawing = value => drawingTarget && value?.occurrence && value.occurrence.start === drawingTarget.occurrence?.start &&
+      value.occurrence.end === drawingTarget.occurrence?.end && normalizeLabel(value.occurrence.reference) === normalizeLabel(drawingTarget.asset);
+    const ranges = sameDrawing(state.drawing) ? [] : [state.selection?.active && state.selection.start !== state.selection.end ? state.selection : null,
+      state.focus?.active ? state.focus : null];
+    for (const row of Object.values(state.humanContexts)) if (row.visible && row.editing && row.revision === state.revision && !sameDrawing(row.drawing)) {
+      ranges.push(row.selection, row.focus);
+    }
+    const hands = ranges.filter(Boolean).map(range => ({original: range, moved: range}));
+    for (const row of splices) {
+      const touched = hands.find(hand => overlap(hand.moved, row));
+      if (touched) return failure('foreground_hand_wins', 'yielded', {current: {start: touched.original.start, end: touched.original.end}});
+      for (const hand of hands) hand.moved = transportInterval(hand.moved.start, hand.moved.end, [row]);
+    }
+    return null;
+  }
+
+  function committedText(beforeText, splices, authoredCount, actor, docKind, operation, restores, sourceTransactionId, drawAssets, commentInverses, commentRestorations) {
+    const authoredSplices = splices.slice(0, authoredCount);
+    let derivedCommentIndex = null;
+    let text = transformSplices(beforeText, splices);
+    if (text == null) return null;
+    if (docKind === 'markdown' && operation !== 'document.replace' && !restores && !sourceTransactionId) {
+      const retired = imageDeletionSplices(beforeText, text, authoredSplices, actor);
+      if (retired.length) { splices = splices.concat(retired); text = transformSplices(text, retired); }
+      let emptied;
+      do {
+        emptied = false;
+        const rows = markerDeletionSplices(beforeText, text, splices, actor, 'ink');
+        if (rows.length) { splices = splices.concat(rows); text = transformSplices(text, rows); emptied = true; }
+      } while (emptied);
+    }
+    if (docKind === 'markdown' && drawAssets?.length) {
+      let additions;
+      try { additions = pendingAssetSplices(text, drawAssets); } catch { return null; }
+      if (additions.length) { splices = splices.concat(additions); text = transformSplices(text, additions); }
+    }
+    if (docKind === 'markdown' && operation !== 'document.replace') {
+      const comments = commentSplices(beforeText, splices);
+      if (comments.length) { splices = splices.concat(comments); text = transformSplices(text, comments); derivedCommentIndex = splices.length - 1; }
+    }
+    for (const change of commentRestorations || []) {
+      const row = commentRestoreSplice(text, change, change.later, splices);
+      if (row) {splices = splices.concat(row); text = transformSplices(text, [row]);}
+    }
+    for (const change of commentInverses || []) {
+      const row = change.later && commentUndoSplice(text, change, change.later.concat({splices}));
+      if (!row) return {reason: 'change_interleaved'};
+      splices = splices.concat(row); text = transformSplices(text, [row]);
+      if (text == null) return null;
+    }
+    return { text, splices, authoredSplices, derivedCommentIndex };
+  }
+
+  function commitFenceRefusal(fact) {
+    const fence = typeof host.commitFence === 'function' ? host.commitFence(fact) : '';
+    return fence ? failure(fence, 'refused') : null;
+  }
+
+  async function commit(splices, who, context, operation, options = {}) {
+    options = {...options, turnId: options.turnId ?? who.turnId};
+    const guarded = documentGuardFailure(context); if (guarded) return guarded;
+    cancelled(context);
+    const beforeText = state.text, baseRevision = state.revision, documentId = state.documentId;
+    const authoredCount = options.authoredCount ?? splices.length;
+    if (!safeInt(authoredCount) || authoredCount > splices.length) return failure('edit_invalid', 'invalid');
+    const computed = committedText(beforeText, splices, authoredCount, who.actor, state.docKind, operation,
+      options.restores === true, options.sourceTransactionId, options.drawAssets, options.commentInverses, options.commentRestorations);
+    if (!computed) return failure('target_changed', 'conflict');
+    if (computed.reason) return failure(computed.reason, 'conflict');
+    let { text, splices: withRetirements, authoredSplices } = computed;
+    splices = withRetirements;
+    options = {...options, authoredCount, editCount: options.editCount ?? authoredCount};
+    if (options.drawingPatch) {
+      const candidate = clone(options.drawingPatch);
+      const index = splices.findIndex(row => {
+        const match = DRAW_OCCURRENCE.exec(row.removed);
+        return match && normalizeLabel(match[2]) === normalizeLabel(candidate.asset);
+      });
+      if (index < 0) return failure('draw_patch_invalid', 'conflict');
+      const authored = splices[index];
+      const target = transportInterval(authored.pos, authored.pos + authored.inserted.length, splices.slice(index + 1));
+      if (!target) return failure('draw_patch_invalid', 'conflict');
+      candidate.occurrence = {...candidate.occurrence, start: authored.pos, end: authored.pos + authored.removed.length, position: authored.pos};
+      candidate.targetOccurrence = {...candidate.targetOccurrence, ...target, position: target.start};
+      if (!verifyDrawingPatch(candidate, beforeText, text)) return failure('draw_patch_invalid', 'conflict');
+      const retainedDrawingPatch = compactDrawingPatch(candidate, beforeText, text);
+      if (!retainedDrawingPatch) return failure('draw_patch_invalid', 'conflict');
+      options = {...options, drawingPatch: candidate, fence: {...options.fence, drawingPatch: candidate}};
+    }
+    if (options.drawingPresentation) {
+      const requested = options.drawingPresentation;
+      let occurrence = null;
+      for (let index = 0; index < splices.length && !occurrence; index++) {
+        const splice = splices[index], images = /!\[((?:\\.|[^\]\\])*)\]\[([^\]\n]+)\]/g;
+        for (let match; (match = images.exec(splice.inserted));) {
+          if (normalizeLabel(match[2]) !== normalizeLabel(requested.reference)) continue;
+          occurrence = transportInterval(splice.pos + match.index, splice.pos + match.index + match[0].length, splices.slice(index + 1));
+          break;
+        }
+      }
+      options = {...options, drawingPresentation: occurrence ? {...requested, occurrence} : null};
+    }
+    const invalid = admissibleSnapshotText(text);
+    if (invalid) return failure(invalid, 'invalid');
+    const beforeMetadata = {filename: state.filename, docKind: state.docKind};
+    const metadata = options.metadataDelta || (options.metadata ? metadataDelta(beforeMetadata, options.metadata, {assign: options.metadataAssignments || []}) : null);
+    const afterMetadata = transformMetadata(beforeMetadata, metadata);
+    if (!afterMetadata) return failure('metadata_invalid', 'invalid');
+    const metadataChanged = afterMetadata.filename !== beforeMetadata.filename || afterMetadata.docKind !== beforeMetadata.docKind;
+    if (afterMetadata.docKind !== beforeMetadata.docKind && currentDrawing()?.open) return failure('draw_session_open', 'conflict');
+    const effectChanged = hasHistoryEffect({splices: [], transaction: {sourceTransactionId: options.sourceTransactionId, sourceTransactionIds: options.sourceTransactionIds}}, journalHistory().records);
+    options = {...options, metadataDelta: metadata, metadata: afterMetadata};
+    if (text === beforeText && !metadataChanged && !effectChanged) return {outcome: 'unchanged', sourceChanged: false, changeId: null, editCount: 0};
+    const gate = commitGate(splices, who, options.drawingPatch);
+    if (gate) return gate;
+    if (state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'comments.write' &&
+        options.restores !== true && !options.sourceTransactionId &&
+        touchesCommentRecord(beforeText, authoredSplices, options.metadata?.docKind || state.docKind)) return failure('comments_record');
+    const law = enforceWill(beforeText, text, authoredSplices, { docKind: state.docKind, actor: who.actor,
+      restores: options.restores === true ? options.restored : null, referenceCheck: host.referenceCheck, markerSplices: splices });
+    if (law) return failure('document_law', 'refused', law);
+    const fenced = commitFenceRefusal({...options.fence, splices});
+    if (fenced) return fenced;
+    if (!law && state.docKind === 'markdown' && who.actor === 'agent' && operation !== 'document.replace' &&
+        options.restores !== true && !options.sourceTransactionId) {
+      const broken = markerBroken(beforeText, text, splices, 'ink');
+      if (broken) return failure('ink_pair_broken', 'refused', broken);
+    }
+    if (context.prepareOnly) return {outcome: 'prepared', splices: authoredSplices, options};
+    let result = null, transactionId = null, revision = baseRevision + 1, presentation = null;
+    const uncertain = reason => failure(reason, 'uncertain', { operation, requestId: who.requestId, baseRevision,
+      ...(transactionId ? { transactionId } : {}) });
+    if (documentGuardFailure(context)) return documentGuardFailure(context);
+    if (typeof host.commit === 'function') {
+      try {
+        result = await host.commit({ documentId, baseRevision, beforeText, text, splices: clone(splices), authoredCount,
+          ...who, signal: context.signal, operation, label: clip(options.label ?? operation, 120),
+          sourceTransactionId: options.sourceTransactionId || null,
+          metadata, beforeMetadata, afterMetadata,
+          ...(options.sourceTransactionIds?.length ? {sourceTransactionIds: options.sourceTransactionIds} : {}),
+          ...(options.restores === true ? {restored: clone(options.restored || [])} : {}),
+          ...(options.turnId ? {turnId: options.turnId} : {}), fence: options.fence || null });
+        const ok = result?.ok;
+        if (ok === false) {
+          const reason = result.reason, outcome = result.outcome;
+          return failure(typeof reason === 'string' && reason ? clip(reason, 160) : 'commit_refused',
+            outcome === 'refused' ? 'refused' : 'conflict');
+        }
+        if (ok !== true) return uncertain('host_commit_receipt_invalid');
+        const suppliedId = result.transactionId;
+        if (suppliedId == null) return uncertain('host_commit_receipt_invalid');
+        if (suppliedId != null) {
+          if (typeof suppliedId !== 'string' || !suppliedId || suppliedId.length > 256) return uncertain('host_commit_receipt_invalid');
+          transactionId = suppliedId;
+        }
+        const suppliedDocumentId = result.documentId;
+        if (typeof suppliedDocumentId !== 'string' || !suppliedDocumentId) return uncertain('host_commit_receipt_invalid');
+        if (suppliedDocumentId !== documentId) return uncertain('document_replaced_after_commit');
+        const suppliedRevision = result.revision;
+        if (suppliedRevision == null) return uncertain('host_commit_receipt_invalid');
+        revision = suppliedRevision;
+        if (result.createdAt !== undefined && result.createdAt !== null && !safeInt(result.createdAt)) return uncertain('host_commit_receipt_invalid');
+        if (result.author !== undefined) historyAuthor(result.author, who.actor);
+        if (metadata && (canonicalJson(result.metadata) !== canonicalJson(afterMetadata))) return uncertain('host_commit_receipt_invalid');
+        presentation = result.drawingReceipt || result.presentation;
+      } catch { return uncertain('host_commit_unconfirmed'); }
+    } else cancelled(context);
+    if (!safeInt(revision) || revision !== baseRevision + 1) return result ? uncertain('host_revision_invalid') : failure('host_revision_invalid');
+    const entry = appendCommit(text, splices, who, operation, { ...options, derivedCommentIndex: computed.derivedCommentIndex, revision, ...(result ? {createdAt: result.createdAt ?? null, affectedBlockIds: result.affectedBlockIds, author: result.author || who.author} : {}), id: transactionId || undefined });
+    if (metadataChanged) { state.handles = {}; state.refs = {}; state.cursors = {}; }
+    const structure = structureReceipt(beforeText, text, state.filename, context);
+    const output = { outcome: options.rebased ? 'rebased' : 'applied', sourceChanged: text !== beforeText,
+      sourceRevision: state.revision, act: publicAct(entry), changeId: entry.id, editCount: options.editCount || splices.length,
+      ...(options.turnId ? {turnId: options.turnId} : {}),
+      ...(presentation ? {presentation, ...(result?.drawingReceipt ? {drawingReceipt: result.drawingReceipt} : {})} : {}),
+      ...(options.drawingPatch ? {drawingPatch: {...clone(options.drawingPatch), transactionId: entry.id}} : {}),
+      ...(structure ? { structure } : {}),
+      transaction: { transactionId: entry.id, baseRevision, revision, actor: who.actor, principal: who.principal,
+        operation, createdAt: entry.createdAt, author: clone(entry.author), sourceTransactionId: options.sourceTransactionId || null,
+        ...(options.sourceTransactionIds?.length ? {sourceTransactionIds: [...options.sourceTransactionIds]} : {}),
+        ...(options.turnId ? {turnId: options.turnId, turnBaseRevision: entry.turnBaseRevision} : {}) } };
+    return operation === 'document.draw' || options.drawingPatch ? drawingReceipt(output) : output;
+  }
+
+  async function applyEdits(input, who, context) {
+    if (!Array.isArray(input.edits) || !input.edits.length || input.edits.length > LIMITS.edits) return failure('edits_invalid', 'invalid');
+    const ready = [], seen = new Set();
+    let total = 0, rebased = false;
+    for (let index = 0; index < input.edits.length; index++) {
+      const edit = input.edits[index];
+      if (!edit || typeof edit.context_handle !== 'string' || typeof edit.text !== 'string' ||
+          edit.text.length > LIMITS.editChars || (edit.placement && !['replace', 'before', 'after'].includes(edit.placement))) return failure('edit_invalid', 'invalid', { editIndex: index });
+      total += edit.text.length;
+      if (total > LIMITS.editChars) return failure('batch_too_large', 'invalid');
+      if (seen.has(edit.context_handle)) return failure('context_repeated', 'invalid', { editIndex: index });
+      seen.add(edit.context_handle);
+      if (changeOf(edit.context_handle)) return failure('context_handle_wrong_kind', 'invalid', { editIndex: index });
+      const held = lookup('handles', edit.context_handle, who);
+      if (held.outcome) return { ...held, editIndex: index };
+      if (['draw', 'svg', 'image-comment'].includes(held.kind)) return failure('context_handle_wrong_kind', 'invalid', { editIndex: index });
+      const range = relocate(held, who);
+      if (range.outcome) return { ...range, editIndex: index };
+      rebased ||= range.rebased;
+      const placement = edit.placement || 'replace';
+      const start = placement === 'after' ? range.end : range.start;
+      const end = placement === 'replace' ? range.end : start;
+      const inserted = placement === 'after' && needsParagraphBreakAfter(state.text, range.end)
+        ? paragraphBreakAround(state.text, range.end).prefix + edit.text : edit.text;
+      const narrow = minimalSplice(state.text.slice(start, end), inserted);
+      const pos = start + narrow.pos;
+      ready.push({ held, editIndex: index, start, end, offset: pos - range.start,
+        splice: { pos, removed: narrow.removed, inserted: narrow.inserted } });
+    }
+    const ordered = ready.slice().sort((a, b) => a.start - b.start || a.end - b.end);
+    for (let index = 1; index < ordered.length; index++) {
+      const prev = ordered[index - 1], next = ordered[index];
+      if (next.start < prev.end || (next.start === prev.start && (next.start === next.end || prev.start === prev.end))) {
+        return failure('edits_overlap', 'invalid', { editIndex: next.editIndex });
+      }
+    }
+    const withSplices = ready.filter(row => row.splice.removed || row.splice.inserted).sort((a, b) => b.splice.pos - a.splice.pos);
+    const splices = withSplices.map(row => row.splice);
+    const handlePairs = withSplices.map(row => ({ handleId: row.held.id, offset: row.offset }));
+    const result = await commit(splices, who, context, 'document.edit', {
+      label: input.label ?? editLabel(who), rebased, editCount: ready.length,
+      handleIds: ready.map(row => row.held.id), handlePairs, note: input.note || null, turnId: input.turn_id,
+    });
+    if (['applied', 'rebased', 'unchanged'].includes(result.outcome)) {
+      if (result.outcome !== 'unchanged' && splices.length) {
+        const entry = state.journal.find(row => row.id === result.changeId);
+        const span = entry && transportInterval(splices[0].pos, splices[0].pos + splices[0].inserted.length, entry.splices.slice(1));
+        const fresh = span && handle(span.start, span.end, who);
+        if (fresh) result.handle = fresh.id;
+      }
+      for (const row of ready) row.held.used = true;
+      if (input.note && typeof host.note === 'function') {try {host.note(clip(input.note, 240));} catch {}}
+    }
+    return result;
+  }
+
+  function editLabel(who) { return who?.actor === 'agent' ? 'Agent edit' : 'Edit'; }
+
+  function publicAct(entry) {
+    if (!entry) return null;
+    return {id: entry.id, document_id: state.documentId, base_revision: entry.baseRevision, revision: entry.revision,
+      author: {kind: entry.author?.kind || entry.actor, ...((entry.author?.name || entry.agent || entry.hostAgent)
+        ? {name: entry.author?.name || entry.agent || entry.hostAgent} : {})},
+      at: safeInt(entry.createdAt) && entry.createdAt > 0 && Number.isFinite(new Date(entry.createdAt).getTime()) ? new Date(entry.createdAt).toISOString() : null, operation: entry.operation,
+      ...(entry.turnId ? {turn_id: entry.turnId} : {}), ...(entry.label != null ? {label: entry.label} : {}),
+      ...(entry.sourceTransactionIds?.length || entry.sourceTransactionId
+        ? {reverses: entry.sourceTransactionIds || [entry.sourceTransactionId]} : {})};
+  }
+
+  function publicWriteReceipt(value) {
+    if (!value.transaction && !Object.hasOwn(value, 'changeId')) return value.outcome === 'unchanged' ? {...value, act: null} : value;
+    const {transaction, changeId, undoneChangeId, undoneChangeIds, turnId, ...result} = value;
+    return {...result, ...(value.outcome === 'unchanged' ? {act: null} : {})};
+  }
+
+  function validSnapshotJournalRow(row) {
+    if (!row || !safeInt(row.revision) || !safeInt(row.baseRevision) || !Array.isArray(row.splices) ||
+        typeof row.id !== 'string' || !row.id || !['human', 'agent', 'system'].includes(row.actor) ||
+        typeof row.principal !== 'string' || !row.principal || row.principal.length > 160 ||
+        typeof row.transport !== 'string' || !row.transport || typeof row.operation !== 'string' || !row.operation) return false;
+    try { if (row.author) historyAuthor(row.author, row.actor); historyTurn(row); }
+    catch (_) { return false; }
+    return true;
+  }
+
+  function journalHistory(rows = state.journal, source = state.text, complete = state.history.complete) {
+    const material = rows;
+    return {source, complete: complete === true, metadata: {filename: state.filename, docKind: state.docKind}, revision: material.at(-1)?.revision ?? state.revision,
+      earliestRevision: material[0]?.baseRevision ?? state.revision,
+      records: material.map(row => ({splices: row.splices, ...(Object.hasOwn(row, 'authored') ? {authored: row.authored} : {}), ...(row.metadata ? {metadata: row.metadata} : {}),
+        ...(row.label == null ? {} : {changeSet: {label: row.label}}),
+        ...(row.derivedCommentIndex == null ? {} : {derivedCommentIndex: row.derivedCommentIndex}),
+        transaction: {id: row.id, baseRevision: row.baseRevision, revision: row.revision,
+          actor: historyAuthor(row.author || {kind: row.actor, id: row.principal}, row.actor), createdAt: row.createdAt ?? null,
+          operation: row.operation, affectedBlockIds: row.affectedBlockIds || [], sourceTransactionId: row.sourceTransactionId || null,
+          ...(row.sourceTransactionIds?.length ? {sourceTransactionIds: row.sourceTransactionIds} : {}),
+          ...(row.reverts ? {reverts: row.reverts} : {}), ...(row.reapplies ? {reapplies: row.reapplies} : {}),
+          ...historyTurn(row)}}))};
+  }
+
+  function validCommentHistory(history, rows) {
+    if (!rows.some(row => row.derivedCommentIndex != null)) return true;
+    const before = sourceBefore(history, rows[0].id);
+    if (!before.ok) return false;
+    let source = before.source, originalSource;
+    for (const row of rows) {
+      const index = row.derivedCommentIndex;
+      if (index != null) {
+        if (row.authored) originalSource ||= authoredSourceReader(before.source, history.records);
+        const original = row.authored ? originalSource(row.id) : {source, splices: row.splices};
+        if (!safeInt(index) || index >= original.splices.length) return false;
+        const derived = commentSplices(original.source, original.splices.slice(0, index))[0], claimed = original.splices[index];
+        if (!derived || ['pos', 'removed', 'inserted'].some(key => derived[key] !== claimed[key])) return false;
+      }
+      source = transformSplices(source, row.splices);
+      if (source == null) return false;
+    }
+    return true;
+  }
+
+  function inversePlan(entries, options) {
+    const plan = selectiveUndo(journalHistory(), entries.map(row => row.id), options);
+    if (!plan.ok && plan.reason === 'history_invalid') {
+      let text = state.text;
+      for (const entry of state.journal.slice().reverse()) for (const row of entry.splices.slice().reverse()) {
+        const prior = transformSplices(text, [row], true);
+        if (prior === null) {
+          const end = row.pos + row.inserted.length;
+          if (safeInt(row.pos) && row.pos >= 0 && end <= text.length && text.slice(row.pos, end) === row.inserted &&
+              (!safeBoundary(text, row.pos) || !safeBoundary(text, end))) return failure('target_changed', 'conflict');
+          return failure(plan.reason, 'conflict');
+        }
+        text = prior;
+      }
+    }
+    return plan.ok ? plan : failure(plan.reason, 'conflict');
+  }
+
+  function inverse(entry) {
+    const plan = inversePlan([entry]);
+    return plan.ok ? plan.splices : plan;
+  }
+
+  function historyDrawings(source) {
+    const facts = structureMarkdown({source, kinds: ['image'], matchLimit: 2048}, markdownParser());
+    if (!facts.complete) throw Error('drawing_history_unavailable');
+    const rows = [];
+    for (const match of facts.matches || []) {
+      const raw = source.slice(match.start, match.end), parsed = DRAW_OCCURRENCE.exec(raw);
+      if (!parsed) continue;
+      const saved = sourceDrawing(source, parsed[2]);
+      if (saved) rows.push({start: match.start, end: match.end, raw, alt: parsed[1], asset: parsed[2], recipe: saved.recipe,
+        definition: {start: saved.asset.start, end: saved.asset.end}});
+    }
+    return rows;
+  }
+
+  function drawingHistory(entries) {
+    if (state.docKind !== 'markdown') return [];
+    const chosen = new Set(entries.map(row => row.id)), first = entries.reduce((a, b) => a.revision < b.revision ? a : b);
+    const base = sourceBefore(journalHistory(), first.id), journal = since(first.baseRevision);
+    if (!base.ok || !journal) throw Error('drawing_history_unavailable');
+    let source = base.source, previous = historyDrawings(source);
+    const tracks = previous.map(row => ({current: row, events: [], aliases: new Set([normalizeLabel(row.asset)]), raws: new Set([row.raw])}));
+    previous.forEach((row, index) => row.track = tracks[index]);
+    for (const entry of journal) {
+      const afterSource = transformSplices(source, entry.splices);
+      if (afterSource == null) throw Error('drawing_history_unavailable');
+      const following = historyDrawings(afterSource), available = new Set(following), paired = new Map();
+      const pair = (before, after) => {paired.set(before, after); available.delete(after);};
+      for (const before of previous) {
+        const moved = transportInterval(before.start, before.end, entry.splices);
+        const exact = moved && [...available].find(after => after.start === moved.start && after.end === moved.end && after.raw === before.raw);
+        if (exact) pair(before, exact);
+      }
+      for (const before of previous.filter(row => !paired.has(row))) {
+        const ids = new Set(before.recipe.shapes.map(shape => shape.id));
+        const candidates = [...available].filter(after => normalizeLabel(after.asset) === normalizeLabel(before.asset) ||
+          after.recipe.shapes.some(shape => ids.has(shape.id)));
+        const unique = candidates.filter(after => previous.filter(row => !paired.has(row)).filter(row =>
+          normalizeLabel(row.asset) === normalizeLabel(after.asset) || row.recipe.shapes.some(shape => after.recipe.shapes.some(next => next.id === shape.id))).length === 1);
+        if (unique.length === 1) pair(before, unique[0]);
+      }
+      const original = chosen.has(entry.id) && entry.drawingPatch ? drawingPatchForEntry(entry) : null;
+      for (const before of previous) {
+        const after = paired.get(before), track = before.track;
+        track.current = after || null;
+        if (after) {after.track = track; track.aliases.add(normalizeLabel(after.asset)); track.raws.add(after.raw);}
+        if (!after || canonicalJson(sansView(before.recipe)) !== canonicalJson(sansView(after.recipe)) || before.raw !== after.raw) {
+          const liveOriginal = original && normalizeLabel(original.asset) === normalizeLabel(before.asset) &&
+            original.occurrence.start === before.start && after && normalizeLabel(original.reference) === normalizeLabel(after.asset);
+          track.events.push({entry, chosen: chosen.has(entry.id), before: liveOriginal ? original.recipeBefore : before.recipe,
+            after: after ? liveOriginal ? original.recipeAfter : after.recipe : null, beforeAlt: before.alt, afterAlt: after?.alt});
+        }
+      }
+      for (const after of available) {
+        const track = {current: after, aliases: new Set([normalizeLabel(after.asset)]), raws: new Set([after.raw]),
+          events: [{entry, chosen: chosen.has(entry.id), before: {...after.recipe, shapes: [], strokes: []}, after: after.recipe,
+            beforeAlt: after.alt, afterAlt: after.alt, created: true}]};
+        tracks.push(track); after.track = track;
+      }
+      previous = following; source = afterSource;
+    }
+    return tracks.filter(track => track.current && track.events.some(event => event.chosen)).map(track => {
+      for (const event of track.events) {
+        if (event.chosen || !event.before || !event.after) continue;
+        const refs = event.entry.sourceTransactionIds || (event.entry.sourceTransactionId ? [event.entry.sourceTransactionId] : []);
+        const prior = track.events.find(row => !row.chosen && !row.neutral && refs.includes(row.entry.id));
+        if (prior?.before && prior.after && canonicalJson(sansView(prior.before)) === canonicalJson(sansView(event.after)) &&
+            canonicalJson(sansView(prior.after)) === canonicalJson(sansView(event.before)) &&
+            prior.beforeAlt === event.afterAlt && prior.afterAlt === event.beforeAlt) prior.neutral = event.neutral = true;
+      }
+      const live = drawingFor(track.current.start, track.current.end, track.current.asset);
+      const firstChosen = track.events.findIndex(event => event.chosen);
+      return {...track, live, needsSemantic: track.events.slice(firstChosen + 1).some(event => !event.chosen && !event.neutral) ||
+        !!live && canonicalJson(live.recipe) !== canonicalJson(track.current.recipe)};
+    });
+  }
+
+  async function replayPaintingChanges(input, changes, context) {
+    if (host.ready) await host.ready('drawing');
+    if (typeof host.paintReplay !== 'function' && typeof host.material !== 'function') return failure('paint_replay_unavailable', 'conflict');
+    const recipe = clone(input);
+    for (const change of changes) {
+      const index = recipe.shapes.findIndex(shape => shape.id === change.id), before = recipe.shapes[index];
+      let replayed;
+      if (typeof host.material === 'function') {
+        const prepared = await prepareMaterial('replay', {position: 'undo:' + change.id, shape: before,
+          omitIds: change.omitIds, requireEmptyBase: change.requireEmptyBase === true}, context);
+        if (prepared.refusal) return ['paint_replay_unavailable', 'material_result_invalid', 'material_unavailable'].includes(prepared.refusal.reason)
+          ? failure('paint_replay_unavailable', 'conflict') : prepared.refusal;
+        replayed = prepared.value;
+      } else replayed = await host.paintReplay(before, change.omitIds, {signal: context.signal, requireEmptyBase: change.requireEmptyBase === true});
+      cancelled(context);
+      if (!replayed || replayed.id !== before.id || replayed.recognized !== 'paint' ||
+          canonicalJson(replayed.geom) !== canonicalJson(before.geom) ||
+          canonicalJson(replayed.paint?.px) !== canonicalJson(before.paint?.px) || replayed.paint?.scale !== before.paint?.scale)
+        return failure('paint_replay_unavailable', 'conflict');
+      const omitted = new Set(change.omitIds), expected = {...before.paint.replay,
+        entries: before.paint.replay.entries.map(row => omitted.has(row.id) ? {...row, removed: true} : row)};
+      if (canonicalJson(replayed.paint?.replay) !== canonicalJson(expected)) return failure('paint_replay_changed', 'conflict');
+      recipe.shapes[index] = {...before, raster: replayed.raster, paint: replayed.paint};
+    }
+    return {recipe};
+  }
+
+  async function drawingInverse(entries, tracks, who, context, commentOptions) {
+    const source = state.text, revision = state.revision, documentId = state.documentId;
+    const semantic = tracks.filter(track => track.needsSemantic);
+    if (!semantic.length) return null;
+    const aliases = new Set(semantic.flatMap(track => [...track.aliases])), raws = new Set(semantic.flatMap(track => [...track.raws]));
+    const held = (text, splice, inserted) => {
+      const end = splice.pos + (inserted ? splice.inserted.length : splice.removed.length);
+      const touches = (start, finish) => splice.pos === end ? splice.pos > start && splice.pos < finish : splice.pos < finish && end > start;
+      for (const asset of documentAssets(text).assets.values()) if (aliases.has(normalizeLabel(asset.label)) && touches(asset.start, asset.end)) return true;
+      for (const raw of raws) for (let at = text.indexOf(raw); at >= 0; at = text.indexOf(raw, at + raw.length)) if (touches(at, at + raw.length)) return true;
+      return false;
+    };
+    const protectedActs = new Map();
+    const plan = inversePlan(entries, {...commentOptions, keepHunk: ({actId, actSource, priorSplices, beforeSource, splice}) => {
+      if (commentOptions?.keepHunk({actId, beforeSource, splice})) return true;
+      let protectedAct = protectedActs.get(actId);
+      if (!protectedAct || protectedAct.source !== actSource) {
+        const ranges = [...documentAssets(actSource).assets.values()].filter(asset => aliases.has(normalizeLabel(asset.label)))
+          .map(asset => ({start: asset.start, end: asset.end}));
+        for (const raw of raws) for (let at = actSource.indexOf(raw); at >= 0; at = actSource.indexOf(raw, at + raw.length))
+          ranges.push({start: at, end: at + raw.length});
+        protectedAct = {source: actSource, ranges}; protectedActs.set(actId, protectedAct);
+      }
+      const ranges = protectedAct.ranges.map(range => transportTouchedInterval(range.start, range.end, priorSplices));
+      if (ranges.some(range => splice.removed.length ? splice.pos < range.end && splice.pos + splice.removed.length > range.start
+        : splice.pos > range.start && splice.pos < range.end)) return true;
+      const after = transformSplices(beforeSource, [splice]);
+      return held(beforeSource, splice, false) || after != null && held(after, splice, true);
+    }});
+    if (!plan.ok) return plan;
+    const assets = [], additions = [], patches = [], replacedAssets = [], sourceDrawings = historyDrawings(source);
+    for (const track of semantic) {
+      const current = track.current, liveRecipe = track.live?.recipe || current.recipe;
+      let recipe = clone(liveRecipe), alt = current.alt;
+      for (let index = track.events.length - 1; index >= 0; index--) {
+        const event = track.events[index];
+        if (!event.chosen || !event.after) continue;
+        const later = track.events.slice(index + 1).filter(row => !row.chosen && !row.neutral && row.before && row.after);
+        const changes = paintUndoChanges(recipe, event.before, event.after);
+        if (changes?.some(change => sourceDrawings.filter(drawing => change.omitIds.some(id =>
+          drawing.recipe.shapes.some(shape => shape.paint?.replay?.entries?.some(entry => entry.id === id && !entry.removed)))).length > 1))
+          return failure('paint_replay_unavailable', 'conflict');
+        const laterMaterial = event.after.shapes.some(shape => {
+          if (shape.recognized !== 'paint') return false;
+          const before = event.before.shapes.find(row => row.id === shape.id), current = recipe.shapes.find(row => row.id === shape.id);
+          const material = row => row && {raster: row.raster, paint: row.paint};
+          return canonicalJson(material(before)) !== canonicalJson(material(shape)) && current &&
+            canonicalJson(material(current)) !== canonicalJson(material(shape));
+        });
+        if (laterMaterial && !changes) return failure('paint_replay_unavailable', 'conflict');
+        let before = event.before, after = event.after;
+        if (changes) {
+          const replayed = await replayPaintingChanges(recipe, changes, context);
+          if (replayed.outcome) return replayed;
+          recipe = replayed.recipe; before = clone(before); after = clone(after);
+          for (const change of changes) {
+            const following = after.shapes.find(shape => shape.id === change.id), prior = before.shapes.find(shape => shape.id === change.id);
+            if (!prior) before.shapes.push(clone(following));
+            else {prior.raster = following.raster; prior.paint = clone(following.paint);
+              if (canonicalJson(event.before.shapes.find(shape => shape.id === change.id).paint?.px) !== canonicalJson(following.paint?.px)) prior.geom = clone(following.geom);}
+          }
+        }
+        recipe = _rapierDrawUndoRecipe(recipe, before, after, later.map(row => ({before: row.before, after: row.after, act: row.entry})));
+        if (!recipe) return failure('drawing_history_unavailable', 'conflict');
+        if (alt === event.afterAlt && !later.some(row => row.beforeAlt !== row.afterAlt)) alt = event.beforeAlt;
+      }
+      if (canonicalJson(sansView(recipe)) === canonicalJson(sansView(current.recipe)) && alt === current.alt) continue;
+      const rasterRefusal = await paintRastersHold(recipe, liveRecipe, context);
+      if (rasterRefusal) return rasterRefusal;
+      const refracted = await prepareRefraction(recipe, context);
+      if (refracted.refusal) return refracted.refusal;
+      recipe = refracted.recipe;
+      const svg = _rapierDrawBuildSVG(recipe);
+      if (!svg) return failure('drawing_history_unavailable', 'conflict');
+      const title = _rapierDrawNextAssetName([...documentAssets(source).assets.values(), ...assets]);
+      const asset = await createAsset(encoder.encode(svg), null, {codec: 'image/svg+xml', title});
+      const range = transportInterval(current.start, current.end, plan.splices);
+      if (!range || plan.after.slice(range.start, range.end) !== current.raw) return failure('drawing_history_unavailable', 'conflict');
+      const raw = '![' + alt + '][' + asset.label + ']', saved = sourceDrawing(source, current.asset), after = _rapierDrawReadRecipeFromSVGText(svg);
+      additions.push({pos: range.start, removed: current.raw, inserted: raw});
+      assets.push({id: normalizeLabel(asset.label), label: asset.label, url: asset.url, title: asset.title});
+      replacedAssets.push(current.asset);
+      if (saved && alt === current.alt) patches.push({patch: _rapierDrawRecipeDelta(liveRecipe, after),
+        occurrence: {...(track.live?.occurrence || {}), start: current.start, end: current.end, reference: current.asset},
+        targetOccurrence: {start: range.start, end: range.start + raw.length, reference: asset.label},
+        asset: current.asset, reference: asset.label, assetGeneration: sha256(saved.asset.url),
+        ...(track.live?.session ? {session: track.live.session, surfaceGeneration: track.live.surfaceGeneration} : {}),
+        sourceRecipeBefore: current.recipe, sourceRecipeAfter: after, recipeBefore: liveRecipe, recipeAfter: after});
+    }
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    for (const track of semantic) {
+      const refused = drawBindingFailure({assetLabel: track.current.asset, ...drawingBinding(track.live)}, track.current);
+      if (refused) return refused;
+    }
+    const authored = plan.splices.concat(additions.sort((a, b) => b.pos - a.pos)), text = transformSplices(source, authored);
+    if (text == null) return failure('document_changed', 'conflict');
+    const splices = authored.concat(imageDeletionSplices(source, text, authored, who.actor));
+    const drawingPatch = !plan.splices.length && additions.length === 1 && patches.length === 1 ? patches[0] : null;
+    return {splices, authoredCount: authored.length, drawAssets: assets,
+      ...(assets.length === 1 ? {result: {replaced: replacedAssets[0], asset: {reference: assets[0].label, title: assets[0].title}}} : {}),
+      ...(drawingPatch ? {drawingPatch,
+      fence: {operation: 'document.draw', drawingAsset: drawingPatch.asset, shapesOnly: true, drawingPatch}} : {})};
+  }
+
+  async function paintInverse(entry, who, context, interleaved) {
+    if (host.ready) await host.ready('drawing');
+    if (typeof host.paintReplay !== 'function' && typeof host.material !== 'function') return null;
+    const source = state.text, revision = state.revision, documentId = state.documentId;
+    const plan = paintUndoPlan(source, entry, since(entry.revision), currentDrawing());
+    if (!plan) return null;
+    const live = drawingFor(plan.start, plan.end, plan.asset), binding = {assetLabel: plan.asset, ...drawingBinding(live)};
+    const laterPaint = plan.changes.some(change => {
+      const known = new Set(change.replay.entries.map(row => row.id));
+      return plan.recipe.shapes.find(shape => shape.id === change.id)?.paint?.replay?.entries.some(row => !known.has(row.id));
+    });
+    if (!interleaved && !laterPaint) return null;
+    const replayed = await replayPaintingChanges(plan.recipe, plan.changes, context);
+    if (replayed.outcome) return replayed;
+    let recipe = replayed.recipe;
+    const rasterRefusal = await paintRastersHold(recipe, plan.recipe, context);
+    if (rasterRefusal) return rasterRefusal;
+    const refracted = await prepareRefraction(recipe, context);
+    if (refracted.refusal) return refracted.refusal;
+    recipe = refracted.recipe;
+    const svg = _rapierDrawBuildSVG(recipe);
+    if (!svg) return failure('paint_replay_unavailable', 'conflict');
+    const title = _rapierDrawNextAssetName(documentAssets(source).assets.values());
+    const asset = await createAsset(encoder.encode(svg), null, {codec: 'image/svg+xml', title});
+    cancelled(context);
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    const settled = drawBindingFailure(binding, {start: plan.start, end: plan.end});
+    if (settled) return settled;
+    const raw = '![' + plan.alt + '][' + asset.label + ']';
+    const authored = [{pos: plan.start, removed: plan.raw, inserted: raw}];
+    const changed = transformSplices(source, authored);
+    if (changed == null) return failure('document_changed', 'conflict');
+    const splices = authored.concat(imageDeletionSplices(source, changed, authored, who.actor));
+    const saved = sourceDrawing(source, plan.asset), after = _rapierDrawReadRecipeFromSVGText(svg);
+    const patch = after && _rapierDrawRecipeDelta(plan.recipe, after);
+    if (!saved || !patch) return failure('paint_replay_unavailable', 'conflict');
+    const drawingPatch = {patch,
+      occurrence: {...(live?.occurrence || {}), start: plan.start, end: plan.end, reference: plan.asset},
+      targetOccurrence: {start: plan.start, end: plan.start + raw.length, reference: asset.label},
+      asset: plan.asset, reference: asset.label, assetGeneration: sha256(saved.asset.url),
+      ...(binding.drawSession ? {session: binding.drawSession, surfaceGeneration: binding.surfaceGeneration} : {}),
+      sourceRecipeBefore: plan.sourceRecipe, sourceRecipeAfter: after, recipeBefore: plan.recipe, recipeAfter: after};
+    return {splices, authoredCount: 1, drawAssets: [{id: normalizeLabel(asset.label), label: asset.label, url: asset.url, title: asset.title}],
+      drawingPatch,
+      fence: {operation: 'document.draw', drawingAsset: plan.asset, shapesOnly: true,
+        drawingPatch, paintTargets: plan.changes.map(change => plan.recipe.shapes.find(shape => shape.id === change.id))},
+      result: {replaced: plan.asset, asset: {reference: asset.label, title}}};
+  }
+
+  function sameHistoryAuthor(left, right) {
+    return (left.author?.kind || left.actor) === (right.author?.kind || right.actor) &&
+      (left.author?.id || left.principal) === (right.author?.id || right.principal);
+  }
+
+  function unavailableAct(kind = 'act', author = false) {
+    const history = {complete: state.history.complete, earliestRevision: state.history.earliestRevision, retainedChanges: state.journal.length};
+    return failure('act_unavailable', 'target_gone', {history, hint: author
+      ? 'No ' + kind + ' with this id is recorded for the requested author. Check the id and author with read {history:true}.'
+      : history.complete
+        ? 'No ' + kind + ' with this id is recorded in this document\'s complete history. Check the id from edit or read {history:true}.'
+        : 'This ' + kind + ' is not in the retained history, which starts at revision ' + history.earliestRevision + '. It may be older or the id may be mistyped. Check read {history:true}.'});
+  }
+
+  function turnChanges(name, changes = state.journal, author = null) {
+    const entries = changes.filter(row => row.turnId === name && (!author || sameHistoryAuthor(row, author)));
+    if (!entries.length) return unavailableAct('turn', !!author);
+    if (entries.some(row => !sameHistoryAuthor(row, entries[0]))) return failure('turn_ambiguous', 'conflict');
+    if (!since(Math.min(...entries.map(row => row.baseRevision)))) return failure('history_unavailable', 'conflict');
+    return entries;
+  }
+
+  function inverseTurn(entries) {
+    const plan = inversePlan(entries);
+    return plan.ok ? plan.splices : plan;
+  }
+
+  function undoHistoryAct(target, context = {}, snapshot) {
+    const run = async () => {
+      cancelled(context);
+      if (snapshot) {
+        if (snapshot.documentId !== state.documentId || snapshot.revision !== state.revision ||
+            snapshot.text !== state.text || !Array.isArray(snapshot.journal)) return failure('document_changed', 'conflict');
+        let rows, projection;
+        try {
+          if (!snapshot.journal.every(validSnapshotJournalRow)) return failure('history_invalid', 'conflict');
+          const history = journalHistory(snapshot.journal, state.text, snapshot.historyComplete ?? state.history.complete);
+          projection = historyProjection(history, {from: 0, to: 0});
+          if (!projection.ok) return failure(projection.reason, 'conflict');
+          if (!validCommentHistory(history, snapshot.journal)) return failure('history_invalid', 'conflict');
+          rows = snapshot.journal.map(row => {
+            const who = participant(row, mintId);
+            return {...clone(row), ...who, owner: ownerOf(who), createdAt: row.createdAt ?? null,
+              label: row.label ?? null, sourceTransactionId: row.sourceTransactionId || null};
+          });
+        } catch (_) { return failure('history_invalid', 'conflict'); }
+        const retained = new Map(state.journal.map(row => [row.id, row]));
+        state.journal = rows.map(row => {
+          const prior = retained.get(row.id);
+          return prior && canonicalJson(prior.splices) === canonicalJson(row.splices) ? {...prior, ...row} : row;
+        });
+        state.history.earliestRevision = projection.earliestRevision;
+        state.history.complete = projection.complete;
+      }
+      const requested = typeof target === 'string' ? {actId: target} : target || {};
+      const authorMatches = row => (!requested.actorId || row.author?.id === requested.actorId) &&
+        (!requested.actorKind || row.author?.kind === requested.actorKind);
+      const entry = requested.actId ? state.journal.find(row => row.id === requested.actId)
+        : requested.turnId ? state.journal.findLast(row => row.turnId === requested.turnId &&
+          authorMatches(row)) : null;
+      if (!entry) return unavailableAct(requested.turnId ? 'turn' : 'act', !!(requested.actorId || requested.actorKind));
+      if (!authorMatches(entry)) return unavailableAct('act', true);
+      return undo(requested.turnId ? {turn_id: requested.turnId} : {change_id: entry.id},
+        participant({actor: 'human', principal: 'local', transport: 'platform', author: context.author}, mintId), context,
+        requested.actorId && requested.actorKind ? entry : null);
+    };
+    const result = queue.then(run, run);
+    queue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  async function undo(input, who, context, turnAuthor = null) {
+    const retainedBinding = typeof host.drawingPresentationBinding === 'function' ? host.drawingPresentationBinding() : undefined;
+    const presentationBinding = retainedBinding === undefined ? drawingPresentationBinding() : retainedBinding;
+    if (input.turn_id && input.change_id) return failure('change_target_ambiguous', 'invalid');
+    const changes = state.journal;
+    const group = input.turn_id ? turnChanges(input.turn_id, changes, turnAuthor) : null;
+    if (group?.outcome) return group;
+    const entry = input.change_id ? changes.find(row => row.id === input.change_id) : group?.at(-1);
+    if (!entry) return unavailableAct();
+    if (who.actor === 'agent' && (group || [entry]).some(row => row.actor !== 'agent')) return failure('act_not_agent_authored', 'refused');
+    const selectedIds = new Set((group || [entry]).map(row => row.id));
+    const commentEntries = [], commentRestorations = [];
+    if (state.text.includes('<!-- md-comments:v1 ') || (group || [entry]).some(row =>
+        row.splices.some(splice => splice.removed.includes('<!-- md-comments:v1 ') || splice.inserted.includes('<!-- md-comments:v1 ')))) {
+      const effects = historyEffects(journalHistory().records);
+      if (!effects.ok) return failure('history_invalid', 'conflict');
+      for (const row of group || [entry]) {
+        if (!effects.active.has(row.id)) continue;
+        const before = sourceBefore(journalHistory(), row.id);
+        if (!before.ok) return failure(before.reason, 'conflict');
+        const afterSource = transformSplices(before.source, row.splices);
+        if (afterSource == null) return failure('history_invalid', 'conflict');
+        const change = {entry: row, beforeSource: before.source, afterSource, later: since(row.revision), selectedIds};
+        const discussionChanges = commentChanges(before.source, afterSource);
+        if (discussionChanges === null) return failure('change_interleaved', 'conflict');
+        if (discussionChanges.length) commentEntries.push(change);
+        if (row.derivedCommentIndex != null) commentRestorations.push(change);
+      }
+    }
+    const commentIds = new Set(commentEntries.concat(commentRestorations.filter(change =>
+      change.entry.sourceTransactionId || change.entry.sourceTransactionIds?.length)).map(change => change.entry.id));
+    const keepComments = ({actId, beforeSource, splice}) => {
+      if (!commentIds.has(actId)) return false;
+      const afterSource = transformSplices(beforeSource, [splice]);
+      return [[beforeSource, splice.removed], [afterSource, splice.inserted]].some(([source, text]) => {
+        if (source == null) return true;
+        const parsed = parseComments(source), record = parsed.record;
+        return !!(parsed.reason || record && (text.length ? splice.pos < record.end && splice.pos + text.length > record.start
+          : splice.pos > record.start && splice.pos < record.end));
+      });
+    };
+    const commentOptions = commentIds.size ? {keepHunk: keepComments, ...(commentEntries.length
+      ? {splitSplice: ({beforeSource, splice}) => commentSpliceParts(beforeSource, splice)} : {})} : undefined;
+    const plan = inversePlan(group || [entry], commentOptions);
+    if (plan.ok && plan.unchanged) return {outcome: 'unchanged', reason: 'nothing_to_undo', act: null, sourceChanged: false, editCount: 0,
+      hint: 'This act\'s changes are no longer in the text: it was already undone, or later work replaced them.'};
+    let splices = plan.ok ? plan.splices : plan, painting = null, drawingTracks = [];
+    if (plan.ok && (/data:image\/svg\+xml(?:;base64)?,/i.test(state.text) || (group || [entry]).some(row => row.drawingPatch))) {
+      try { drawingTracks = drawingHistory(group || [entry]); painting = await drawingInverse(group || [entry], drawingTracks, who, context, commentOptions); }
+      catch (error) { cancelled(context); return failure(error?.message === 'paint_replay_unavailable' ? error.message : 'drawing_history_unavailable', 'conflict'); }
+      if (painting?.outcome) return painting;
+      if (painting) splices = painting.splices;
+    }
+    if (!painting && !(group?.length > 1) && entry.operation === 'document.draw' && (!splices.outcome || splices.reason === 'change_interleaved')) {
+      try { painting = await paintInverse(entry, who, context, !!plan.overlaps?.length || splices.reason === 'change_interleaved'); }
+      catch { cancelled(context); return failure('paint_replay_unavailable', 'conflict'); }
+      if (painting?.outcome) return painting;
+      if (painting) splices = painting.splices;
+    }
+    if (splices.outcome) return splices;
+    let drawingPatch = null;
+    if (entry.drawingPatch && splices.length && !painting && !(group?.length > 1)) {
+      const original = drawingPatchForEntry(entry);
+      if (!original) return failure('drawing_history_unavailable', 'conflict');
+      const saved = sourceDrawing(state.text, original.reference);
+      if (!saved) return failure('target_changed', 'conflict');
+      const prior = sourceBefore(journalHistory(), entry.id), later = since(entry.revision);
+      const tracked = drawingTracks.find(track => track.events.some(event => event.chosen && event.entry.id === entry.id) &&
+        normalizeLabel(track.current.asset) === normalizeLabel(original.reference) &&
+        canonicalJson(track.current.recipe) === canonicalJson(original.sourceRecipeAfter));
+      const current = later && transportInterval(original.targetOccurrence.start, original.targetOccurrence.end, later.flatMap(row => row.splices)) || tracked?.current;
+      const target = transformSplices(state.text, splices);
+      if (!prior.ok || !current || target == null) return failure('drawing_history_unavailable', 'conflict');
+      const occurrence = {pos: current.start, removed: state.text.slice(current.start, current.end),
+        inserted: prior.source.slice(original.occurrence.start, original.occurrence.end)};
+      const replaced = transformSplices(state.text, [occurrence]);
+      if (replaced == null) return failure('drawing_history_unavailable', 'conflict');
+      const beforeComments = parseComments(replaced), afterComments = parseComments(target);
+      let remainder;
+      if (beforeComments.record && afterComments.record && beforeComments.record.raw === afterComments.record.raw) {
+        const tail = minimalSplice(replaced.slice(beforeComments.record.end), target.slice(afterComments.record.end));
+        remainder = [{...tail, pos: beforeComments.record.end + tail.pos},
+          minimalSplice(replaced.slice(0, beforeComments.record.start), target.slice(0, afterComments.record.start))];
+      } else remainder = [minimalSplice(replaced, target)];
+      splices = [occurrence, ...remainder.filter(row => row.removed || row.inserted)];
+      drawingPatch = {undo: original.undo !== true, patch: _rapierDrawRecipeDelta(original.recipeAfter, original.recipeBefore),
+        occurrence: clone(original.targetOccurrence), targetOccurrence: clone(original.occurrence),
+        asset: original.reference, reference: original.asset, assetGeneration: sha256(saved.asset.url),
+        sourceRecipeBefore: clone(original.sourceRecipeAfter), sourceRecipeAfter: clone(original.sourceRecipeBefore),
+        recipeBefore: clone(original.recipeAfter), recipeAfter: clone(original.recipeBefore)};
+    }
+    const inversePatch = painting?.drawingPatch || drawingPatch;
+    const reversedIds = plan.sourceTransactionIds || (group || [entry]).map(row => row.id);
+    const result = await commit(splices, who, context, 'document.undo', {
+      label: `Undo ${entry.label || entry.operation}`, metadataDelta: plan.metadata,
+      commentInverses: commentEntries.slice().reverse(), commentRestorations: commentRestorations.slice().reverse(),
+      sourceTransactionId: reversedIds.length === 1 ? reversedIds[0] : null,
+      ...(reversedIds.length ? {sourceTransactionIds: reversedIds} : {}), restores: true, editCount: splices.length,
+      restored: plan.splices,
+      ...(inversePatch ? {drawingPresentation: {...presentationBinding, presentation: {open: false, replay: false},
+        reference: inversePatch.reference}} : {}),
+      ...(painting ? {authoredCount: painting.authoredCount, drawAssets: painting.drawAssets, fence: painting.fence, drawingPatch: painting.drawingPatch}
+        : drawingPatch ? {drawingPatch, fence: {operation: 'document.draw', drawingAsset: drawingPatch.asset,
+          shapesOnly: true, drawingPatch}} : {}),
+    });
+    if (result.outcome === 'applied' || result.outcome === 'unchanged') {
+      result.undoneChangeId = entry.id;
+      if (group) result.undoneChangeIds = group.map(row => row.id);
+      if (painting) Object.assign(result, painting.result);
+    }
+    return result;
+  }
+
+  function buildComparison(baseline, incoming, name, who, sourceSplices) {
+    if (bytes(baseline) + bytes(incoming) > LIMITS.compareBytes) return failure('compare_byte_limit');
+    const lines = (baseline.match(/\n/g)?.length || 0) + (incoming.match(/\n/g)?.length || 0);
+    if (lines > LIMITS.compareLines) return failure('compare_line_limit');
+    const budget = {left: 1e7};
+    const {edits: ranges} = diff(baseline, incoming, {_unit: 'line', _budget: budget,
+      from: sourceSplices || journalOperations(baseline, incoming, state.journal)});
+    let edits = 0;
+    for (const range of ranges) {
+      if (range.coarse) return failure('compare_too_complex');
+      for (const text of [baseline.slice(...range.before), incoming.slice(...range.after)]) {
+        if (text) edits += (text.match(/\n/g)?.length || 0) + Number(!text.endsWith('\n'));
+      }
+      if (edits > 20000) return failure('compare_too_complex');
+    }
+    const changes = [];
+    for (const range of ranges) {
+      const before = baseline.slice(...range.before), after = incoming.slice(...range.after);
+      const change = minimalSplice(before, after);
+      changes.push({ id: mintId('diff_'), start: range.before[0] + change.pos, end: range.before[0] + change.pos + change.removed.length,
+        incomingStart: range.after[0] + change.pos, incomingEnd: range.after[0] + change.pos + change.inserted.length,
+        removed: change.removed, inserted: change.inserted });
+      if (changes.length > LIMITS.compareChanges) return failure('compare_change_limit');
+    }
+    return { id: mintId('compare_'), owner: ownerOf(who), documentId: state.documentId, revision: state.revision,
+      baseline, incoming, name: clip(name || 'Comparison.md', 512), changes, createdAt: now() };
+  }
+
+  function comparisonFields() {
+    if (!state.compare) return null;
+    const fields = {
+      compareId: state.compare.id, name: state.compare.name,
+      ...(state.compare.turnId ? {turn_id: state.compare.turnId} : {}),
+      changes: state.compare.changes.length,
+      items: [], remaining: state.compare.changes.length,
+      enumerate: {tool: 'read', arguments: {comparison: true}},
+    };
+    const surface = state.compare.baseline === state.text ? publicSurface() : null;
+    const lineOf = at => surface ? surface.targets.lines.number(sourcePosition(surface.projection, at, false, true)) : textTargets(state.compare.baseline).lines.number(at);
+    for (const row of state.compare.changes) {
+      const item = {change_id: row.id, line: lineOf(row.start), removed_chars: row.removed.length, inserted_chars: row.inserted.length,
+        ...(row.removed ? {removed: clip(disclose(state.compare.baseline, ...removedWords(state.compare.baseline, row.start, row.end, row.inserted)).text, 96)} : {}),
+        preview: row.inserted ? changePreview(state.compare.incoming, row.incomingStart, row.incomingEnd, 96)
+          : changePreview(state.compare.baseline, row.start, row.end, 96)};
+      if (bytes(JSON.stringify(stamp({...fields, items: [...fields.items, item]}))) > LIMITS.resultBytes - 1024) break;
+      fields.items.push(item); fields.remaining--;
+    }
+    return fields;
+  }
+
+  const comparisonContext = () => {
+    const fields = comparisonFields();
+    return fields ? accepted(fields) : failure('compare_not_open');
+  };
+
+  async function storedAlternative(text, who, context) {
+    if (who.actor === 'human' || state.docKind !== 'markdown' || text.includes('<!-- rapier-block:')) return {text};
+    const {projection, targets} = publicSurface();
+    if (projection.text === state.text && !parseWill(projection.text).present) return {text};
+    const plan = planTextChanges(projection.text, [{text}], targets);
+    if (plan.reason) return {text};
+    let blocks; try {blocks = fencedBlocks(text);} catch {return {text};}
+    if (blocks.some(row => /^rapier-(?:paint|water)$/.test(row.kind) && !projection.segments.some(prior => prior.id === row.id))) return {text};
+    let compiled; try {compiled = await compileTextPlan(projection, plan, who, context);} catch {return {text};}
+    if (compiled.outcome) return {text};
+    const operation = compiled.commentsChanged ? (compiled.options.authoredCount ? 'document.edit' : 'comments.write') : 'document.replace';
+    const computed = committedText(state.text, compiled.splices, compiled.options.authoredCount ?? compiled.splices.length, who.actor, state.docKind,
+      operation, false, null, compiled.options.drawAssets);
+    return computed && !computed.reason ? {text: computed.text, sourceSplices: computed.splices} : {text};
+  }
+
+  async function compareText(input, who, context, baseline = state.text) {
+    const invalid = admissibleText(input.text);
+    if (invalid) return failure(invalid, 'invalid');
+    if (state.compare && who.actor !== 'human' && state.compare.owner !== ownerOf(who)) return failure('compare_not_owned');
+    const alternative = baseline === state.text ? await storedAlternative(input.text, who, context) : {text: input.text};
+    input = {...input, text: alternative.text};
+    const compared = buildComparison(baseline, input.text, input.name, who, alternative.sourceSplices);
+    if (compared.outcome) return compared;
+    const presentation = {presentation: {status: 'unconfirmed', acknowledged: false}};
+    if (typeof host.compare === 'function') {
+      const result = await host.compare({ documentId: state.documentId, revision: state.revision, compareId: compared.id,
+        currentText: baseline, incomingText: input.text, currentName: state.filename, incomingName: compared.name,
+        ...who, signal: context.signal });
+      if (!result?.ok) return failure(result?.reason || 'compare_open_refused');
+      presentation.presentation = {status: result.pending ? 'pending' : result.presented === true || result.visible === true ? 'presented' : 'unconfirmed',
+        acknowledged: result.presented === true || result.visible === true, ...(result.viewId ? {id: result.viewId} : {}), ...(result.reason ? {reason: result.reason} : {})};
+    }
+    state.compare = compared;
+    return { ...comparisonContext(), mode: 'alternative', sourceChanged: false, ...presentation };
+  }
+
+  async function compareAction(input, who, context) {
+    const action = input.action || 'open';
+    if (action === 'open') return compareText(input, who, context);
+    if (action === 'close') {
+      if (!state.compare) return failure('compare_not_open');
+      if (input.compare_id && input.compare_id !== state.compare.id) return failure('compare_changed', 'conflict');
+      if (who.actor !== 'human' && state.compare.owner !== ownerOf(who)) return failure('compare_not_owned');
+      let closed = null;
+      if (typeof host.closeCompare === 'function') {
+        closed = await host.closeCompare({ documentId: state.documentId, ...who, signal: context.signal });
+        if (!closed?.ok) return failure(closed?.reason || 'compare_close_refused');
+      }
+      state.compare = null;
+      return accepted({closed: true, mode: 'closed', sourceChanged: false, presentation: {status: closed?.closed === true ? 'closed' : closed?.pending ? 'pending' : 'unconfirmed', acknowledged: closed?.closed === true}});
+    }
+    return failure('action_invalid', 'invalid');
+  }
+
+  function getComparisonChange(id) {
+    if (!state.compare) return failure('compare_not_open');
+    return changeOf(id) || failure('change_missing', 'target_gone');
+  }
+
+  function readChange(input, who, cursor = null) {
+    const row = getComparisonChange(input.change_id);
+    if (row.outcome) return row;
+    const compared = state.compare, source = row.removed + row.inserted, total = source.length;
+    const start = cursor?.offset || 0, limit = bounded(input.limit, LIMITS.readChars, 256, LIMITS.readChars);
+    let end = Math.min(total, start + limit);
+    while (!safeBoundary(source, end)) end--;
+    const cursorId = mintId('compare_read_');
+    const page = fitReadPage(source, start, end, until => {
+      const removedStart = Math.min(start, row.removed.length), removedEnd = Math.min(until, row.removed.length);
+      const insertedStart = Math.max(0, start - row.removed.length), insertedEnd = Math.max(0, until - row.removed.length);
+      const removed = disclose(compared.baseline, row.start + removedStart, row.start + removedEnd);
+      const inserted = disclose(compared.incoming, row.incomingStart + insertedStart, row.incomingStart + insertedEnd);
+      const omissions = [...removed.omissions, ...inserted.omissions];
+      const redacted = cursor?.redacted === true || omissions.length > 0;
+      return stamp(accepted({kind: 'comparison', change_id: row.id, compareId: compared.id, start: row.start, end: row.end,
+        removed: removed.text, inserted: inserted.text, removed_start: removedStart, removed_end: removedEnd,
+        inserted_start: insertedStart, inserted_end: insertedEnd, removed_chars: row.removed.length, inserted_chars: row.inserted.length,
+        complete: until === total && !redacted, remaining: total - until,
+        coverage: {disclosed: redacted ? cursor?.disclosed || 0 : until, chars: total, complete: until === total && !redacted},
+        ...(redacted ? {reason: 'source_redacted'} : {}), ...(omissions.length ? {omissions, omissionCount: omissions.length} : {}),
+        next_cursor: until < total ? cursorId : null, expires_in_ms: LIMITS.lifetimeMs}));
+    });
+    if (!page) return failure('result_over_budget', 'refused', {complete: false});
+    const next = page.end < total ? mint('cursors', 'compare_read_', {kind: 'compare-read', compareId: compared.id,
+      changeId: row.id, revision: state.revision, offset: page.end, redacted: page.result.reason === 'source_redacted',
+      disclosed: page.result.coverage.disclosed}, who, cursorId) : null;
+    if (cursor) delete state.cursors[cursor.id];
+    return {...page.result, next_cursor: next?.id || null};
+  }
+
+  function findInComparison(input, who) {
+    if (!state.compare) return failure('compare_not_open');
+    if (typeof input.query !== 'string' || input.query.length > 512) return failure('query_invalid', 'invalid');
+    let offset = 0;
+    if (input.cursor) {
+      const cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'compare' || cursor.compareId !== state.compare.id || cursor.query !== input.query) return failure('compare_changed', 'conflict');
+      offset = cursor.offset;
+    }
+    const needle = input.query.toLowerCase();
+    const found = state.compare.changes.filter(row => row.removed.toLowerCase().includes(needle) || row.inserted.toLowerCase().includes(needle));
+    const page = found.slice(offset, offset + bounded(input.limit, 8, 1, 16)), end = offset + page.length;
+    const next = end < found.length ? mint('cursors', 'compare_', { kind: 'compare', compareId: state.compare.id,
+      query: input.query, offset: end }, who) : null;
+    return accepted({scope: 'comparison',
+      matches: page.map(row => {
+        const preview = row.inserted ? changePreview(state.compare.incoming, row.incomingStart, row.incomingEnd, 160)
+          : changePreview(state.compare.baseline, row.start, row.end, 160);
+        const change = changeOf(row.id);
+        return {
+          matched: preview, handle: row.id, snippet: preview,
+          start: change ? change.start : 0, end: change ? change.end : 0,
+          handle_scope: 'change',
+        };
+      }),
+      remaining: found.length - end, next_cursor: next?.id || null, complete: !next?.id,
+    });
+  }
+
+  async function showChanges(input, who, context) {
+    if (input.turn_id && input.change_id) return failure('change_target_ambiguous', 'invalid');
+    const changes = state.journal;
+    const entry = input.change_id ? changes.find(row => row.id === input.change_id)
+      : input.turn_id ? changes.filter(row => row.turnId === input.turn_id).at(-1) : changes.at(-1);
+    if (!entry) return unavailableAct(input.turn_id ? 'turn' : 'act');
+    const turnId = input.turn_id;
+    const group = turnId ? turnChanges(turnId, changes) : null;
+    if (group?.outcome) return group;
+    const splices = group ? inverseTurn(group) : inverse(entry);
+    if (splices.outcome) return splices;
+    const baseline = transformSplices(state.text, splices);
+    if (baseline == null) return failure('change_interleaved', 'conflict');
+    const result = await compareText({ text: state.text, name: turnId || state.filename }, who, context, baseline);
+    if (result.outcome !== 'ok' || state.compare?.id !== result.compareId) return result;
+    state.compare.changeId = entry.id;
+    if (group) { state.compare.turnId = turnId; state.compare.changeIds = group.map(row => row.id); }
+    return {...result, mode: 'applied_changes', acts: (group || [entry]).map(publicAct)};
+  }
+
+  async function exportDocument({format, compare_id, scope}, who, context) {
+    if (typeof host.exportFile !== 'function') return failure('export_unavailable');
+    const snapshot = readSnapshot(), text = scope ? scope.text : snapshot.text, compared = compare_id ? state.compare : null;
+    let base;
+    if (compare_id) {
+      if (format !== 'html') return failure('compare_export_format_invalid', 'invalid');
+      if (!compared) return failure('compare_not_open');
+      if (compared.id !== compare_id) return failure('compare_changed', 'conflict');
+      if (compared.owner !== ownerOf(who)) return failure('compare_not_owned');
+      if (compared.documentId !== snapshot.documentId || compared.revision !== snapshot.revision)
+        return failure('compare_changed', 'conflict');
+      if (compared.detached || compared.baseline !== text && compared.incoming !== text)
+        return failure('comparison_not_current_document', 'conflict');
+      const reference = compared.incoming === text ? compared.baseline : compared.incoming;
+      base = readBase({text: reference, sha256: sha256(reference), revision: String(compared.revision),
+        name: snapshot.filename, by: agentLabel(who.agent).replace(/[\u0000-\u001f\u007f]/g, ' ') || 'An agent',
+        at: new Date(compared.createdAt).toISOString()});
+    }
+    const exportCurrent = () => sameReadSnapshot(snapshot) && !documentGuardFailure(context) &&
+      (!compared || state.compare?.id === compare_id && state.compare.documentId === snapshot.documentId && state.compare.revision === snapshot.revision);
+    const part = scope && (!scope.whole || scope.revision !== state.revision) ? {text, sha256: sha256(text)} : null;
+    const request = {kind: 'export', documentId: state.documentId, revision: state.revision, format, filename: state.filename,
+      ...(part && ['docx', 'pdf', 'page'].includes(format) ? {part} : {})}, docKind = state.docKind;
+    let checked;
+    if (format === 'docx' || format === 'pdf' || format === 'page') {
+      const mode = 'export:' + format;
+      if (context.continues) {
+        const invalid = checkContinuation(context, mode);
+        if (invalid) return invalid;
+        pendingFacts.delete(context.continues);
+      }
+      if (!context.world?.export) {
+        const requestId = mintId('fact_');
+        pendingFacts.set(requestId, {documentId: state.documentId, revision: state.revision, mode, requirements: request});
+        while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
+        return {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId, requirements: request}};
+      }
+      checked = admitExportArtifact(request, context.world.export);
+      if (!checked.bytes && checked.picture) {
+        const row = publicSurface().projection.segments.find(row => row.id && row.asset && normalizeLabel(row.asset.label) === normalizeLabel(checked.picture));
+        const name = row ? 'Block ' + row.id + (checked.alt ? ' ("' + checked.alt + '")' : '') : checked.alt ? 'The picture "' + checked.alt + '"' : 'A picture';
+        return failure(checked.reason || 'export_unavailable', 'refused', {...(row ? {block: row.id} : {}), ...(checked.alt ? {alt: checked.alt} : {}),
+          ...(checked.reason === 'IMAGE_JXL_UNREADABLE' ? {hint: name + ' is JPEG XL, which the open editor\'s browser cannot read, so it cannot go into ' + (format === 'docx' ? 'Word' : 'a PDF') +
+            '. Ask the person to update their browser and keep editor_url open, or export markdown or html, which keep it.'} : {})});
+      }
+      if (!checked.bytes) return failure(checked.reason || 'export_unavailable', 'refused', {
+        ...(checked.reason === 'editor_unavailable' ? {availableFormats: ['markdown', 'html', 'txt']} : {}),
+        ...(safeInt(checked.limitBytes) ? {limitBytes: checked.limitBytes} : {}), ...(safeInt(checked.byteLength) ? {bytes: checked.byteLength} : {})});
+    }
+    if (documentGuardFailure(context)) return documentGuardFailure(context);
+    let file;
+    try {file = await host.exportFile({...request, docKind, text, ...(part ? {source: snapshot.text} : {}), guard: exportCurrent,
+      ...(base ? {base, compareId: compare_id} : {}), signal: context.signal, ...(checked ? {file: checked, artifact: context.world.export.artifact} : {})});}
+    catch {return failure('export_unconfirmed', 'uncertain', {sourceChanged: false, sourceRevision: request.revision, sourceDocumentId: request.documentId, artifact: {status: 'unconfirmed'}});}
+    if (file?.outcome === 'uncertain') return failure(file.reason || 'export_unconfirmed', 'uncertain',
+      {sourceChanged: false, sourceRevision: request.revision, sourceDocumentId: request.documentId, artifact: {status: 'unconfirmed'}});
+    if (!file?.bytes) return failure(file?.reason || 'export_unavailable', 'refused', {
+      ...(safeInt(file?.limitBytes) ? {limitBytes: file.limitBytes} : {}), ...(safeInt(file?.byteLength) ? {bytes: file.byteLength} : {})});
+    if (file.bytes.byteLength > MAX_EXPORT_BYTES) return failure('export_too_large', 'refused', {limitBytes: MAX_EXPORT_BYTES, bytes: file.bytes.byteLength});
+    return accepted({artifactCreated: true, sourceChanged: false, sourceRevision: request.revision, sourceDocumentId: request.documentId,
+      artifact: {status: 'created', sourceRevision: request.revision, sourceDocumentId: request.documentId, destination: file.destination || (file.url?.startsWith('blob:') ? 'local_session' : 'hosted_export'),
+        ...(file.expiresAt ? {expiresAt: new Date(file.expiresAt).toISOString()} : {})}, format, filename: file.name, mimeType: file.mimeType, bytes: file.bytes.byteLength, limitBytes: MAX_EXPORT_BYTES,
+      scope: scope ? (({text: _, ...rest}) => rest)(scope) : {revision: request.revision, whole: true},
+      fidelity: file.fidelity || exportFidelity(format, docKind),
+      ...(file.id ? {exportId: file.id} : {}), ...(file.url ? {downloadUrl: file.url} : {}),
+      ...(file.expiresAt ? {exportExpiresAt: new Date(file.expiresAt).toISOString()} : {}),
+      ...(safeInt(file.pages) ? {pages: file.pages} : {}), ...(Array.isArray(file.issues) ? {issues: file.issues} : {})});
+  }
+
+  async function openText(input, who, context) {
+    if (input.expected_document_id !== state.documentId || input.expected_revision !== state.revision)
+      return failure('document_changed', 'conflict');
+    const priorDocumentId = state.documentId, priorRevision = state.revision, priorText = state.text;
+    const filename = input.filename || state.filename, kind = input.docKind || (input.filename ? documentKind(filename) : state.docKind);
+    if (!validName(filename) || !['markdown', 'text', 'code'].includes(kind)) return failure('filename_invalid', 'invalid');
+    const invalid = admissibleText(input.text);
+    if (invalid) return failure(invalid, 'invalid');
+    if (who.actor === 'agent' && kind !== state.docKind) return failure('filename_extension_change_requires_conversion', 'refused');
+    const splice = minimalSplice(state.text, input.text), splices = splice.removed || splice.inserted ? [splice] : [];
+    if (who.actor === 'agent' && state.docKind === 'markdown' && touchesCommentRecord(state.text, splices, kind)) return failure('comments_record');
+    const result = await commit(splices, who, context, 'document.replace', {
+      label: input.label ?? 'Replace document', turnId: input.turn_id, metadata: {filename, docKind: kind},
+      metadataAssignments: [...(Object.hasOwn(input, 'filename') ? ['filename'] : []), ...(Object.hasOwn(input, 'docKind') ? ['docKind'] : [])],
+    });
+    if (['applied', 'unchanged'].includes(result.outcome)) {
+      state.filename = filename; state.docKind = kind; state.handles = {}; state.refs = {}; state.cursors = {}; state.compare = null; outlineCache = null; sourceFacts = null;
+    }
+    return {...result, ...(result.outcome === 'uncertain' ? {} : {sourceChanged: ['applied', 'rebased'].includes(result.outcome) ? state.text !== priorText : false}), identityChanged: false,
+      previousDocument: {documentId: priorDocumentId, revision: priorRevision, retention: 'document_history'}, filename, docKind: kind};
+  }
+
+  function drawingReceipt(result) {
+    const committed = ['applied', 'rebased', 'unchanged'].includes(result.outcome);
+    const states = ['incorporated', 'presentation_deferred', 'unavailable', 'uncertain'];
+    const supplied = result.presentation?.status || result.presentation;
+    const intent = state.journal.find(row => row.id === result.changeId)?.drawingIntent;
+    const presentation = intent?.status === 'unavailable' ? 'unavailable' : states.includes(supplied) ? supplied : committed &&
+      Object.values(state.humanContexts).some(row => row.visible && row.expiresAt > now()) ? 'presentation_deferred' : 'unavailable';
+    return {...result, receipt: {...(result.reason === 'cancelled' ? {landed: 0} : {}), state: result.reason === 'cancelled' ? 'cancelled' : committed ? 'committed' : result.outcome === 'pending' && result.pending?.requirements?.kind === 'material' ? 'accepted' : result.outcome === 'uncertain' ? 'uncertain' : 'unavailable',
+      presentation: result.outcome === 'uncertain' ? 'uncertain' : presentation}};
+  }
+
+  async function drawPicture(input, who, context) {
+    if (state.docKind !== 'markdown') return failure('draw_requires_markdown', 'invalid');
+    if (changeOf(input.recipe_handle) || changeOf(input.svg_handle) || changeOf(input.context_handle)) return failure('context_handle_wrong_kind', 'invalid');
+    const retained = typeof host.drawingPresentationBinding === 'function' ? host.drawingPresentationBinding() : undefined;
+    const open = input.kind === 'edit' ? input.presentation?.open !== false : input.presentation?.open === true;
+    context = {...context, drawingPresentation: {binding: retained === undefined ? drawingPresentationBinding() : retained,
+      presentation: {open, replay: input.presentation?.replay !== false}}};
+    return drawingReceipt(await (input.kind === 'edit' ? drawEdit(input, who, context) : drawCreate(input, who, context)));
+  }
+
+  async function prepareMaterial(task, payload, context) {
+    const request = materialRequest(state, task, payload, currentDrawing());
+    cancelled(context);
+    const fact = await host.material(request, {signal: context.signal});
+    cancelled(context);
+    if (!materialMatches(request, state, currentDrawing())) return {refusal: failure('document_changed', 'conflict')};
+    if (fact == null) {
+      const requestId = mintId('fact_');
+      return {refusal: {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId,
+        requirements: materialDescription(request)}}};
+    }
+    const result = admitMaterialResult(request, fact);
+    return result.outcome === 'ok' ? {value: result.value} : {refusal: failure(result.reason)};
+  }
+
+  async function prepareRefraction(recipe, context) {
+    if (!hasRefraction(recipe) || !requiredRefractionScopes(recipe).length) return {recipe};
+    const {renditions, ...source} = recipe;
+    let prepared;
+    if (typeof host.material === 'function') prepared = await prepareMaterial('refraction', {recipe: source}, context);
+    else {
+      if (typeof globalThis.RapierDrawRefraction?.prepare !== 'function')
+        return {refusal: failure('refraction_render_unavailable')};
+      const request = materialRequest(state, 'refraction', {recipe: source}, currentDrawing());
+      cancelled(context);
+      const result = await globalThis.RapierDrawRefraction.prepare(request.payload.recipe, {signal: context.signal});
+      cancelled(context);
+      const refreshed = await refresh(context);
+      if (refreshed) return {refusal: refreshed};
+      if (!materialMatches(request, state, currentDrawing())) return {refusal: failure('document_changed', 'conflict')};
+      const fact = admitMaterialResult(request, {kind: 'material', documentId: request.documentId,
+        revision: request.revision, job: request.job, outcome: 'ok', value: {renditions: result?.renditions || []}});
+      prepared = fact.outcome === 'ok' ? {value: fact.value} : {refusal: failure(fact.reason)};
+    }
+    return prepared.refusal ? prepared : {recipe: {...source, renditions: prepared.value.renditions}};
+  }
+
+  async function paintFigures(list, context, field = 'figures', recipe = null, replace = false) {
+    if (host.ready) await host.ready('drawing');
+    if (!Array.isArray(list) || !list.some(row => row?.kind === 'paint')) return { list };
+    if (typeof host.paint !== 'function' && typeof host.material !== 'function') return { refusal: failure('paint_unavailable') };
+    const out = [];
+    for (const [index, row] of list.entries()) {
+      if (row?.kind !== 'paint') { out.push(row); continue; }
+      const { kind, strokes, id, seed = 1, mode, actions, paper, ...rest } = row;
+      const at = field + '[' + index + ']';
+      if (Object.keys(rest).length) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.' + Object.keys(rest)[0]}) };
+      if (own(row, 'mode') && mode !== 'water') return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.mode'}) };
+      const water = mode === 'water';
+      if (water ? strokes != null : actions != null || paper != null) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.' + (water ? 'strokes' : actions != null ? 'actions' : 'paper')}) };
+      if (!Number.isInteger(seed) || seed < 0 || seed > 0x7fffffff) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.seed'}) };
+      const target = replace ? recipe?.shapes.find(shape => shape.id === id && shape.recognized === 'paint') || null : null;
+      if (replace && !target) return {refusal: failure('paint_target_invalid', 'invalid', {field: at + '.id'})};
+      if (target?.locked) return {refusal: failure('paint_target_locked', 'refused', {field: at + '.id'})};
+      const strokeFault = !water && typeof host.paintStrokesFault === 'function' ? host.paintStrokesFault(strokes, at + '.strokes') : null;
+      if (strokeFault) return {refusal: failure('paint_strokes_invalid', 'invalid', strokeFault)};
+      if (water) {
+        const fault = waterActionsFault(actions, at + '.actions');
+        if (fault) return {refusal: failure('paint_strokes_invalid', 'invalid', {field: fault.field, ...(fault.hint ? {hint: fault.hint} : {})})};
+        if (paper != null && !waterPaperById(paper)) return {refusal: failure('paint_strokes_invalid', 'invalid', {field: at + '.paper'})};
+        if (waterProFeature(actions, paper)) return {refusal: failure('water_pro_unavailable')};
+      }
+      let shape = null;
+      cancelled(context);
+      try {
+        const options = {seed, target, contribution: mintId('paint_'),
+          ...(water ? {mode, actions, ...(paper != null ? {paper} : {}), ...(recipe ? {recipe} : {})} : {})};
+        if (typeof host.material === 'function') {
+          const prepared = await prepareMaterial('paint', {position: at, strokes: water ? null : strokes, ...options}, context);
+          if (prepared.refusal) return {refusal: prepared.refusal.reason === 'paint_strokes_invalid'
+            ? failure('paint_strokes_invalid', 'invalid', {field: at + (water ? '.actions' : '.strokes')}) : prepared.refusal};
+          shape = prepared.value;
+        } else shape = await host.paint(water ? null : strokes, {...options, signal: context.signal});
+      }
+      catch (error) {
+        cancelled(context);
+        return {refusal: failure(error?.code || 'paint_strokes_invalid', error?.code === 'paint_target_changed' ? 'conflict' : ['paint_history_full','paint_layer_full','water_webgpu_unavailable','WATER_BUDGET','WATER_REPLAY_BUDGET','WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error?.code) ? 'refused' : 'invalid')};
+      }
+      cancelled(context);
+      if (!shape) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + (water ? '.actions' : '.strokes')}) };
+      out.push(id == null ? shape : { ...shape, id });
+    }
+    return { list: out };
+  }
+
+  async function paintOperations(operations, context, recipe) {
+    const out = [];
+    for (const [index, operation] of (operations || []).entries()) {
+      if (operation.type !== 'create') { out.push(operation); continue; }
+      const painted = await paintFigures(operation.figures, context, 'operations[' + index + '].figures', recipe);
+      if (painted.refusal) return painted;
+      out.push({...operation, figures: painted.list});
+    }
+    return {list: out};
+  }
+
+  function waterPaperRefusal(recipe, previous) {
+    const paper = recipe?.background?.kind === 'paper' ? recipe.background.paper : null;
+    if (!RAPIER_DRAW_PAPERS.some(row => row.id === paper && row.pro) ||
+        previous?.background?.kind === 'paper' && previous.background.paper === paper) return null;
+    return failure('water_pro_unavailable');
+  }
+
+  function paintSheetsHold(recipe) {
+    for (const shape of recipe?.shapes || []) {
+      if (shape?.recognized !== 'paint' || shape.paint?.mode !== 'water' && shape.paint?.strokes == null && shape.paint?.replay == null) continue;
+      if (typeof host.paintSheet !== 'function' || host.paintSheet(shape.paint) !== true) return false;
+    }
+    return true;
+  }
+
+  async function paintRastersHold(recipe, previous, context) {
+    const rasters = value => (value?.shapes || []).flatMap(shape => shape.recognized === 'paint'
+      ? [shape.raster, shape.paint?.replay?.baseRaster].filter(Boolean) : []);
+    const kept = new Set(rasters(previous)), added = [...new Set(rasters(recipe))].filter(raster => !kept.has(raster));
+    if (!added.length) return null;
+    if (typeof host.paintRaster !== 'function') return failure('paint_raster_decoder_unavailable');
+    const source = state.text, revision = state.revision, documentId = state.documentId;
+    try {
+      for (const raster of added) {
+        cancelled(context);
+        if (await host.paintRaster(raster, {signal: context.signal}) !== true) return failure('paint_raster_decoder_unavailable');
+      }
+    } catch (error) {
+      cancelled(context);
+      return error?.code === 'paint_raster_decoder_unavailable' ? failure(error.code) : failure('paint_raster_invalid', 'invalid');
+    }
+    cancelled(context);
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    return null;
+  }
+
+  async function drawCreate(input, who, context) {
+    if (host.ready) await host.ready('drawing');
+    if (input.shapes != null) return failure('draw_create_patch_conflict', 'invalid');
+    if (input.recipe != null && input.figures != null) return failure('draw_recipe_figures_conflict', 'invalid');
+    if (input.recipe?.figures != null && input.direction != null && input.recipe.direction != null && input.direction !== input.recipe.direction) return failure('draw_direction_conflict', 'invalid');
+    if (typeof input.alt !== 'string' || !input.alt.trim()) return failure('draw_alt_required', 'invalid');
+    const source = state.text, revision = state.revision, documentId = state.documentId;
+    const assets = documentAssets(state.text);
+    let position = assets.appendixStart, held = null, rebased = false, heldOffset = 0;
+    if (input.context_handle) {
+      held = lookup('handles', input.context_handle, who);
+      if (held.outcome) return held;
+      if (held.kind === 'svg' || held.kind === 'image-comment') return failure('context_handle_wrong_kind', 'invalid');
+      const range = relocate(held);
+      if (range.outcome) return range;
+      const facts = await outline(context);
+      if (facts.outcome) return facts;
+      const blocks = facts.blocks?.entries || [];
+      const touched = blocks.filter(row => range.start === range.end
+        ? row.start <= range.end && range.end < row.end : row.start < range.end && range.start < row.end);
+      if (!touched.length) return failure(facts.blocks?.complete ? 'context_has_no_block' : 'draw_structure_unavailable');
+      position = touched[touched.length - 1].end;
+      rebased = range.rebased;
+      heldOffset = position - range.start;
+    }
+    const early = commitGate([{ pos: position, removed: '', inserted: '' }], who);
+    if (early) return early;
+    let painted = null;
+    if (input.figures?.some?.(row => row?.kind === 'paint')) {
+      const result = await paintFigures(input.figures, context);
+      if (result.refusal) return result.refusal;
+      painted = _rapierDrawApplyShapesPatch({ shapes: [] }, { add: result.list }, input.direction);
+      if (!painted) return failure('figures_invalid', 'invalid', { kinds: FIGURE_KINDS });
+    }
+    let svg, recipe;
+    try {
+      const recipeInput = painted || (input.recipe != null
+        ? input.recipe.figures != null && input.direction != null ? { ...input.recipe, direction: input.direction } : input.recipe
+        : input.figures != null ? { figures: input.figures, direction: input.direction } : null);
+      recipe = recipeInput && _rapierDrawNormalizeAgentRecipe(recipeInput);
+      if (!recipe) return input.figures != null && input.recipe == null ? failure('figures_invalid', 'invalid', { ...(_rapierDrawFigureFault(input.figures, [], input.direction) || {}), kinds: FIGURE_KINDS }) : recipeInvalid(_rapierDrawRecipeFault(recipeInput));
+      const operations = await paintOperations(input.operations, context, recipe);
+      if (operations.refusal) return operations.refusal;
+      recipe = applyOperations(recipe, operations.list).recipe;
+      if (!recipe.shapes.length || recipe.shapes.length > 128) return failure('draw_shape_limit', 'invalid');
+      const paperRefusal = waterPaperRefusal(recipe, null);
+      if (paperRefusal) return paperRefusal;
+      if (!paintSheetsHold(recipe)) return failure('paint_sheet_invalid', 'invalid');
+      const rasterRefusal = await paintRastersHold(recipe, null, context);
+      if (rasterRefusal) return rasterRefusal;
+      const refracted = await prepareRefraction(recipe, context);
+      if (refracted.refusal) return refracted.refusal;
+      recipe = refracted.recipe;
+      svg = _rapierDrawBuildSVG(recipe);
+    }
+    catch (error) { cancelled(context); return failure(error?.code || 'draw_render_failed', error?.field ? 'invalid' : 'refused', error?.field ? {field: error.field} : {}); }
+    if (!svg) return failure('recipe_invalid', 'invalid');
+    recipe = _rapierDrawReadRecipeFromSVGText(svg);
+    if (!recipe) return failure('recipe_invalid', 'invalid');
+    const title = _rapierDrawNextAssetName(assets.assets.values());
+    let asset, appended, prospective, raw, prefix, suffix;
+    try {
+      asset = await createAsset(encoder.encode(svg), null, {codec: 'image/svg+xml', title});
+      cancelled(context);
+      const before = source.slice(0, position), after = source.slice(position);
+      const around = paragraphBreakAround(source, position);
+      prefix = around.prefix;
+      suffix = around.suffix;
+      raw = '![' + escapeImageAlt(input.alt) + '][' + asset.label + ']';
+      prospective = before + prefix + raw + suffix + after;
+      appended = await appendAsset(prospective, asset);
+      if (appended.reference !== asset.label) raw = '![' + escapeImageAlt(input.alt) + '][' + appended.reference + ']';
+    } catch (error) {
+      cancelled(context);
+      return failure(error?.code || 'draw_asset_failed');
+    }
+    cancelled(context);
+    const occStart = position + prefix.length;
+    const splices = [{pos: position, removed: '', inserted: prefix + raw + suffix}];
+    const placement = drawingPlacement(appended.source, occStart, raw, appended.reference, true);
+    if (!placement.placed) {
+      return failure(placement.complete ? 'draw_placement_unavailable' : 'draw_structure_unavailable');
+    }
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    const result = await commit(splices, who, context, 'document.draw', {
+      label: input.label ?? 'Draw a picture', editCount: 1, authoredCount: 1, rebased,
+      drawingPresentation: {...context.drawingPresentation?.binding, presentation: context.drawingPresentation?.presentation,
+        occurrence: {start: occStart, end: occStart + raw.length}, reference: appended.reference},
+      turnId: input.turn_id,
+      handleIds: held ? [held.id] : [],
+      handlePairs: [{ handleId: held ? held.id : null, offset: heldOffset }],
+      drawAssets: [{ id: normalizeLabel(appended.reference), label: appended.reference, url: asset.url, title: asset.title }],
+    });
+    if (!['applied', 'rebased'].includes(result.outcome)) return result;
+    if (held) held.used = true;
+    const recipeHandle = drawHandle(occStart, occStart + raw.length, appended.reference, who);
+    const editUnavailable = !recipeHandle && drawHandleRefusal(JSON.stringify(disclosedRecipe(recipe)), JSON.stringify(recipe).length);
+    return { ...result, asset: {reference: appended.reference, title}, width: asset.width, height: asset.height,
+      recipe_handle: recipeHandle?.id || null, ...(editUnavailable ? unavailableEdit(editUnavailable) : {}) };
+  }
+
+  async function drawEdit(input, who, context) {
+    if (host.ready) await host.ready('drawing');
+    if (input.figures != null || input.recipe != null && input.shapes != null) return failure('draw_edit_recipe_conflict', 'invalid');
+    if (input.context_handle != null) return failure('draw_edit_placement_conflict', 'invalid');
+    const patch = input.shapes;
+    if (input.recipe == null && input.alt == null && !input.operations?.length && !(patch && (patch.add?.length || patch.replace?.length || patch.remove?.length || Object.keys(patch.set || {}).length))) return failure('draw_edit_empty', 'invalid');
+    if (input.alt != null && (typeof input.alt !== 'string' || !input.alt.trim())) return failure('draw_alt_required', 'invalid');
+    const source = state.text, revision = state.revision, documentId = state.documentId;
+    const held = lookup('handles', input.recipe_handle, who);
+    if (held.outcome) return held;
+    if (held.kind !== 'draw') return failure('context_handle_wrong_kind', 'invalid');
+    if (held.objectId && input.alt != null) return failure('drawing_object_scope', 'invalid');
+    const range = relocate(held);
+    if (range.outcome) return range;
+    if (held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+    const staleSurface = drawBindingFailure(held, range);
+    const stored = storedRecipe(held.assetLabel);
+    if (!stored) return failure('target_changed', 'conflict');
+    const inspected = held.recipeJSON != null ? JSON.parse(held.recipeJSON) : stored;
+    if (input.recipe != null && !context.textPlan) {
+      const unavailable = drawHandleRefusal(JSON.stringify(disclosedRecipe(inspected)), JSON.stringify(inspected).length);
+      if (unavailable) return failure(unavailable, 'refused', {field: 'recipe'});
+    }
+    const live = drawingFor(range.start, range.end, held.assetLabel);
+    if (live?.recipeUnavailable && live.recipeDigest !== drawingRecipeDigest(stored)) return failure('draw_surface_unavailable', 'conflict', {detail: live.recipeUnavailable});
+    if (staleSurface && (!live?.recipe || live.session !== held.drawSession)) return staleSurface;
+    const penned = recipe => ({...recipe, smooth: recipe.smooth ?? RAPIER_DRAW_SMOOTH_DEFAULT, nib: recipe.nib ?? RAPIER_DRAW_NIB_DEFAULT});
+    const surfaceDiffers = !!live?.recipe && (!!staleSurface || canonicalJson(sansView(live.recipe)) !== canonicalJson(sansView(inspected)));
+    const rebasedSurface = surfaceDiffers && (!!staleSurface || canonicalJson(sansView(penned(live.recipe))) !== canonicalJson(sansView(penned(inspected))));
+    const writeBase = live?.recipe || inspected;
+    const writeBinding = {assetLabel: held.assetLabel, ...drawingBinding(live)};
+    const early = commitGate([{ pos: range.start, removed: held.text, inserted: '' }], who,
+      {asset: held.assetLabel, occurrence: {start: range.start, end: range.end}});
+    if (early) return early;
+    const editingFence = {operation: 'document.draw', surfaceRecipeDigest: drawingRecipeDigest(writeBase), drawingAsset: held.assetLabel || '',
+      shapesOnly: input.alt == null, occurrence: {start: range.start, end: range.end, reference: held.assetLabel}};
+    if (input.shapes?.replace?.some(row => row?.kind === 'paint')) {
+      editingFence.paintTargets = clone(input.shapes.replace.filter(row => row?.kind === 'paint')
+        .map(row => inspected.shapes.find(shape => shape.id === row.id && shape.recognized === 'paint')).filter(Boolean));
+    }
+    const watched = !!commitFenceRefusal() && !commitFenceRefusal(editingFence);
+    let svg, recipe;
+    try {
+      let base = clone(inspected);
+      const outsideObject = value => {
+        const {shapes, ...settings} = value;
+        return canonicalJson({...settings, shapes: shapes.filter(row => row.id !== held.objectId)});
+      };
+      const untouched = held.objectId ? outsideObject(base) : null;
+      if (input.recipe != null) {
+        if (!Array.isArray(input.recipe.shapes) || input.recipe.figures != null) return failure('recipe_invalid', 'invalid');
+        const shapes = [];
+        for (const shape of input.recipe.shapes) {
+          if (shape?.raster?.kept !== true) { shapes.push(shape); continue; }
+          const original = base.shapes.find(original => original.id === shape.id && original.recognized === 'paint');
+          if (!original || shape.recognized !== 'paint') return failure('recipe_invalid', 'invalid');
+          if (canonicalJson(shape.paint ?? null) !== canonicalJson(inspectPaintRecord(original.paint) ?? null)) return failure('paint_kept_recipe_changed', 'invalid');
+          shapes.push({ ...shape, raster: original.raster, paint: original.paint });
+        }
+        base = _rapierDrawNormalizeAgentRecipe({ ...input.recipe, shapes });
+        if (!base) return recipeInvalid(_rapierDrawRecipeFault({ ...input.recipe, shapes }));
+      }
+      if (input.shapes) {
+        const add = await paintFigures(input.shapes.add, context, 'shapes.add', base);
+        if (add.refusal) return add.refusal;
+        const replace = await paintFigures(input.shapes.replace, context, 'shapes.replace', base, true);
+        if (replace.refusal) return replace.refusal;
+        const shapes = { ...input.shapes, add: add.list, replace: replace.list?.slice() };
+        if (shapes.add?.some(shape => shape.raster?.kept === true)) return failure('recipe_invalid', 'invalid');
+        for (let i = 0; i < (shapes.replace?.length || 0); i++) {
+          const shape = shapes.replace[i];
+          if (shape.recognized !== 'paint' || shape.raster?.kept !== true) continue;
+          const original = base.shapes.find(original => original.id === shape.id && original.recognized === 'paint');
+          if (!original) return failure('recipe_invalid', 'invalid');
+          if (canonicalJson(shape.paint ?? null) !== canonicalJson(inspectPaintRecord(original.paint) ?? null)) return failure('paint_kept_recipe_changed', 'invalid');
+          shapes.replace[i] = { ...shape, raster: original.raster, paint: original.paint };
+        }
+        const patched = _rapierDrawApplyShapesPatch(base, shapes, input.direction);
+        if (!patched) return failure('draw_shapes_patch_invalid', 'invalid', _rapierDrawFigureFault((shapes.add || []).filter(raw => raw && typeof raw.kind === 'string'), base.shapes, input.direction) || {});
+        const fault = shapes.set && _rapierDrawRecipeFault(patched);
+        if (fault) return recipeInvalid(fault);
+        base = patched;
+      }
+      const operations = await paintOperations(input.operations, context, base);
+      if (operations.refusal) return operations.refusal;
+      recipe = applyOperations(base, operations.list).recipe;
+      if (held.objectId && outsideObject(recipe) !== untouched) return failure('drawing_object_scope', 'invalid');
+      if (surfaceDiffers) {
+        recipe = _rapierDrawMergeAgentRecipe(writeBase, inspected, recipe);
+        if (!recipe) return failure('draw_surface_changed', 'conflict');
+      }
+      const paperRefusal = waterPaperRefusal(recipe, writeBase);
+      if (paperRefusal) return paperRefusal;
+      if (!paintSheetsHold(recipe)) return failure('paint_sheet_invalid', 'invalid');
+      const rasterRefusal = await paintRastersHold(recipe, writeBase, context);
+      if (rasterRefusal) return rasterRefusal;
+      const refracted = await prepareRefraction(recipe, context);
+      if (refracted.refusal) return refracted.refusal;
+      recipe = refracted.recipe;
+      svg = _rapierDrawBuildSVG(recipe);
+    } catch (error) { cancelled(context); return failure(error?.code || 'draw_render_failed', error?.field ? 'invalid' : 'refused', error?.field ? {field: error.field} : {}); }
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    if (!recipe.shapes.length && !recipe.background) {
+      const result = await commit([{pos: range.start, removed: held.text, inserted: ''}], who, context, 'document.draw', {
+        fence: {...editingFence, shapesOnly: false}, label: input.label ?? 'Remove an empty drawing',
+        turnId: input.turn_id,
+        editCount: 1, authoredCount: 1, handleIds: [held.id],
+        handlePairs: [{handleId: held.id, offset: 0}],
+      });
+      if (!['applied', 'rebased'].includes(result.outcome)) return result;
+      held.used = true;
+      return {...result, removed: true, replaced: held.assetLabel || null, recipe_handle: null};
+    }
+    if (!svg) return failure('recipe_invalid', 'invalid');
+    recipe = _rapierDrawReadRecipeFromSVGText(svg);
+    if (!recipe) return failure('recipe_invalid', 'invalid');
+    return commitPictureEdit(input, who, context, held, range, encoder.encode(svg), {recipe, editingFence, watched, writeBase, writeBinding, live, rebased: !!rebasedSurface});
+  }
+
+  async function drawSVGEdit(input, who, context) {
+    if (typeof input.svg_handle !== 'string') return failure('svg_handle_required', 'invalid', {field: 'svg_handle'});
+    if (input.alt != null && (typeof input.alt !== 'string' || !input.alt.trim())) return failure('draw_alt_required', 'invalid', {field: 'alt'});
+    for (const field of ['recipe_handle', 'recipe', 'figures', 'shapes', 'operations', 'direction', 'context_handle']) {
+      if (input[field] != null) return failure('svg_edit_conflict', 'invalid', {field});
+    }
+    if (!Array.isArray(input.node_edits) || !input.node_edits.length) return failure('svg_node_edit_invalid', 'invalid', {field: 'node_edits'});
+    const held = lookup('handles', input.svg_handle, who);
+    if (held.outcome) return held;
+    if (held.kind !== 'svg') return failure('context_handle_wrong_kind', 'invalid', {field: 'svg_handle'});
+    const range = relocate(held);
+    if (range.outcome) return range;
+    if (assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+    const disclosed = new Set(held.nodeIds);
+    for (let index = 0; index < input.node_edits.length; index++) {
+      if (!disclosed.has(input.node_edits[index].id)) return failure('svg_node_edit_invalid', 'invalid', {field: 'node_edits[' + index + '].id'});
+    }
+    const early = commitGate([{pos: range.start, removed: held.text, inserted: ''}], who);
+    if (early) return early;
+    const editingFence = {operation: 'svg.edit', drawingAsset: held.assetLabel, shapesOnly: false};
+    const asset = documentAssets(state.text).assets.get(normalizeLabel(held.assetLabel));
+    let edited;
+    try { edited = editSVGNodes(decodeDataImage(asset.url), input.node_edits); }
+    catch (error) { return failure(error.code || 'svg_node_edit_invalid', 'invalid', {field: error.field || 'node_edits'}); }
+    return commitPictureEdit(input, who, context, held, range, edited, {nodeIds: held.nodeIds, editingFence, watched: false});
+  }
+
+  async function commitPictureEdit(input, who, context, held, range, svgBytes, {recipe, nodeIds, editingFence, watched, writeBase, writeBinding, live, rebased}) {
+    const source = state.text, revision = state.revision, documentId = state.documentId;
+    const occStart = range.start, oldOccText = held.text;
+    let asset, appended, raw, title;
+    try {
+      title = _rapierDrawNextAssetName(documentAssets(source).assets.values());
+      asset = await createAsset(svgBytes, null, {codec: 'image/svg+xml', title});
+      cancelled(context);
+      const oldAlt = DRAW_OCCURRENCE.exec(oldOccText)?.[1] ?? '';
+      const before = recipe && sourceDrawing(source, held.assetLabel), nextAlt = recipe && escapeImageAlt(_rapierDrawTextAlternative(recipe));
+      const altSource = input.alt != null ? escapeImageAlt(input.alt)
+        : before && drawingLabelsOwnCaption(oldAlt, nextAlt, before.recipe, recipe) ? nextAlt : oldAlt;
+      raw = '![' + altSource + '][' + asset.label + ']';
+      appended = await appendAsset(source, asset);
+      if (appended.reference !== asset.label) raw = '![' + altSource + '][' + appended.reference + ']';
+    } catch (error) {
+      cancelled(context);
+      return failure(error?.code || 'draw_asset_failed');
+    }
+    cancelled(context);
+    const splices = [{ pos: occStart, removed: oldOccText, inserted: raw }];
+    const validated = transformSplices(appended.source, splices);
+    if (validated == null) return failure('document_changed', 'conflict');
+    const placement = drawingPlacement(validated, occStart, raw, appended.reference);
+    if (!placement.placed) {
+      return failure(placement.complete ? 'draw_placement_unavailable' : 'draw_structure_unavailable');
+    }
+    const refreshed = await refresh(context);
+    if (refreshed) return refreshed;
+    const settled = writeBinding ? drawBindingFailure(writeBinding, range) : null;
+    if (settled) return settled;
+    if (state.documentId !== documentId || state.revision !== revision || state.text !== source) return failure('document_changed', 'conflict');
+    let drawingPatch = null;
+    if (recipe && input.alt == null) {
+      const saved = sourceDrawing(source, held.assetLabel);
+      if (!saved) return failure('target_changed', 'conflict');
+      const delta = _rapierDrawRecipeDelta(writeBase, recipe);
+      if (!delta) return failure('draw_patch_invalid', 'conflict');
+      drawingPatch = {patch: delta,
+        occurrence: {...(live?.occurrence || {}), start: occStart, end: occStart + oldOccText.length, reference: held.assetLabel},
+        targetOccurrence: {start: occStart, end: occStart + raw.length, reference: appended.reference},
+        asset: held.assetLabel, reference: appended.reference, assetGeneration: sha256(saved.asset.url),
+        ...(writeBinding?.drawSession ? {session: writeBinding.drawSession, surfaceGeneration: writeBinding.surfaceGeneration} : {}),
+        sourceRecipeBefore: saved.recipe, sourceRecipeAfter: recipe, recipeBefore: writeBase, recipeAfter: recipe};
+    }
+    const result = await commit(splices, who, context, recipe ? 'document.draw' : 'svg.edit', {
+      fence: {...editingFence, ...(drawingPatch ? {drawingPatch} : {})}, ...(drawingPatch ? {drawingPatch} : {}),
+      watched, rebased,
+      ...(recipe ? {drawingPresentation: {...context.drawingPresentation?.binding, presentation: context.drawingPresentation?.presentation,
+        occurrence: {start: occStart, end: occStart + raw.length}, reference: appended.reference}} : {}),
+      turnId: input.turn_id,
+      label: input.label ?? 'Edit a drawing', editCount: 1, authoredCount: splices.length, handleIds: [held.id],
+      handlePairs: [{ handleId: held.id, offset: occStart - range.start }],
+      drawAssets: [{ id: normalizeLabel(appended.reference), label: appended.reference, url: asset.url, title: asset.title }],
+    });
+    if (!['applied', 'rebased'].includes(result.outcome)) return result;
+    held.used = true;
+    const nextHandle = recipe ? (held.objectId && !recipe.shapes.some(row => row.id === held.objectId) ? null
+      : drawHandle(occStart, occStart + raw.length, appended.reference, who, {}, null, null, held.objectId))
+      : svgHandle(occStart, occStart + raw.length, nodeIds, appended.reference, who);
+    return { ...result, asset: {reference: appended.reference, title}, replaced: held.assetLabel || null,
+      width: asset.width, height: asset.height, ...(recipe ? {recipe_handle: nextHandle?.id || null,
+        ...(!nextHandle ? drawingEditAvailability(appended.reference) : {})} : {svg_handle: nextHandle?.id || null}) };
+  }
+
+  function sourceChangeTargets(changeId) {
+    const entry = state.journal.find(row => row.id === changeId);
+    if (!entry) return [];
+    const targets = [];
+    const later = since(entry.revision);
+    if (later) for (let index = 0; index < entry.splices.length && targets.length < 2; index++) {
+      const row = entry.splices[index];
+      let range = transportInterval(row.pos, row.pos + row.inserted.length, entry.splices.slice(index + 1));
+      for (const next of later) { if (!range) break; range = transportInterval(range.start, range.end, next.splices); }
+      if (!range) continue;
+      targets.push({start: range.start, end: range.end, chars: range.end - range.start});
+    }
+    return targets;
+  }
+
+  function changeSummary(retained, chars) {
+    const base = retained?.length && sourceBefore(journalHistory(), retained[0].id);
+    if (!base?.ok || bytes(base.source) + bytes(state.text) > LIMITS.compareBytes) return null;
+    const result = diff(base.source, state.text, {from: retained.flatMap(row => row.splices), limit: 1e6});
+    return result.edits.some(row => row.coarse) ? null : summarize(base.source, state.text, result, {chars});
+  }
+
+  function sourceChanges(who, observed = null, seen = [], chars = 2048) {
+    if (observed == null) return { sinceRevision: null, throughRevision: state.revision, complete: true, changes: [], reason: 'first_observation' };
+    const retained = since(observed);
+    const delivered = new Set(seen);
+    const entries = (retained || state.journal.filter(row => row.revision > observed)).filter(row => !delivered.has(row.id));
+    const rows = entries;
+    const changes = rows.map(entry => {
+      return {act: publicAct(entry), yours: entry.owner === ownerOf(who) &&
+        (entry.author?.name || entry.agent || entry.hostAgent || '') === (who.author?.name || who.agent || who.hostAgent || ''),
+        insertedChars: entry.splices.reduce((sum, row) => sum + row.inserted.length, 0),
+        removedChars: entry.splices.reduce((sum, row) => sum + row.removed.length, 0), targets: [] };
+    });
+    const summary = !seen.length && changes.length && !changes.some(row => row.yours) && changeSummary(retained, chars);
+    return { sinceRevision: observed, throughRevision: state.revision, complete: !!retained && entries.length <= rows.length,
+      retainedChanges: entries.length, omitted: entries.length - rows.length, changes, ...(summary ? {summary} : {}),
+      ...(!retained ? { reason: 'retained_history_limited' } : {}) };
+  }
+
+  function fitContext(result, budget) {
+    const omitted = domain => {
+      const rows = result.omissions ||= [];
+      let row = rows.find(row => row.domain === domain);
+      if (!row) rows.push(row = {domain, reason: 'result_budget', omitted: 0});
+      row.omitted++; result.complete = false;
+    };
+    const lists = [
+      [result.drawing, 'selectedObjects', () => {result.drawing.selectedObjectsComplete = false;}],
+      [result.drawing?.brushes, 'paint', () => {result.drawing.brushes.paintComplete = false;}],
+      [result.drawing?.brushes, 'vector', () => {result.drawing.brushes.vectorComplete = false;}],
+      [result.compare, 'items', () => {result.compare.remaining++; omitted('comparison_items');}],
+      [result, 'agents', () => omitted('agent_names')],
+      [result, 'returns', () => omitted('returned_pages')],
+      [result.editor, 'receipts', () => omitted('editor_receipts')],
+      [result.drawing, 'receipts', () => {result.drawing.receiptsComplete = false;}],
+      [result.continuation?.person, 'intents', () => {result.continuation.person.intentsComplete = false; result.continuation.person.omittedIntents++;}],
+      [result.sourceChanges, 'changes', row => {
+        result.sourceChanges.complete = false; result.sourceChanges.omitted++;
+        for (const target of row.targets) if (target.ref) delete state.refs[target.ref];
+      }],
+    ].filter(([owner, field]) => Array.isArray(owner?.[field]));
+    while (bytes(JSON.stringify(stamp(result))) > budget) {
+      const list = lists.find(([owner, field]) => owner[field].length);
+      if (!list) break;
+      const [owner, field, record] = list;
+      const index = owner === result.sourceChanges ? owner[field].findIndex(row => row.act.author.kind !== 'human') : -1;
+      record(index >= 0 ? owner[field].splice(index, 1)[0] : field === 'items' ? owner[field].pop() : owner[field].shift());
+    }
+    return result;
+  }
+
+  function publicCommentAnchor(anchor, parsed) {
+    const {exact, start, end, ...rest} = anchor;
+    return {...rest, ...(anchor.quote ? {quote: display(anchor.quote, 256)} : {}),
+      ...(anchor.status === 'attached' ? commentSourceRange(anchor, parsed) : {})};
+  }
+
+  function listComments(input, who) {
+    if (state.docKind !== 'markdown') return failure('comments_require_markdown');
+    const parsed = parseComments(state.text);
+    if (parsed.reason) return failure(parsed.reason);
+    let offset = 0, textOffset = 0, threadId = input.thread_id || null, status = input.status || 'all';
+    if (input.cursor) {
+      const cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'comments') return failure('cursor_kind_mismatch');
+      if (cursor.revision !== state.revision) return failure('read_snapshot_changed', 'conflict');
+      ({offset, textOffset, threadId, status} = cursor);
+    }
+    const threads = commentThreads(state.text, parsed).filter(thread => status === 'all' || thread.resolved === (status === 'resolved'));
+    const thread = threadId ? threads.find(row => row.id === threadId) : null;
+    if (threadId && !thread) return failure('comment_missing', 'target_gone');
+    const items = [], rows = thread ? thread.messages : threads, budget = LIMITS.resultBytes - 2048;
+    const publicMessage = row => ({id: row.id, text: row.text,
+      author: {kind: row.author.kind, name: display(row.author.name, 64)}, createdAt: row.createdAt,
+      ...(row.date !== undefined ? {date: row.date} : {}),
+      ...(row.replyTo !== undefined ? {replyTo: row.replyTo} : {}),
+      ...(row.recipient ? {recipient: display(row.recipient, 64)} : {})});
+    while (offset < rows.length) {
+      const row = rows[offset];
+      const message = thread ? {...publicMessage(row), text: clip(row.text.slice(textOffset), 2048), offset: textOffset,
+        complete: textOffset + clip(row.text.slice(textOffset), 2048).length === row.text.length, chars: row.text.length} : null;
+      const item = thread ? message : {id: row.id, resolved: row.resolved, anchor: publicCommentAnchor(row.anchor, parsed),
+        messages: row.messages.length, lastMessage: {...publicMessage(row.messages.at(-1)), text: display(row.messages.at(-1).text, 240)}};
+      if (bytes(JSON.stringify([...items, item])) > budget) {
+        if (!items.length) {
+          if (input.cursor) delete state.cursors[input.cursor];
+          return failure('result_over_budget', 'refused', {complete: false});
+        }
+        break;
+      }
+      items.push(item);
+      if (message && !message.complete) { textOffset += message.text.length; break; }
+      offset++; textOffset = 0;
+    }
+    const complete = offset >= rows.length;
+    const next = complete ? null : mint('cursors', 'comments_', {kind: 'comments', revision: state.revision,
+      threadId, status, offset, textOffset}, who);
+    if (input.cursor) delete state.cursors[input.cursor];
+    return accepted({...(thread ? {thread: {id: thread.id, resolved: thread.resolved, anchor: publicCommentAnchor(thread.anchor, parsed)}, messages: items}
+      : {threads: items}), total: rows.length, complete, next_cursor: next?.id || null});
+  }
+
+  async function comment(input, who, context) {
+    if (state.docKind !== 'markdown') return failure('comments_require_markdown');
+    const parsed = parseComments(state.text);
+    if (parsed.reason) return failure(parsed.reason);
+    const threads = commentThreads(state.text, parsed);
+    const action = input.action;
+    const writesMessage = action === 'create' || action === 'reply';
+    if (writesMessage && (typeof input.text !== 'string' || !input.text.trim() ||
+        bytes(input.text) > 4096 || admissibleText(input.text))) return failure('comment_text_invalid', 'invalid');
+    if (!writesMessage && (input.text !== undefined || input.recipient !== undefined) ||
+        action !== 'create' && (input.context_handle !== undefined || input.anchor !== undefined || input.object_id !== undefined)) {
+      return failure('comment_arguments_invalid', 'invalid');
+    }
+    let thread, held = null;
+    if (action === 'create') {
+      if (input.thread_id) return failure('comment_arguments_invalid', 'invalid');
+      const kind = input.anchor || (input.context_handle ? 'text' : 'document');
+      if (kind === 'document' && (input.context_handle || input.object_id) || kind !== 'drawing' && input.object_id) return failure('comment_anchor_invalid', 'invalid');
+      let range = null;
+      if (kind !== 'document') {
+        held = lookup('handles', input.context_handle, who);
+        if (held.outcome) return held;
+        if (held.kind === 'change') return failure('context_handle_wrong_kind', 'invalid');
+        if (held.kind === 'image-comment' && kind !== 'image') return failure('context_handle_wrong_kind', 'invalid');
+        range = relocate(held);
+        if (range.outcome) return range;
+        if (['draw', 'svg'].includes(held.kind) && held.assetDigest && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+        if (kind === 'drawing' && held.kind !== 'draw') return failure('context_handle_wrong_kind', 'invalid');
+      }
+      const anchor = commentAnchor(kind, range?.start, range?.end, state.text, parsed, input.object_id);
+      thread = {id: mintId('thread_'), anchor, resolved: false, messages: []};
+      const checked = commentThreads(state.text, {...parsed, current: true, threads: [thread]})[0];
+      if (checked.anchor.status !== 'attached') return failure('comment_anchor_invalid', 'invalid', {detail: checked.anchor.reason});
+      threads.push(thread);
+    } else {
+      thread = threads.find(row => row.id === input.thread_id);
+      if (!thread) return failure('comment_missing', 'target_gone');
+    }
+    let message = null;
+    if (writesMessage) {
+      const recipient = typeof input.recipient === 'string' ? input.recipient.trim() : '';
+      message = {id: mintId('message_'), text: input.text,
+        author: {kind: who.actor, name: who.actor === 'human' ? 'You' : who.agent || who.actor},
+        createdAt: Math.floor(now()), ...(recipient ? {recipient} : {})};
+      thread.messages.push(message);
+    } else if (action === 'resolve' || action === 'reopen') {
+      if (thread.resolved === (action === 'resolve')) return {outcome: 'unchanged', threadId: thread.id};
+      thread.resolved = action === 'resolve';
+    } else return failure('comment_action_invalid', 'invalid');
+    const row = writeComments(state.text, threads, parsed);
+    const result = await commit([row], who, context, 'comments.write', {label: input.label ?? 'Comment', turnId: input.turn_id, editCount: 1,
+      authoredCount: 1, });
+    return {...result, threadId: thread.id, ...(message ? {messageId: message.id} : {})};
+  }
+
+  function inspectVisual(input, context) {
+    const pointing = collaboration().presence;
+    const drawing = drawingSummary();
+    const prepared = visualRequest({...state, drawing: input.preview ? null : drawing, selection: pointing?.selection || state.selection,
+      focus: input.sourceRange || pointing?.focus || state.focus}, input);
+    if (prepared.outcome !== 'ok') return {...failure(prepared.reason, prepared.outcome, prepared), ...(drawing ? {drawing} : {})};
+    const mode = 'visual:' + prepared.request.scope;
+    if (context.continues) {
+      const invalid = checkContinuation(context, mode);
+      if (invalid) return invalid;
+      const prior = pendingFacts.get(context.continues);
+      pendingFacts.delete(context.continues);
+      if (canonicalJson(prior.requirements?.sourceRange) !== canonicalJson(prepared.request.sourceRange)) return failure('visual_target_changed');
+    }
+    if (context.world?.visual) {
+      const result = visualResult(prepared.request, context.world.visual);
+      return {...(result.outcome === 'ok' ? result : failure(result.reason, result.outcome, result)), ...(drawing ? {drawing} : {})};
+    }
+    const requestId = mintId('fact_');
+    pendingFacts.set(requestId, {documentId: state.documentId, revision: state.revision, mode, requirements: prepared.request});
+    while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
+    return {outcome: 'pending', reason: 'surface_fact_required', ...(drawing ? {drawing} : {}), pending: {kind: 'surface-fact', requestId, requirements: prepared.request}};
+  }
+
+  function askEditor(operation, input, who, context) {
+    let sourceRange = input.action === 'playback' ? input.sourceRange : undefined;
+    if (input.context_handle !== undefined) {
+      if (input.text !== undefined || !['read_aloud', 'copy', 'playback'].includes(input.action)) return failure('editor_arguments_invalid', 'invalid');
+      const target = readTarget({context_handle: input.context_handle}, who);
+      if (target.outcome) return target;
+      if (input.action !== 'playback' && (target.change || target.draw || target.svg)) return failure('context_handle_wrong_kind', 'invalid');
+      input = input.action === 'playback' ? input : {...input, text: state.text.slice(target.start, target.end)};
+      sourceRange = {start: target.start, end: target.end};
+    }
+    if (input.action === 'copy' && input.format === 'complete' && !sourceRange) return failure('editor_context_required', 'refused',
+      {hint: 'Read the passage first, then copy its context_handle as a complete excerpt.'});
+    const prepared = editorRequest(state, operation, input);
+    if (prepared.outcome !== 'ok') return prepared;
+    if (sourceRange) prepared.request.sourceRange = sourceRange;
+    const mode = 'editor:' + operation;
+    let requestId = context.world?.editor?.receipt?.id;
+    if (context.continues) {
+      const invalid = checkContinuation(context, mode);
+      if (invalid) return invalid;
+      const prior = pendingFacts.get(context.continues);
+      pendingFacts.delete(context.continues);
+      const {id, ...requirements} = prior.requirements || {};
+      if (canonicalJson(requirements) !== canonicalJson(prepared.request)) return failure('editor_request_changed');
+      requestId = context.continues;
+    }
+    if (context.world?.editor) return editorResult({...prepared.request, ...(requestId ? {id: requestId} : {})}, context.world.editor);
+    requestId = mintId('fact_');
+    const requirements = {...prepared.request, id: requestId};
+    pendingFacts.set(requestId, {documentId: state.documentId, revision: state.revision, mode, requirements});
+    while (pendingFacts.size > LIMITS.invocationKeys) pendingFacts.delete(pendingFacts.keys().next().value);
+    return {outcome: 'pending', reason: 'surface_fact_required', pending: {kind: 'surface-fact', requestId, requirements}};
+  }
+
+  async function point(input, who, context) {
+    const {target: selected} = input;
+    input = {...input, ...selected};
+    if (selected.kind === 'act') input.change_id = selected.act_id;
+    let target, reveal = host.reveal;
+    const change = selected.kind === 'comparison' ? changeOf(input.change_id) : null;
+    if (selected.kind === 'comparison' && !change) return failure('change_missing', 'target_gone');
+    if (change) {
+      if (state.compare.owner !== ownerOf(who) && !state.compare.hostCompareId) return failure('compare_not_owned');
+      target = {compareId: state.compare.id, changeId: change.id, hostCompareId: state.compare.hostCompareId || null,
+        start: change.start, end: change.end, incomingStart: change.incomingStart, incomingEnd: change.incomingEnd,
+        removed: change.removed, inserted: change.inserted, currentText: state.compare.baseline, incomingText: state.compare.incoming,
+        index: state.compare.changes.indexOf(change)};
+      reveal = host.revealChange;
+    } else if (input.change_id) {
+      const entry = state.journal.find(row => row.id === input.change_id);
+      if (!entry) return unavailableAct();
+      const later = since(entry.revision);
+      if (!later) return failure('history_unavailable', 'conflict');
+      for (let index = 0; index < entry.splices.length; index++) {
+        const row = entry.splices[index];
+        let range = transportTouchedInterval(row.pos, row.pos + row.inserted.length, entry.splices.slice(index + 1));
+        for (const next of later) { if (!range) break; range = transportTouchedInterval(range.start, range.end, next.splices); }
+        if (range) { target = range; break; }
+      }
+      if (!target && !entry.splices.length) target = {start: 0, end: 0};
+      if (!target) return failure('target_changed', 'conflict');
+    } else {
+      const held = lookup('handles', input.context_handle, who);
+      if (held.outcome) return held;
+      const range = relocate(held);
+      if (range.outcome) return range;
+      if (held.kind === 'draw' && assetDigest(held.assetLabel) !== held.assetDigest) return failure('target_changed', 'conflict');
+      target = {...range, ...(held.kind === 'draw' ? {assetLabel: held.assetLabel, ...(held.objectId ? {objectId: held.objectId} : {})} : {})};
+    }
+    const createdAt = now(), lifetime = input.lifetime ?? 6, key = presenceKey(who);
+    for (const row of Object.values(state.pointers)) if (row.status !== 'expired') {
+      row.status = 'expired'; row.reason = 'pointer_replaced';
+    }
+    const pointer = {id: mintId('pointer_'), documentId: state.documentId, revision: state.revision,
+      owner: ownerOf(who), ...(who.agent ? {agent: who.agent} : {}), start: target.start, end: target.end,
+      ...(target.objectId ? {objectId: target.objectId} : {}), ...(target.assetLabel ? {assetLabel: target.assetLabel} : {}),
+      ...(target.compareId ? {compareId: target.compareId, changeId: target.changeId} : {}),
+      words: input.words, createdAt, expiresAt: createdAt + lifetime * 1000, status: 'deferred'};
+    state.pointers[key] = pointer;
+    const retained = Object.entries(state.pointers).sort((a, b) => a[1].createdAt - b[1].createdAt);
+    while (retained.length > LIMITS.principals) delete state.pointers[retained.shift()[0]];
+    publishPresence();
+    let value;
+    try {
+      if (typeof reveal === 'function') value = await reveal({documentId: state.documentId, revision: state.revision,
+        ...target, pointer: clone(pointer), ...who, signal: context.signal});
+      cancelled(context);
+    } catch (error) {
+      pointer.status = 'expired'; publishPresence(); throw error;
+    }
+    expireCollaboration();
+    if (pointer.status !== 'expired') pointer.status = value?.status === 'expired' ? 'expired' : value?.ok && !value?.pending ? 'shown' : 'deferred';
+    if (value?.viewId) pointer.viewId = value.viewId;
+    publishPresence();
+    return {outcome: pointer.status, status: pointer.status, pointerId: pointer.id, createdAt, expires_at: pointer.expiresAt, lifetime,
+      ...(value?.viewId ? {view: {id: value.viewId, status: value.pending ? 'pending' : pointer.status}} : {}),
+      ...(value?.reason ? {reason: value.reason} : {})};
+  }
+
+  async function readDocument(input, who, context) {
+    if (input.cursor && input.target) return failure('read_target_ambiguous', 'invalid');
+    let target = input.target, returnStart = null;
+    if (input.cursor) {
+      const cursor = lookup('cursors', input.cursor, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind === 'return-read') {
+        target = {kind: 'return', return_id: cursor.returnId, start: cursor.offset};
+        returnStart = cursor.start;
+      }
+    }
+    if (target?.kind === 'return') {
+      if (input.paintSample) return failure('drawing_object_scope', 'invalid');
+      if (typeof host.readReturn !== 'function') return failure('return_unavailable');
+      const result = await host.readReturn({return_id: target.return_id, start: target.start ?? 0, limit: input.limit});
+      if (result?.outcome !== 'ok') return result || failure('return_unavailable');
+      const start = returnStart ?? target.start ?? 0;
+      const next = result.complete ? null : mint('cursors', 'return_read_', {kind: 'return-read', returnId: target.return_id,
+        start, offset: result.end}, who);
+      if (input.cursor) delete state.cursors[input.cursor];
+      return {...result, kind: 'return', authority: false, next_cursor: next?.id || null,
+        coverage: {start, end: result.end, disclosed: result.end - start, chars: result.end + result.remaining, complete: start === 0 && result.complete === true}};
+    }
+    const args = {...input, ...target};
+    delete args.target;
+    if (target?.kind === 'comparison' && target.change_id) args.context_handle = target.change_id;
+    return readContext(args, who, context);
+  }
+
+  async function observe(input, who, context) {
+    if (host.ready && (input.facets || ['capabilities']).includes('capabilities')) await host.ready('drawing').catch(() => {});
+    const snapshot = readSnapshot();
+    const resumed = state.resume[ownerOf(who)];
+    let observed = resumed?.revision ?? null, seenChanges = resumed?.seenChanges || [];
+    if (input.since) {
+      const cursor = lookup('cursors', input.since, who);
+      if (cursor.outcome) return cursor;
+      if (cursor.kind !== 'observation') return failure('cursor_kind_mismatch', 'invalid');
+      if (cursor.revision > state.revision) return failure('observation_changed', 'conflict');
+      observed = cursor.revision; seenChanges = cursor.seenChanges || [];
+    }
+    const facets = new Set(input.facets || ['changes', 'receipts', 'capabilities']);
+    const budget = bounded(input.budget_bytes, 6144, 2048, LIMITS.resultBytes);
+    const together = collaboration(), pointing = together.presence, will = sourceWill();
+    const focused = pointing?.focus || state.focus, selected = pointing?.selection || state.selection;
+    const located = (row, kind) => input.refs === false ? {start: row.start, end: row.end} : reference(row.start, row.end, who, {kind});
+    const focus = focused && located(focused, 'focus'), selection = selected && located(selected, 'selection');
+    const editor = projectEditorContext(typeof host.editorContext === 'function' ? await host.editorContext() : null);
+    const drawing = drawingSummary(), sha = sourceSha256(), paint = typeof host.paintBrushes === 'function' ? host.paintBrushes() : null;
+    const drawingCore = drawing ? Object.fromEntries(['open', 'session', 'occurrence', 'assetGeneration', 'surfaceGeneration', 'recipeDigest', 'recipeUnavailable', 'mode', 'busy']
+      .filter(key => drawing[key] !== undefined).map(key => [key, drawing[key]])) : null;
+    const paintCore = {available: !!paint, ...(paint?.modes ? {modes: paint.modes} : {}),
+      needs: {paint: 'open editor', water: 'open editor with WebGPU'},
+      renderer: {status: typeof host.material === 'function' ? (drawingPresentationBinding() ? 'attached' : 'unavailable')
+        : typeof host.paint === 'function' ? 'local' : 'unavailable', water: 'unprobed'},
+      guide: {resource: 'rapier://guide/water'}};
+    const paintBrief = paint && facets.has('capabilities') ? {...paintCore,
+      brushSizes: Object.fromEntries(paint.modes.map(mode => [mode,
+        Object.fromEntries(paint.brushes.filter(brush => brush.mode === mode).map(({id, size}) => [id, size]))])),
+      figure: paint.figure} : paintCore;
+    const result = accepted({filename: state.filename, docKind: state.docKind, chars: state.text.length, sha256: sha,
+      surface: {kind: pointing?.active ? 'editor' : 'headless', next: pointing?.active ? 'continue' : 'deliver_page'},
+      human: pointing ? {active: pointing.active === true, editing: pointing.editing === true, revision: pointing.revision,
+        open: pointing.drawing?.open ? (pointing.drawing.tool === 'water' ? 'water' : pointing.drawing.tool === 'paint' ? 'paint' : 'draw') : pointing.view || 'document',
+        ...(pointing.drawing?.open && typeof pointing.drawing.tool === 'string' ? {tool: pointing.drawing.tool} : {}),
+        ...(pointing.view ? {view: pointing.view} : {}), ...(pointing.objects ? {objects: objectFacts(pointing.objects)} : {}), expiresAt: pointing.expiresAt} : {status: 'unobserved'},
+      ...(typeof host.notesForeground === 'function' ? {foreground: host.notesForeground()} : {}),
+      focus: focus ? {ref: focus.id, start: focus.start, end: focus.end} : null,
+      selection: selection ? {ref: selection.id, start: selection.start, end: selection.end,
+        ...(selected.objectId ? {objectId: selected.objectId} : {})} : null,
+      collaboration: {agentPresence: agentPresence(who, true)},
+      ...(state.notes ? {notes: state.notes} : {}),
+      ...(typeof host.view === 'function' ? {view: host.view()} : {}),
+      ...(will?.present ? {law: {default: will.faults.length ? 'keep' : 'edit', regions: will.regions.length,
+        laws: [...new Set(will.regions.map(row => row.law))], ...(will.faults.length ? {faultCount: will.faults.length} : {})}} : {}),
+      ...(facets.has('changes') ? {sourceChanges: sourceChanges(who, observed, seenChanges, Math.min(2048, Math.floor(budget / 4)))} : {}),
+      continuation: continuationContext(will),
+      ...(facets.has('receipts') ? {editor: {receipts: editor.receipts}, drawingIntent: drawingTurnSummary()} : {}),
+      ...(facets.has('capabilities') ? {capabilities: {source: true, nativeDrawing: state.docKind === 'markdown',
+        svg: state.docKind === 'markdown', editor: pointing?.active ? 'attached' : 'unavailable',
+        notes: typeof host.notesFind === 'function' ? 'host' : 'unavailable'},
+        editorPreferences: editor.preferences} : {}),
+      drawing: facets.has('drawing') && drawing ? drawing : drawingCore,
+      paint: facets.has('paint') && paint ? {...paint, ...paintCore} : paintBrief,
+      ...(facets.has('comments') && state.docKind === 'markdown' ? {comments: commentSummary(state.text)} : {}),
+      ...(facets.has('comparison') && state.compare ? {compare: comparisonFields()} : {}),
+      ...(facets.has('history') ? {history: {complete: state.history.complete, earliestRevision: state.history.earliestRevision,
+        retainedChanges: state.journal.length, trimmedBytes: state.history.trimmedBytes}} : {}),
+    });
+    if (facets.has('returns')) {
+      result.returns = typeof host.returns === 'function' ? await host.returns() : [];
+      result.returnWaiting = result.returns.length > 0;
+    }
+    if (['structure', 'images', 'layout'].some(facet => facets.has(facet))) {
+      const facts = await outline(context);
+      if (facts?.outcome) return facts;
+      if (facets.has('structure')) result.structure = {engine: facts.engine, total: facts.total, complete: facts.complete,
+        ...(facts.reason ? {reason: facts.reason} : {})};
+      const {images, layout} = facts;
+      if (images && (facets.has('images') || facets.has('structure'))) result.images = {scope: 'markdown', total: images.total, indexed: images.entries.length,
+        profiles: images.entries.reduce((counts, row) => {counts[row.profile]++; return counts;}, {embedded: 0, linked: 0}),
+        drawings: images.entries.filter(row => row.drawing).length, assetRecords: images.assetRecords,
+        declaredAssetBytes: images.declaredAssetBytes, complete: images.complete,
+        omitted: Math.max(0, images.total - images.entries.length), ...(images.reason ? {reason: images.reason} : {})};
+      if (layout && (facets.has('layout') || facets.has('structure'))) result.layout = {standard: 'md-layout:v1', annotatedBlocks: layout.total,
+        alignments: [...new Set(layout.entries.map(row => row.align).filter(Boolean))],
+        wrappedImages: layout.entries.filter(row => row.kind === 'image' && ['around', 'beside', 'box', 'behind', 'front'].includes(row.wrap)).length,
+        malformed: (layout.faults || []).length, ...(layout.faults?.length ? {faults: layout.faults.slice(0, 8)} : {}),
+        complete: layout.complete, omitted: Math.max(0, layout.total - layout.entries.length), ...(layout.reason ? {reason: layout.reason} : {})};
+    }
+    if (facets.has('brief')) {
+      const brief = await continuationBrief(context, Math.max(0, budget - bytes(JSON.stringify(stamp(result))) - 512));
+      if (brief?.outcome) return brief;
+      if (brief) result.brief = brief;
+    }
+    if (!sameReadSnapshot(snapshot)) {
+      if (focus) delete state.refs[focus.id];
+      if (selection) delete state.refs[selection.id];
+      return failure('read_snapshot_changed', 'conflict');
+    }
+    const cursor = mint('cursors', 'observe_', {kind: 'observation', revision: snapshot.revision}, who);
+    result.observation_cursor = cursor?.id || null;
+    if (cursor) result.continuation.next = {tool: 'document.observe', arguments: {since: cursor.id}};
+    result.facets = [...facets];
+    for (const field of ['brief', 'editorPreferences', 'paint', 'drawing', 'compare', 'comments', 'history', 'images', 'layout', 'structure', 'capabilities']) {
+      if (bytes(JSON.stringify(stamp(result))) <= budget - 128) break;
+      if (result[field] === undefined) continue;
+      if (field === 'drawing') {if (result.drawing === drawingCore) continue; result.drawing = drawingCore;}
+      else if (field === 'paint') {if (result.paint === paintCore) continue; result.paint = paintCore;}
+      else delete result[field];
+      (result.omissions ||= []).push({domain: field, reason: 'result_budget'}); result.complete = false;
+    }
+    fitContext(result, budget - 128);
+    for (const row of result.sourceChanges?.changes || []) {
+      row.targets = sourceChangeTargets(row.act.id);
+      if (input.refs !== false) for (const target of row.targets) {
+        const ref = reference(target.start, target.end, who, {kind: 'change'});
+        if (ref) {target.ref = ref.id; delete target.start; delete target.end;}
+      }
+    }
+    fitContext(result, budget - 128);
+    if (bytes(JSON.stringify(stamp(result))) > budget) {
+      if (focus) delete state.refs[focus.id];
+      if (selection) delete state.refs[selection.id];
+      if (cursor) delete state.cursors[cursor.id];
+      for (const row of result.sourceChanges?.changes || []) for (const target of row.targets) if (target.ref) delete state.refs[target.ref];
+      return failure('result_over_budget', 'refused', {requiredBytes: bytes(JSON.stringify(stamp(result)))});
+    }
+    if (cursor) {
+      if (result.sourceChanges?.omitted > 0 || !result.sourceChanges && observed !== null) {
+        cursor.revision = observed; cursor.seenChanges = [...new Set([...seenChanges, ...(result.sourceChanges?.changes || []).map(row => row.act.id)])];
+      }
+      const retainedSourceBacklog = !result.sourceChanges && observed !== null &&
+        state.journal.some(row => row.revision > observed && !seenChanges.includes(row.id));
+      if (!result.sourceChanges?.omitted && !retainedSourceBacklog) delete result.continuation.next;
+    }
+    return result;
+  }
+
+  function publicText(source = state.text) {
+    if (state.docKind !== 'markdown') return projectSegments(source, imageSpans(source).map(span => ({...span,
+      kind:'asset',text:'<!-- rapier-image:' + sha256(source.slice(span.start,span.end)) + ' -->'})));
+    const assets = documentAssets(source), replacements = [];
+    const usedIds = new Set([...source.matchAll(/<!-- rapier-block:([A-Za-z0-9_-]+) /g)].map(row => row[1]));
+    let imageIndex = 0;
+    for (const row of assets.blocks) {
+      const label = /^\[([^\]\r\n]+)\]:/.exec(row.source)?.[1] || row.id;
+      replacements.push({...row, definitionStart: row.start, label, kind: 'asset', hidden: true, text: '', marker: '<!-- rapier-asset:' + row.id + ' -->'});
+    }
+    const images = [...assets.assets.values()].some(asset => /^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url))
+      ? structureMarkdown({source, kinds: ['image'], matchLimit: 2048}, markdownParser()) : {matches: []};
+    for (const item of images.matches || []) {
+      const raw = source.slice(item.start, item.end), match = DRAW_OCCURRENCE.exec(raw);
+      if (!match) continue;
+      const asset = assets.assets.get(normalizeLabel(match[2]));
+      if (!asset || !/^data:image\/svg\+xml(?:;base64)?,/i.test(asset.url)) continue;
+      let recipe; try {recipe = _rapierDrawReadRecipeFromSVGText(new TextDecoder().decode(decodeDataImage(asset.url)));} catch {continue;}
+      const marker = /<!-- rapier-block:([A-Za-z0-9_-]+) (rapier-(?:draw|water|paint|svg)) -->\n\n$/.exec(source.slice(0, item.start));
+      let id = marker?.[1];
+      if (!id) {do {id = 'image-' + ++imageIndex;} while (usedIds.has(id)); usedIds.add(id);}
+      const kind = marker?.[2] || (recipe ? 'rapier-draw' : 'rapier-svg');
+      const live = source === state.text && recipe ? drawingFor(item.start, item.end, asset.label) : null;
+      recipe = live?.recipe || recipe;
+      let body = recipe ? disclosedRecipe(recipe) : JSON.parse(svgInspection(asset.label) || '{}');
+      if (!recipe && Array.isArray(body.nodes)) body = {nodes: body.nodes.map(({id, element, attributes, text}) => ({id, element, attributes, ...(text !== null ? {text} : {})})), complete: !body.truncated};
+      const attrs = {id, alt: match[1].replace(/\\([\[\]\\])/g, '$1')};
+      const start = marker ? item.start - marker[0].length : item.start;
+      const leading = start && source[start - 1] !== '\n' ? '\n' : '';
+      const placed = /^[ \t]*(<!--md-layout:v1[^>\r\n]*-->)[ \t]*(?=\r?\n|$)/.exec(source.slice(item.end)), end = item.end + (placed?.[0].length || 0);
+      const trailing = end < source.length && !/[\r\n]/.test(source[end]) ? '\n' : '';
+      const fence = blockText(kind, attrs, JSON.stringify(body, null, 2)) + (placed ? '\n' + placed[1] : '');
+      replacements.push({start, end, imageStart: item.start,
+        raw, id, kind, asset, recipe, live, leading, trailing, fence, text: leading + fence + trailing});
+    }
+    for (const span of imageSpans(source)) if (!replacements.some(row => row.start <= span.start && row.end >= span.end)) replacements.push({...span, id: sha256(source.slice(span.start, span.end)), kind: 'asset', text: '<!-- rapier-image:' + sha256(source.slice(span.start, span.end)) + ' -->'});
+    const parsed = parseComments(source);
+    if (parsed.record && !parsed.reason) replacements.push({...parsed.record, kind: 'comments', text: commentThreads(source, parsed).map(thread =>
+      blockText('rapier-comment', {id: thread.id, on: (() => {const range = commentSourceRange(thread.anchor, parsed), id = range && htmlFence(source.slice(range.start, range.end))?.attrs.id; return id ? '#' + id : thread.anchor.quote || '';})(), resolved: String(thread.resolved)},
+        JSON.stringify({messages: thread.messages}, null, 2))).join('\n\n')});
+    const ordered = replacements.toSorted((a, b) => a.start - b.start), eol = /\r\n|\r|\n/g;
+    ordered.forEach((row, index) => {
+      if (!row.hidden) return;
+      const floor = index ? ordered[index - 1].end : 0, ceiling = ordered[index + 1]?.start ?? source.length;
+      let start = row.start;
+      while (start > floor && (source[start - 1] === '\n' || source[start - 1] === '\r')) start--;
+      if (start > floor || floor && !ordered[index - 1].hidden) { eol.lastIndex = start; const first = eol.exec(source); if (first && first.index === start && first.index + first[0].length <= row.start) start += first[0].length; }
+      row.start = start;
+      row.end = Math.min(ceiling, row.end + /^(?:\r\n|\r|\n)?/.exec(source.slice(row.end))[0].length);
+    });
+    return projectSegments(source, ordered);
+  }
+
+  function publicSurface() {
+    const facts = snapshotFacts(), drawing = state.drawing || Object.values(state.humanContexts).some(row => row.visible && row.drawing);
+    if (facts.surface && !drawing) return facts.surface;
+    const projection = publicText();
+    const surface = {projection, targets: textTargets(projection.text), digest: null};
+    facts.surface = projection.segments.some(row => row.live) ? null : surface;
+    return surface;
+  }
+
+  async function compileTextPlan(projection, plan, who, context) {
+    const whole = plan.ranges?.length === 0 && plan.splices.length === 1 && plan.splices[0].pos === 0 && plan.splices[0].removed === projection.text;
+    const budget = {left: 1e7}, hidden = projection.segments.filter(row => row.hidden), groups = [];
+    for (const row of hidden) {
+      const last = groups.at(-1);
+      if (last && last.from === row.from && last.end === row.start) last.end = row.end;
+      else groups.push({...row});
+    }
+    const exactChanges = (before, after) => diff(before, after, {_unit: 'char', _budget: budget}).edits;
+    const ambiguous = () => failure('text_changes_ambiguous', 'refused', {hint: 'Use separate exact old/new or after/insert changes around retained blocks.'});
+    const tooComplex = () => failure('text_changes_too_complex', 'refused', {hint: 'Use smaller exact old/new or after/insert changes.'});
+    let mappedPlan = plan;
+    const will = whole ? parseWill(projection.text) : null;
+    if (whole && (hidden.length || will.present)) {
+      const edits = exactChanges(projection.text, plan.text);
+      if (edits.some(row => row.coarse)) return tooComplex();
+      if (who.actor !== 'human' && will.present && edits.length) {
+        const after = parseWill(plan.text), envelopes = new Map();
+        for (const region of will.regions) {
+          const raw = projection.text.slice(region.openerStart, region.closerEnd);
+          envelopes.set(raw, (envelopes.get(raw) || 0) + 1);
+        }
+        let leftIndex = 0, rightIndex = 0;
+        for (const region of will.regions) {
+          while (leftIndex < edits.length && edits[leftIndex].before[1] <= region.openerStart) leftIndex++;
+          while (rightIndex < edits.length && edits[rightIndex].before[0] < region.closerEnd) rightIndex++;
+          const left = edits[leftIndex - 1], right = edits[rightIndex];
+          if (left && right && !/\S/.test(projection.text.slice(left.before[1], region.openerStart)) &&
+              !/\S/.test(projection.text.slice(region.closerEnd, right.before[0]))) {
+            const removedLeft = /\S/.test(projection.text.slice(...left.before)), insertedLeft = /\S/.test(plan.text.slice(...left.after));
+            const removedRight = /\S/.test(projection.text.slice(...right.before)), insertedRight = /\S/.test(plan.text.slice(...right.after));
+            if (insertedLeft && removedRight && (!removedLeft || !insertedRight) ||
+                insertedRight && removedLeft && (!removedRight || !insertedLeft)) return ambiguous();
+          }
+          if (envelopes.get(projection.text.slice(region.openerStart, region.closerEnd)) > 1 &&
+              edits[0].before[0] < region.closerEnd && edits.at(-1).before[1] > region.openerStart) return ambiguous();
+        }
+        const outsideLines = (text, regions) => {
+          const found = new Map(); let start = 0;
+          for (let index = 0; index <= regions.length; index++) {
+            const end = regions[index]?.openerStart ?? text.length;
+            for (const match of text.slice(start, end).matchAll(/[^\r\n]+/g)) if (/\S/.test(match[0])) {
+              const counts = found.get(match[0]) || new Map();
+              counts.set(index, (counts.get(index) || 0) + 1); found.set(match[0], counts);
+            }
+            start = regions[index]?.closerEnd ?? end;
+          }
+          return found;
+        };
+        if (!after.faults.length && after.regions.length === will.regions.length) {
+          const beforeLines = outsideLines(projection.text, will.regions), afterLines = outsideLines(plan.text, after.regions);
+          for (const [line, counts] of beforeLines) {
+            const next = afterLines.get(line);
+            if (next && [...counts].some(([index, count]) => count > (next.get(index) || 0)) &&
+                [...next].some(([index, count]) => count > (counts.get(index) || 0))) return ambiguous();
+          }
+        }
+      }
+      const cuts = [...groups.map(row => row.from), ...will.markers.flatMap(row => [row.start, row.end])].sort((a, b) => a - b), merged = [];
+      let cut = 0;
+      for (const row of edits) {
+        const last = merged.at(-1);
+        if (last) while (cut < cuts.length && cuts[cut] < last.before[1]) cut++;
+        if (last && !(cut < cuts.length && cuts[cut] <= row.before[0])) {last.before[1] = row.before[1]; last.after[1] = row.after[1];}
+        else merged.push({before: [...row.before], after: [...row.after]});
+      }
+      if (merged.length > 64) return tooComplex();
+      mappedPlan = {...plan, splices: merged.toReversed().map(row => ({pos: row.before[0],
+        removed: projection.text.slice(...row.before), inserted: plan.text.slice(...row.after)}))};
+    }
+    const blocks = fencedBlocks(plan.text), previous = new Map(projection.segments.filter(row => row.id && row.kind !== 'asset').map(row => [row.id, row]));
+    const prepared = new Map(), assets = [], options = {}, commentBlocks = blocks.filter(row => row.kind === 'rapier-comment');
+    const parsed = parseComments(state.text), threads = commentThreads(state.text, parsed);
+    const heldComments = projection.segments.filter(row => row.kind === 'comments').flatMap(row => fencedBlocks(row.text));
+    const commentsChanged = JSON.stringify(heldComments.map(row => row.text)) !== JSON.stringify(commentBlocks.map(row => row.text));
+    for (const block of blocks.filter(row => row.kind !== 'rapier-comment')) {
+      if (block.kind === 'html') {prepared.set(block.id, block.text.trimEnd()); continue;}
+      const prior = previous.get(block.id), unchanged = prior && block.text.trimEnd() === prior.fence;
+      if (unchanged) {prepared.set(block.id, state.text.slice(prior.start, prior.end)); continue;}
+      let body; try {body = JSON.parse(block.body);} catch (error) {return failure('block_json_invalid', 'invalid', {block: block.id, hint: 'The ' + block.kind + ' fence holds one JSON object, and it did not parse (' + String(error.message).slice(0, 160) + ').'});}
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return failure('block_body_invalid', 'invalid', {block: block.id});
+      const previousBlock = prior && fencedBlocks(prior.fence)[0];
+      const {alt, ...attrs} = block.attrs, {alt: previousAlt, ...previousAttrs} = previousBlock?.attrs || {};
+      if (prior && block.kind === prior.kind && canonicalJson(attrs) === canonicalJson(previousAttrs) &&
+          canonicalJson(body) === canonicalJson(JSON.parse(previousBlock.body))) {
+        const caption = alt ?? previousAlt;
+        if (typeof caption !== 'string' || !caption.trim()) return failure('draw_alt_required', 'invalid', {block: block.id});
+        const occurrence = DRAW_OCCURRENCE.exec(prior.raw);
+        const raw = caption === previousAlt ? prior.raw : '![' + escapeImageAlt(caption) + prior.raw.slice(2 + occurrence[1].length);
+        prepared.set(block.id, state.text.slice(prior.start, prior.imageStart) + raw);
+        continue;
+      }
+      let input = {...body, alt: block.attrs.alt || prior?.asset.title || block.id};
+      const materialBlock = block.kind === 'rapier-water' || block.kind === 'rapier-paint';
+      if (Array.isArray(body.shapes)) input = {alt: input.alt, recipe: body};
+      else if (materialBlock && body.recipe == null && body.shapes == null && body.operations == null) {
+        if (prior) return failure('paint_kept_recipe_changed', 'refused', {block: block.id, revision: surfaceRevision(projection), context: textContext(projection.text, prior.from, prior.to)});
+        input = {alt: input.alt, figures: [{kind: 'paint', id: 'paint',
+          ...(block.kind === 'rapier-water' ? {mode: 'water', actions: body.actions, ...(block.attrs.paper ? {paper: block.attrs.paper} : {})} : {strokes: body.strokes}), seed: Number(block.attrs.seed ?? 1)}]};
+      }
+      if (prior?.recipe?.shapes.some(shape => shape.recognized === 'paint') &&
+          (input.figures || block.attrs.seed !== undefined || block.attrs.paper !== undefined))
+        return failure('paint_kept_recipe_changed', 'refused', {block: block.id, revision: surfaceRevision(projection), context: textContext(projection.text, prior.from, prior.to)});
+      const schema = getOperation('document.draw').inputSchema.properties;
+      for (const key of ['figures','shapes','operations','direction','recipe','presentation'])
+        if (own(input,key)) validateInput(schema[key],input[key],key);
+      let result;
+      if (prior && block.kind === 'rapier-svg') {
+        const inspection = JSON.parse(svgInspection(prior.asset.label) || '{}');
+        const nodes = inspection.nodes || [];
+        let edits = body.node_edits;
+        if (Array.isArray(body.nodes)) {
+          if (body.nodes.length !== nodes.length || body.nodes.some((row, index) => row.id !== nodes[index].id || row.element !== nodes[index].element)) return failure('svg_node_structure_kept', 'invalid', {block: block.id});
+          edits = body.nodes.flatMap((row, index) => {
+            const before = nodes[index], attributes = {};
+            for (const key of new Set([...Object.keys(before.attributes || {}), ...Object.keys(row.attributes || {})]))
+              if ((row.attributes?.[key] ?? null) !== (before.attributes?.[key] ?? null)) attributes[key] = row.attributes?.[key] ?? null;
+            const changed = {...(Object.keys(attributes).length ? {attributes} : {}), ...(row.text !== undefined && row.text !== before.text ? {text: row.text} : {})};
+            return Object.keys(changed).length ? [{id: row.id, ...changed}] : [];
+          });
+          if (!edits.length) {prepared.set(block.id, state.text.slice(prior.start, prior.end)); continue;}
+        }
+        const held = svgHandle(prior.imageStart, prior.imageStart + prior.raw.length, nodes.map(row => row.id), prior.asset.label, who);
+        result = await drawSVGEdit({svg_handle: held.id, node_edits: edits, ...(block.attrs.alt !== undefined ? {alt: input.alt} : {})}, who, {...context, prepareOnly: true});
+      } else if (prior && prior.recipe) {
+        const held = drawHandle(prior.imageStart, prior.imageStart + prior.raw.length, prior.asset.label, who,
+          drawingBinding(prior.live), {textPlan: true}, prior.live ? JSON.stringify(prior.recipe) : null);
+        if (!held) return failure('block_too_large', 'refused', {block: block.id});
+        let editInput;
+        if (input.figures) {
+          if (input.figures.some(row => row.kind === 'paint')) {
+            const painted = await paintFigures(input.figures, context); if (painted.refusal) return painted.refusal;
+            const recipe = _rapierDrawApplyShapesPatch({shapes: []}, {add: painted.list}, input.direction);
+            editInput = {recipe};
+          } else {
+            const recipe = _rapierDrawNormalizeAgentRecipe({figures: input.figures, direction: input.direction});
+            if (!recipe) return failure('figures_invalid', 'invalid', {...(_rapierDrawFigureFault(input.figures, [], input.direction) || {}), kinds: FIGURE_KINDS, block: block.id});
+            editInput = {recipe};
+          }
+        } else editInput = {recipe: input.recipe, shapes: input.shapes, operations: input.operations, ...(input.direction ? {direction: input.direction} : {})};
+        if (block.attrs.alt !== undefined && block.attrs.alt !== fencedBlocks(prior.text)[0].attrs.alt) editInput.alt = input.alt;
+        result = await drawPicture({...editInput, kind: 'edit', recipe_handle: held.id, presentation: input.presentation}, who, {...context, prepareOnly: true, textPlan: true});
+      } else if (block.kind === 'rapier-svg') return failure('svg_create_requires_image', 'invalid', {block: block.id});
+      else result = await drawPicture({...input, kind: 'create'}, who, {...context, prepareOnly: true});
+      if (result.outcome !== 'prepared') return {...result, block: block.id};
+      const asset = result.options.drawAssets?.[0];
+      if (!asset) {prepared.set(block.id, ''); continue;}
+      assets.push(asset);
+      const caption = block.attrs.alt || prior && DRAW_OCCURRENCE.exec(prior.raw)?.[1] || block.id;
+      const raw = '![' + escapeImageAlt(caption) + '][' + asset.label + ']';
+      prepared.set(block.id, (prior ? state.text.slice(prior.start, prior.imageStart) : '<!-- rapier-block:' + block.id + ' ' + block.kind + ' -->\n\n') + raw);
+      if (result.options.drawingPatch) {
+        if (!options.drawingPatch || prior?.live) Object.assign(options, {drawingPatch: result.options.drawingPatch, fence: result.options.fence});
+      }
+      if (result.options.drawingPresentation) options.drawingPresentation = result.options.drawingPresentation;
+    }
+    const splices = [], hiddenPlacements = [];
+    let definitionsTouched = false;
+    for (const range of expandedChanges(projection, mappedPlan)) {
+      let inserted = range.inserted, framing = range.framing, hiddenFrames = [];
+      const replace = (from, until, text) => {
+        const splice = {pos: from, removed: inserted.slice(from, until), inserted: text};
+        framing = keptRangesAfterSplice(framing, splice);
+        hiddenFrames = keptRangesAfterSplice(hiddenFrames, splice);
+        inserted = inserted.slice(0, from) + text + inserted.slice(until);
+      };
+      const original = projection.text.slice(range.start, range.end), kept = minimalSplice(original, inserted), placed = [];
+      const held = groups.filter(row => row.start >= range.pos && row.end <= range.until);
+      if (held.length > 64) return tooComplex();
+      let changes;
+      for (const row of held.toReversed()) {
+        const offset = row.from - range.start;
+        let at = offset <= kept.pos ? offset : offset >= kept.pos + kept.removed.length ? offset + kept.inserted.length - kept.removed.length : -1;
+        if (at < 0) {
+          changes ||= exactChanges(original, range.inserted);
+          if (changes.some(row => row.coarse)) return tooComplex();
+          let delta = 0;
+          for (const change of changes) {
+            if (offset <= change.before[0]) {at = offset + delta; break;}
+            if (offset < change.before[1]) {
+              if (change.after[0] !== change.after[1]) return ambiguous();
+              at = change.after[0]; break;
+            }
+            delta = change.after[1] - change.before[1];
+          }
+          if (at < 0) at = offset + delta;
+        }
+        const sentinel = '\n\u0000rapier-definition-' + placed.length + '\u0000';
+        replace(at, at, sentinel); placed.push({...row, sentinel});
+      }
+      for (const block of fencedBlocks(inserted).filter(row => row.kind !== 'rapier-comment').reverse()) {
+        const kept = prepared.get(block.id), raw = block.kind === 'html' || !kept ? kept : kept.replace(/[ \t]*<!--md-layout:v1[^>]*-->$/, '') + (block.layout ? ' ' + block.layout : '');
+        const prior = previous.get(block.id), leading = prior?.leading || '';
+        const from = leading && inserted.slice(block.start - leading.length, block.start) === leading ? block.start - leading.length : block.start;
+        const eol = prior?.trailing ? '' : /(?:\r\n|\r|\n)$/.exec(block.text)?.[0] || '';
+        replace(from, block.end, raw + eol);
+      }
+      for (const row of projection.segments.filter(row => row.kind === 'asset' && !row.hidden)) {
+        const raw = state.text.slice(row.start, row.end);
+        for (let at = inserted.indexOf(row.text); at >= 0; at = inserted.indexOf(row.text, at + raw.length)) replace(at, at + row.text.length, raw);
+      }
+      for (const row of inserted.includes('<!-- rapier-asset:') ? hidden : []) {
+        for (let at = inserted.indexOf(row.marker); at >= 0; at = inserted.indexOf(row.marker)) {
+          const lead = /(?:\r\n|\r|\n)*$/.exec(inserted.slice(0, at))[0].length;
+          replace(at - lead, at + row.marker.length, '');
+        }
+      }
+      if (inserted.includes('<!-- rapier-asset:')) return failure('asset_marker_unknown', 'invalid');
+      for (const row of placed) {
+        const at = inserted.indexOf(row.sentinel); if (at < 0) continue;
+        const raw = state.text.slice(row.start, row.end);
+        replace(at, at + row.sentinel.length, raw);
+        hiddenFrames.push({start: at, end: at + raw.length});
+      }
+      if (projection.segments.some(row => row.hidden && row.start >= range.pos && row.end <= range.until)) definitionsTouched = true;
+      const removed = state.text.slice(range.pos, range.until);
+      const commentGroups = [];
+      for (const block of fencedBlocks(inserted).filter(row => row.kind === 'rapier-comment')) {
+        const end = block.end - (/(?:\r\n|\r|\n)$/.exec(block.text)?.[0].length || 0), previous = commentGroups.at(-1);
+        if (previous && inserted.slice(previous.end, block.start) === '\n\n') {
+          previous.end = end; previous.ids.push(block.id);
+        } else commentGroups.push({start: block.start, end, ids: [block.id]});
+      }
+      const ownsComments = parsed.record && range.pos <= parsed.record.start && range.until >= parsed.record.end;
+      const commentOwner = ownsComments && (commentGroups.find(row => row.ids.some(id => threads.some(thread => thread.id === id))) || commentGroups[0]);
+      const typed = minimalSplice(removed, inserted), suffix = inserted.length - typed.pos - typed.inserted.length;
+      for (const row of commentGroups.reverse()) {
+        let from = row.start, until = row.end;
+        if (row !== commentOwner && !row.ids.some(id => threads.some(thread => thread.id === id))) {
+          const end = inserted.length - suffix, lead = /(?:\r?\n)*$/.exec(inserted.slice(Math.min(typed.pos, from), from))[0].length;
+          const trail = /^(?:\r?\n)*/.exec(inserted.slice(until, Math.max(until, end)))[0].length;
+          if (!(from - lead > typed.pos && until + trail < end)) from -= lead;
+          until += trail;
+        }
+        replace(from, until, row === commentOwner ? parsed.record.raw : '');
+      }
+      for (const gap of framing.toReversed()) replace(gap.start, gap.end, '');
+      if (ownsComments && !commentOwner) {
+        const at = framing.find(gap => gap.start === gap.end).start;
+        replace(at, at, parsed.record.raw);
+      }
+      if (removed === inserted) continue;
+      const patched = options.drawingPatch && projection.segments.find(row => row.asset?.label === options.drawingPatch.asset && range.pos <= row.imageStart && range.until >= row.imageStart + row.raw.length);
+      if (patched) {
+        const target = [...inserted.matchAll(/!\[((?:\\.|[^\]\\])*)\]\[([^\]\n]+)\]/g)].find(row => normalizeLabel(row[2]) === normalizeLabel(options.drawingPatch.reference));
+        if (!target) return failure('block_placement_changed', 'conflict');
+        const beforeLength = patched.imageStart - range.pos, afterStart = beforeLength + patched.raw.length;
+        const suffix = minimalSplice(removed.slice(afterStart), inserted.slice(target.index + target[0].length));
+        if (suffix.removed || suffix.inserted) splices.push({...suffix, pos: range.pos + afterStart + suffix.pos});
+        splices.push({pos: patched.imageStart, removed: patched.raw, inserted: target[0]});
+        const prefix = minimalSplice(removed.slice(0, beforeLength), inserted.slice(0, target.index));
+        if (prefix.removed || prefix.inserted) splices.push({...prefix, pos: range.pos + prefix.pos});
+      } else {
+        const narrow = minimalSplice(removed, inserted);
+        splices.push({...narrow, pos: range.pos + narrow.pos});
+      }
+      if (hiddenFrames.length) hiddenPlacements.push({after: splices.length,
+        ranges: hiddenFrames.map(row => ({start: range.pos + row.start, end: range.pos + row.end}))});
+    }
+    if (hidden.length && splices.length) {
+      const text = transformSplices(state.text, splices);
+      if (text == null) return failure('target_changed', 'conflict');
+      const retained = new Map();
+      for (const row of documentAssets(text).blocks) retained.set(row.source, (retained.get(row.source) || 0) + 1);
+      for (const row of hidden) {
+        const count = retained.get(row.source) || 0;
+        if (!count) return failure('asset_definition_boundary', 'refused', {hint: 'Keep a blank line before retained image definitions; finish the inserted text with a line break.'});
+        retained.set(row.source, count - 1);
+      }
+      if (whole) {
+        let retired = imageDeletionSplices(state.text, text, [{pos: 0, removed: state.text, inserted: text}], who.actor);
+        if (retired.length && !documentAssets(transformSplices(text, retired)).blocks.length) {
+          let spans = hidden.map(({start, end}) => ({start, end}));
+          for (const row of splices) spans = keptRangesAfterSplice(spans, row);
+          for (const placement of hiddenPlacements) {
+            let ranges = placement.ranges;
+            for (const row of splices.slice(placement.after)) ranges = keptRangesAfterSplice(ranges, row);
+            spans.push(...ranges);
+          }
+          spans = spans.sort((a, b) => a.start - b.start).reduce((rows, row) => {
+            const last = rows.at(-1);
+            if (last && last.end >= row.start) last.end = Math.max(last.end, row.end);
+            else if (row.end > row.start) rows.push({...row});
+            return rows;
+          }, []);
+          if (documentAssets(text).blocks.some(block => !spans.some(row => row.start <= block.start && row.end >= block.end)))
+            return ambiguous();
+          retired = spans.sort((a, b) => b.start - a.start).map(row =>
+            ({pos: row.start, removed: text.slice(row.start, row.end), inserted: ''}));
+        }
+        if (retired.length) {options.authoredCount = splices.length; splices.push(...retired);}
+      }
+    }
+    if (commentsChanged) {
+      const authoredCount = options.authoredCount ?? splices.length;
+      const computed = committedText(state.text, splices, authoredCount, who.actor, state.docKind, 'comments.write', false, null, assets);
+      if (!computed || computed.reason) return failure(computed?.reason || 'target_changed', 'conflict');
+      const current = parseComments(computed.text), next = commentThreads(computed.text, current).map(clone), retained = new Set(commentBlocks.map(row => row.id));
+      for (const thread of next) if (!retained.has(thread.id) && thread.messages.some(row => row.author.kind === 'human')) return failure('human_comment_preserved', 'refused');
+      const wanted = next.filter(row => retained.has(row.id));
+      for (const block of commentBlocks) {
+        let thread = wanted.find(row => row.id === block.id), messages;
+        try {messages = JSON.parse(block.body).messages;} catch {}
+        if (!Array.isArray(messages)) messages = [{text: block.body}];
+        if (!thread && messages.some(message => typeof message?.text !== 'string' || !message.text.trim() || bytes(message.text) > 4096)) return failure('comment_text_invalid', 'invalid');
+        if (!thread) {
+          const requested = block.attrs.on || '', id = requested.startsWith('#') ? requested.slice(1) : '';
+          const drawn = id && new RegExp('<!-- rapier-block:' + id.replace(/[^A-Za-z0-9_-]/g, '\\$&') + ' rapier-(?:draw|water|paint|svg) -->\\n\\n(!\\[[^\\n]+)').exec(computed.text);
+          const linked = id ? fencedBlocks(computed.text, true).find(row => row.id === id) || (drawn && {text: drawn[1]}) : null;
+          const record = current.record, scopes = record ? [{start: 0, end: record.start}, {start: record.end, end: computed.text.length}] : [undefined];
+          const on = linked ? linked.text : requested, positions = on ? scopes.flatMap(scope => exactMatches(computed.text, on, scope, 2)).slice(0, 2) : [];
+          if (on && positions.length !== 1) return failure(positions.length ? 'comment_anchor_ambiguous' : 'comment_anchor_missing', 'conflict', {block: block.id});
+          thread = {id: block.id, anchor: commentAnchor(on ? 'text' : 'document', positions[0], positions[0] + on.length, computed.text, current), resolved: false, messages: []}; wanted.push(thread);
+        }
+        const previousMessages = thread.messages;
+        for (const message of previousMessages) if (message.author.kind === 'human' && !messages.some(row => canonicalJson(row) === canonicalJson(message))) return failure('human_comment_preserved', 'refused');
+        if (messages.some(message => !previousMessages.some(row => canonicalJson(row) === canonicalJson(message)) && (typeof message?.text !== 'string' || !message.text.trim() || bytes(message.text) > 4096))) return failure('comment_text_invalid', 'invalid');
+        thread.messages = messages.map(message => {
+          const old = previousMessages.find(row => row.id === message.id);
+          if (old && canonicalJson(old) === canonicalJson(message)) return old;
+          return {id: old?.id || mintId('message_'), text: message.text, author: {kind: who.actor, name: who.agent || who.actor}, createdAt: Math.floor(now())};
+        });
+        thread.resolved = block.attrs.resolved === 'true';
+      }
+      const row = writeComments(computed.text, wanted, current);
+      options.authoredCount = authoredCount;
+      splices.splice(0, splices.length, ...computed.splices, row);
+    }
+    if (splices.length > 64) return tooComplex();
+    if (definitionsTouched || splices.some(row => /!\[[^\r\n]*\]\[/.test(row.inserted))) {
+      const restored = keptDefinitions(splices, assets);
+      if (restored.outcome) return restored;
+    }
+    const markerOnly = splices.length === 2 && splices.some(row => !row.removed && /^<!-- rapier-block:[A-Za-z0-9_-]+ rapier-(?:draw|water|paint) -->\n\n$/.test(row.inserted));
+    if (options.drawingPatch && (splices.length !== 1 && !markerOnly || commentsChanged)) {delete options.drawingPatch; delete options.fence;}
+    return {splices, options: {...options, drawAssets: assets}, commentsChanged};
+  }
+
+  const pictureReferences = source => new Set([...source.matchAll(/!\[(?:\\.|[^\]\\])*\]\[([^\]\r\n]+)\]/g)].map(row => normalizeLabel(row[1])));
+  function keptDefinitions(splices, assets) {
+    const before = documentAssets(state.text), text = transformSplices(state.text, splices);
+    if (text == null) return {};
+    const after = documentAssets(text), used = pictureReferences(text);
+    const orphans = (index, source) => new Set([...pictureReferences(source)].filter(id => !index.references[id] && !assets.some(asset => asset.id === id)));
+    for (const row of before.blocks) {
+      if (!row.active || after.references[row.id] || assets.some(asset => asset.id === row.id) || !used.has(row.id)) continue;
+      assets.push({id: row.id, label: /^\[([^\]\r\n]+)\]:/.exec(row.source)?.[1] || row.id, url: row.url, title: row.title});
+    }
+    const was = orphans(before, state.text), lost = [...orphans(after, text)].filter(id => !was.has(id) && (before.references[id] || /^IMAGE-[0-9A-F]{64}-[0-9A-F]{12}$/.test(id)));
+    return lost.length ? failure('asset_definition_missing', 'refused', {labels: lost.slice(0, 8).map(id => id.toLowerCase()),
+      hint: 'This write leaves a picture with no definition. Keep each drawing as its fence from read, or remove the whole picture; undo {act} restores an earlier loss.'}) : {};
+  }
+
+  function givenRevision(value, current = surfaceRevision()) {
+    if (value === current) return {revision: value};
+    const asked = revisionNumber(value);
+    if (asked === null) return failure('revision_format', 'invalid', {field: 'revision', revision: current, hint: REVISION_FORMS});
+    return {revision: typeof value === 'string' && /^\d+$/.test(value) ? asked : value};
+  }
+
+  function surfaceRevision(projection = publicSurface().projection) {
+    const live = projection.segments.filter(row => row.live).map(row => ({id:row.id, ...drawingBinding(row.live)}));
+    return live.length ? state.revision + ':' + sha256(canonicalJson({text:sha256(projection.text),live})) : state.revision;
+  }
+
+  function surfaceFailure(reason, source, input, detail = {}, targets = textTargets(source)) {
+    const change = input.changes?.[detail.index || 0] || input, scope = textScope(source, change, targets), needle = change.old ?? change.after;
+    const found = needle && !scope.reason ? exactMatches(source, needle, scope, 2) : [], at = found.length === 1 ? found[0] : scope.start || 0;
+    const facts = {revision: surfaceRevision(), ...detail}, lines = targets.lines;
+    if (reason === 'revision_changed' && typeof facts.revision === 'string' && input.revision !== facts.revision)
+      facts.hint = 'A drawing is live in the editor, so the revision is the string "' + facts.revision + '". Check the context below, then pass that string exactly as revision.';
+    if (reason === 'text_ambiguous') {
+      let count = 0; const matches = [];
+      for (let pos = source.indexOf(needle, scope.start); pos >= 0 && pos + needle.length <= scope.end; pos = source.indexOf(needle, pos + 1)) {
+        count++; if (matches.length < 8) matches.push(excerptRow(source, pos, needle.length, lines));
+      }
+      return failure(reason, 'conflict', {...facts, count, matches});
+    }
+    if (reason === 'heading_missing') {
+      const asked = ([change.heading].flat().at(-1) || '').toLowerCase(), words = asked.split(/\s+/).filter(Boolean), outline = targets.outline, candidates = [];
+      for (const equal of [true, false]) for (let row = 0; row < outline.count && candidates.length < 8; row++) {
+        const title = outline.titles[row].toLowerCase();
+        if (equal ? title === asked : title !== asked && words.length && words.every(word => title.includes(word))) {
+          const heading = outline.row(row); candidates.push({line: heading.line, text: '#'.repeat(heading.level) + ' ' + heading.title});
+        }
+      }
+      return failure(reason, 'conflict', {...facts, candidates});
+    }
+    let start = at, end = found.length === 1 ? at + needle.length : at;
+    if (reason === 'text_missing' && typeof needle === 'string' && !scope.reason) {
+      let low = 0, high = needle.length;
+      while (low < high) {const mid = Math.ceil((low + high) / 2); if (exactMatches(source, needle.slice(0, mid), scope, 1).length) low = mid; else high = mid - 1;}
+      facts.hint = 'The text was not found. Copy the exact text from a fresh read.';
+      if (low >= 8 && low * 2 >= needle.length) {facts.matched = low; start = exactMatches(source, needle.slice(0, low), scope, 1)[0]; end = start + low;
+        facts.hint = 'The first ' + low + ' of ' + needle.length + ' characters of old are found (the context shows where); the text differs after them.';}
+      if (change.heading !== undefined || change.block) {
+        const outside = exactMatches(source, needle, undefined, 2);
+        if (outside.length === 1) facts.outside = {line: lines.number(outside[0])};
+      }
+      const scoped = source.slice(scope.start, scope.end);
+      for (const [hint, normalize] of [
+        ['line_ends', text => text.replace(/\r\n?/g, '\n')],
+        ['trailing_spaces', text => text.replace(/[ \t]+(?=\r?$)/gm, '')],
+        ['non_breaking_spaces', text => text.replace(/\u00a0/g, ' ')],
+        ['typographic_quotes', text => text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"')],
+      ]) if (needle && normalize(scoped).includes(normalize(needle))) {facts.hint = hint; break;}
+    }
+    return failure(reason, 'conflict', {...facts, context: textContext(source, start, end, 1800, offset => lines.number(offset))});
+  }
+
+  function untouchedTextPlan(input, projection, targets, who) {
+    if (!safeInt(input.revision) || !safeInt(surfaceRevision(projection)) || !input.changes || input.changes.some(row => Object.hasOwn(row, 'text'))) return null;
+    const entries = since(input.revision); if (!entries) return null;
+    const plan = planTextChanges(projection.text, input.changes, targets); if (plan.reason) return plan;
+    let read = state.text;
+    for (let act = entries.length - 1; act >= 0 && read != null; act--) read = transformSplices(read, entries[act].splices, true);
+    if (read == null) return null;
+    const past = publicText(read), then = planTextChanges(past.text, input.changes); if (then.reason) return null;
+    const wanted = expandedChanges(past, {splices: then.ranges});
+    const found = expandedChanges(projection, {splices: plan.ranges});
+    if (found.length !== wanted.length) return null;
+    const points = new Set(expandedChanges(projection, {splices: plan.ranges.filter((row, index) => Object.hasOwn(input.changes[index], 'after'))}).map(row => row.until));
+    for (const [index, current] of found.entries()) {
+      let range = {start: current.pos, end: current.until};
+      const point = points.has(current.until);
+      for (let act = entries.length - 1; act >= 0; act--) for (let splice = entries[act].splices.length - 1; splice >= 0; splice--) {
+        const row = entries[act].splices[splice];
+        if (point && row.pos === range.end && (row.inserted || row.removed)) return null;
+        range = transportInterval(range.start, range.end, [{pos: row.pos, removed: row.inserted, inserted: row.removed}]);
+        if (!range) return null;
+      }
+      if (range.start !== wanted[index].pos || range.end !== wanted[index].until) return null;
+    }
+    return {...plan, others: entries.filter(row => !sameOwner(row, who)).length};
+  }
+
+  async function doorOpen(input, who, context) {
+    validateInput(PAGE_TOOLS.find(tool => tool.name === 'open').inputSchema, input);
+    if (input.note === 'new') return notesWrite({target: {kind: 'create'}, text: input.text, title: input.title}, who, context);
+    if (input.note) return notesOpen({note_ref: input.note, expected_foreground: typeof host.notesForeground === 'function' ? host.notesForeground() : undefined}, who, context);
+    const {projection, targets} = publicSurface(), size = textBytes(projection.text);
+    if (size <= (context.transport === 'webmcp' ? 4096 : 32768)) {
+      const whole = await doorRead({}, who, context);
+      return whole.outcome === 'ok' ? {...whole, lines: targets.lines.number(projection.text.length), bytes: size} : whole;
+    }
+    return {...await doorRead({as: 'outline'}, who, context), lines: targets.lines.number(projection.text.length), bytes: size};
+  }
+
+  async function doorGuide(input, who, context) {
+    if (host.ready && (input.guide || state.cursors[input.cursor]?.topic) === 'water') await host.ready('drawing').catch(() => {});
+    let held;
+    if (input.cursor) {
+      if (Object.keys(input).some(key => !['cursor', 'agent', 'operation_id'].includes(key))) return failure('cursor_options_conflict', 'invalid');
+      held = lookup('cursors', input.cursor, who);
+      if (held.outcome) return held;
+    }
+    const topic = held?.topic || input.guide;
+    const guide = guideResult({topic}, topic === 'water' && typeof host.paintBrushes === 'function' ? host.paintBrushes() : null);
+    if (guide.outcome !== 'ok') return guide;
+    const digest = sha256(guide.instructions);
+    if (held && held.digest !== digest) return failure('guide_changed', 'conflict');
+    const offset = held?.offset || 0, limit = context.transport === 'webmcp' ? LIMITS.resultBytes : 96 * 1024;
+    let instructions = textHead(guide.instructions.slice(offset), context.transport === 'webmcp' ? 8192 : 32768);
+    while (instructions.length && bytes(JSON.stringify(stamp({guide: topic, instructions}))) > limit - 512)
+      instructions = textHead(instructions, Math.floor(textBytes(instructions) * .75));
+    const until = offset + instructions.length;
+    const next = until < guide.instructions.length ? mint('cursors', 'guide_', {kind: 'guide', topic, offset: until, digest}, who).id : null;
+    return accepted({guide: topic, instructions, complete: !next, next_cursor: next});
+  }
+
+  async function doorRead(input, who, context) {
+    if (input.query !== undefined && input.search !== undefined) return failure('read_selector_conflict', 'invalid', {field: 'query',
+      hint: 'query finds text in this document; search lists Notes. Choose one reader.'});
+    if (input.guide || input.cursor && state.cursors[input.cursor]?.kind === 'guide') return doorGuide(input, who, context);
+    const notesCursor = input.cursor && /^notes-(list|read|history)$/.test(state.cursors[input.cursor]?.kind) ? state.cursors[input.cursor] : null;
+    if (input.search !== undefined || notesCursor?.kind === 'notes-list') return notesList({query: input.search, cursor: input.cursor, limit: input.limit}, who, context);
+    if (input.note || notesCursor) {
+      const note_ref = input.note ?? notesCursor.note_ref;
+      if (input.versions || notesCursor?.kind === 'notes-history') return notesHistory({note_ref, cursor: input.cursor, limit: input.limit}, who, context);
+      return notesRead({note_ref, version: input.version, cursor: input.cursor, limit: input.limit}, who, context);
+    }
+    if (input.versions === true || input.version !== undefined) return failure('notes_selector', 'invalid', {field: input.version !== undefined ? 'version' : 'versions',
+      hint: 'versions and version choose a Note\'s saved versions and need note. For this document\'s acts use history:true.'});
+    if (input.since !== undefined && state.cursors[input.since]?.kind !== 'observation') return failure('since_unknown', 'invalid', {field: 'since',
+      hint: 'since takes the value a read gave in continuation.next, not an act id or a revision. For this document\'s acts use history:true.'});
+    if (input.cursor && ['block','heading','lines','as','state','preferences','history','since','comparison','return_id'].some(key=>own(input,key)))
+      return failure('cursor_options_conflict','invalid');
+    if (input.as && !['text', 'image', 'outline'].includes(input.as)) return failure('representation_unknown', 'invalid');
+    if (input.as === 'image') {
+      let sourceRange, drawingBlock;
+      if (input.block || input.heading || input.lines) {
+        const {projection, targets} = publicSurface();
+        let scope = textScope(projection.text, input, targets);
+        if (scope.reason) return {...surfaceFailure(scope.reason, projection.text, input, {}, targets), outcome: 'target_gone'};
+        if (input.lines) {
+          if (input.heading || input.block || input.lines[1] < input.lines[0]) return failure('lines_invalid', 'invalid');
+          const last_line = targets.lines.number(projection.text.length);
+          if (input.lines[0] > last_line) return failure('lines_invalid', 'invalid', {last_line,
+            hint: 'The document\'s last line is ' + last_line + '. Read a range starting at or before that line.'});
+          scope = {start: targets.lines.offset(input.lines[0] - 1), end: targets.lines.offset(input.lines[1])};
+        }
+        sourceRange = {start: sourcePosition(projection, scope.start), end: sourcePosition(projection, scope.end, true)};
+        const drawing = input.block && projection.segments.find(row => row.id === input.block && row.recipe);
+        if (drawing) {
+          drawingBlock = drawing.id;
+          sourceRange = {start: drawing.imageStart, end: drawing.imageStart + drawing.raw.length};
+        }
+      }
+      const preview = context.visualPreview;
+      if (preview && (preview.documentId !== state.documentId || preview.revision !== state.revision ||
+          preview.block !== drawingBlock || canonicalJson(preview.sourceRange) !== canonicalJson(sourceRange)))
+        return failure('document_changed');
+      return inspectVisual({expectedRevision: state.revision, scope: sourceRange ? 'focus' : 'page', sourceRange,
+        ...(drawingBlock ? {block: drawingBlock, detail: true, ...(preview ? {preview: true, previewChars: preview.chars} : {})} : {})}, context);
+    }
+    if (input.return_id || input.cursor && state.cursors[input.cursor]?.kind === 'return-read') return readDocument(input.cursor ? {cursor: input.cursor, limit: input.limit} : {target: {kind: 'return', return_id: input.return_id}, limit: input.limit}, who, context);
+    if (input.comparison) {
+      if (!state.compare) return failure('compare_not_open');
+      const current = disclose(state.compare.baseline).text, alternative = disclose(state.compare.incoming).text;
+      const limit = context.transport === 'webmcp' ? 2000 : 12000;
+      return accepted({revision: state.revision, comparison: {id: state.compare.id, name: state.compare.name,
+        current: textHead(current, limit), alternative: textHead(alternative, limit),
+        complete: textBytes(current) <= limit && textBytes(alternative) <= limit}});
+    }
+    const stateRead = input.state || input.preferences === true;
+    const observed = await observe({since:input.since,refs:false,facets: ['receipts','changes','brief', ...(input.history ? ['history'] : []), ...(stateRead ? ['returns', 'capabilities', 'drawing'] : [])], budget_bytes: context.transport === 'webmcp' ? 4096 : 12288}, who, context);
+    if (observed.outcome !== 'ok') return observed;
+    const surface = publicSurface(), {projection, targets} = surface, source = projection.text;
+    const sourceDigest = () => surface.digest ??= sha256(source);
+    const lineAt = offset => targets.lines.number(offset);
+    const located = ({start, end, ...rest}) => {const at = sourcePosition(projection, start, false, true), until = sourcePosition(projection, end, true, true); return {...rest, start: at, end: until, line: lineAt(at)};};
+    const rangeText = range => range ? {...located(range), text: clip(disclose(state.text, range.start, range.end).text, 1200)} : null;
+    const sourceChanges = observed.sourceChanges && {...observed.sourceChanges, changes: observed.sourceChanges.changes.map(row => ({...row, targets: row.targets.map(located)}))};
+    const continuation = {...observed.continuation, person: {...observed.continuation.person, intents: observed.continuation.person.intents.map(located), intentsRead: {tool: 'read', arguments: {}}}};
+    if (continuation.next) continuation.next = {tool: 'read', arguments: {since: observed.observation_cursor}};
+    const info = {revision: surfaceRevision(projection), filename: state.filename, selection: rangeText(observed.selection),
+      human: observed.human?.active === true ? observed.human : {active: false},
+      focus: rangeText(observed.focus), ...(observed.foreground ? {foreground: observed.foreground} : {}), continuation,
+      ...(observed.omissions ? {omissions: observed.omissions} : {}),
+      view: observed.view || observed.collaboration?.view || null, collaboration: observed.collaboration, will: observed.law, surface:observed.surface, sourceChanges, observation_cursor:observed.observation_cursor, brief:observed.brief,
+      ...(observed.history ? {history: {...observed.history, acts: state.journal.slice(-32).map(publicAct), more: state.journal.length > 32}} : {})};
+    if (info.history) while (info.history.acts.length && bytes(JSON.stringify(info.history)) > 3072) {
+      info.history.acts.shift(); info.history.more = true;
+    }
+    if (input.history && !stateRead && !['cursor', 'block', 'heading', 'lines', 'query', 'as'].some(key => own(input, key))) return accepted(info);
+    if (stateRead) return accepted({...info, state: observed.state, editor: {...observed.editor, ...(input.preferences === true ? {preferences: observed.editorPreferences} : {})}, returnWaiting:observed.returnWaiting, drawing: observed.drawing, notes: observed.notes, returns: observed.returns, capabilities: observed.capabilities, paint: observed.paint ? {...observed.paint, guide: {resource: 'rapier://guide/water'}} : undefined});
+    const scope = textScope(source, input, targets); if (scope.reason) return {...surfaceFailure(scope.reason, source, input, {}, targets), outcome: 'target_gone'};
+    let start = scope.start, end = scope.end;
+    if (input.lines) {
+      if (input.heading || input.block || input.lines[1] < input.lines[0]) return failure('lines_invalid', 'invalid');
+      const last_line = info.last_line = targets.lines.number(source.length);
+      start = targets.lines.offset(Math.min(input.lines[0], last_line) - 1); end = targets.lines.offset(input.lines[1]);
+      if (input.lines[0] > last_line) start = end;
+    }
+    let offset = start, query = input.query, headingRow = input.as === 'outline' ? 0 : -1;
+    let paintingBlock = input.block, paintingPosition;
+    if (input.cursor) {
+      const held = lookup('cursors', input.cursor, who);
+      if (held.outcome) return held;
+      if (held.kind !== 'text-surface' || held.textRevision !== info.revision || held.digest !== sourceDigest()) return surfaceFailure('revision_changed', source, input, {}, targets);
+      if (query !== undefined && query !== held.query)
+        return failure('cursor_options_conflict','invalid');
+      start = held.start; end = held.end; offset = held.offset;
+      query = held.query; headingRow = held.headingRow ?? -1;
+      paintingBlock = held.paintingBlock; paintingPosition = held.paintingPosition;
+    }
+    const budget = Math.max(4, Math.min(input.limit || 32768, context.transport === 'webmcp' ? 4096 : 32768));
+    if (headingRow >= 0) {
+      if (query !== undefined) return failure('cursor_options_conflict', 'invalid');
+      const headings = targets.outline, rows = [];
+      for (let index = 0; index < headings.count; index++) {
+        const {title, level, start: at, line} = headings.row(index);
+        if (at >= start && at < end) rows.push({at, line, text: textHead('#'.repeat(level) + ' ' + title.replace(/[\r\n]/g, ' '), 2048)});
+      }
+      let fence;
+      for (const match of source.matchAll(/^ {0,3}(`{3,}|~{3,})([^\n]*)/gm)) {
+        if (fence) {
+          if (match[1][0] === fence[0] && match[1].length >= fence.length && !match[2].trim()) fence = null;
+        } else if (match[1][0] !== '`' || !match[2].includes('`')) {
+          fence = match[1];
+          if (match.index >= start && match.index < end) rows.push({at: match.index, line: lineAt(match.index), text: textHead(match[0].replace(/\r$/, ''), 2048)});
+        }
+      }
+      rows.sort((a, b) => a.at - b.at);
+      const outline = []; let used = 0;
+      for (; headingRow < rows.length; headingRow++) {
+        const {at, ...row} = rows[headingRow], size = bytes(JSON.stringify(row)) + 1;
+        if (outline.length && used + size > budget) break;
+        outline.push(row); used += size;
+      }
+      const next = headingRow < rows.length ? mint('cursors', 'read_', {kind: 'text-surface', revision: state.revision, textRevision:info.revision, digest: sourceDigest(), start, end, offset, headingRow}, who).id : null;
+      return accepted({...info, outline, complete: !next, next_cursor: next});
+    }
+    if (query !== undefined) {
+      if (!query) return failure('query_required', 'invalid');
+      const all = exactMatches(source, query, {start: offset, end}, 33), matches = [];
+      const resultLimit = context.transport === 'webmcp' ? LIMITS.resultBytes : 96 * 1024;
+      const matchBudget = Math.max(1024, Math.min(budget, resultLimit - bytes(JSON.stringify(stamp(info))) - 1024));
+      for (const at of all.slice(0, 32)) {
+        const item = excerptRow(source, at, query.length, targets.lines);
+        if (matches.length && bytes(JSON.stringify([...matches, item])) > matchBudget) break;
+        while (bytes(JSON.stringify([item])) > matchBudget && item.text.length)
+          item.text = textHead(item.text, Math.floor(textBytes(item.text) * .75));
+        matches.push(item);
+      }
+      const next = all.length > matches.length ? mint('cursors', 'read_', {kind: 'text-surface', revision: state.revision, textRevision:info.revision, query, digest: sourceDigest(), start, end, offset: all[matches.length]}, who).id : null;
+      return accepted({...info, matches, complete: !next, next_cursor: next});
+    }
+    const drawing = paintingBlock && projection.segments.find(row => row.id === paintingBlock &&
+      row.recipe?.shapes.some(shape => shape.recognized === 'paint'));
+    let acts;
+    const paintAct = (layer, contribution) => {
+      if (!acts) {
+        acts = new Map();
+        try {
+          const track = state.journal.length && drawingHistory(state.journal).find(row =>
+            row.current.start === drawing.imageStart && row.current.end === drawing.imageStart + drawing.raw.length);
+          for (const event of track?.events || []) {
+            if (!event.after || event.entry.sourceTransactionId || event.entry.sourceTransactionIds?.length) continue;
+            for (const shape of event.after.shapes) {
+              const prior = event.before?.shapes.find(row => row.id === shape.id)?.paint?.replay?.entries || [];
+              const current = drawing.recipe.shapes.find(row => row.id === shape.id)?.paint?.replay?.entries || [];
+              for (const entry of shape.paint?.replay?.entries || []) {
+                const kept = current.find(row => row.id === entry.id);
+                if (kept && !entry.removed && !prior.some(row => row.id === entry.id) &&
+                    canonicalJson({...kept, removed: false}) === canonicalJson({...entry, removed: false}))
+                  acts.set(shape.id + '\u0000' + entry.id, event.entry.id);
+              }
+            }
+          }
+        } catch {  }
+      }
+      return acts.get(layer + '\u0000' + contribution) || null;
+    };
+    const resultLimit = context.transport === 'webmcp' ? LIMITS.resultBytes : 96 * 1024;
+    const line = lineAt(offset);
+    let text, painting, contentBudget = budget;
+    do {
+      const reserve = offset < end ? contentBudget < 8 ? contentBudget : Math.min(Math.ceil(contentBudget / 2),
+        textBytes(textHead(source.slice(offset, end), contentBudget))) : 0;
+      painting = drawing ? readPainting(drawing.recipe, paintingPosition, contentBudget - reserve, paintAct) : {text: '', next: null};
+      text = textHead(source.slice(offset, end), contentBudget - textBytes(painting.text));
+      if (bytes(JSON.stringify(stamp({...info, text, line, ...(painting.text ? {painting: painting.text} : {})}))) <= resultLimit - 512 || contentBudget === 4) break;
+      contentBudget = Math.max(4, Math.floor(contentBudget * .75));
+    } while (true);
+    if (offset + text.length < end) {
+      const cut = text.lastIndexOf('\n'), space = text.search(/\s\S*$/);
+      if (cut > text.length / 4) text = text.slice(0, cut + 1);
+      else if (space > 0) text = text.slice(0, space + 1);
+    }
+    const until = offset + text.length;
+    const next = until < end || painting.next ? mint('cursors', 'read_', {kind: 'text-surface', revision: state.revision,
+      textRevision:info.revision, digest: sourceDigest(), start, end, offset: until,
+      ...(drawing ? {paintingBlock, paintingPosition: painting.next} : {})}, who).id : null;
+    const position = at => {const row = lineAt(at); return [row, at - targets.lines.offset(row - 1) + 1];};
+    const paged = next || offset > start ? (([, column], [endLine, endColumn]) => ({column, end_line: endLine, end_column: endColumn}))(position(offset), position(until)) : {};
+    const removed = [...new Set(targets.html.filter(row => row.start < until && row.end > offset)
+      .flatMap(row => htmlRemoved(row.body)))];
+    return accepted({...info, text, complete: !next, next_cursor: next, line, ...paged,
+      ...(painting.text ? {painting: painting.text} : {}), ...(removed.length ? {removed} : {})});
+  }
+
+  const previousBlockUnchanged = (row, projection) => projection.segments.some(prior => prior.id === row.id && prior.fence === row.text.trimEnd());
+  function writtenBlocks(before) {
+    const after = publicSurface().projection;
+    return fencedBlocks(after.text).filter(row => !previousBlockUnchanged(row, before)).map(({id, text}) => {
+      const paint = after.segments.find(row => row.id === id)?.recipe?.shapes.filter(shape => shape.recognized === 'paint') || [];
+      const kept = [...new Set(paint.map(shape => shape.raster.startsWith('data:image/png;') ? 'png' : 'jxl'))];
+      return {id, text: textHead(text, 6000), complete: textBytes(text) <= 6000, ...(kept.length ? {picture: kept.join(',')} : {})};
+    });
+  }
+
+  function changedDrawingPreviews(before) {
+    return publicSurface().projection.segments.filter(row => row.recipe && !before.segments.some(prior =>
+      prior.id === row.id && canonicalJson(prior.recipe) === canonicalJson(row.recipe))).map(row => ({
+      block: row.id, documentId: state.documentId, revision: state.revision,
+      sourceRange: {start: row.imageStart, end: row.imageStart + row.raw.length}}));
+  }
+
+  function insertedBreak(row) {
+    if (!row || typeof row !== 'object' || Object.hasOwn(row, 'text')) return '';
+    if (typeof row.insert === 'string') return row.insert;
+    if (typeof row.new === 'string') return row.new;
+    return '';
+  }
+  function sameLineEndings(input, text, targets) {
+    if (!Array.isArray(input.changes)) return input;
+    let sawBreak = false, sawCr = text.includes('\r');
+    for (const row of input.changes) {
+      const inserted = insertedBreak(row);
+      if (!/[\r\n]/.test(inserted)) continue;
+      sawBreak = true;
+      if (inserted.includes('\r')) sawCr = true;
+    }
+    if (!sawBreak || !sawCr) return input;
+    const located = planTextChanges(text, input.changes, targets), ranges = located.reason ? [] : located.ranges;
+    const near = at => {
+      let found = null; const breaks = /\r\n|\n|\r/g;
+      for (let match; (match = breaks.exec(text)) && match.index < at;) found = match[0];
+      if (found) return found;
+      breaks.lastIndex = at; return breaks.exec(text)?.[0] || '\n';
+    };
+    let next = 0;
+    return {...input, changes: input.changes.map(row => {
+      if (!row || typeof row !== 'object' || Object.hasOwn(row, 'text')) return row;
+      const at = ranges[next++]?.pos ?? 0;
+      const follow = (value, pos) => value.replace(/\r\n|\r|\n/g, near(pos));
+      if (typeof row.insert === 'string') return {...row, insert: follow(row.insert, at + (row.after?.length || 0))};
+      if (typeof row.old !== 'string' || typeof row.new !== 'string') return row;
+      const edits = diff(row.old, row.new, {_unit: 'char', from: [{pos: 0, removed: row.old, inserted: row.new}]}).edits;
+      let replacement = row.new;
+      for (const edit of edits.toReversed()) if (!edit.coarse)
+        replacement = replacement.slice(0, edit.after[0]) + follow(row.new.slice(...edit.after), at + edit.before[0]) + replacement.slice(edit.after[1]);
+      return {...row, new: replacement};
+    })};
+  }
+
+  async function doorEdit(input, who, context) {
+    if (input.note) {
+      if (input.fields && input.changes) return failure('note_fields_and_changes', 'invalid');
+      if (typeof host.notesRead !== 'function') return noNotesWrite(input.note);
+      const got = await host.notesRead({note_ref: input.note, ...who, signal: context.signal});
+      if (got === undefined) return noNotesWrite(input.note);
+      const blocked = refusedWrite(unavailableNotes(got, input.note)) || notesRefused(got); if (blocked) return blocked;
+      if (typeof got?.text !== 'string') return failure('notes_not_found');
+      const read = noteReads.get(ownerOf(who) + '\u0000' + input.note);
+      if (!read) return failure('notes_read_required', 'refused');
+      const revision = sha256(got.text), quoted = (failed, plan) => read.source === revision ? surfaceFailure(failed, got.text, input, plan) : failure(failed, 'conflict');
+      if (input.revision !== revision) return {...quoted('revision_changed'), revision};
+      if (input.fields) {
+        const schema = getOperation('notes.set').inputSchema;
+        const field = Object.keys(input.fields).find(key => !Object.hasOwn(schema.properties,key) || ['note_ref','turn_id','label','agent','operation_id'].includes(key));
+        if (field) return failure('note_fields_invalid','invalid',{field});
+        const values = {...input.fields,note_ref:input.note,turn_id:input.turn_id,label:input.label};
+        try {validateInput(schema,Object.fromEntries(Object.entries(values).filter(([,value])=>value!==undefined)));}
+        catch (error) {return failure('note_fields_invalid','invalid',{hint:error.message});}
+        return notesSet(values,who,context);
+      }
+      input = sameLineEndings(input, got.text);
+      const plan = planTextChanges(got.text, input.changes);
+      if (plan.reason) return {...quoted(plan.reason, plan), revision};
+      const result = await notesWrite({target: {kind: 'note', note_ref: input.note}, text: plan.text, turn_id: input.turn_id, label: input.label}, who, context);
+      return {...result, revision: result.applied ? sha256(plan.text) : revision, ...(result.applied ? {lines: plan.lines} : {})};
+    }
+    const {projection, targets} = publicSurface(), source = projection.text;
+    if (input.fields) return failure('note_required', 'invalid');
+    const given = givenRevision(input.revision, surfaceRevision(projection)); if (given.outcome) return given;
+    input = sameLineEndings({...input, revision: given.revision}, source, targets);
+    const asked = typeof input.revision === 'string' ? Number(input.revision.split(':')[0]) : input.revision;
+    if (safeInt(asked) && asked > state.revision) return failure('revision_unknown', 'invalid', {revision: surfaceRevision(projection)});
+    if (own(input, 'filename')) {
+      if (!validName(input.filename)) return failure('filename_invalid', 'invalid');
+      const extension = name => { const at = name.lastIndexOf('.'); return at >= 0 ? name.slice(at + 1).toLowerCase() : ''; };
+      if (extension(input.filename) !== extension(state.filename)) return failure('filename_extension_change_requires_conversion', 'refused');
+    }
+    if (input.changes === undefined && own(input, 'filename')) {
+      if (input.revision !== surfaceRevision(projection)) return surfaceFailure('revision_changed', source, input, {}, targets);
+      const result = await commit([], who, context, 'document.edit', {
+        turnId: input.turn_id, label: input.label || 'Rename document', metadata: {filename: input.filename, docKind: state.docKind},
+      });
+      return {...result, revision: surfaceRevision(), ...(['applied', 'rebased'].includes(result.outcome) ? {renamed: state.filename} : {})};
+    }
+    const empty = (input.changes || []).findIndex(row => row && row.old === '');
+    if (empty >= 0) return failure('old_empty', 'invalid', {index: empty,
+      hint: 'old must be existing text. To insert, use {after, insert} (after:"" in an empty document); to replace everything, use {text}.'});
+    const moved = input.revision !== surfaceRevision(projection), plan = moved ? untouchedTextPlan(input, projection, targets, who) : planTextChanges(source, input.changes, targets);
+    if (!plan) return surfaceFailure('revision_changed', source, input, {}, targets);
+    if (plan.reason) return surfaceFailure(plan.reason, source, input, plan, targets);
+    const compiled = await compileTextPlan(projection, plan, who, context);
+    if (compiled.outcome) return compiled;
+    const result = await commit(compiled.splices, who, context, compiled.commentsChanged ? (compiled.options.authoredCount ? 'document.edit' : 'comments.write') : input.changes.some(row => Object.hasOwn(row, 'text')) ? 'document.replace' : compiled.options.drawingPatch && !input.filename ? 'document.draw' : 'document.edit', {
+      ...compiled.options, rebased: moved,
+      turnId: input.turn_id, label: input.label || editLabel(who), editCount: input.changes.length,
+      ...(input.filename ? {metadata: {filename: input.filename, docKind: state.docKind}, metadataAssignments: ['filename']} : {}),
+    });
+    const blocksOf = text => {try {return fencedBlocks(text);} catch {return [];}};
+    const written = ['applied', 'rebased'].includes(result.outcome) ? publicSurface().projection.text : '';
+    const mayHaveHtmlFence = text => /(?:^|[\r\n]) {0,3}(?:`{3,}|~{3,})[^\r\n]*\bhtml\b/i.test(text);
+    const scanHtml = Boolean(written && mayHaveHtmlFence(written));
+    const before = new Set(scanHtml ? blocksOf(source).map(row => row.text) : []);
+    const removed = scanHtml ? [...new Set(blocksOf(written).filter(row => row.kind === 'html' && !before.has(row.text)).flatMap(row => htmlRemoved(row.body)))] : [];
+    const spread = plan.written?.some(([first, last], index) => first !== plan.lines[index] || last !== first);
+    const passage = written && written === plan.text ? editPassage(written, plan.written) : null;
+    const previews = written ? changedDrawingPreviews(projection) : [];
+    return {...result, revision: surfaceRevision(), ...(removed.length ? {removed} : {}), ...(input.filename && ['applied', 'rebased'].includes(result.outcome) ? {renamed: state.filename} : {}),
+      ...(['applied', 'rebased', 'unchanged'].includes(result.outcome) ? {lines: plan.lines, ...(spread ? {lines_written: plan.written} : {}), ...(moved ? {others: plan.others} : {}), ...(compiled.options.drawAssets?.length ? {blocks: writtenBlocks(projection)} : {})} : {}),
+      ...(written ? {hash: publicSurface().digest ??= sha256(written), ...(passage ? {passage} : {})} : {}),
+      ...(previews.length ? {previews, hint: 'Inspect each picture, then adjust. For detail, read {as:"image",block:id}; undo an unwanted act before repainting.'} : {})};
+  }
+
+  function passageHandle(input, who) {
+    const {projection, targets} = publicSurface(), selected = textScope(projection.text, input, targets); if (selected.reason) return selected;
+    const scope = {start: sourcePosition(projection, selected.start), end: sourcePosition(projection, selected.end, true)};
+    const matches = input.text !== undefined ? exactMatches(state.text, input.text, scope, 2) : [scope.start];
+    if (matches.length !== 1) return {reason: matches.length ? 'text_ambiguous' : 'text_missing'};
+    const end = input.text !== undefined ? matches[0] + input.text.length : scope.end;
+    const held = handle(matches[0], end, who);
+    return held ? {context_handle: held.id} : {reason: 'passage_too_large'};
+  }
+  function passageFailure(reason, input) {
+    const {projection, targets} = publicSurface();
+    return surfaceFailure(reason, projection.text, {...input, old: input.text}, {}, targets);
+  }
+
+  async function doorShow(input, who, context) {
+    const target = showTarget(input);
+    if (target === 'view' && (input.preference !== undefined || input.value !== undefined)) return failure('show_arguments_invalid', 'invalid', {field: input.preference !== undefined ? 'preference' : 'value'});
+    if (target === 'preferences' && input.view !== undefined) return failure('show_arguments_invalid', 'invalid', {field: 'view'});
+    if (target === 'comparison' && input.text !== undefined && (input.heading !== undefined || input.block !== undefined))
+      return failure('comparison_whole_text', 'invalid', {field: input.heading !== undefined ? 'heading' : 'block',
+        hint: 'A comparison compares whole documents: pass the whole alternative document as text, without heading or block.'});
+    if (target === 'comparison') return dispatchOperation('comparison.present', input.close ? {action: 'close', compare_id: input.compare_id}
+      : input.act || input.turn_id ? {action: 'show', target: input.act ? {kind: 'act', act_id: input.act} : {kind: 'turn', turn_id: input.turn_id}}
+      : {action: 'open', text: input.text, name: input.name}, who, context);
+    if (target === 'view') return dispatchOperation('editor.set_view', {view: input.view}, who, context);
+    if (target === 'preferences') return askEditor('editor.set_preferences', {preference: input.preference, value: input.value}, who, context);
+    if (target === 'plugin') return askEditor('document.device_action', {action: 'install_plugin', plugin: input.name}, who, context);
+    if (target === 'file') return askEditor('document.device_action', {action: 'open_file'}, who, context);
+    if (target === 'playback') {
+      const {projection, targets} = publicSurface(), given = givenRevision(input.revision, surfaceRevision(projection));
+      if (given.outcome) return given;
+      if (given.revision !== surfaceRevision(projection)) return failure('document_changed', 'conflict');
+      if (typeof input.value !== 'boolean') return failure('show_arguments_invalid', 'invalid');
+      const selected = textScope(projection.text, input, targets); if (selected.reason) return passageFailure(selected.reason, input);
+      const matches = input.text !== undefined ? exactMatches(projection.text, input.text, selected, 2) : [selected.start];
+      if (matches.length !== 1) return passageFailure(matches.length ? 'text_ambiguous' : 'text_missing', input);
+      const end = input.text !== undefined ? matches[0] + input.text.length : selected.end;
+      return askEditor('document.device_action', {action: 'playback', value: input.value,
+        sourceRange: {start: sourcePosition(projection, matches[0]), end: sourcePosition(projection, end, true)}}, who, context);
+    }
+    if (target === 'pair') return failure('pairing_hosted_only');
+    if (target === 'return') return dispatchOperation('document.create_return', {}, who, context);
+    if (target === 'note') return notesOpen({note_ref: input.note, expected_foreground: typeof host.notesForeground === 'function' ? host.notesForeground() : undefined}, who, context);
+    if (target === 'ask') {
+      if (input.question && typeof host.note === 'function') host.note(input.question);
+      return dispatchOperation('document.wait_for_user', {mode: input.wait || 'message', timeout_ms: input.timeout_ms, after_return_id: input.after_return_id}, who, context);
+    }
+    if (!['passage', 'block', 'pointer', 'read_aloud'].includes(target)) return failure('show_target_unknown', 'invalid');
+    if (target === 'pointer' && input.act) return point({target: {kind: 'act', act_id: input.act}, words: input.words || '', lifetime: input.lifetime}, who, context);
+    const passage = passageHandle(input, who); if (passage.reason) return passageFailure(passage.reason, input);
+    if (target === 'read_aloud') return askEditor('document.device_action', {action: 'read_aloud', ...passage}, who, context);
+    if (target === 'pointer') return point({target: {kind: 'source', ...passage}, words: input.words || '', lifetime: input.lifetime}, who, context);
+    return dispatchOperation('editor.reveal', passage, who, context);
+  }
+
+  async function doorExport(input, who, context) {
+    if (input.to === 'sync') return notesSync({action: 'now'}, who, context);
+    if (input.to === 'save') {
+      const given = input.revision === undefined ? {revision: undefined} : givenRevision(input.revision); if (given.outcome) return given;
+      return dispatchOperation('document.save', {expected_revision: given.revision === surfaceRevision() ? state.revision : given.revision}, who, context);
+    }
+    if (input.to === 'clipboard') {
+      const passage = passageHandle(input, who); if (passage.reason) return passageFailure(passage.reason, input);
+      return askEditor('document.device_action', {action: 'copy', ...passage, format: input.format || 'plain'}, who, context);
+    }
+    if (input.to && input.to !== 'file') return failure('export_target_unknown', 'invalid');
+    const scope = exportScope(input, input.format || 'markdown'); if (scope.outcome) return scope;
+    return exportDocument({format: input.format || 'markdown', compare_id: input.compare_id, scope: scope.part}, who, context);
+  }
+
+  function exportScope(input, format) {
+    const fields = ['heading', 'block', 'revision'].filter(key => input[key] !== undefined);
+    if (!fields.length) return {};
+    if (input.compare_id !== undefined) return failure('export_scope_invalid', 'invalid', {field: fields[0], hint: 'A comparison file holds both whole documents: omit ' + fields.join(', ') + '.'});
+    if (host.exportScope !== true) return failure('export_scope_unavailable', 'refused', {field: fields[0], availableFormats: [],
+      hint: 'This door writes the whole current document. Omit ' + fields.join(', ') + '.'});
+    let revision = state.revision, source = state.text;
+    if (input.revision !== undefined) {
+      const asked = revisionNumber(input.revision);
+      if (asked === null) return failure('revision_format', 'invalid', {field: 'revision', revision: surfaceRevision(), hint: REVISION_FORMS});
+      if (asked > state.revision) return failure('revision_unknown', 'invalid', {revision: surfaceRevision()});
+      if (asked < state.revision) {
+        const entries = since(asked);
+        for (let act = (entries?.length ?? 0) - 1; act >= 0 && source != null; act--) source = transformSplices(source, entries[act].splices, true);
+        if (!entries || source == null) return failure('revision_unavailable', 'refused', {revision: asked, hint: 'The history no longer reaches revision ' + asked + '. Export the current revision.'});
+        revision = asked;
+      }
+    }
+    const scope = {revision, whole: input.heading === undefined && input.block === undefined};
+    if (!scope.whole) {
+      const projection = publicText(source), targets = textTargets(projection.text), found = textScope(projection.text, input, targets);
+      if (found.reason) return failure(found.reason, 'refused', {revision});
+      const start = sourcePosition(projection, found.start), end = sourcePosition(projection, found.end, true);
+      let part = source.slice(start, end);
+      const references = pictureReferences(part);
+      for (const row of documentAssets(source).blocks) if (row.active && references.has(row.id)) {
+        try {part = appendAssetText(part, {id: row.id, label: /^\[([^\]\r\n]+)\]:/.exec(row.source)?.[1] || row.id, url: row.url, title: row.title}).source;} catch {}
+      }
+      Object.assign(scope, input.heading !== undefined ? {heading: input.heading} : {}, input.block !== undefined ? {block: input.block} : {},
+        {lines: [targets.lines.number(found.start), targets.lines.number(Math.max(found.start, found.end - 1))]});
+      source = part;
+    }
+    return {part: {...scope, text: source}};
+  }
+
+  async function dispatchOperation(name, input, who, context) {
+    let result;
+    switch (name) {
+      case 'open': result = await doorOpen(input, who, context); break;
+      case 'read': result = await doorRead(input, who, context); break;
+      case 'edit': result = await doorEdit(input, who, context); break;
+      case 'undo': result = Boolean(input.act) === Boolean(input.turn_id) ? failure(input.act ? 'act_and_turn_conflict' : 'act_or_turn_required', 'invalid') : input.act?.startsWith('notes-source:') && typeof host.notesSourceUndo === 'function' ? await notesSourceUndo(input, who, context) : input.act?.startsWith('notes-controls:') ? await notesUndo(input, who, context) : await undo({change_id: input.act, turn_id: input.turn_id}, who, context); break;
+      case 'show': result = await doorShow(input, who, context); break;
+      case 'export': result = await doorExport(input, who, context); break;
+      case 'document.observe': result = await observe(input, who, context); break;
+      case 'document.outline': result = await getOutline(input, who, context); break;
+      case 'comments.read': result = listComments(input, who); break;
+      case 'comments.write': result = await comment(input, who, context); break;
+      case 'document.inspect_visual': result = inspectVisual(input, context); break;
+      case 'editor.read_aloud':
+      case 'editor.copy':
+      case 'editor.open_file':
+      case 'editor.install_plugin':
+        result = askEditor('document.device_action', {...input, action: EDITOR_TOOL_ACTIONS[name]}, who, context); break;
+      case 'document.read': result = await readDocument(input, who, context); break;
+      case 'document.find': result = await find(input, who, context); break;
+      case 'document.edit': result = await applyEdits(input, who, context); break;
+      case 'document.undo': result = await undo({...input, change_id: input.target?.act_id, turn_id: input.target?.turn_id}, who, context); break;
+      case 'comparison.present': result = input.action === 'show'
+        ? await showChanges({...input, change_id: input.target?.act_id, turn_id: input.target?.turn_id}, who, context) : await compareAction(input, who, context); break;
+      case 'document.replace': result = await openText(input, who, context); break;
+      case 'editor.point': result = await point(input, who, context); break;
+      case 'editor.set_preferences': result = askEditor(name, input, who, context); break;
+      case 'editor.set_view': {
+        if (input.preference !== undefined || input.value !== undefined) {
+          result = failure('editor_arguments_invalid', 'invalid', {hint: 'Pass view alone, or pass preference and value together.'}); break;
+        }
+        if (typeof host.setView !== 'function') { result = failure('view_unavailable', 'refused', {hint: 'Open the document in its connected editor, then retry.'}); break; }
+        const value = await host.setView({documentId: state.documentId, revision: state.revision, view: input.view, ...who, signal: context.signal});
+        const view = {...(typeof host.view === 'function' ? host.view() : {}), requested: input.view,
+          ...(value?.viewId ? {id: value.viewId} : {}), status: value?.pending ? 'pending' : value?.ok ? 'presented' : 'refused'};
+        result = value?.pending ? {outcome: 'pending', reason: 'presentation_pending', view}
+          : value?.ok ? accepted({view, ...(value.reason ? {reason: value.reason} : {})}) : failure(value?.reason || 'view_unavailable', value?.outcome || 'refused',
+            {view, hint: value?.hint || 'Open the document in its connected editor and select an available view.'});
+        break;
+      }
+      case 'editor.reveal': {
+        const change = changeOf(input.context_handle);
+        if (change) {
+          if (typeof host.revealChange !== 'function') { result = failure('reveal_unavailable'); break; }
+          const value = await host.revealChange({ documentId: state.documentId, revision: state.revision, compareId: state.compare.id, changeId: change.id,
+            hostCompareId: state.compare.hostCompareId || null,
+            start: change.start, end: change.end, incomingStart: change.incomingStart, incomingEnd: change.incomingEnd,
+            removed: change.removed, inserted: change.inserted, currentText: state.compare.baseline, incomingText: state.compare.incoming,
+            index: state.compare.changes.indexOf(change), ...who, signal: context.signal });
+          result = value?.pending && value.viewId ? { outcome: 'pending', reason: 'presentation_pending', view: {id: value.viewId, status: 'pending'} }
+            : value?.ok ? accepted({ revealed: true }) : failure(value?.reason || 'view_changed');
+          break;
+        }
+        const held = lookup('handles', input.context_handle, who);
+        if (held.outcome) { result = held; break; }
+        const range = relocate(held);
+        if (range.outcome) { result = range; break; }
+        if (typeof host.reveal !== 'function') { result = failure('reveal_unavailable'); break; }
+        const value = await host.reveal({ documentId: state.documentId, revision: state.revision, start: range.start, end: range.end,
+          ...who, signal: context.signal });
+        result = value?.pending && value.viewId ? { outcome: 'pending', reason: 'presentation_pending', view: {id: value.viewId, status: 'pending'} }
+          : value?.ok ? accepted({ revealed: true, ...(value.reason ? {reason: value.reason} : {}) }) : failure(value?.reason || 'view_changed'); break;
+      }
+      case 'document.create_return':
+        result = typeof host.createReturn === 'function' ? await host.createReturn() : failure('return_unavailable');
+        break;
+      case 'document.wait_for_user': {
+        if (typeof host.wait !== 'function') { result = failure('wait_unavailable'); break; }
+        const mode = input.mode || 'message';
+        if (!['message', 'selection'].includes(mode)) { result = failure('wait_mode_invalid', 'invalid'); break; }
+        result = await host.wait({ documentId: state.documentId, revision: state.revision, mode,
+          timeout_ms: waitTimeout(input.timeout_ms), after_return_id: input.after_return_id, ...who, signal: context.signal });
+        if (!result || typeof result !== 'object') result = failure('wait_unavailable');
+        break;
+      }
+      case 'document.save': {
+        if (input.expected_revision !== undefined && input.expected_revision !== state.revision) {result = failure('document_changed', 'conflict'); break;}
+        if (typeof host.save !== 'function') { result = failure('save_unavailable'); break; }
+        const request = {documentId: state.documentId, revision: state.revision, filename: state.filename, text: state.text,
+          ...who, signal: context.signal};
+        let value;
+        try {value = await host.save(request);}
+        catch {result = failure('save_unconfirmed', 'uncertain', {sourceChanged: false}); break;}
+        result = {
+          outcome: value?.outcome === 'unacknowledged' ? 'uncertain' : clip(value?.outcome || (value?.ok ? 'ok' : 'refused'), 64),
+          ...(!['uncertain', 'unacknowledged'].includes(value?.outcome) && typeof value?.saved === 'boolean' ? {saved: value.saved} : {}),
+          destination: value?.destination || 'unconfirmed', sourceChanged: false,
+          verified: value?.verified === true, confirmed: value?.confirmed === true,
+          filename: request.filename,
+          ...(value?.saveStatus ? { saveStatus: clip(value.saveStatus, 64) } : {}),
+          ...(value?.reason ? { reason: clip(value.reason, 160) } : !value?.ok ? { reason: 'save_refused' } : {}),
+          ...(value?.savedDocumentId ? { savedDocumentId: clip(value.savedDocumentId, 256) } : {}),
+          ...(safeInt(value?.savedDocumentRevision) ? {savedDocumentRevision: value.savedDocumentRevision} : {}),
+          ...(value?.binding ? {binding: value.binding} : {}),
+        };
+        break;
+      }
+      case 'document.draw': result = await drawPicture({...input, ...input.target}, who, context); break;
+      case 'svg.edit': result = state.docKind !== 'markdown' ? failure('draw_requires_markdown', 'invalid')
+        : await drawSVGEdit(input, who, context); break;
+      case 'document.export': result = await exportDocument(input, who, context); break;
+      case 'notes.find': result = await notesList(input, who, context); break;
+      case 'notes.read': result = await notesRead(input, who, context); break;
+      case 'notes.open': result = await notesOpen(input, who, context); break;
+      case 'notes.write': result = await notesWrite(input, who, context); break;
+      case 'notes.set': result = await notesSet(input, who, context); break;
+      case 'notes.history': result = await notesHistory(input, who, context); break;
+      case 'notes.sync': result = await notesSync(input, who, context); break;
+      default: result = failure('operation_unknown', 'invalid');
+    }
+    return result;
+  }
+
+  async function execute(name, input, context) {
+    if (documentGuardFailure(context)) return stamp(documentGuardFailure(context));
+    const inputDigest = canonicalDigest(input);
+    const who = invocationCaller(input, context);
+    let workKey = null;
+    const finalize = (result, { record = true } = {}) => {
+      const value = {...publicWriteReceipt(result || failure('operation_failed'))};
+      if (['open', 'read', 'edit', 'undo', 'show', 'export'].includes(name)) {
+        if (value.operation) value.operation = name;
+        if (value.next && /^(document|editor|notes|comments|comparison)\./.test(value.next)) value.next = 'read';
+        if (value.outcome === 'uncertain' && ['edit', 'undo'].includes(name)) value.sourceStatus = 'uncertain';
+      }
+      if (value.outcome === 'uncertain' && ['document.edit', 'document.replace', 'document.draw', 'svg.edit', 'document.undo', 'comments.write'].includes(name))
+        value.sourceStatus = 'uncertain';
+      const output = stamp(value);
+      if (name === 'document.observe' && output.collaboration) {
+        output.collaboration.agentPresence = agentPresence({...who, ...(output.collaboration.agentPresence?.agent ? {agent: output.collaboration.agentPresence.agent} : {})}, !!workKey);
+      }
+      if (record) recordInvocation(who.invocationKey, name, state.documentId, output, inputDigest, who);
+      return output;
+    };
+    try {
+    if (context.rejectedInvocationKey) {
+      return finalize(failure('invocation_key_not_allowed', 'invalid'));
+    }
+    const recorded = !context.continues && recordedInvocation(name, inputDigest, who);
+    if (recorded) return finalize(recorded, {record: false});
+    const descriptor = getTool(name);
+    if (!descriptor) return finalize(failure('operation_unknown', 'invalid'));
+    input = validateInput(descriptor.inputSchema, input, 'arguments', !descriptor.visibility);
+    const named = agentLabel(input.agent);
+    if (named) who.agent = named;
+    if (named && who.actor === 'agent' && who.author.name === undefined)
+      who.author = historyAuthor({...who.author, name: named}, who.actor);
+    if (who.actor === 'agent') {
+      workKey = presenceKey(who);
+      const held = working.get(workKey);
+      working.set(workKey, {who, count: (held?.count || 0) + 1});
+      publishPresence();
+    }
+    const beforeHandles = new Set(Object.keys(state.handles)), beforeRefs = new Set(Object.keys(state.refs)), beforeCursors = new Set(Object.keys(state.cursors));
+    const snapshotOperation = name === 'show' && (input.target === 'view' || !input.target && input.view) ? 'editor.set_view' : name === 'show' && input.target === 'preferences' ? 'editor.set_preferences' : name;
+    const unsettled = await refresh(context, snapshotOperation);
+    if (unsettled) return finalize(unsettled);
+    if (context.materialBinding && !materialMatches(context.materialBinding, state, currentDrawing()))
+      return finalize(failure('document_changed', 'conflict'));
+    prune();
+    let result;
+    let resumed = false;
+    result = await dispatchOperation(name, input, who, context);
+    resumed = ['open','read','document.observe'].includes(name) && result.outcome === 'ok' && !!result.observation_cursor;
+    if (descriptor.effect === 'read' && documentGuardFailure(context)) {
+      for (const [pool, before] of [['handles', beforeHandles], ['refs', beforeRefs], ['cursors', beforeCursors]])
+        for (const id of Object.keys(state[pool])) if (!before.has(id)) delete state[pool][id];
+      result = documentGuardFailure(context);
+    }
+    if (result?.drawingPatch && bytes(JSON.stringify(stamp(result))) > LIMITS.resultBytes) {
+      const {asset, reference, occurrence, targetOccurrence, transactionId} = result.drawingPatch;
+      result = {...result, drawingPatch: {asset, reference, occurrence, targetOccurrence, transactionId,
+        complete: false, reason: 'semantic_patch_in_journal'}};
+    }
+    const output = stamp(publicWriteReceipt(result || failure('operation_failed')));
+    const previews = name === 'edit' && ['applied', 'rebased'].includes(output.outcome) && output.previews?.length ? output.previews : null;
+    const receipt = previews ? {...output} : output;
+    if (previews) delete receipt.previews;
+    const resultLimit = ['open', 'read'].includes(name) && context.transport !== 'webmcp' ? 96 * 1024 : LIMITS.resultBytes;
+    let finalOutput = receipt;
+    if (bytes(JSON.stringify(receipt)) <= resultLimit) {
+      if (resumed) {
+        const observation = state.cursors[output.observation_cursor];
+        remember(state.resume, who, {revision: observation?.revision ?? state.revision,
+          ...(observation?.seenChanges ? {seenChanges: observation.seenChanges} : {})});
+      }
+    } else {
+      for (const id of Object.keys(state.handles)) if (!beforeHandles.has(id)) delete state.handles[id];
+      finalOutput = boundedResult(receipt, {limit: resultLimit + 1, readOnly: descriptor.effect === 'read'});
+      if (output.pending?.kind === 'surface-fact' && finalOutput.outcome !== 'pending') pendingFacts.delete(output.pending.requestId);
+    }
+    return finalize(previews ? {...finalOutput, previews} : finalOutput);
+    } catch (error) {
+      if (error?.name === 'AbortError' || context.signal?.aborted) return finalize(name === 'document.draw' ? drawingReceipt(failure('cancelled')) : failure('cancelled'));
+      if (error instanceof TypeError || error?.code === 'invalid_arguments') return finalize(failure(clip(error.message, 160), 'invalid', error?.path ? {field: String(error.path).replace(/^arguments\.?/, '')} : undefined));
+      throw error;
+    } finally {
+      if (workKey) {
+        const held = working.get(workKey);
+        if (held?.count > 1) held.count--;
+        else working.delete(workKey);
+        publishPresence();
+      }
+    }
+  }
+
+  function invoke(name, input = {}, context = {}) {
+    const waiting = name === 'document.wait_for_user' || name === 'show' && showTarget(input) === 'ask';
+    if (waiting && waitPending) return Promise.resolve(stamp(failure('wait_already_pending')));
+    if (waiting) waitPending = true;
+    const run = async () => {
+      try { return await execute(name, input, context); }
+      finally { if (waiting) waitPending = false; }
+    };
+    const result = queue.then(run, run);
+    queue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  return Object.freeze({ invoke, replay, snapshot, reconcile, undoHistoryAct, humanContext, pointResult, collaboration, drawingContext: drawingSummary, invocationJournal: invocationJournalEntries });
+}

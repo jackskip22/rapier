@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Choose Drive files · Rapier</title>
+<!-- Google's Picker for Rapier Notes' plain files on Drive (notes/drive-picker.mjs). Its own page so the editor never
+     loads Google's script; the folder and a short-lived token arrive only from the Rapier window that opened it. -->
+<style>
+:root { color-scheme: light dark; --ink: #000; --page: #fff; }
+@media (prefers-color-scheme: dark) { :root { --ink: #fff; --page: #000; } }
+html, body { margin: 0; background: var(--page); color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
+main { max-width: 36rem; margin: 0 auto; padding: 32px 16px; }
+p { margin: 0 0 12px; }
+</style>
+</head>
+<body>
+<main><p id="said">Opening Google Drive…</p></main>
+<script>
+(() => {
+  const opener = window.opener, origin = location.origin, said = document.getElementById('said');
+  const done = message => { try { opener.postMessage(message, origin); } catch (_) {} setTimeout(() => window.close(), 300); };
+  if (!opener) { said.textContent = 'Open this from sync in Rapier Notes.'; return; }
+  addEventListener('message', event => {
+    const data = event.data;
+    if (event.source !== opener || event.origin !== origin || !data || data.type !== 'rapier-drive-picker') return;
+    const script = document.createElement('script');
+    script.src = 'https://apis.google.com/js/api.js';
+    script.onerror = () => done({type: 'rapier-drive-picked', error: true});
+    script.onload = () => gapi.load('picker', {callback: () => {
+      const P = google.picker;
+      const view = new P.DocsView(P.ViewId.DOCS).setParent(data.folderId).setIncludeFolders(false).setMode(P.DocsViewMode.LIST);
+      const picker = new P.PickerBuilder().addView(view).enableFeature(P.Feature.MULTISELECT_ENABLED)
+        .setOAuthToken(data.accessToken).setDeveloperKey(data.key).setAppId(data.appId).setOrigin(origin)
+        .setTitle('Choose the files Rapier syncs')
+        .setCallback(result => {
+          if (result.action === P.Action.PICKED) done({type: 'rapier-drive-picked', count: (result.docs || []).length});
+          else if (result.action === P.Action.CANCEL) done({type: 'rapier-drive-picked', count: 0});
+        }).build();
+      said.textContent = 'Choose the files in Google Drive.';
+      picker.setVisible(true);
+    }, onerror: () => done({type: 'rapier-drive-picked', error: true})});
+    document.head.append(script);
+  });
+  opener.postMessage({type: 'rapier-drive-picker-ready'}, origin);
+})();
+</script>
+</body>
+</html>

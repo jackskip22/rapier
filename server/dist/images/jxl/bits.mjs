@@ -1,0 +1,105 @@
+// Bit writer. MIT (images/jxl/LICENSE).
+
+const POWERS = [1];
+for (let count = 1; count <= 32; count++) POWERS.push(POWERS[count - 1] * 2);
+
+export const LITTLE_ENDIAN = new Uint8Array(Uint32Array.of(1).buffer)[0] === 1;
+
+export class BitWriter {
+  constructor(capacity = 4096, maxBytes = Infinity) {
+    if (maxBytes !== Infinity && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) throw new RangeError('Invalid encoded picture allocation limit.');
+    this.bytes = new Uint8Array(maxBytes === Infinity ? capacity : Math.min(capacity, maxBytes));
+    this.maxBytes = maxBytes;
+    this.at = 0;
+    this.acc = 0;
+    this.pending = 0;
+  }
+  write(count, value) {
+    if (!(value >= 0 && value < POWERS[count])) throw new Error('bit write out of range: ' + count + ' bits, ' + value);
+    let pending = this.pending + count;
+    if (this.at + 5 >= this.bytes.length) this.grow();
+    const bytes = this.bytes;
+    if (pending < 32) {
+      let acc = this.acc | value << this.pending;
+      while (pending >= 8) { bytes[this.at++] = acc & 255; acc >>>= 8; pending -= 8; }
+      this.acc = acc; this.pending = pending; return;
+    }
+    let acc = this.acc + value * (1 << this.pending);
+    while (pending >= 8) { bytes[this.at++] = acc & 255; acc = Math.floor(acc / 256); pending -= 8; }
+    this.acc = acc; this.pending = pending;
+  }
+  writeU32(choices, value) {
+    for (let selector = 0; selector < 4; selector++) {
+      const [bits, offset] = choices[selector];
+      if (value >= offset && value - offset < POWERS[bits]) { this.write(2, selector); if (bits) this.write(bits, value - offset); return; }
+    }
+    throw new Error('U32 value out of range: ' + value);
+  }
+  zeroPadToByte() {
+    if (!this.pending) return;
+    if (this.at + 1 >= this.bytes.length) this.grow();
+    this.bytes[this.at++] = this.acc; this.acc = 0; this.pending = 0;
+  }
+  get bitLength() { return this.at * 8 + this.pending; }
+  grow(need = 0) {
+    const required = this.at + need + 16;
+    if (!Number.isSafeInteger(required) || required < 0) throw new RangeError('The encoded picture cannot be allocated.');
+    if (required > this.maxBytes) throw Object.assign(new RangeError('The encoded picture exceeds its allocation limit.'), {code: 'JXL_MEMORY'});
+    const capacity = Math.min(this.maxBytes, Math.max(this.bytes.length * 2, required));
+    let next;
+    try { next = new Uint8Array(capacity); }
+    catch (error) {
+      if (!(error instanceof RangeError) || capacity === required) throw error;
+      next = new Uint8Array(required);
+    }
+    next.set(this.bytes.subarray(0, this.at)); this.bytes = next;
+  }
+  append(other) {
+    if (this.at + other.at + 8 >= this.bytes.length) this.grow(other.at + 8);
+    if (!this.pending) { this.bytes.set(other.bytes.subarray(0, other.at), this.at); this.at += other.at; }
+    else for (let i = 0; i < other.at; i++) this.write(8, other.bytes[i]);
+    if (other.pending) this.write(other.pending, other.acc);
+  }
+  finish() {
+    const length = this.at + (this.pending ? 1 : 0), out = this.bytes.slice(0, length);
+    if (this.pending) out[this.at] = this.acc;
+    return out;
+  }
+}
+
+export function complete(steps) { let step; while (!(step = steps.next()).done); return step.value; }
+export function* part(steps, index, count) {
+  let step, reply, completed = false;
+  try {
+    while (!(step = steps.next(reply)).done) reply = yield scaled(step.value, done => (index + done) / count);
+    completed = true;
+    return step.value;
+  } finally {
+    try { steps.return?.(); } catch (error) { if (completed) throw error; }
+  }
+}
+export const scaled = (value, f) => typeof value === 'number' ? f(value) : {...value, at: g => f(value.at(g))};
+
+export function packSigned(value) { return value >= 0 ? value * 2 : -value * 2 - 1; }
+
+export function floorLog2(value) { return 31 - Math.clz32(value); }
+export function ceilLog2(value) { return value <= 1 ? 0 : 32 - Math.clz32(value - 1); }
+
+export function float16Bits(value) {
+  const sign = value < 0 || Object.is(value, -0) ? 0x8000 : 0;
+  if (value === 0) return sign;
+  value = Math.abs(value);
+  if (!(value < 65520)) throw new Error('half float out of range: ' + value);
+  let exponent = 0, mantissa = value;
+  while (mantissa >= 2) { mantissa /= 2; exponent++; }
+  while (mantissa < 1) { mantissa *= 2; exponent--; }
+  if (exponent < -14) { mantissa = value * 16384; exponent = -15; }
+  else mantissa -= 1;
+  const scaled = mantissa * 1024;
+  let m = Math.round(scaled);
+  if (m - scaled === 0.5 && (m & 1)) m--;
+  if (m === 1024) { m = 0; exponent++; }
+  return sign | ((exponent + 15) << 10) | m;
+}
+
+export const FRAME_SIZE = [[8, 0], [11, 256], [14, 2304], [30, 18688]];

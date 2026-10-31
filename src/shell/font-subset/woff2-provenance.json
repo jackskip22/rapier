@@ -1,0 +1,18 @@
+{
+  "woff2": {
+    "version": "1.0.2",
+    "source": "https://github.com/google/woff2/tree/v1.0.2"
+  },
+  "brotli": {
+    "version": "1.2.1",
+    "commit": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    "source": "https://github.com/google/brotli/tree/v1.2.1"
+  },
+  "compiler": "emscripten/emsdk@sha256:bbe90e2b00acbd1a9596087d88305029f383de1eb71c0cdb20f4e19647265450",
+  "memoryMaximumBytes": 268435456,
+  "fontMaximumBytes": 31457280,
+  "sourceModifications": "None; Rapier owns only the bounded Embind entry in woff2-binding.cpp.",
+  "bindingSha256": "93422959ce2462b43bb0f36ff22f32ae570f337b9c914bed3e169c6cb83a7d52",
+  "moduleSha256": "e1f875c086a3389780daaff9a1e9aeaa82a83ab9301003d4c2bad9b23e6b1c0d",
+  "rebuild": "node shell/font-subset/build-woff2.mjs --sources=<directory matching woff2-sources.json> --check"
+}

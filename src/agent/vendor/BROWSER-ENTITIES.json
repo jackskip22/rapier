@@ -1,0 +1,36 @@
+{
+  "description": "The page and Node use the same native ES2022 build of unchanged markdown-it 15.0.3 release source (MARKDOWNIT.json). tools/entities-vendor.mjs re-encodes its 2,125 HTML entity names as a compact list with the strict decoder its callers require, then minifies with the pinned options. The normal Rapier core rule in agent/markdown-spec.mjs owns auto-link token expansion; the vendor has no parser rule changes. Each vendor pins upstream and derived bytes; a changed source or derivation requires grammar and entity equivalence before repinning.",
+  "vendors": [
+    {
+      "id": "lib-markdownit",
+      "upstream": {
+        "name": "markdown-it-15.0.3.es2022.umd.js",
+        "bytes": 144327,
+        "sha256": "ab352b33693b8a4c88c0c0a977f12b30df9aa42bc163f73e59397939e397182a"
+      },
+      "entities": {
+        "names": 2125,
+        "legacy": 106
+      },
+      "derived": {
+        "name": "markdown-it-15.0.3.es2022.umd.rapier.min.js",
+        "bytes": 94470,
+        "sha256": "09d16498c075e83b0ba986dab07e83f0850f601f6f7551bd4aaf79d3167f7bc4"
+      }
+    }
+  ],
+  "tool": {
+    "name": "terser",
+    "version": "5.51.2",
+    "options": {
+      "ecma": 2022,
+      "compress": {
+        "passes": 2
+      },
+      "mangle": true,
+      "format": {
+        "comments": "/^!|@license|copyright/i"
+      }
+    }
+  }
+}

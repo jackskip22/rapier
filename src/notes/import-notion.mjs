@@ -1,0 +1,184 @@
+import {noteFileName, orderAfter} from './model.mjs';
+import {readZipEntries, zipOversizeSkip} from './zip.mjs';
+import {importTags, literalInline, literalLine} from './import.mjs';
+import {parseFrontMatter} from './frontmatter.mjs';
+import {readImportText, reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
+
+const ID_SUFFIX = / [0-9a-f]{32}$/i;
+const stripId = name => name.replace(ID_SUFFIX, '');
+function splitExt(name) { const m = /^(.*)(\.[^./]*)$/.exec(name); return m ? [m[1], m[2]] : [name, '']; }
+function basename(path) { const s = String(path).split(/[\\/]/); return s[s.length - 1]; }
+
+const IMAGE_MIME = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', heic: 'image/heic', heif: 'image/heic'};
+function imageMime(ext) { return IMAGE_MIME[ext.replace(/^\./, '').toLowerCase()] || null; }
+const trimPropertySpace = text => String(text).replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
+function oneLine(s) { return trimPropertySpace(String(s).replace(/[ \t\r\n\f]+/g, ' ')); }
+
+function parseCsv(text) {
+	const rows = []; let row = [], field = '', quoted = false;
+	const s = String(text).replace(/\r\n?/g, '\n');
+	for (let i = 0; i < s.length; i++) {
+		const c = s[i];
+		if (quoted) { if (c === '"') { if (s[i + 1] === '"') { field += '"'; i++; } else quoted = false; } else field += c; }
+		else if (c === '"') quoted = true;
+		else if (c === ',') { row.push(field); field = ''; }
+		else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+		else field += c;
+	}
+	if (quoted) throw new Error('unterminated quoted CSV field');
+	if (field.length || row.length) { row.push(field); rows.push(row); }
+	return rows;
+}
+
+const CREATED_HEADER = /^(?:created|created time|creation date)$/i;
+const MODIFIED_HEADER = /^(?:updated|modified|edited|last edited time|last edited|updated time|modified time)$/i;
+function dateFromRow(headers, values, pattern) {
+	for (let i = 0; i < headers.length; i++) {
+		if (!pattern.test(headers[i])) continue;
+		if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(values[i] || '')) continue;
+		const t = Date.parse(values[i]);
+		if (Number.isFinite(t)) return t;
+	}
+	return undefined;
+}
+
+export async function importNotion(entries, options) {
+	const list = Array.isArray(entries) ? entries : [];
+	const existing = Array.isArray(options && options.existing) ? options.existing.filter(n => typeof n === 'string') : [];
+	const lastOrder = typeof (options && options.lastOrder) === 'string' ? options.lastOrder : '';
+	const skipped = [];
+
+	const collected = [];
+	for (const e of list) {
+		if (!e || typeof e.name !== 'string') continue;
+		if (/\.zip$/i.test(e.name) && e.bytes && e.text === undefined) {
+			const start = collected.length;
+			try {
+				for await (const z of readZipEntries(e.bytes)) collected.push({...z, rootId: e.rootId});
+			} catch (error) { collected.length = start; skipped.push({name: e.name, why: 'could not be read as a zip: ' + String((error && error.message) || error)}); }
+		} else if (e.oversize || e.text !== undefined || e.bytes !== undefined) collected.push({...e});
+	}
+	const named = collected.filter(e => { if (!e.oversize) return true; skipped.push(zipOversizeSkip(e)); return false; });
+	for (const e of named) {
+		e.name = e.name.replace(/\\/g, '/'); e.sourceName = e.sourceName || e.name;
+		e.characterWarnings = [];
+		if (/\.(md|csv)$/i.test(e.name)) {
+			try { e.text = readImportText(e, e.characterWarnings); }
+			catch (error) { skipped.push({name: e.sourceName, why: error.message}); }
+		}
+	}
+	if (named.length && named.every(e => e.name.includes('/'))) {
+		const first = named[0].name.split('/')[0];
+		if (named.every(e => e.name.split('/')[0] === first)) for (const e of named) e.name = e.name.slice(first.length + 1);
+	}
+
+	const mdEntries = named.filter(e => /\.md$/i.test(e.name) && typeof e.text === 'string');
+	let csvEntries = named.filter(e => /\.csv$/i.test(e.name) && typeof e.text === 'string');
+	const views = [];
+	for (const all of csvEntries.filter(e => /[ _][0-9a-f]{32}_all\.csv$/i.test(e.name))) {
+		all.name = all.name.replace(/_all\.csv$/i, '.csv');
+		const view = csvEntries.find(e => e !== all && e.name === all.name);
+		if (view) views.push({view, all});
+	}
+	csvEntries = csvEntries.filter(e => !views.some(row => row.view === e));
+	const pictureEntries = named.filter(e => e.bytes && imageMime(splitExt(basename(e.name))[1]));
+
+	const pictures = pictureEntries.map(e => ({name: e.sourceName, sourceName: e.sourceName, rootId: e.rootId ?? '', bytes: e.bytes, mime: imageMime(splitExt(e.name)[1])}));
+	for (const e of named) if (!mdEntries.includes(e) && !csvEntries.includes(e) && !pictureEntries.includes(e)) skipped.push({name: e.sourceName, rootId: e.rootId ?? '', byteLength: e.bytes?.length, attachment: true, why: 'unsupported attachment retained in source export'});
+	const mdByTitle = new Map();
+	for (const page of mdEntries) {
+		const title = stripId(splitExt(basename(page.name))[0]);
+		if (!mdByTitle.has(title)) mdByTitle.set(title, []);
+		mdByTitle.get(title).push(page);
+	}
+	function categoryFor(path, ownTitle) {
+		const parts = path.split('/'); parts.pop();
+		if (!parts.length) return '';
+		let name = stripId(parts[parts.length - 1]);
+		if (name === ownTitle) { parts.pop(); if (!parts.length) return ''; name = stripId(parts[parts.length - 1]); }
+		return name;
+	}
+
+	const claims = new Map(), standalone = [], damagedCsv = [];
+	for (const csv of csvEntries) {
+		let rows; try { rows = parseCsv(csv.text); } catch (error) {
+			damagedCsv.push({entry: csv, why: 'CSV structure is damaged: ' + String(error?.message || error)}); continue;
+		}
+		if (!rows.length) { skipped.push({name: csv.name, why: 'empty CSV'}); continue; }
+		const headers = rows[0].map(h => trimPropertySpace(h));
+		if (!headers.length || !headers[0]) { skipped.push({name: csv.name, why: 'no column to use as a title'}); continue; }
+		const dbTitle = stripId(splitExt(basename(csv.name))[0]);
+		const lineWarnings = [];
+		reportCharacterChange(csv.text, csv.text.replace(/\r\n?/g, '\n'), lineWarnings, 'CSV line endings');
+		for (const [rowIndex, values] of rows.slice(1).entries()) {
+			if (!values.some(value => trimPropertySpace(value))) continue;
+			const title = trimPropertySpace(values[0] || '') || 'Untitled row ' + (rowIndex + 2);
+			const warnings = [...(csv.characterWarnings || []), ...(trimPropertySpace(values[0] || '') ? [] : [{code: 'row_untitled', message: 'Row has no title; its remaining values were kept in a separately named note.'}])];
+			warnings.push(...lineWarnings);
+			warnings.push({code: 'database_properties', message: 'Database properties are plain text in this note, not live relations, formulas or database views. Date columns without a timezone remain text.'});
+			const lines = [], tags = [];
+			for (let i = 1; i < Math.max(headers.length, values.length); i++) { const v = values[i] || ''; if (v) lines.push(literalLine(headers[i] || 'Column ' + (i + 1)) + ': ' + v.split('\n').map(literalLine).join('  \n')); }
+			for (let i = 1; i < Math.min(headers.length, values.length); i++) if (/^tags?$/i.test(headers[i])) { const names = String(values[i] || '').split(','); for (const name of names) reportCharacterChange(name, trimPropertySpace(name), warnings, 'CSV tag display name'); tags.push(...names.map(tag => trimPropertySpace(tag)).filter(Boolean)); }
+			if (values.length > headers.length) warnings.push({code: 'csv_extra_columns', message: 'Values beyond the named columns were kept by column number.'});
+			const created = dateFromRow(headers, values, CREATED_HEADER), modified = dateFromRow(headers, values, MODIFIED_HEADER);
+			const queue = mdByTitle.get(title) || [];
+			const directory = csv.name.replace(/\.csv$/i, '') + '/';
+			const candidates = queue.filter(page => page.name.slice(0, page.name.lastIndexOf('/') + 1) === directory);
+			const md = candidates.length === 1 ? candidates[0] : null;
+			if (md) queue.splice(queue.indexOf(md), 1);
+			if (md) claims.set(md, {lines, tags, created, modified, sourceName: csv.sourceName, warnings});
+			else standalone.push({title: oneLine(title), sourceItem: 'row:' + (rowIndex + 2), lines, tags, created, modified, category: dbTitle, sourceName: csv.sourceName, rootId: csv.rootId ?? '', warnings: [...warnings, {code: candidates.length > 1 ? 'row_ambiguous' : 'row_unmatched', message: 'CSV row kept as a separate note because its own page could not be identified uniquely.'}]});
+		}
+	}
+
+	const pool = existing.slice(), built = [], seenSections = new Set(), sections = [];
+	function addSection(name) { if (name && !seenSections.has(name.toLowerCase())) { seenSections.add(name.toLowerCase()); sections.push(name); } }
+	for (const row of damagedCsv) built.push({...literalImportSource({...row.entry, name: row.entry.sourceName}, pool, row.why, [...(row.entry.characterWarnings || [])], 'csv'), created: -Infinity});
+
+	for (const e of mdEntries) {
+		try {
+			const ownTitle = stripId(splitExt(basename(e.name))[0]);
+			const front = parseFrontMatter(String(e.text));
+			let text = front.body;
+			const warnings = [...(e.characterWarnings || [])];
+			if (/<(?:aside|table|iframe|object|embed)\b/i.test(text)) warnings.push({code: 'html_retained', message: 'Rich block retained as its original HTML; editor-specific presentation may differ.'});
+			const claim = claims.get(e);
+			warnings.push(...(claim?.warnings || []));
+			if (claim && claim.lines.length) {
+				const eol = /\r\n|\r|\n/.exec(text)?.[0] || '\n';
+				const first = /[^\r\n]*\S[^\r\n]*(?:\r\n|\r|\n|$)/.exec(text);
+				const at = first ? first.index + first[0].length : text.length;
+				const prefix = text.slice(0, at), rest = text.slice(at);
+				text = prefix + (prefix && !/[\r\n]$/.test(prefix) ? eol : '') + eol
+					+ claim.lines.join('\n').replace(/\n/g, eol) + eol + (rest && !/^[\r\n]/.test(rest) ? eol : '') + rest;
+			}
+			text = (front.present ? front.bom + front.block : '') + text;
+			const category = categoryFor(e.name, ownTitle);
+			if (category) addSection(category);
+			const file = noteFileName(text, pool); pool.push(file);
+			const entry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''};
+			if (category) entry.category = category;
+			const modified = claim && claim.modified;
+			if (modified !== undefined) entry.modified = modified;
+			built.push({file, text: importTags(text, claim?.tags || [], warnings, e.name), entry, sourceName: e.sourceName, rootId: e.rootId ?? '', propertySourceName: claim?.sourceName, warnings, created: claim?.created ?? -Infinity});
+		} catch (_) { skipped.push({name: e.name, why: 'could not be read'}); }
+	}
+	for (const row of standalone) {
+		try {
+			const text = '# ' + literalInline(row.title) + '\n\n' + row.lines.join('\n') + '\n';
+			if (row.category) addSection(row.category);
+			const file = noteFileName(text, pool); pool.push(file);
+			const entry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: ''};
+			if (row.category) entry.category = row.category;
+			if (row.modified !== undefined) entry.modified = row.modified;
+			built.push({file, text: importTags(text, row.tags, row.warnings, row.title), entry, sourceName: row.sourceName, sourceItem: row.sourceItem, rootId: row.rootId, warnings: row.warnings, created: row.created ?? -Infinity});
+		} catch (_) { skipped.push({name: row.title, why: 'could not be read'}); }
+	}
+
+	const byNewest = built.slice().sort((a, b) => b.created - a.created);
+	let last = lastOrder;
+	for (const n of byNewest) { last = orderAfter(last); n.entry.order = last; if (Number.isFinite(n.created) && n.entry.created === undefined) n.entry.created = Math.round(n.created); }
+
+	const read = csv => built.filter(note => note.propertySourceName === csv.sourceName || note.sourceName === csv.sourceName).map(note => note.file);
+	return finishImportCharacters({notes: built.map(({created, ...note}) => note), skipped, sections, pictures, consumed: [...views.map(({view, all}) => ({name: view.sourceName, rootId: view.rootId ?? '', files: read(all)})), ...csvEntries.filter(csv => read(csv).length).map(csv => ({name: csv.sourceName, rootId: csv.rootId ?? '', files: read(csv)}))]});
+}

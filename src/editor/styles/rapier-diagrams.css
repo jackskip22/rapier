@@ -1,0 +1,27 @@
+.rapier-diagrams-view{position:fixed;inset:0;z-index:880;display:flex;flex-direction:column;background:var(--color-bg);color:var(--color-text);overflow:hidden}
+.rapier-diagrams-view__bar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);min-height:48px;padding:env(safe-area-inset-top,0px) max(var(--space-4),env(safe-area-inset-right,0px)) 0 max(var(--space-4),env(safe-area-inset-left,0px));max-width:720px;width:100%;margin:0 auto;box-sizing:border-box}
+.rapier-diagrams-view__heading{display:flex;align-items:center;min-width:0}
+.rapier-diagrams-view__title{font:var(--fw-semibold) var(--text-lg)/1 var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase}
+.rapier-diagrams-view__bar>.navigator-close{width:48px;height:48px;margin-right:calc(-1 * var(--space-2))}
+.rapier-diagrams-view__body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:var(--space-6);max-width:720px;width:100%;margin:0 auto;box-sizing:border-box;padding:var(--space-2) max(var(--space-4),env(safe-area-inset-right,0px)) calc(var(--space-8) + env(safe-area-inset-bottom,0px)) max(var(--space-4),env(safe-area-inset-left,0px))}
+.rapier-diagrams-view__note{margin:0;font:var(--fw-regular) var(--text-sm)/1.4 var(--font-sans)}
+.rapier-diagrams-view__note:empty{display:none}
+.rapier-diagrams-view__stage{display:flex;flex-direction:column;gap:var(--space-2);min-width:0}
+.rapier-diagrams-view__drawing{min-height:160px;overflow:auto;display:flex;justify-content:center;align-items:flex-start}
+.rapier-diagrams-view__drawing>svg{flex:none;margin:auto}
+.rapier-diagrams-view__write{display:flex;flex-direction:column;gap:var(--space-6);min-width:0}
+.rapier-diagrams-view__source{display:block;box-sizing:border-box;width:100%;min-height:12em;resize:vertical;margin:0;padding:var(--space-3) var(--space-4);border:0;border-radius:0;outline:none;background:var(--color-surface-2);color:var(--color-text);font:var(--fw-regular) var(--text-sm)/1.5 var(--font-mono);tab-size:2;white-space:pre;overflow:auto}
+.rapier-diagrams-view__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2)}
+.rapier-diagrams-view__grid .settings-action-btn,.rapier-diagrams-view__part>.settings-action-btn,.rapier-diagrams-view__install{justify-content:center;text-align:center}
+.rapier-diagrams-view__part{display:flex;flex-direction:column;gap:var(--space-2)}
+.rapier-diagrams-view>#toast-root{z-index:2}
+@media (min-width:900px){
+	.rapier-diagrams-view__bar,.rapier-diagrams-view__body{max-width:1280px}
+	.rapier-diagrams-view__body{display:grid;grid-template-columns:minmax(320px,5fr) minmax(0,7fr);grid-template-areas:"note note" "write stage" "foot foot";align-content:start;column-gap:var(--space-8)}
+	.rapier-diagrams-view__body>.rapier-diagrams-view__note{grid-area:note}
+	.rapier-diagrams-view__write{grid-area:write}
+	.rapier-diagrams-view__stage{grid-area:stage;align-self:start}
+	.rapier-diagrams-view__drawing{min-height:420px}
+	.rapier-diagrams-view__body>.rapier-tool-footer{grid-area:foot}
+	.rapier-diagrams-view__kinds{grid-template-columns:repeat(3,minmax(0,1fr))}
+}

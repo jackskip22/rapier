@@ -1,0 +1,353 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+const _rapierEmbedFramed = window.self !== window.top;
+const _rapierEmbedMode = !_rapierEmbedFramed ? 'top' : new URLSearchParams(location.search).get('embed') === '1' ? 'host' : _rapierHasSameOriginParent() ? 'local' : 'refused';
+const _rapierEmbed = {
+	framed: _rapierEmbedFramed, local: _rapierEmbedMode === 'local', active: _rapierEmbedMode === 'host', refused: _rapierEmbedMode === 'refused',
+	ready: false, heldConnect: null, connected: false, loaded: false, loading: false, loadToken: 0, loadAbort: null,
+	port: null, portGeneration: 0, hostOrigin: '', sessionId: '', documentId: '', baseRevision: null,
+	capabilities: null, settings: null, readyTimer: null, stateSignature: '', requestLedger: new Map(),
+};
+_rapierEmbed.fileOpen = globalThis.RapierEmbedContract.createFilePicker({
+	document,
+	refusal() {
+		if (!_rapierEmbed.connected || !_rapierEmbed.loaded) return 'open_disconnected';
+		if (!_rapierEmbed.capabilities?.includes('open')) return 'open_not_granted';
+		return _rapierEmbed.loading ? 'open_busy' : '';
+	},
+	snapshot: () => ({port: _rapierEmbed.port, portGeneration: _rapierEmbed.portGeneration,
+		baseRevision: _rapierEmbed.baseRevision, generation: reader.generation}),
+	current: row => row.port === _rapierEmbed.port && row.portGeneration === _rapierEmbed.portGeneration &&
+		row.baseRevision === _rapierEmbed.baseRevision && row.generation === reader.generation,
+	settle: () => true,
+	post: (...args) => _rapierEmbedPost(...args),
+	open: (file, ticket) => readerOpenFile(file, {ticket, generation: ticket.generation}),
+	notify: code => readerToast(code === 'open_stale' ? 'Document changed. Open the file again.' : 'Can’t open a file here.', 'info'),
+	error: error => { if (error?.name !== 'AbortError') (console.error(error), readerToast('Couldn’t open that file.', 'error')); },
+});
+const READER_GRANTS = ['open', 'changes'];
+const READER_FEATURES = ['find', 'readAloud', 'share'];
+const READER_STYLE_LIMIT = 4 * 1024 * 1024;
+
+function readerPublishState() {
+	_rapierEmbed.fileOpen.check();
+	if (!_rapierEmbed.connected || !_rapierEmbed.capabilities?.includes('changes')) { _rapierEmbed.stateSignature = ''; return; }
+	const state = {loaded: _rapierEmbed.loaded, dirty: false, saving: false, closing: false, readOnly: true, filename: reader.filename, docKind: reader.docKind};
+	const signature = JSON.stringify(state);
+	if (signature === _rapierEmbed.stateSignature) return;
+	if (_rapierEmbedPost('document-state', state)) _rapierEmbed.stateSignature = signature;
+}
+
+function readerEmbedListen() {
+	const early = globalThis.RapierEarlyConnects?.take?.() || [];
+	if (!_rapierEmbed.active) return;
+	addEventListener('message', readerEmbedConnect);
+	for (const event of early) readerEmbedConnect(event);
+}
+
+function readerEmbedConnect(event) {
+	if (!_rapierEmbed.active || event.source !== window.parent || _rapierAdmitParentOrigin(event.origin) !== event.origin ||
+			(_rapierEmbed.hostOrigin && event.origin !== _rapierEmbed.hostOrigin)) return;
+	const data = event.data;
+	if (!data || typeof data !== 'object' || Array.isArray(data) || data.type !== 'rapier-connect') return;
+	const refuse = (code, extra = {}) => {
+		try {
+			event.ports[0].postMessage({type: 'protocol-error', sessionId: data.sessionId, documentId: data.documentId, requestId: null, baseRevision: null, payload: {code, ...extra}});
+			event.ports[0].close();
+		} catch (_) {}
+	};
+	const unknown = Object.keys(data).find(key => !['type', 'sessionId', 'documentId', 'capabilities', 'theme', 'contract', 'settings', 'agent'].includes(key));
+	if (unknown) { refuse('invalid_payload', {reason: 'unknown connect field ' + unknown.slice(0, 64)}); return; }
+	const CONTRACT = 1;
+	if (data.contract !== undefined && data.contract !== CONTRACT) { refuse('contract_unsupported', {speaks: [CONTRACT]}); return; }
+	if (data.theme !== undefined && !_rapierEmbedValidTheme(data.theme)) { refuse('invalid_payload', {reason: 'theme must be light, dark or system'}); return; }
+	const offered = data.capabilities === undefined ? [] : data.capabilities;
+	if (!Array.isArray(offered) || offered.length > READER_GRANTS.length || new Set(offered).size !== offered.length || offered.some(name => !READER_GRANTS.includes(name))) { refuse('capabilities_invalid'); return; }
+	let settings;
+	try {
+		settings = globalThis.RapierEmbedContract.normalizeSettings(data.settings, {
+			features: globalThis.RapierEmbedContract.FEATURES.filter(name => READER_FEATURES.includes(name)),
+			accents: PREFERENCE_ACCENTS.map(preset => preset.name),
+			limits: {documentBytes: RapierTextCodec.maxDocumentBytes, pictureBytes: 16 * 1024 * 1024},
+		});
+	} catch (error) { refuse(error.code || 'settings_invalid'); return; }
+	if (_rapierEmbed.settings && JSON.stringify(_rapierEmbed.settings) !== JSON.stringify(settings)) { refuse('settings_changed'); return; }
+	const capabilities = Object.freeze(READER_GRANTS.filter(name => offered.includes(name)));
+	if (_rapierEmbed.capabilities && JSON.stringify(_rapierEmbed.capabilities) !== JSON.stringify(capabilities)) { refuse('capabilities_changed'); return; }
+	if (typeof data.sessionId !== 'string' || !data.sessionId || data.sessionId.length > 256 || typeof data.documentId !== 'string' || !data.documentId || data.documentId.length > 256) {
+		refuse('invalid_payload', {reason: 'sessionId and documentId must be nonempty strings of at most 256 code units'}); return;
+	}
+	const port = event.ports?.length === 1 ? event.ports[0] : null;
+	if (!port) return;
+	if (!_rapierEmbed.ready) {
+		try { _rapierEmbed.heldConnect?.ports[0].close(); } catch (_) {}
+		_rapierEmbed.heldConnect = event;
+		return;
+	}
+	if (_rapierEmbed.loaded && (data.sessionId !== _rapierEmbed.sessionId || data.documentId !== _rapierEmbed.documentId)) { try { port.close(); } catch (_) {} return; }
+	const previous = _rapierEmbed.port;
+	if (previous && previous !== port) {
+		if (_rapierEmbed.loading) { try { port.close(); } catch (_) {} return; }
+		_rapierEmbed.fileOpen.cancel('open_disconnected');
+		try { previous.close(); } catch (_) {}
+	}
+	const generation = ++_rapierEmbed.portGeneration;
+	Object.assign(_rapierEmbed, {capabilities, hostOrigin: event.origin, sessionId: data.sessionId, documentId: data.documentId, port, connected: true, requestLedger: new Map()});
+	if (!_rapierEmbed.settings) {
+		_rapierEmbed.settings = settings;
+		document.documentElement.setAttribute('data-rapier-host-features', settings.features.join(' '));
+		document.documentElement.lang = settings.language;
+		if (settings.palette) reader.hostAccent = settings.palette.accent;
+	}
+	if (data.theme !== undefined) reader.hostTheme = data.theme;
+	readerApplyView();
+	readerRenderSettings();
+	clearTimeout(_rapierEmbed.readyTimer);
+	port.addEventListener('message', message => readerEmbedMessage(message, port, generation));
+	port.addEventListener('messageerror', () => {
+		if (port !== _rapierEmbed.port || generation !== _rapierEmbed.portGeneration) return;
+		readerEmbedCancelLoad();
+		_rapierEmbed.fileOpen.cancel('open_disconnected', false);
+		try { port.close(); } catch (_) {}
+		_rapierEmbed.connected = false;
+		_rapierEmbed.port = null;
+		if (readerSpeech.active) readerStopReading();
+	});
+	port.start();
+	_rapierEmbedPost('connected', {appVersion: READER_VERSION || '0.0.0', contract: CONTRACT, capabilities, settings: _rapierEmbed.settings});
+	_rapierEmbed.stateSignature = '';
+	readerPublishState();
+}
+
+function readerEmbedMessage(event, port, generation) {
+	if (port !== _rapierEmbed.port || generation !== _rapierEmbed.portGeneration) return;
+	const data = event && event.data;
+	if (!_rapierEmbedValidEnvelope(data)) return;
+	if (data.type === 'style') { readerHostStyle(data); return; }
+	if (!RAPIER_EMBED_KNOWN_TYPES.has(data.type) && !['asset-ack', 'asset-nack', 'open-ack', 'open-result', 'open-nack'].includes(data.type)) {
+		_rapierEmbedPost('protocol-error', {code: 'unknown_command', reason: 'unrecognized message type'}, data.requestId);
+		return;
+	}
+	const required = {load: 'open', compare: 'compare', save: 'read', 'save-ack': 'read', 'save-nack': 'read', close: 'close', 'close-decision': 'close', 'asset-ack': 'assets', 'asset-nack': 'assets', 'open-ack': 'open', 'open-result': 'open', 'open-nack': 'open'}[data.type];
+	if (required && !_rapierEmbed.capabilities?.includes(required)) {
+		_rapierEmbedPost('protocol-error', {code: 'capability_denied', capability: required}, data.requestId);
+		return;
+	}
+	if (['open-ack', 'open-result', 'open-nack'].includes(data.type)) {
+		const code = _rapierEmbed.fileOpen.answer(data);
+		if (code) _rapierEmbedPost('protocol-error', {code}, data.requestId);
+		return;
+	}
+	const payload = data.payload || {};
+	const fields = {load: ['content', 'filename', 'revision', 'readOnly', 'title', 'baseUrl'], disconnect: [], theme: ['theme']}[data.type];
+	const text = (key, max) => payload[key] === undefined || typeof payload[key] === 'string' && payload[key].length <= max;
+	const valid = fields && Object.keys(payload).every(key => fields.includes(key)) && text('filename', RAPIER_EMBED_FILENAME_MAX_CHARS) && text('title', 240)
+		&& (data.type !== 'load' || typeof payload.content === 'string' && _rapierEmbedValidRevision(payload.revision ?? data.baseRevision))
+		&& (payload.readOnly === undefined || typeof payload.readOnly === 'boolean')
+		&& (data.type !== 'theme' || _rapierEmbedValidTheme(payload.theme));
+	if (!valid) {
+		_rapierEmbedPost('protocol-error', {code: 'invalid_payload', reason: 'malformed ' + data.type + ' payload'}, data.requestId);
+		return;
+	}
+	if (data.type === 'theme') { reader.hostTheme = payload.theme; readerApplyView(); readerRenderSettings(); return; }
+	if (data.type === 'load') { void readerEmbedLoad(data); return; }
+	if (data.type === 'disconnect') {
+		readerEmbedCancelLoad();
+		_rapierEmbed.fileOpen.cancel('open_disconnected', false);
+		try { port.close(); } catch (_) {}
+		_rapierEmbed.connected = false;
+		if (_rapierEmbed.port === port) _rapierEmbed.port = null;
+		if (readerSpeech.active) readerStopReading();
+	}
+}
+
+async function readerEmbedLoad(data) {
+	if (!_rapierEmbedValidRequestId(data.requestId)) return;
+	const port = _rapierEmbed.port, generation = _rapierEmbed.portGeneration;
+	const current = () => port === _rapierEmbed.port && generation === _rapierEmbed.portGeneration;
+	const admitted = _rapierEmbedLedgerAdmit('load', data);
+	if (admitted.outcome === 'conflict') { _rapierEmbedPost('protocol-error', {code: 'request_conflict', reason: 'load reused a request id with a different payload'}, data.requestId); return; }
+	if (admitted.outcome === 'saturated') { _rapierEmbedPost('protocol-error', {code: 'busy', reason: 'load arrived while every request this connection remembers is still pending'}, data.requestId); return; }
+	if (admitted.outcome === 'replay' || admitted.outcome === 'join') {
+		const answered = admitted.outcome === 'replay' ? admitted.entry : await admitted.entry.promise;
+		if (current() && answered && answered.type) _rapierEmbedPost(answered.type, answered.payload, data.requestId);
+		return;
+	}
+	const entry = admitted.entry;
+	const respond = (type, payload) => {
+		if (entry.state !== 'pending') return;
+		_rapierEmbedLedgerSettle(entry, type, payload);
+		if (current()) _rapierEmbedPost(type, payload, data.requestId);
+	};
+	try { await readerEmbedLoadRun(data, respond, entry); } finally { _rapierEmbedLedgerSettle(entry, null, null); }
+}
+
+function readerEmbedCancelLoad() {
+	const controller = _rapierEmbed.loadAbort;
+	if (!controller) return;
+	_rapierEmbed.loadAbort = null;
+	_rapierEmbed.loadToken++;
+	_rapierEmbed.loading = false;
+	_rapierEmbedLedgerSettle(_rapierEmbed.loadEntry, null, null);
+	_rapierEmbed.loadEntry = null;
+	_rapierEmbed.loadRequestId = '';
+	controller.abort();
+}
+function readerLoadDeadline() {
+	const over = globalThis.__rapierLoadDeadlineMs;
+	return typeof over === 'number' && over >= 0 && over <= 120000 ? over : 120000;
+}
+
+async function readerEmbedLoadRun(data, respond, entry) {
+	if (_rapierEmbed.loading && performance.now() - _rapierEmbed.loadStarted < readerLoadDeadline()) {
+		respond('load-nack', {code: 'load_busy', reason: 'another document is still loading'});
+		return;
+	}
+	if (_rapierEmbed.loading) {
+		const stale = _rapierEmbed.loadEntry, staleId = _rapierEmbed.loadRequestId;
+		const payload = {code: 'load_timeout', reason: 'the reader did not finish loading'};
+		if (stale && stale !== entry) _rapierEmbedLedgerSettle(stale, 'load-nack', payload);
+		if (staleId) _rapierEmbedPost('load-nack', payload, staleId);
+		readerEmbedCancelLoad();
+	}
+	const payload = data.payload || {};
+	const revision = payload.revision == null ? data.baseRevision : payload.revision;
+	if (typeof payload.content !== 'string' || !_rapierEmbedValidRevision(revision)) { respond('load-nack', {code: 'invalid_payload', reason: 'invalid document payload'}); return; }
+	const limit = _rapierEmbed.settings?.limits.documentBytes || RapierTextCodec.maxDocumentBytes;
+	if (new Blob([payload.content]).size > limit) { respond('load-nack', {code: 'document_too_large', limit}); return; }
+	let content;
+	try { content = RapierTextCodec.normalizeProtocol(payload.content); } catch (error) { respond('load-nack', {code: 'invalid_payload', reason: /plain UTF-8/.test(error?.message) ? 'the document holds a NUL or a lone surrogate, which plain text cannot' : 'invalid document payload'}); return; }
+	let pictureBase;
+	try { pictureBase = globalThis.RapierEmbedContract.pictureBase(payload.baseUrl); }
+	catch (error) { respond('load-nack', {code: error.code, reason: error.message}); return; }
+	const filename = typeof payload.filename === 'string' && payload.filename.trim() ? payload.filename : 'document.md';
+	if (filename.length > RAPIER_EMBED_FILENAME_MAX_CHARS || !_rapierDocumentNameIsAdmissible(filename)) { respond('load-nack', {code: 'invalid_filename', reason: 'invalid document filename'}); return; }
+	const operation = ++_rapierEmbed.loadToken, controller = new AbortController();
+	const port = _rapierEmbed.port, generation = _rapierEmbed.portGeneration;
+	const current = () => operation === _rapierEmbed.loadToken && !controller.signal.aborted &&
+		port === _rapierEmbed.port && generation === _rapierEmbed.portGeneration && _rapierEmbed.connected;
+	_rapierEmbed.loadAbort = controller;
+	_rapierEmbed.loading = true;
+	_rapierEmbed.loadStarted = performance.now();
+	_rapierEmbed.loadRequestId = data.requestId;
+	_rapierEmbed.loadEntry = entry;
+	_rapierEmbed.fileOpen.cancel('open_stale');
+	let stopped, cancelRender, stallTimer;
+	const canceled = new Promise(resolve => {
+		stopped = () => resolve(false);
+		controller.signal.addEventListener('abort', stopped, {once: true});
+	});
+	const deadline = setTimeout(() => {
+		if (!current()) return;
+		respond('load-nack', {code: 'load_timeout', reason: 'the reader did not finish loading'});
+		readerEmbedCancelLoad();
+		readerPublishState();
+	}, readerLoadDeadline());
+	try {
+		const stall = globalThis.__rapierStallLoadMs;
+		if (typeof stall === 'number' && stall > 0 && stall <= 5000)
+			await Promise.race([new Promise(resolve => { stallTimer = setTimeout(resolve, stall); }), canceled]);
+		if (!current()) return;
+		const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 240) : '';
+		globalThis.RapierEmbedPictureBase = pictureBase;
+		const reading = readerLoad(content, filename, title);
+		const readerGeneration = reader.generation;
+		cancelRender = () => {
+			if (reader.generation !== readerGeneration) return;
+			reader.render++; reader.generation++;
+			if (reader.parts) { readerPartsRetire(reader.parts); reader.parts = null; }
+		};
+		controller.signal.addEventListener('abort', cancelRender, {once: true});
+		if (controller.signal.aborted) cancelRender();
+		const shown = await Promise.race([reading, canceled]);
+		if (!current()) return;
+		if (!shown) { respond('load-nack', {code: 'load_superseded', reason: 'a newer document replaced the host load'}); return; }
+		_rapierEmbed.baseRevision = revision;
+		_rapierEmbed.loaded = true;
+		respond('load-ack', {revision, recoveredDraft: false, readOnly: true});
+	} catch (error) {
+		if (!current()) return;
+		try { console.warn('[rapier-embed] document load failed', error); } catch (_) {}
+		respond('load-nack', {code: 'document_unshowable', reason: 'document could not be shown'});
+	} finally {
+		clearTimeout(deadline); clearTimeout(stallTimer);
+		controller.signal.removeEventListener('abort', stopped);
+		if (cancelRender) controller.signal.removeEventListener('abort', cancelRender);
+		if (_rapierEmbed.loadAbort === controller) {
+			_rapierEmbed.loadAbort = null;
+			_rapierEmbed.loading = false;
+			_rapierEmbed.loadEntry = null;
+			_rapierEmbed.loadRequestId = '';
+			readerPublishState();
+		}
+	}
+}
+
+function readerHostStyle(data) {
+	if (!_rapierEmbed.capabilities.includes('open')) {
+		_rapierEmbedPost('protocol-error', {code: 'capability_denied', capability: 'open'}, data.requestId);
+		return;
+	}
+	const payload = data.payload || {}, fonts = payload.fonts === undefined ? [] : payload.fonts;
+	const text = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max;
+	const face = row => row && typeof row === 'object' && !Array.isArray(row) && Object.keys(row).every(key => ['family', 'source', 'descriptors'].includes(key)) && text(row.family, 256) &&
+		(text(row.source, READER_STYLE_LIMIT) || row.source instanceof ArrayBuffer || ArrayBuffer.isView(row.source)) &&
+		(row.descriptors === undefined || row.descriptors && typeof row.descriptors === 'object' && !Array.isArray(row.descriptors) && Object.values(row.descriptors).every(value => text(value, 256)));
+	const valid = Object.keys(payload).every(key => ['css', 'fonts'].includes(key)) && (payload.css === undefined || typeof payload.css === 'string' && payload.css.length <= READER_STYLE_LIMIT) &&
+		Array.isArray(fonts) && fonts.length <= 16 && fonts.every(face);
+	if (!valid) { _rapierEmbedPost('protocol-error', {code: 'invalid_payload', reason: 'malformed style payload'}, data.requestId); return; }
+	if (payload.css !== undefined) {
+		let sheet = $('rapier-host-style');
+		if (!sheet) { sheet = document.createElement('style'); sheet.id = 'rapier-host-style'; document.head.append(sheet); }
+		sheet.textContent = _rapierRenderModule('render-sanitize')._rapierStylesheetWithoutRemoteUrls(payload.css);
+		readerApplyView();
+		readerRenderSettings();
+	}
+	for (const row of fonts) {
+		const failed = error => _rapierEmbedPost('protocol-error', {code: 'font_invalid', reason: String(error?.message || error).slice(0, 500)}, data.requestId);
+		try {
+			const loaded = new FontFace(row.family, row.source, row.descriptors || {});
+			document.fonts.add(loaded);
+			loaded.load().catch(failed);
+		} catch (error) { failed(error); }
+	}
+}
+
+function readerEmbedEscapeLeaves() {
+	let leave = false;
+	addEventListener('keydown', event => {
+		const active = document.activeElement;
+		leave = event.key === 'Escape' && !event.repeat && !event.isComposing && _rapierEmbed.connected && !readerDialogs.length &&
+			!(active && (active.isContentEditable || /^(?:INPUT|TEXTAREA|SELECT)$/.test(active.tagName)));
+	}, true);
+	addEventListener('keydown', event => {
+		if (!leave || event.key !== 'Escape' || event.defaultPrevented) return;
+		leave = false;
+		window.parent.postMessage({type: 'rapier-focus-leave', backward: event.shiftKey}, _rapierEmbed.hostOrigin || '*');
+	});
+}
+
+function _rapierEmbedStart() {
+	readerEmbedListen();
+	if (_rapierEmbed.refused) {
+		const refused = $('embed-refused');
+		for (const later of refused.querySelectorAll('template[data-rapier-later]')) later.replaceWith(later.content);
+		refused.hidden = false;
+		return;
+	}
+	if (!_rapierEmbed.active) return;
+	readerEmbedEscapeLeaves();
+	_rapierEmbed.ready = true;
+	const held = _rapierEmbed.heldConnect;
+	_rapierEmbed.heldConnect = null;
+	if (held) readerEmbedConnect(held);
+	clearTimeout(_rapierEmbed.readyTimer);
+	let delay = 250;
+	const announce = () => {
+		if (_rapierEmbed.connected) return;
+		window.parent.postMessage({type: 'rapier-ready'}, _rapierEmbed.hostOrigin || '*');
+		_rapierEmbed.readyTimer = setTimeout(announce, delay);
+		delay = Math.min(delay * 2, 8000);
+	};
+	announce();
+}

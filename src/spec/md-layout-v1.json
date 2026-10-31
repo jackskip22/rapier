@@ -1,0 +1,387 @@
+{
+ "format": "md-layout:v1 conformance vectors",
+ "about": "Each case is a whole HTML comment and the layout a conforming parser returns for it, or null when the comment is not a layout (then it is an ordinary comment and changes nothing). Numbers are plain JSON numbers; line is a number or a string with a pt unit.",
+ "cases": [
+  {
+   "comment": "<!--md-layout:v1 width=47%-->",
+   "layout": {
+    "width": 47
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% x=72%-->",
+   "layout": {
+    "width": 47,
+    "x": 72
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47.5%-->",
+   "layout": {
+    "width": 47.5
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=100%-->",
+   "layout": {
+    "width": 100
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% wrap=around x=72% y=2.4em-->",
+   "layout": {
+    "width": 47,
+    "wrap": "around",
+    "x": 72,
+    "y": 2.4
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% wrap=around x=72% y=-1.5em-->",
+   "layout": {
+    "width": 47,
+    "wrap": "around",
+    "x": 72,
+    "y": -1.5
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% wrap=box x=72% rotate=15deg-->",
+   "layout": {
+    "width": 47,
+    "wrap": "box",
+    "x": 72,
+    "rotate": 15
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% wrap=behind x=50% opacity=30%-->",
+   "layout": {
+    "width": 47,
+    "wrap": "behind",
+    "x": 50,
+    "opacity": 30
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 wrap=front x=10%-->",
+   "layout": {
+    "wrap": "front",
+    "x": 10
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=50% wrap=behind lock=on-->",
+   "layout": {
+    "width": 50,
+    "wrap": "behind",
+    "lock": "on"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 lines=3-->",
+   "layout": {
+    "lines": 3
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 lines=3 wrap=around-->",
+   "layout": {
+    "lines": 3,
+    "wrap": "around"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 lines=12-->",
+   "layout": {
+    "lines": 12
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 align=center-->",
+   "layout": {
+    "align": "center"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 align=justify-->",
+   "layout": {
+    "align": "justify"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 rotate=-8.5deg width=40%-->",
+   "layout": {
+    "rotate": -8.5,
+    "width": 40
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 rotate=180deg width=40%-->",
+   "layout": {
+    "rotate": 180,
+    "width": 40
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 first=1-->",
+   "layout": {
+    "first": 1
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 indent=2.863636 first=-1.395833-->",
+   "layout": {
+    "indent": 2.863636,
+    "first": -1.395833
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 marker=0.5-->",
+   "layout": {
+    "marker": 0.5
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 hyphens=auto-->",
+   "layout": {
+    "hyphens": "auto"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 caps=small-->",
+   "layout": {
+    "caps": "small"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 hanging=on-->",
+   "layout": {
+    "hanging": "on"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 before=6pt after=12pt-->",
+   "layout": {
+    "before": 6,
+    "after": 12
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 before=0pt-->",
+   "layout": {
+    "before": 0
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 line=1.5-->",
+   "layout": {
+    "line": 1.5
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 line=14pt-->",
+   "layout": {
+    "line": "14pt"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 line=14pt+-->",
+   "layout": {
+    "line": "14pt+"
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 caps=small hyphens=auto hanging=on lines=3-->",
+   "layout": {
+    "caps": "small",
+    "hyphens": "auto",
+    "hanging": "on",
+    "lines": 3
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1   width=47%\t x=72%  -->",
+   "layout": {
+    "width": 47,
+    "x": 72
+   }
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=0%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=101%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% width=48%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=047%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 x=72%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 y=2em-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 wrap=sideways-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% wrap=around align=center-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 lines=3 width=40%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 lines=0-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 lines=13-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 rotate=15-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 rotate=-0deg-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 rotate=+15deg-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 rotate=181deg-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 rotate=15.55deg-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 opacity=4%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 opacity=101%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 opacity=30.5%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 first=0.1234567-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 first=65-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 indent=+1-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 lock=off-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 hyphens=on-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 caps=large-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 hanging=off-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 before=721pt-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 before=6-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 after=1.234pt-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 line=0.4-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 line=4.01-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 line=0pt-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 line=014pt-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 color=red-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47%;x=72%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 -->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47% # note-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v2 width=47%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!-- md-layout:v1 width=47%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1width=47%-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47%--> trailing",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47%\n-->",
+   "layout": null
+  },
+  {
+   "comment": "<!--md-layout:v1 width=47%-- >",
+   "layout": null
+  }
+ ]
+}

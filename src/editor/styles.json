@@ -1,0 +1,76 @@
+[
+  {"id": "rapier-document-style", "path": "editor/styles/rapier-document.css"},
+  {"id": "rapier-composer-style", "path": "editor/styles/rapier-composer.css"},
+  {
+    "id": "rapier-font-style",
+    "path": "shell/fonts/fonts.css"
+  },
+  {
+    "id": "rapier-content-style",
+    "path": "spec/markdown-style.css"
+  },
+  {
+    "id": "rapier-app-style",
+    "path": "editor/styles/rapier-app.css"
+  },
+  {
+    "id": "rapier-editor-style",
+    "path": "editor/styles/rapier-editor.css"
+  },
+  {
+    "id": "rapier-highlight-style",
+    "path": "editor/styles/rapier-highlight.css"
+  },
+  {
+    "id": "rapier-source-style",
+    "path": "editor/styles/rapier-source.css"
+  },
+  {
+    "id": "rapier-live-style",
+    "path": "editor/styles/rapier-live.css"
+  },
+  {
+    "id": "rapier-info-style",
+    "path": "editor/styles/rapier-info.css"
+  },
+  {
+    "id": "rapier-changes-style",
+    "path": "editor/styles/rapier-changes.css"
+  },
+  {
+    "id": "rapier-tool-view-style",
+    "path": "editor/styles/rapier-tool-view.css"
+  },
+  {
+    "id": "rapier-draw-style",
+    "path": "editor/styles/rapier-draw.css"
+  },
+  {
+    "id": "rapier-jxl-style",
+    "path": "editor/styles/rapier-jxl.css"
+  },
+  {
+    "id": "rapier-convert-style",
+    "path": "editor/styles/rapier-convert.css"
+  },
+  {
+    "id": "rapier-diff-style",
+    "path": "editor/styles/rapier-diff.css"
+  },
+  {
+    "id": "rapier-diagrams-style",
+    "path": "editor/styles/rapier-diagrams.css"
+  },
+  {
+    "id": "rapier-math-style",
+    "path": "editor/styles/rapier-math.css"
+  },
+  {
+    "id": "rapier-notes-style",
+    "path": "editor/styles/rapier-notes.css"
+  },
+  {
+    "id": "rapier-todo-style",
+    "path": "notes/rapier-todo.css"
+  }
+]

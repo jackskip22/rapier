@@ -1,0 +1,10 @@
+import {registrationReady, syncVerified, clientRegistered, OTHER_SYNC} from './sync-config.mjs';
+export const listProviders = (registrations = OTHER_SYNC) => Object.freeze([
+	Object.freeze({id: 'cloudflare', label: 'Cloudflare R2', ready: registrationReady() && syncVerified(), notice: registrationReady() ? 'sign-in is registered; live verification is still pending.' : 'cloudflare sign-in awaits registration. advanced setup accepts an existing storage key.'}),
+	Object.freeze({id: 's3', label: 'S3-compatible storage', ready: false, notice: 'built in, not on yet: waits on a live test in the android app.'}),
+	Object.freeze({id: 'webdav', label: 'WebDAV', ready: false, notice: 'built in, not on yet: waits on a live test in the android app.'}),
+	Object.freeze({id: 'drive', label: 'Google Drive', ready: clientRegistered(registrations.drive), notice: 'built in, not on yet: waits on rapier’s registration with google.'}),
+	Object.freeze({id: 'onedrive', label: 'OneDrive', ready: clientRegistered(registrations.onedrive), notice: 'built in, not on yet: waits on rapier’s registration with microsoft.'}),
+	Object.freeze({id: 'dropbox', label: 'Dropbox', ready: clientRegistered(registrations.dropbox), notice: 'built in, not on yet: waits on rapier’s registration with dropbox.'}),
+]);
+export const availability = listProviders();

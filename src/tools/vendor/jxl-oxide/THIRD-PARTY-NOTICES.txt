@@ -1,0 +1,6 @@
+jxl-oxide-wasm 0.12.6
+Copyright Wonwoo Choi and contributors.
+https://github.com/tirr-c/jxl-oxide
+Dual-licensed MIT OR Apache-2.0; see LICENSE-MIT and LICENSE-APACHE.
+This package is an independent Rust JPEG XL decoder and PNG output wrapper.
+The original release files are preserved; see PROVENANCE.json for integrity.

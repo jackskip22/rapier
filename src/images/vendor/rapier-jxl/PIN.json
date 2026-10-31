@@ -1,0 +1,35 @@
+{
+  "rebuild": "ESBUILD=<dir>/node_modules/esbuild TERSER=<dir>/node_modules/terser node tools/jxl-vendor.mjs --write",
+  "version": "8.0.1",
+  "source": {
+    "digest": "313b73b7741b8633750c5fe17432152172ac7bfbb1df2a6317dd24046a9871bc",
+    "files": 315
+  },
+  "tools": {
+    "esbuild": "0.25.10",
+    "terser": "5.51.2",
+    "node": "v22.23.4"
+  },
+  "files": {
+    "codec.mjs": {
+      "bytes": 39183,
+      "sha256": "0613ab94b9758d0348fe8c8150a188719f5a0a4f950c0b918380d31ffb438e4a"
+    },
+    "still.worker.mjs": {
+      "bytes": 815562,
+      "sha256": "5008b66b00e61da09190dac2edef6cba878c780a6e4fdfb3997d0191393415b2"
+    },
+    "animation.worker.mjs": {
+      "bytes": 828644,
+      "sha256": "80ef29bfa61a67fe4cd1aa01b6e19a28cb34faec3a78e4c03940b7cfcf9679bc"
+    },
+    "decode.worker.mjs": {
+      "bytes": 375592,
+      "sha256": "e1bb52c720e7a17c246ac1763feff495727e9a21d2c7038440319f21e3158737"
+    },
+    "jpeg.worker.mjs": {
+      "bytes": 465611,
+      "sha256": "d066498e85e258939886fde4aa4b26250bb441ab5d9953fba01057bb88d34ff4"
+    }
+  }
+}

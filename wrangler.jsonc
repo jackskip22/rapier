@@ -1,0 +1,15 @@
+{
+  "name": "rapier",
+  "compatibility_date": "2026-08-08",
+  "workers_dev": false,
+  // Dedicated pages are static files named by _redirects. Assets answer them, including
+  // trailing-slash redirects, and the worker is not invoked for those requests.
+  // The worker runs only when no asset matches.
+  "main": "door-worker.js",
+  "assets": {
+    "directory": "./site",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "not_found_handling": "404-page"
+  }
+}

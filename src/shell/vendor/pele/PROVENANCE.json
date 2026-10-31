@@ -1,0 +1,30 @@
+{
+  "package": "pele",
+  "version": "1.9.0",
+  "source": "https://github.com/obsidianmd/pele",
+  "path": "dist/pele.js",
+  "sourceSha256": "7c40a25eeaf4370fb56c03d9d8f6780051c9c39b6c6ca36d53239075117097f5",
+  "tarball": "https://registry.npmjs.org/pele/-/pele-1.9.0.tgz",
+  "integrity": "sha512-KUmBt7P5JduVKQaP6FKfXiRgH3LBVIKsmdgPJZU7jD3ye6F+Z8fbms+OjivE7rWY09Qx+5X65VKe/9ywKFJ9Sw==",
+  "license": "MIT",
+  "adapter": "1.9.0-native-2",
+  "sources": {
+    "draw/flowchart-mermaid.mjs": "adb396f4317f240a92dd75a538193bf362b3329a223eb055f5783b72f47ad269",
+    "shell/mermaid/api.mjs": "0c012c4c1ab491e141d4c99ca516885de7517f12aa59ef3f791b62e9d00652f9"
+  },
+  "build": {
+    "esbuild": "0.28.2",
+    "target": "es2022",
+    "format": "iife",
+    "globalName": "pele",
+    "minify": true,
+    "nativeClassFields": true,
+    "strictIIFE": true
+  },
+  "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
+  "npmLockSha256": "a942b5de64c9b3600739a432abde9dd4bbf1d9723149fb8a0f6f34e5e4e1d0b7",
+  "bytes": 722820,
+  "sha256": "7d366fe3068048c388fabc1eb43b070718459ca9c2fe8fc940684bd7172046f9",
+  "sha384": "vPm/+HAI9fOqGc1GFl8wFvzMcZjXMhIUXWSdd2qAAVW6fBqjmK6Np6MVprxE8DFK",
+  "noticesSha256": "c93b2cab850a177315a8b410f38b4c0df5190ae539d2053b5bff3b531e1a1409"
+}

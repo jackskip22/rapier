@@ -1,0 +1,726 @@
+import {JsonDepthGuard} from '../kit/json-depth.mjs';
+import {zipEntries, readZipEntries, zipOversizeSkip, ZIP_MAX_ENTRIES, ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
+import {walkZipEntries} from './zip-walk.mjs';
+import {noteFileName, orderAfter, isCodeFile, codeFileName} from './model.mjs';
+import {importAttachments, ownedRecordingStarts} from './import-attachments.mjs';
+import {attachmentHref} from './attachments.mjs';
+import {recordingHref} from './audio.mjs';
+import {importLinkPatches, scanLinks, resolveAssetPath} from './links.mjs';
+import {addBackup, backupSetId, verifyBackupStream, BACKUP_MANIFEST_FILE} from './restore.mjs';
+import {createImportReceipt} from './import-receipt.mjs';
+import {sha256} from './integrity.mjs';
+import {setTags, tagsOf} from './frontmatter.mjs';
+import {readImportText, keepImportCharacters, reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
+
+export async function openBackupFiles(files) {
+	if (!Array.isArray(files) || !files.length || files.length > ZIP_MAX_ENTRIES) throw new Error('Choose a complete backup or its numbered ZIP parts.');
+	const parts = [];
+	for (const file of files) {
+		if (!/\.zip$/i.test(file?.name || '')) throw new Error('Choose only backup ZIP files. Nothing was restored.');
+		const entries = [];
+		for await (const entry of zipEntries(file)) {
+			if (entry.oversize) {
+				if (typeof entry.source !== 'function') throw new Error('This backup member cannot be read whole: ' + entry.name);
+				entries.push({...entry, read: async () => { const source = await entry.source(); return source.read(0, entry.size); }});
+			} else entries.push(entry);
+		}
+		parts.push({entries});
+	}
+	return parts;
+}
+
+const backupSetImports = new WeakSet();
+export async function openBackupSetForImport(files) {
+	const parts = await openBackupFiles(files), groups = new Map();
+	let hasSet = false, hasOther = false;
+	for (let i = 0; i < parts.length; i++) {
+		const marker = parts[i].entries.find(entry => entry.name === BACKUP_MANIFEST_FILE);
+		let manifest = null;
+		if (marker) {
+			if (marker.size > ZIP_WRITE_METADATA_BYTES) throw new Error('The backup manifest exceeds its file-details bound.');
+			manifest = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(await marker.read()));
+		}
+		if (manifest?.set) hasSet = true; else hasOther = true;
+		const key = manifest?.set ? 'set:' + manifest.set.id : 'pick:' + i;
+		if (!groups.has(key)) groups.set(key, []);
+		groups.get(key).push(parts[i]);
+	}
+	if (!hasSet) return null;
+	if (hasOther) throw new Error('Choose backup parts without other archives. Add ordinary archives separately. Nothing was imported.');
+	for (const selected of groups.values()) await verifyBackupStream({parts:selected}, {partial:true});
+	const out = [];
+	for (let i = 0; i < parts.length; i++) for (let j = 0; j < parts[i].entries.length; j++) {
+		const entry = parts[i].entries[j], bytes = await entry.read(), characterWarnings = [];
+		const row = {name:entry.name, bytes, size:bytes.length, rootId:'pick:' + i, rootName:files[i].name, inputId:'pick:' + i + ':entry:' + j, expanded:true, characterWarnings};
+		if (TEXT_EXT.test(row.name)) row.text = readImportText({bytes}, characterWarnings, row.name);
+		Object.freeze(characterWarnings); out.push(Object.freeze(row));
+	}
+	out.picked = Object.freeze(files.map((file, i) => Object.freeze({rootId:'pick:' + i, name:file.name, byteLength:file.size, kind:'container'})));
+	Object.freeze(out); backupSetImports.add(out); return out;
+}
+
+export const IMPORT_SOURCES = Object.freeze(['rapier', 'keep', 'markdown', 'notion', 'evernote', 'html', 'zoho', 'joplin', 'simplenote', 'standardnotes', 'textbundle', 'dayone', 'roam', 'logseq', 'paper', 'code']);
+export const IMPORT_MAX_ENTRIES = ZIP_MAX_ENTRIES;
+export const IMPORT_MAX_BYTES = ZIP_READ_MAX_BYTES;
+export const IMPORT_JSON_MAX_BYTES = 25 * 1024 * 1024;
+export function parseImportJson(text) {
+	new JsonDepthGuard(128, {label: 'import JSON'}).write(text);
+	return JSON.parse(text);
+}
+
+export function importNames(pool) {
+	const taken = new Set(), suffixes = new Map(); let at = 0;
+	return text => {
+		for (; at < pool.length; at++) taken.add(pool[at].toLowerCase());
+		const file = noteFileName(text, [], {taken, suffixes});
+		pool.push(file); taken.add(file.toLowerCase()); at++;
+		return file;
+	};
+}
+const TEXT_EXT = /\.(?:json|md|markdown|txt|text|csv|html?|mht|mhtml|znote|zoho|enex|xml|yaml|yml|opml)$/i;
+const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|jxl|bmp|svg|heic|heif|avif|ico)$/i;
+const CONTAINER_EXT = /\.(?:zip|textpack|bear2bk)$/i;
+const SYSTEM_FILE = /(?:^|\/)(?:__MACOSX\/|(?:\.DS_Store|Thumbs\.db|desktop\.ini)$)/i;
+const SYSTEM_WHY = 'operating system file, not a note; it stays in the original export';
+const enc = new TextEncoder();
+const baseOf = name => String(name).split(/[\\/]/).pop();
+const extOf = name => /\.([^./\\]+)$/.exec(String(name))?.[1].toLowerCase() || '';
+const bytesOf = entry => entry?.bytes instanceof Uint8Array ? entry.bytes : entry?.bytes instanceof ArrayBuffer ? new Uint8Array(entry.bytes) : enc.encode(typeof entry?.text === 'string' ? entry.text : '');
+const byteLength = entry => entry?.oversize && Number.isSafeInteger(entry.size) && entry.size >= 0 ? entry.size : bytesOf(entry).length;
+const message = error => String(error?.message || error);
+function archiveRefusal(error) {
+	const reason = {entries: 'This archive has too many files for one import.', bytes: 'This archive opens into more data than Rapier can bring in at once.', metadata: 'This archive has more file details than Rapier can handle in one import.'}[error?.zipBudget];
+	return reason ? reason + ' Nothing from this archive was imported. Keep the original ZIP. You can extract it with a ZIP tool to recover its files, but importing the notes alone does not restore their recordings or history.'
+		: 'could not be read as a zip: ' + message(error);
+}
+const pathOK = name => typeof name === 'string' && !!name && !/[\0\r\n]/.test(name) && !/^(?:[\\/]|[a-z]:)/i.test(name) && !name.replace(/\\/g, '/').split('/').some(p => p === '..');
+const sameInput = (a, b) => a.inputId && a.inputId === b.inputId;
+
+const emptySourceValue = value => value === undefined || value === null || value === ''
+	|| Array.isArray(value) && !value.length || object(value) && !Object.keys(value).length;
+const FIELD_LABELS = {publicURL:'publishing link',collaboratorEmails:'collaborator email addresses',sharees:'collaborator email addresses',
+	created_time:'storage creation time',updated_time:'storage edit time',deleted_time:'original deletion time',
+	'reminder-order':'reminder order',protected:'protection setting'};
+const fieldLabel = key => Object.hasOwn(FIELD_LABELS, key) ? FIELD_LABELS[key] : key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ').toLowerCase();
+export function importMetadata(source, represented, warnings, subject, {unset, labels = {}, at = ''} = {}) {
+	if (!object(source)) return;
+	const kept = Object.entries(source).filter(([key, value]) => !represented.includes(key) && !emptySourceValue(value) && !unset?.(key, value))
+		.map(([key, value]) => [at ? at + '.' + key : key, value, Object.hasOwn(labels, key) ? labels[key] : fieldLabel(key)]);
+	if (kept.length) warnings.push({code: 'source_metadata', subject, fields: Object.fromEntries(kept.map(([path, value]) => [path, value])),
+		labels: Object.fromEntries(kept.map(([path, , label]) => [path, label])),
+		message: subject + ' not applied: ' + [...new Set(kept.map(([, , label]) => label))].join(', ') + '. Their values stay in the original export and in this import record.'});
+}
+export function importDate(value, parsed, warnings, field) {
+	if (Number.isSafeInteger(parsed) && parsed >= 0) return parsed;
+	if (value !== undefined && value !== null && value !== '') warnings.push({code:'invalid_time', field, value,
+		message: 'The ' + field + ' could not be read, so no date was set. Its value stays in the original export and in this import record.'});
+	return undefined;
+}
+export function importClock(options) {
+	return Number.isSafeInteger(options?.now) && options.now >= 0 ? options.now : Date.now();
+}
+export function importTrash(entry, options, warnings) {
+	if (!entry.trashed) return;
+	entry.trashedAt = importClock(options);
+	warnings.push({code: 'trash_clock', message: 'This note arrived in the recycle bin. Its 7 days there start at this import, not at its old deletion date.'});
+}
+export function importAlarm(entry, at, done, warnings) {
+	if (!Number.isSafeInteger(at) || at <= 0) {
+		if (Number.isSafeInteger(done) && done > 0) warnings.push({code:'alarm_completion', completedAt:done,
+			message:'This note was marked done with no due time, so no reminder was set. Its completion time stays in the original export and in this import record.'});
+		return;
+	}
+	entry.remind = {at};
+	if (Number.isSafeInteger(done) && done > 0) {
+		entry.remindDone = at; entry.remindDoneFor = JSON.stringify(entry.remind);
+		warnings.push({code: 'alarm_completion', completedAt: done, occurrenceAt: at,
+			message: 'The reminder arrived already done. Its completion time stays in the original export and in this import record.'});
+	}
+}
+
+const INLINE_MARKS = /([\\*`\[\]<+~^$=])|(^|[^\p{L}\p{N}])(_)|(_)(?=$|[^\p{L}\p{N}])/gu;
+export function literalDestination(url) {
+	return String(url).replace(/[\u0000-\u0020()<>\\]/g, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase())
+		.replace(/&/g, '&amp;');
+}
+const WEB_ADDRESS = /(https?:\/\/[^\s<>]+)/g, ADDRESS_MARKS = /([\\*`\[\]])/g;
+export function literalInline(text) {
+	return String(text).split(WEB_ADDRESS).map((part, i) => i % 2 ? part.replace(ADDRESS_MARKS, '\\$1') : part.replace(INLINE_MARKS, (m, mark, before, under, under2) =>
+		mark ? '\\' + mark : under ? before + '\\_' : under2 ? '\\_' : m)).join('')
+		.replace(/&(?=(?:#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);)/g, '\\&')
+		.replace(/(^|[ \t])(#+)$/, (_, gap, hashes) => gap + hashes.replace(/#/g, '\\#'));
+}
+export function literalLine(line) {
+	const trimmed = line.replace(/^[ \t]+/, ''), indent = line.length - trimmed.length;
+	let out = literalInline(trimmed);
+	const number = /^(\d{1,9})([.)])(?:\s|$)/.exec(trimmed);
+	if (number) out = number[1] + '\\' + out.slice(number[1].length);
+	else if (/^(?:#{1,6}(?:\s|$)|>|[-+](?:\s|$)|(?:-{3,}|={3,})\s*$|\|)/.test(out)) out = '\\' + out;
+	return (indent ? ' '.repeat(Math.min(indent, 3)) : '') + out;
+}
+export function literalBlock(text) { return String(text).replace(/\r\n?/g, '\n').split('\n').map(literalLine).join('\n'); }
+
+export async function expandImportZips(entries) {
+	const out = [];
+	for (const e of entries) {
+		if (e && typeof e.name === 'string' && /\.zip$/i.test(e.name) && e.bytes) {
+			const start = out.length;
+			try { for await (const z of readZipEntries(e.bytes)) out.push({...z, rootId: e.rootId}); }
+			catch (error) { out.length = start; out.push({...e, unreadable: String(error?.message || error)}); }
+		} else out.push(e);
+	}
+	return out;
+}
+
+export async function readJsonInputs(list, skipped) {
+	const named = [];
+	for (const e of list) {
+		if (!e || typeof e.name !== 'string') continue;
+		if (/\.zip$/i.test(e.name) && e.bytes && e.text === undefined) {
+			const start = named.length;
+			try {
+				for await (const z of readZipEntries(e.bytes)) named.push({...z, rootId: e.rootId});
+			} catch (error) { named.length = start; skipped.push({name: e.name, why: 'could not be read as a zip: ' + String((error && error.message) || error)}); }
+		} else if (e.oversize || e.text !== undefined || e.bytes !== undefined) named.push({...e});
+	}
+	const readable = named.filter(e => { if (!e.oversize) return true; skipped.push(zipOversizeSkip(e)); return false; });
+	for (const e of readable) if (/\.(?:json|txt|text)$/i.test(e.name)) {
+		e.characterWarnings = [];
+		try { e.text = readImportText(e, e.characterWarnings); }
+		catch (error) { skipped.push({name: e.name, why: error.message}); }
+	}
+	return readable;
+}
+
+export function uniquePictureName(base, used) {
+	let name = base, n = 2;
+	while (used.has(name.toLowerCase())) { const dot = base.lastIndexOf('.'); name = (dot > 0 ? base.slice(0, dot) : base) + ' ' + (n++) + (dot > 0 ? base.slice(dot) : ''); }
+	used.add(name.toLowerCase());
+	return name;
+}
+
+export function importTags(text, tags, warnings, name) {
+	const source = String(text ?? ''), wanted = [], malformed = [];
+	for (const tag of Array.isArray(tags) ? tags : []) {
+		if (typeof tag !== 'string') continue;
+		if (Array.isArray(warnings)) reportCharacterChange(tag, tag.trim(), warnings, 'tag name');
+		if (!tag.trim()) continue;
+		(tag.isWellFormed() ? wanted : malformed).push(tag);
+	}
+	const say = (why, named) => { if (Array.isArray(warnings)) warnings.push({code: 'tags-unwritten', name: String(name ?? ''), message: why + ': ' + named.map(tag => tag.isWellFormed() ? tag : JSON.stringify(tag)).join(', ')}); };
+	if (malformed.length) say('These tag names are not valid text, so they were not written into the note', malformed);
+	if (!wanted.length) return source;
+	try { return setTags(source, [...tagsOf(source), ...wanted]); }
+	catch (error) {
+		if (!(error instanceof RangeError)) throw error;
+		say('Its metadata block could not be edited safely, so these tags were not written into the note', wanted);
+		return source;
+	}
+}
+
+function jsonValue(entry) {
+	if (typeof entry?.text !== 'string') return {error: 'JSON is not valid UTF-8 text'};
+	if (byteLength(entry) > IMPORT_JSON_MAX_BYTES) return {error: 'JSON exceeds the 25 MiB source bound'};
+	try { return {value: JSON.parse(entry.text.replace(/^\uFEFF/, ''))}; }
+	catch (_) { return {error: 'invalid JSON'}; }
+}
+function object(value) { return value && typeof value === 'object' && !Array.isArray(value); }
+function jsonSource(value, name, flavour) {
+	if (Array.isArray(value) && value.some(page => object(page) && typeof page.title === 'string')
+		&& (flavour === 'roam' || value.some(page => object(page) && typeof page.title === 'string' && Array.isArray(page.children)
+			&& page.children.some(block => object(block) && typeof block.string === 'string' && typeof block.uid === 'string')))) return 'roam';
+	if (!object(value)) return '';
+	if (Array.isArray(value.entries) && (/^journal\.json$/i.test(baseOf(name)) || value.entries.some(entry => object(entry)
+		&& typeof entry.creationDate === 'string' && (typeof entry.text === 'string' || Array.isArray(entry.photos))))) return 'dayone';
+	if (/^info\.json$/i.test(baseOf(name)) && [1, 2].includes(value.version) && (value.type === undefined || value.type === 'net.daringfireball.markdown')) return 'textbundle';
+	if (Array.isArray(value.activeNotes) || Array.isArray(value.trashedNotes)) return 'simplenote';
+	if (/^notes\.json$/i.test(baseOf(name)) && Number.isInteger(value.version) && object(value.notes)) return 'rapier';
+	if (Array.isArray(value.items) && (!value.items.length || value.items.some(item => object(item) && typeof item.content_type === 'string'))) return 'standardnotes';
+	if (typeof value.title === 'string' && (typeof value.textContent === 'string' || typeof value.textContentHtml === 'string' || Array.isArray(value.listContent) || Array.isArray(value.attachments) || typeof value.isPinned === 'boolean')) return 'keep';
+	return '';
+}
+
+export async function openContainers(entries, limits = {}) {
+	if (backupSetImports.has(entries) && limits.maxBytes === undefined && limits.maxEntries === undefined) return entries;
+	const list = Array.isArray(entries) ? entries : [], out = [], picked = [];
+	const maxBytes = Number.isSafeInteger(limits.maxBytes) && limits.maxBytes >= 0 ? Math.min(limits.maxBytes, IMPORT_MAX_BYTES) : IMPORT_MAX_BYTES;
+	const maxEntries = Number.isSafeInteger(limits.maxEntries) && limits.maxEntries >= 0 ? Math.min(limits.maxEntries, IMPORT_MAX_ENTRIES) : IMPORT_MAX_ENTRIES;
+	let total = 0, sequence = 0;
+	function admit(raw, rootId, rootName, inputId) {
+		const name = typeof raw?.name === 'string' ? raw.name.replace(/\\/g, '/') : String(raw?.name ?? '(unnamed input)');
+		const characterWarnings = [...(raw?.characterWarnings || [])];
+		const inputText = raw?.bytes === undefined && typeof raw?.text === 'string' ? keepImportCharacters(raw.text, characterWarnings, name) : raw?.text;
+		const bytes = raw?.oversize ? undefined : bytesOf({...raw, text: inputText}), entry = {...raw, name, rootId, rootName, inputId, ...(bytes ? {bytes} : {}), expanded: true, characterWarnings};
+		if (raw?.oversize) entry.unreadable = zipOversizeSkip(entry).why;
+		if (raw?.bytes !== undefined && !(raw.bytes instanceof Uint8Array) && !(raw.bytes instanceof ArrayBuffer)) entry.unreadable ||= 'unsupported byte buffer';
+		if (raw?.bytes === undefined && typeof raw?.text !== 'string') entry.unreadable ||= 'input has no text or bytes';
+		if (!pathOK(name)) entry.unreadable = 'not a relative source path';
+		else if (SYSTEM_FILE.test(name)) { entry.unreadable = SYSTEM_WHY; entry.system = true; }
+		if (++sequence > maxEntries || total + byteLength(entry) > maxBytes) entry.unreadable ||= 'import exceeds the admitted entry or byte bound';
+		else total += byteLength(entry);
+		if (!entry.unreadable && TEXT_EXT.test(name)) {
+			try { entry.text = readImportText({bytes}, characterWarnings, name); }
+			catch (_) { delete entry.text; entry.unreadable = 'no readable text'; }
+		}
+		out.push(entry);
+	}
+	for (let i = 0; i < list.length; i++) {
+		const raw = list[i], name = typeof raw?.name === 'string' ? raw.name : '(unnamed input)';
+		if (raw?.expanded && raw.inputId) { admit(raw, String(raw.rootId || ''), raw.rootName || name, raw.inputId); continue; }
+		const bundle = /^(.*?\.textbundle)(?:[\\/]|$)/i.exec(name)?.[1];
+		const container = CONTAINER_EXT.test(name) || /\.jex$/i.test(name) || Array.isArray(raw?.entries);
+		const rootId = String(raw?.rootId ?? (container ? 'pick:' + i : bundle ? 'bundle:' + bundle : 'loose'));
+		const rootName = raw?.rootName || (container ? name : bundle || 'picked files');
+		picked.push({rootId, name, byteLength: Array.isArray(raw?.entries) ? raw.entries.reduce((sum, e) => sum + byteLength(e), 0) : byteLength(raw), kind: container ? 'container' : bundle ? 'folder member' : 'file'});
+		if (Array.isArray(raw?.entries)) {
+			if (!/\.textbundle\/?$/i.test(name)) { admit({...raw, unreadable: 'only textbundle folder entries are offered here'}, rootId, rootName, rootId + ':pick:' + i); continue; }
+			if (!raw.entries.length) { admit({...raw, unreadable: 'empty textbundle'}, rootId, rootName, rootId + ':pick:' + i); continue; }
+			for (let j = 0; j < raw.entries.length; j++) admit({...raw.entries[j], flavour: raw.entries[j]?.flavour ?? raw.flavour}, rootId, rootName, rootId + ':entry:' + j);
+			continue;
+		}
+		if (CONTAINER_EXT.test(name)) {
+			const start = out.length, priorTotal = total, priorSequence = sequence;
+			try {
+				let j = 0;
+				const walk = walkZipEntries(bytesOf(raw), {name, wholeArchiveMarker: BACKUP_MANIFEST_FILE, maxBytes: Math.max(0, maxBytes - total), maxEntries: Math.max(0, maxEntries - sequence)});
+				for (;;) {
+					const step = await walk.next();
+					if (step.done) {
+						total = priorTotal + step.value.inflatedBytes; sequence = priorSequence + step.value.entries;
+						break;
+					}
+					const {archivePath, ...entry} = step.value, nested = archivePath.length > 1;
+					const memberRoot = nested ? rootId + ':zip:' + JSON.stringify(archivePath.slice(1)) : rootId;
+					if (entry.oversize || !entry.name.endsWith('/')) admit({...entry, ...(nested ? {archivePath} : {}), from: name, flavour: raw.flavour}, memberRoot, nested ? archivePath.join('!') : rootName, rootId + ':entry:' + j++);
+				}
+				if (!j) admit({...raw, unreadable: 'empty archive'}, rootId, rootName, rootId + ':pick:' + i);
+
+			} catch (error) {
+				out.length = start; total = priorTotal; sequence = priorSequence;
+				admit({...raw, unreadable: archiveRefusal(error)}, rootId, rootName, rootId + ':pick:' + i);
+			}
+			continue;
+		}
+		admit(raw, rootId, rootName, rootId + ':pick:' + i);
+	}
+	out.picked = Array.isArray(entries?.picked) ? entries.picked.map(row => ({...row})) : picked;
+	return out;
+}
+
+export function sourceOf(entry, flavour = entry?.flavour) {
+	if (!entry || entry.unreadable || typeof entry.name !== 'string') return '';
+	const name = entry.name, ext = extOf(name), text = typeof entry.text === 'string' ? entry.text : '';
+	const bundle = /\.textbundle(?:\/|$)/i.test(name) || /\.(?:textbundle|textpack)$/i.test(entry.rootName || '') || flavour === 'textbundle';
+	if (bundle && /(?:^|\/)text\.(?:md|markdown)$/i.test(name)) return 'textbundle';
+	if (ext === 'enex') return 'evernote';
+	if (ext === 'jex') return 'joplin';
+	if (/^(?:html?|mht|mhtml)$/.test(ext)) return 'html';
+	if (ext === 'znote' || ext === 'zoho') return 'zoho';
+	if (ext === 'json') {
+		const parsed = jsonValue(entry), source = jsonSource(parsed.value, name, flavour);
+		return source || (!parsed.error && importCodeFile(entry) ? 'code' : '');
+	}
+	if (ext === 'txt' || ext === 'text') {
+		if (/^\s*\uFEFF?\s*\{/.test(text)) { const found = jsonSource(jsonValue(entry).value, name, flavour); if (found) return found; }
+		return 'markdown';
+	}
+	if (ext === 'md' || ext === 'markdown') {
+		const normal = text.replace(/\r\n?/g, '\n');
+		const id = /\nid: ([0-9a-f]{32})\n/i.exec(normal + '\n')?.[1];
+		if (id && baseOf(name).replace(/\.[^.]+$/, '').toLowerCase() === id.toLowerCase()
+			&& /\n(?:id|parent_id|type_): [^\n]*\n(?:[a-z_]+: [^\n]*\n)*$/.test(normal.replace(/\n*$/, '\n')) && /\ntype_: \d+\n/.test(normal + '\n')) return 'joplin';
+		if (flavour === 'logseq') return 'logseq';
+		if (flavour === 'paper') return 'paper';
+		return /[0-9a-f]{32}$/i.test(baseOf(name).replace(/\.[^.]+$/, '')) ? 'notion' : 'markdown';
+	}
+	if (ext === 'csv' && /[0-9a-f]{32}/i.test(baseOf(name))) return 'notion';
+	if (IMAGE_EXT.test(name)) return 'picture';
+	return importCodeFile(entry) ? 'code' : '';
+}
+
+function importCodeFile(entry) {
+	const name = entry.name;
+	return isCodeFile(baseOf(name)) && !/(^|\/)(\.obsidian|\.trash|__MACOSX)(\/|$)/i.test(name)
+		&& !(baseOf(name).toLowerCase() === 'info.json' && /\.text(?:bundle|pack)(?:\/|$)/i.test(name + '/' + (entry.rootName || '')));
+}
+function importCode(entries, {lastOrder = ''} = {}) {
+	const notes = [];
+	for (const entry of entries) {
+		const bytes = bytesOf(entry), file = codeFileName(baseOf(entry.name), notes.map(note => note.file));
+		if (!file) throw new Error('This source filename cannot be kept as code.');
+		lastOrder = orderAfter(lastOrder);
+		let text; const warnings = [];
+		try { text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes); }
+		catch (_) { text = new TextDecoder('utf-8', {ignoreBOM: true}).decode(bytes); warnings.push({code: 'code-text-unreadable', message: 'The code file was kept byte for byte. Its encoding is not UTF-8, so text editing and text history are unavailable; keep the original file.'}); }
+		notes.push({file, sourceName: entry.name, rootId: entry.rootId, bytes, text, warnings,
+			entry: {order: lastOrder, pinned: false, skill: false, archived: false, trashed: false, colour: ''}});
+	}
+	return {notes};
+}
+
+function simplenoteTwins(entries, classified) {
+	const twins = new Map();
+	for (const entry of entries) {
+		if (classified.get(entry) !== 'simplenote' || !/(?:^|\/)source\/notes\.json$/i.test(entry.name)) continue;
+		const source = jsonValue(entry).value, prefix = entry.name.replace(/source\/notes\.json$/i, '');
+		for (const [key, directory] of [['activeNotes', ''], ['trashedNotes', 'trash/']]) {
+			const names = new Map();
+			for (const note of Array.isArray(source?.[key]) ? source[key] : []) {
+				if (typeof note?.content !== 'string' || note.tags != null && (!Array.isArray(note.tags) || note.tags.some(tag => typeof tag !== 'string'))) continue;
+				let text = note.content;
+				if (note.tags) {
+					const lines = []; let line = '';
+					for (const tag of note.tags) {
+						if (line.length + tag.length > 75) { lines.push(line); line = tag; }
+						else line += ', ' + tag;
+					}
+					lines.push(line);
+					text += '\n\nTags:\n  ' + lines.map(value => value.replace(/^, /, '')).join('\n  ');
+				}
+				const title = text.split('\n').map(value => value.trim()
+					.replace(/[<>:"/\\|?*\u0000-\u001f\u0080-\u009f]/g, '')
+					.replace(/^\.+$|^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i, '')
+					.replace(/[. ]+$/, '')).find(Boolean)?.slice(0, 40) || 'untitled';
+				const count = names.get(title) || 0; names.set(title, count + 1);
+				const name = (prefix + directory + title + (count ? ' (' + count + ')' : '') + '.txt').toWellFormed();
+				if (!twins.has(name)) twins.set(name, new Set());
+				twins.get(name).add(text);
+			}
+		}
+	}
+	return entry => twins.get(entry.name)?.has(entry.text) === true;
+}
+
+export function sniff(entries, options = {}) {
+	const roots = new Map(), batches = [], unread = [], attachments = [];
+	for (const entry of entries || []) {
+		if (entry.system) { unread.push({...entry, why: entry.unreadable}); continue; }
+		const rootId = String(entry.rootId || '');
+		if (!roots.has(rootId)) roots.set(rootId, []);
+		roots.get(rootId).push(entry);
+	}
+	for (const [rootId, root] of roots) {
+		if (root.some(e => e.name === BACKUP_MANIFEST_FILE)) {
+			const refused = root.find(e => e.unreadable);
+			if (refused) for (const e of root) unread.push({...e, why: refused.unreadable});
+			else {
+				const setId = backupSetId(root), held = setId && batches.find(batch => batch.source === 'rapier' && batch.setId === setId);
+				if (held) { held.entries.push(...root); held.primary.push(...root); }
+				else batches.push({source: 'rapier', rootId, setId, entries: root.slice(), primary: root.slice()});
+			}
+			continue;
+		}
+		const list = root.filter(e => !e.oversize);
+		for (const entry of root) if (entry.oversize) unread.push({...entry, why: entry.unreadable || zipOversizeSkip(entry).why});
+		const classified = new Map(list.map(e => [e, sourceOf(e, e.flavour ?? options.flavour)]));
+		const byDirectory = new Map();
+		for (const entry of list) {
+			const directory = entry.name.slice(0, entry.name.lastIndexOf('/') + 1);
+			if (!byDirectory.has(directory)) byDirectory.set(directory, []);
+			byDirectory.get(directory).push(entry);
+		}
+		for (const member of list.filter(e => classified.get(e) === 'textbundle' && /(?:^|\/)(?:text\.(?:md|markdown)|info\.json)$/i.test(e.name))) {
+			const directory = member.name.slice(0, member.name.lastIndexOf('/') + 1);
+			for (const entry of byDirectory.get(directory) || []) if (/^(?:text\.(?:md|markdown)|info\.json)$/i.test(entry.name.slice(directory.length)) && !entry.unreadable) classified.set(entry, 'textbundle');
+		}
+		const packageDirectories = new Set(list.filter(e => classified.get(e) === 'textbundle')
+			.map(e => e.name.slice(0, e.name.lastIndexOf('/') + 1)));
+		for (const entry of list) {
+			for (let at = entry.name.indexOf('assets/'); at !== -1; at = entry.name.indexOf('assets/', at + 1)) {
+				if (packageDirectories.has(entry.name.slice(0, at))) { classified.set(entry, ''); break; }
+			}
+		}
+		if (list.some(e => classified.get(e) === 'rapier')) {
+			const refused = list.find(e => e.unreadable);
+			if (refused) for (const e of list) unread.push({...e, why: refused.unreadable});
+			else {
+				const sidecar = list.find(e => classified.get(e) === 'rapier').name, folder = sidecar.slice(0, sidecar.lastIndexOf('/') + 1);
+				const files = folder && list.every(e => e.name.startsWith(folder)) ? list.map(e => ({...e, name: e.name.slice(folder.length)})) : list;
+				batches.push({source: 'rapier', rootId, entries: files, primary: files});
+			}
+			continue;
+		}
+		const shared = list.filter(e => classified.get(e) === 'picture' || (!classified.get(e) && !e.unreadable));
+		const simpleTwin = simplenoteTwins(list, classified);
+		const keepTwins = new Set(list.filter(e => classified.get(e) === 'keep').map(e => e.name.replace(/\.json$/i, '')));
+		const standard = list.filter(e => classified.get(e) === 'standardnotes').flatMap(e => {
+			const items = jsonValue(e).value?.items;
+			return Array.isArray(items) ? items : [];
+		});
+		const standardTwin = e => {
+			const match = /(?:^|\/)Items\/([^/]+)\/[^/]*-([0-9a-f]{8})\.txt$/i.exec(e.name);
+			if (!match || typeof e.text !== 'string') return false;
+			return standard.some(item => item?.content_type === match[1] && item.uuid?.split('-')[0] === match[2] &&
+				(item.content_type === 'Note' ? typeof item.content?.text === 'string' && item.content.text === e.text :
+					JSON.stringify(jsonValue(e).value) === JSON.stringify(item.content)));
+		};
+		for (const e of list) {
+			let source = classified.get(e);
+			const twin = source === 'markdown' && (simpleTwin(e) || standardTwin(e));
+			const htmlTwin = source === 'html' && keepTwins.has(e.name.replace(/\.html?$/i, ''));
+			if (twin || htmlTwin) { unread.push({...e, why: 'duplicate text representation; the richer JSON in this root is authoritative'}); continue; }
+			if (!source || source === 'picture') {
+				if (e.unreadable) unread.push({...e, why: e.unreadable});
+				else attachments.push(e);
+				continue;
+			}
+			if (['simplenote', 'standardnotes', 'dayone', 'roam', 'evernote', 'html', 'zoho'].includes(source) || /\.jex$/i.test(e.name)) {
+				batches.push({source, rootId, entries: [e, ...shared.filter(p => p !== e)], primary: [e], single: true});
+				continue;
+			}
+			let batch = batches.find(b => b.source === source && b.rootId === rootId && !b.single);
+			if (!batch) { batch = {source, rootId, entries: [], primary: []}; batches.push(batch); }
+			batch.entries.push(e); batch.primary.push(e);
+		}
+		for (const batch of batches.filter(b => b.rootId === rootId && ['keep', 'markdown', 'notion', 'joplin', 'textbundle', 'logseq', 'paper'].includes(b.source))) {
+			for (const e of shared) if (!batch.entries.includes(e)) batch.entries.push(e);
+		}
+		const textDirectories = new Set(list.filter(e => classified.get(e) === 'textbundle' && /(?:^|\/)text\.(?:md|markdown)$/i.test(e.name)).map(e => e.name.slice(0, e.name.lastIndexOf('/') + 1)));
+		for (const batch of batches.filter(b => b.rootId === rootId && b.source === 'textbundle'))
+			for (const e of root) if (e.unreadable && /(?:^|\/)info\.json$/i.test(e.name) && textDirectories.has(e.name.slice(0, e.name.lastIndexOf('/') + 1))) batch.entries.push(e);
+	}
+	batches.sort((a, b) => IMPORT_SOURCES.indexOf(a.source) - IMPORT_SOURCES.indexOf(b.source));
+	return {batches, unread, attachments};
+}
+
+function sectionNames(options) { return (options.sections || options.index?.sections || []).map(s => typeof s === 'string' ? s : s?.name).filter(Boolean); }
+function lastKeyOf(notes, fallback) { return notes.reduce((last, note) => typeof note.entry?.order === 'string' && note.entry.order > last ? note.entry.order : last, fallback); }
+function skippedRow(entry, why, attachment = false) { if (entry.oversize) return {...zipOversizeSkip(entry), inputId:entry.inputId, why}; return {rootId: entry.rootId, inputId: entry.inputId, name: entry.name, byteLength: byteLength(entry), why, ...(attachment ? {attachment: true, bytes: entry.bytes, retainedIn: 'source input'} : {})}; }
+
+export async function importAny(entries, options = {}, importers = {}) {
+	const now = importClock(options);
+	const opened = await openContainers(entries, options), {batches, unread} = sniff(opened, options);
+	const existing = (Array.isArray(options.existing) ? options.existing : Object.keys(options.index?.notes || {})).filter(n => typeof n === 'string');
+	const attachmentSources = [];
+	const warnings = [], notes = [], skipped = unread.map(e => skippedRow(e, e.why)), pictures = [], sections = [], sources = {}, unoffered = [], backups = [], backupFiles = [], sectionsAdded = [];
+	for (const task of opened.filter(e => /(?:^|\/)Tasks\/Tasks\.json$/i.test(e.name) && batches.some(b => b.source === 'keep' && b.rootId === e.rootId))) {
+		warnings.push({code: 'keep_tasks', rootId: task.rootId, sourceName: task.name, message: 'Google Tasks reminders were kept in the Tasks file. Set reminders on the matching notes; task titles do not reliably identify a Keep note.'});
+	}
+	const audio = [], audioPool = [...(Array.isArray(options.audioExisting) ? options.audioExisting : [])];
+	const consumed = new Map(), refused = new Map(unread.map(e => [e.inputId, e.why]));
+	const spelling = new Map(sectionNames(options).map(name => [name.toLowerCase(), name]));
+	let lastOrder = options.lastOrder || '', backupIndex = options.index;
+	let backupIndexComplete = !!options.index || !existing.length;
+	function admitSection(raw) {
+		const name = typeof raw === 'string' ? raw : raw?.name;
+		if (!name) return;
+		const key = name.toLowerCase();
+		if (!spelling.has(key)) spelling.set(key, name);
+		const canonical = spelling.get(key);
+		if (!sections.includes(canonical)) sections.push(canonical);
+	}
+	function recordConsumed(inputId, note) { if (!consumed.has(inputId)) consumed.set(inputId, []); if (note) consumed.get(inputId).push(note); }
+	for (const batch of batches) {
+		const {source, rootId, primary} = batch;
+		const primarySet = new Set(primary), primaryNames = new Map(), primaryIds = new Map();
+		for (let at = 0; at < primary.length; at++) {
+			const entry = primary[at];
+			for (const [map, key] of [[primaryNames, entry.name], [primaryIds, entry.inputId]]) {
+				if (!map.has(key)) map.set(key, []);
+				map.get(key).push(at);
+			}
+		}
+		const format = source === 'zoho' && typeof importers.zoho !== 'function' ? 'html' : source;
+		const fn = source === 'rapier' ? addBackup : source === 'code' ? importCode : typeof importers[format] === 'function' ? importers[format] : null;
+		if (!fn) {
+			if (!unoffered.includes(source)) unoffered.push(source);
+			for (const e of primary) { const why = 'no importer for ' + source + ' in this build'; skipped.push(skippedRow(e, why)); refused.set(e.inputId, why); }
+			continue;
+		}
+		let result;
+		try {
+			const input = ['keep', 'simplenote', 'standardnotes', 'dayone', 'roam'].includes(source)
+				? batch.entries.filter(e => primarySet.has(e) || extOf(e.name) !== 'json').map(e => primarySet.has(e) && typeof e.text === 'string' ? {...e, text: e.text.replace(/^\uFEFF/, '')} : e) : batch.entries;
+			result = await fn(input, {existing: source === 'rapier' ? [...existing, ...backupFiles.map(f => f.name)] : [], index: source === 'rapier' ? backupIndex : undefined,
+				lastOrder, rootId, now, sections: sectionNames(options), flavour: options.flavour, subtle: options.subtle, audioExisting: audioPool});
+		} catch (error) {
+			for (const e of primary) { const why = 'the ' + source + ' importer failed: ' + message(error); skipped.push(skippedRow(e, why)); refused.set(e.inputId, why); }
+			continue;
+		}
+		for (const warning of result?.warnings || []) warnings.push({...warning, rootId, source});
+		const got = (Array.isArray(result?.notes) ? result.notes : []).map(n => ({...n, entry: {...n.entry}, text: typeof n.text === 'string' ? n.text : String(n.source ?? ''), rootId,
+			sourceName: n.sourceName || n.sourcePath || (primary.length === 1 ? primary[0].name : n.file), ...(source === 'rapier' ? {exactBackup: true} : {})}));
+		const backupInputs = source === 'rapier' ? new Map(primary.map(e => [e.name, e])) : null;
+		for (const n of got) {
+			const named = primaryNames.get(n.sourceName) || [], identified = n.sourceInputId ? primaryIds.get(n.sourceInputId) || [] : [];
+			const matches = identified.length ? [...new Set([...named, ...identified])].sort((a, b) => a - b) : named;
+			const inputs = backupInputs ? (backupInputs.has(n.sourceName) ? [backupInputs.get(n.sourceName)] : []) : matches.map(at => primary[at]);
+			if (!inputs.length && primary.length === 1) inputs.push(primary[0]);
+			n.sourceInputIds = inputs.map(e => e.inputId);
+			n.warnings = [...(n.warnings || []), ...(source === 'code' ? [] : inputs.flatMap(e => e.characterWarnings || []))];
+			for (const e of inputs) recordConsumed(e.inputId, n);
+			if (n.entry.category) { admitSection(n.entry.category); n.entry.category = spelling.get(n.entry.category.toLowerCase()); }
+			notes.push(n);
+		}
+		for (const row of result?.audio || []) {
+			if (!row?.name || audioPool.some(n => n.toLowerCase() === String(row.name).toLowerCase())) continue;
+			audio.push({...row, rootId}); audioPool.push(row.name);
+			const inputs = row.sourceName ? batch.entries.filter(e => e.name === row.sourceName) : [], owner = got.find(n => n.file === row.note);
+			if (owner) (owner.ownedRecordings ||= []).push(recordingHref(row.name));
+			if (inputs.length === 1 && owner) recordConsumed(inputs[0].inputId, owner);
+		}
+		sources[source] = (sources[source] || 0) + got.length;
+		lastOrder = lastKeyOf(got, lastOrder);
+		for (const raw of result?.sections || []) admitSection(raw);
+		for (const row of result?.consumed || []) {
+			const name = typeof row === 'string' ? row : row.name;
+			const owners = typeof row?.sourceName === 'string' ? got.filter(note => note.sourceName === row.sourceName) : got;
+			for (const at of primaryNames.get(name) || []) for (const n of owners) recordConsumed(primary[at].inputId, n);
+		}
+		for (const row of result?.skipped || []) {
+			const matching = batch.entries.filter(e => e.name === row.name);
+			const canonical = matching.length === 1 ? matching[0] : null;
+			const normalized = {...row, rootId, ...(canonical ? {inputId: canonical.inputId, byteLength: byteLength(canonical)} : {})};
+			const attachment = row.attachment || (canonical && !primarySet.has(canonical));
+			if (attachment && canonical) Object.assign(normalized, {attachment: true, bytes: canonical.bytes, retainedIn: 'source input'});
+			skipped.push(normalized);
+			if (canonical && !attachment) refused.set(canonical.inputId, row.why || 'the importer refused this input');
+		}
+		for (const row of [...(result?.attachments || []), ...(result?.skipped || []).filter(row => row.attachment && row.bytes)]) {
+			const name = row.sourceName || row.name, original = batch.entries.filter(e => e.name === name);
+			attachmentSources.push({...row, retainUnlinked: true, sourceName: name, rootId, ...(original.length === 1 ? {inputId: original[0].inputId} : {})});
+		}
+		for (const p of result?.pictures || []) {
+			const name = p.sourceName || p.name, candidates = batch.entries.filter(e => e.name === name);
+			const original = candidates.length === 1 ? candidates[0] : null;
+			pictures.push({...p, name, sourceName: name, rootId, ...(original ? {inputId: original.inputId, bytes: original.bytes} : {})});
+		}
+		if (source === 'rapier') {
+			backups.push(...(result.backups || [])); backupFiles.push(...(result.files || [])); sectionsAdded.push(...(result.sectionsAdded || []));
+			backupIndex = result.index;
+			backupIndexComplete = backupIndexComplete && result.indexComplete !== false;
+			const mappedFiles = new Map((result.fileMap || []).map(row => [row.sourcePath, row]));
+			for (const e of primary) {
+				const mapped = mappedFiles.get(e.name);
+				if (mapped) recordConsumed(e.inputId, {file: mapped.file});
+				else if (e.name === 'notes.json' || e.name === 'rapier-backup.json') recordConsumed(e.inputId, {file: 'notes.json'});
+			}
+		}
+	}
+	for (const e of opened) if (!e.unreadable && extOf(e.name) === 'json' && !consumed.has(e.inputId) && !refused.has(e.inputId)) {
+		const parsed = jsonValue(e);
+		if (!parsed.error || /bound|25 MiB/.test(parsed.error) || typeof e.text !== 'string') continue;
+		const note = literalImportSource(e, [...existing, ...notes.map(n => n.file)], 'JSON structure is damaged; the export family could not be identified safely.', [...(e.characterWarnings || [])], 'json');
+		note.sourceInputIds = [e.inputId]; note.rootId = e.rootId;
+		lastOrder = orderAfter(lastOrder); note.entry.order = lastOrder;
+		notes.push(note); recordConsumed(e.inputId, note); sources.markdown = (sources.markdown || 0) + 1;
+	}
+	if (notes.length && !backups.length) {
+		const members = new Map();
+		for (const row of opened) { if (!members.has(row.rootId)) members.set(row.rootId, []); members.get(row.rootId).push(row); }
+		const roots = new Map(), copies = new Map();
+		for (const [id, rows] of members) {
+			const key = JSON.stringify([rows[0].rootName || '', (await Promise.all(rows.map(async row => JSON.stringify([row.name, row.flavour || '', row.unreadable || '', await sha256(bytesOf(row))])))).sort()]);
+			const ordinal = copies.get(key) || 0; copies.set(key, ordinal + 1);
+			roots.set(id, await sha256(enc.encode(JSON.stringify([key, ordinal]))));
+		}
+		const source = await sha256(enc.encode(JSON.stringify([options.flavour || '', [...roots.values()].sort()]))), items = new Map();
+		for (const note of notes) {
+			const key = JSON.stringify([source, roots.get(note.rootId), note.sourceName, note.sourceItem || '']), ordinal = items.get(key) || 0;
+			items.set(key, ordinal + 1); note.entry.importSource = await sha256(enc.encode(JSON.stringify([key, ordinal])));
+		}
+		const prior = new Set(Object.values(options.index?.notes || {}).map(entry => entry.importSource));
+		const repeated = notes.filter(note => prior.has(note.entry.importSource));
+		if (repeated.length) {
+			const complete = repeated.length === notes.length;
+			const result = {notes: [], fileMap: [], warnings: [], skipped: complete ? [] : opened.picked.map(row => ({name: row.name, rootId: row.rootId,
+				why: 'Part of this exact export is already in this folder. Nothing was imported; keep the export and review the earlier import before adding it again.'})),
+				sections: [], sectionsAdded: [], pictures: [], audio: [], attachments: [], sources: {}, unoffered: [], picked: opened.picked, accounting: [], backups: [], backupFiles: [],
+				alreadyImported: complete, repeatConflict: !complete, repeatedNotes: repeated.length};
+			result.receipt = createImportReceipt(result, {stamp: options.stamp ?? null, id: options.id ?? null});
+			return result;
+		}
+	}
+	for (const e of opened) if (IMAGE_EXT.test(e.name) && !e.unreadable && !pictures.some(p => sameInput(p, e))) pictures.push({...e, sourceName: e.name});
+	const uniquePictures = pictures.filter((p, i) => !p.inputId || pictures.findIndex(q => sameInput(p, q)) === i);
+	const embeddedPicturePaths = new Set();
+	const final = finalizeImport(notes, {existing, ascii: options.ascii === true});
+	for (let i = 0; i < final.notes.length; i++) {
+		let note = final.notes[i];
+		if (note.exactBackup || isCodeFile(note.file)) continue;
+		if (typeof options.pictureImporter === 'function') {
+			try {
+				const result = await options.pictureImporter(note.text, {rootId: note.rootId, sourceName: note.sourceName, pictures: uniquePictures, convert: options.convertPicture});
+				const text = typeof result?.text === 'string' ? result.text : note.text;
+				note = {...note, text, ...(text !== note.text ? {bytes: enc.encode(text)} : {}), warnings: [...(note.warnings || []), ...(result.warnings || [])], unresolvedPictures: result.unresolved || [], embeddedPictures: result.embedded || []};
+				for (const embedded of result.embedded || []) embeddedPicturePaths.add(JSON.stringify([embedded.rootId || '', embedded.name]));
+				for (const embedded of result.embedded || []) for (const p of uniquePictures.filter(p => p.rootId === embedded.rootId && p.name === embedded.name)) if (p.inputId) recordConsumed(p.inputId, note);
+			} catch (error) { note = {...note, warnings: [...(note.warnings || []), {code: 'pictures-unconverted', message: 'Picture conversion failed; original references retained: ' + message(error)}]}; }
+		} else {
+			const unresolvedPictures = scanLinks(note.text).filter(link => link.image && (link.kind !== 'embed' || IMAGE_EXT.test(link.dest)) && !resolveAssetPath(note.sourceName, link.dest).outside).map(link => ({dest: link.dest, start: link.start, end: link.end, reason: 'picture embedding was not provided'}));
+			if (unresolvedPictures.length) note = {...note, unresolvedPictures};
+		}
+		final.notes[i] = note;
+	}
+	const backupRoots = new Set(batches.filter(batch => batch.source === 'rapier').flatMap(batch => batch.entries.map(entry => entry.rootId)));
+	const rawObjects = opened.filter(row => !backupRoots.has(row.rootId)).map(row => ({...row,
+		retainUnlinked: !consumed.has(row.inputId) && (!sourceOf(row) || sourceOf(row) === 'picture')
+	}));
+	const attached = importAttachments(final.notes, [...rawObjects, ...uniquePictures.filter(p => !backupRoots.has(p.rootId)).map(p => ({...p, retainUnlinked: !embeddedPicturePaths.has(JSON.stringify([p.rootId || '', p.sourceName || p.name]))})), ...attachmentSources], {
+		existing: [...(options.attachmentExisting || []), ...backupFiles.filter(row => row.name.startsWith('attachments/')).map(row => row.name.slice(12))], ascii: options.ascii === true
+	});
+	final.notes = attached.notes.map(note => {
+		if (!note.unresolvedLinks?.length) return note;
+		const links = scanLinks(note.text), owned = ownedRecordingStarts(note, links), copied = new Set((note.linkedAttachments || []).map(attachmentHref));
+		const unresolvedLinks = note.unresolvedLinks.filter(row => links.some(link => link.dest === row.dest && (link.anchor || '') === (row.anchor || '') && !copied.has(link.dest) && !owned.has(link.start)));
+		return {...note, unresolvedLinks};
+	});
+	for (const row of attached.unread) skipped.push({name: row.object.sourceName, rootId: row.object.rootId, inputId: row.object.inputId, attachment: true, why: row.why + ' Keep the original source file.'});
+	for (const row of attached.used) if (row.object.inputId) recordConsumed(row.object.inputId, {file: row.file});
+	const mappedNotes = new Map(notes.map((note, i) => [note, final.notes[i]]));
+	const accounting = opened.map(e => {
+		const got = (consumed.get(e.inputId) || []).map(n => mappedNotes.get(n) || n);
+		const files = [...new Set(got.map(n => n.file))];
+		if (files.length || consumed.has(e.inputId)) return {rootId: e.rootId, inputId: e.inputId, name: e.name, byteLength: byteLength(e), status: 'imported', files};
+		if (refused.has(e.inputId)) return {rootId: e.rootId, inputId: e.inputId, name: e.name, byteLength: byteLength(e), status: 'refused', why: refused.get(e.inputId)};
+		let why = attached.unread.find(row => row.object.inputId === e.inputId)?.why || 'attachment was not copied; keep the source input';
+		if (IMAGE_EXT.test(e.name)) why = 'picture bytes retained; no verified embedded use was produced';
+		else if (sourceOf(e)) why = 'the export contained no imported note from this input';
+		else if (extOf(e.name) === 'json') why = jsonValue(e).error || 'JSON is not a supported export shape';
+		const attachment = !sourceOf(e);
+		if (!skipped.some(s => s.inputId === e.inputId)) skipped.push(skippedRow(e, why, attachment || IMAGE_EXT.test(e.name)));
+		return {rootId: e.rootId, inputId: e.inputId, name: e.name, byteLength: byteLength(e), status: attachment || IMAGE_EXT.test(e.name) ? 'attachment' : 'refused', why};
+	});
+	const copiedInputs = new Set(attached.used.map(row => row.object.inputId).filter(Boolean));
+	const outcomes = new Map(accounting.map(row => [row.inputId, row])), inputRows = new Set(), reported = [];
+	for (const row of skipped) {
+		const outcome = outcomes.get(row.inputId);
+		if (outcome?.status === 'imported') {
+			if (copiedInputs.has(row.inputId)) continue;
+			for (const note of final.notes.filter(n => outcome.files.includes(n.file))) note.warnings = [...(note.warnings || []), {code: 'partial-source-import', sourceName: row.name, message: row.why}];
+			continue;
+		}
+		if (row.inputId && inputRows.has(row.inputId)) continue;
+		if (row.inputId) inputRows.add(row.inputId);
+		reported.push(outcome?.status === 'attachment' ? {...row, why: outcome.why, attachment: true, bytes: opened.find(e => e.inputId === row.inputId)?.bytes, retainedIn: 'source input'} : row);
+	}
+	const result = finishImportCharacters({...final, warnings, skipped: reported, sections, sectionsAdded, pictures: uniquePictures, audio, attachments: attached.attachments, sources, unoffered, picked: opened.picked, accounting, backups, backupFiles});
+	if (backups.length && backupIndex) { result.backupIndex = backupIndex; result.backupIndexComplete = backupIndexComplete; }
+	result.receipt = createImportReceipt(result, {stamp: options.stamp ?? null, id: options.id ?? null});
+	return result;
+}
+export function finalizeImport(notes, {existing = [], ascii = false} = {}) {
+	const pool = [...existing], occupied = new Set(pool);
+	const noteNames = new Set(pool.map(file => file.toLowerCase()));
+	const codeNames = new Set(pool.map(file => String(file).normalize('NFC').toLowerCase())), suffixes = new Map();
+	const planned = (notes || []).map(note => {
+		const sourceName = note.sourceName || note.sourcePath || note.file;
+		const title = typeof note.title === 'string' && note.title ? '# ' + note.title : note.text;
+		const code = isCodeFile(note.file);
+		let file = note.exactBackup ? note.file : code ? codeFileName(note.file, [], {ascii}) : noteFileName(title, [], {ascii});
+		if (!note.exactBackup && file && (code ? codeNames.has(file.normalize('NFC').toLowerCase()) : noteNames.has(file.toLowerCase())))
+			file = code ? codeFileName(note.file, pool, {ascii}) : noteFileName(title, pool, {ascii, taken: noteNames, suffixes});
+		if (!file) throw new Error('import filename cannot keep its code type: ' + note.file);
+		if (occupied.has(file)) throw new Error('import would replace occupied file: ' + file);
+		pool.push(file); occupied.add(file); noteNames.add(file.toLowerCase()); codeNames.add(file.normalize('NFC').toLowerCase());
+		return {...note, entry: {...note.entry}, file, sourceName, rootId: String(note.rootId || '')};
+	});
+	const fileMap = planned.map(n => ({rootId: n.rootId, sourceName: n.sourceName, file: n.file, sourceAliases: [...(n.sourceAliases || [])],
+		...(n.sourceWikiAliases?.length ? {sourceWikiAliases: [...n.sourceWikiAliases]} : {})}));
+	const patches = importLinkPatches(planned.filter(n => !n.exactBackup && !isCodeFile(n.file)), fileMap); let nextPatch = 0;
+	return {notes: planned.map(n => {
+		if (n.exactBackup || isCodeFile(n.file)) return n;
+		const p = patches[nextPatch++];
+		return {...n, text: p.text, ...(p.changed.length ? {bytes: new TextEncoder().encode(p.text)} : {}), changedLinks: p.changed, unresolvedLinks: p.unresolved};
+	}), fileMap};
+}

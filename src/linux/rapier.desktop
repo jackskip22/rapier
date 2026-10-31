@@ -1,0 +1,33 @@
+[Desktop Entry]
+Type=Application
+Name=Rapier
+GenericName=Markdown editor
+Comment=Write Markdown offline, in one file
+Exec=rapier %F
+Icon=rapier
+Terminal=false
+Categories=Utility;TextEditor;
+Keywords=markdown;notes;writing;
+MimeType=text/markdown;text/x-markdown;application/x-rapier-html;image/openraster;
+StartupWMClass=rapier
+Actions=new-document;notes;draw;paint;jxl;
+
+[Desktop Action new-document]
+Name=New document
+Exec=rapier --new
+
+[Desktop Action notes]
+Name=Notes
+Exec=rapier --notes
+
+[Desktop Action draw]
+Name=Draw
+Exec=rapier --draw
+
+[Desktop Action paint]
+Name=Paint
+Exec=rapier --paint
+
+[Desktop Action jxl]
+Name=JPEG XL converter
+Exec=rapier --jxl

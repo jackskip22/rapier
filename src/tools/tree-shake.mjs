@@ -1,0 +1,115 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import acorn from '../agent/vendor/acorn.mjs';
+import {lexicalBindings} from './engine-census.mjs';
+
+function units(source) {
+  const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module', locations: true});
+  const lexical = lexicalBindings(ast), rows = [], byName = new Map(), byNode = new Map();
+  const add = (node, statement, names, declarator = null) => {
+    const unit = {node, statement, names, declarator, edges: new Set()};
+    rows.push(unit); byNode.set(node, unit);
+    for (const name of names) byName.set(name, unit);
+  };
+  const ids = pattern => pattern.type === 'Identifier' ? [pattern.name]
+    : pattern.type === 'ObjectPattern' ? pattern.properties.flatMap(row => ids(row.value || row.argument))
+    : pattern.type === 'ArrayPattern' ? pattern.elements.filter(Boolean).flatMap(ids)
+    : pattern.type === 'AssignmentPattern' ? ids(pattern.left) : pattern.type === 'RestElement' ? ids(pattern.argument) : [];
+  for (const statement of ast.body) {
+    if (statement.type === 'ExportNamedDeclaration' && !statement.declaration) continue;
+    const node = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+    if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') add(node, statement, [node.id.name]);
+    else if (node.type === 'VariableDeclaration') for (const row of node.declarations) add(row, statement, ids(row.id), node);
+    else if (node.type !== 'ImportDeclaration') add(node, statement, []);
+  }
+  for (const node of lexical.nodes) {
+    if (!lexical.isReference(node) || !byName.has(node.name) || lexical.bindingAt(node.name, node)?.scope.kind !== 'program') continue;
+    let at = node, owner = null;
+    while (at && !owner) { owner = byNode.get(at) || null; at = lexical.parents.get(at); }
+    if (owner) owner.edges.add(byName.get(node.name));
+  }
+  const specifiers = ast.body.filter(statement => statement.type === 'ExportNamedDeclaration' && !statement.declaration)
+    .flatMap(statement => statement.specifiers.map(row => ({statement, row, local: row.local.name, exported: row.exported.name})));
+  return {rows, byName, specifiers};
+}
+const reach = seeds => { const seen = new Set(seeds); for (const unit of seen) for (const next of unit.edges) seen.add(next); return seen; };
+
+export function shakeModule(source, drop) {
+  const {rows, byName, specifiers} = units(source);
+  const dropping = new Set(drop);
+  const local = name => specifiers.find(row => row.exported === name)?.local ?? name;
+  const dropped = new Set([...dropping].map(local).filter(name => byName.has(name)).map(name => byName.get(name)));
+  const exportedStill = unit => (unit.statement.type === 'ExportNamedDeclaration' && !dropped.has(unit)) ||
+    specifiers.some(row => unit.names.includes(row.local) && !dropping.has(row.exported));
+  const live = reach(rows.filter(unit => exportedStill(unit) || !unit.names.length)), fromDropped = reach(dropped);
+  const kept = reach([...live, ...rows.filter(unit => !live.has(unit) && !fromDropped.has(unit))]);
+  const edits = [], exportedNow = new Set();
+  for (const statement of new Set(rows.map(unit => unit.statement))) {
+    const members = rows.filter(unit => unit.statement === statement), stay = members.filter(unit => kept.has(unit));
+    const isExport = statement.type === 'ExportNamedDeclaration', keepExport = isExport && stay.some(unit => !dropped.has(unit));
+    if (keepExport) stay.forEach(unit => unit.names.forEach(name => exportedNow.add(name)));
+    if (!stay.length) { edits.push([statement.start, statement.end, '']); continue; }
+    const declaration = isExport ? statement.declaration : statement;
+    if (stay.length < members.length) {
+      edits.push([statement.start, statement.end, (keepExport ? 'export ' : '') + declaration.kind + ' ' + stay.map(unit => source.slice(unit.node.start, unit.node.end)).join(', ') + ';']);
+    } else if (isExport && !keepExport) edits.push([statement.start, declaration.start, '']);
+  }
+  for (const statement of new Set(specifiers.map(row => row.statement))) {
+    const rowsHere = specifiers.filter(row => row.statement === statement), stay = rowsHere.filter(row => !dropping.has(row.exported));
+    stay.forEach(row => exportedNow.add(row.exported));
+    if (stay.length === rowsHere.length) continue;
+		const owner = statement.source ? ' from ' + source.slice(statement.source.start, statement.source.end) : '';
+		edits.push([statement.start, statement.end, stay.length ? 'export {' + stay.map(row => source.slice(row.row.start, row.row.end)).join(', ') + '}' + owner + ';'
+			: statement.source ? 'import ' + source.slice(statement.source.start, statement.source.end) + ';' : '']);
+  }
+  let out = source;
+  for (const [start, end, text] of edits.sort((a, b) => b[0] - a[0])) out = out.slice(0, start) + text + out.slice(end);
+  return {source: out, removed: rows.filter(unit => !kept.has(unit)).flatMap(unit => unit.names), unexported: [...dropping].filter(name => !exportedNow.has(name))};
+}
+
+export function pruneImports(source) {
+	const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module', locations: true}), lexical = lexicalBindings(ast), read = new Set();
+	for (const node of lexical.nodes) if (lexical.isReference(node)) {
+		const binding = lexical.bindingAt(node.name, node);
+		if (binding && binding.kind === 'import') read.add(binding);
+	}
+	const edits = [];
+	for (const statement of ast.body) if (statement.type === 'ImportDeclaration') {
+		const stay = statement.specifiers.filter(row => [...read].some(binding => binding.name === row.local.name));
+		if (stay.length === statement.specifiers.length) continue;
+		edits.push([statement.start, statement.end, stay.length
+			? 'import {' + stay.map(row => source.slice(row.start, row.end)).join(', ') + '} from ' + source.slice(statement.source.start, statement.source.end) + ';'
+			: 'import ' + source.slice(statement.source.start, statement.source.end) + ';']);
+	}
+	for (const [start, end, text] of edits.sort((a, b) => b[0] - a[0])) source = source.slice(0, start) + text + source.slice(end);
+	return source;
+}
+
+export function declaresOnly(source) {
+	const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module'});
+	const quiet = node => {
+		if (!node) return true;
+		switch (node.type) {
+			case 'Literal': case 'Identifier': case 'ArrowFunctionExpression': case 'FunctionExpression': case 'ClassExpression': return true;
+			case 'TemplateLiteral': return node.expressions.every(quiet);
+			case 'ArrayExpression': return node.elements.every(row => !row || quiet(row.type === 'SpreadElement' ? row.argument : row));
+			case 'ObjectExpression': return node.properties.every(row => row.type === 'Property' && !row.computed && quiet(row.value));
+			case 'UnaryExpression': return node.operator !== 'delete' && quiet(node.argument);
+			case 'BinaryExpression': case 'LogicalExpression': return quiet(node.left) && quiet(node.right);
+			case 'ConditionalExpression': return quiet(node.test) && quiet(node.consequent) && quiet(node.alternate);
+			default: return false;
+		}
+	};
+	return ast.body.every(statement => {
+		const node = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+		if (!node || node.type === 'ImportDeclaration' || node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration' && !node.superClass) return true;
+		return node.type === 'VariableDeclaration' && node.declarations.every(row => quiet(row.init));
+	});
+}
+
+export function dropBareImports(source, gone, resolve) {
+	const ast = acorn.parse(source, {ecmaVersion: 'latest', sourceType: 'module'}), edits = [];
+	for (const statement of ast.body) if (statement.type === 'ImportDeclaration' && !statement.specifiers.length && gone.has(resolve(statement)))
+		edits.push([statement.start, statement.end]);
+	for (const [start, end] of edits.sort((a, b) => b[0] - a[0])) source = source.slice(0, start) + source.slice(end);
+	return source;
+}

@@ -1,0 +1,69 @@
+{
+  "adapter": "4.5.0-svg-2",
+  "npmLockSha256": "a942b5de64c9b3600739a432abde9dd4bbf1d9723149fb8a0f6f34e5e4e1d0b7",
+  "sources": {
+    "zenuml-adapter.mjs": "ffef156709f52fbb67e77b6a1a1f0321fb0820e193852feb80eb99034f5442c2",
+    "zenuml-svg.mjs": "2a04df15fbd5f9c192bd36d7dc4544d443c6de9f6d7bd89a0098e20631aa4698"
+  },
+  "esbuild": "0.28.2",
+  "renderer": {
+    "path": "@zenuml/core/dist/cli/zenuml.mjs",
+    "sha256": "26189ae1b160d54556369d3cfa0acb33dd0d8bd7365fe92945ac4209417b2748",
+    "upstreamThemeSha256": "39c35f62498575a89d0020a9857337e7e3a479e8fff47fa2e1d3b9da27596f26",
+    "patches": [
+      "no Node file access",
+      "no Node paths",
+      "Rapier type",
+      "no IBM Plex face",
+      "ink strokes follow the theme",
+      "ink fills follow the theme",
+      "filled arrowheads follow the theme",
+      "self-call heads follow the theme",
+      "section label grounds are the page",
+      "finally label grounds are the page",
+      "section words follow the theme",
+      "stereotypes take the names' color",
+      "section conditions follow the theme",
+      "participant models carry authored widths",
+      "parser widths reach participant models",
+      "authored widths reserve participant space",
+      "authored widths size participant boxes",
+      "references display their authored label",
+      "authored backgrounds choose participant ink",
+      "participant names use their authored-background ink",
+      "participant icons use their authored-background ink",
+      "explicit returns carry their authored styles",
+      "return labels draw their authored styles",
+      "fragment headers carry their authored styles",
+      "fragment keywords draw their authored styles",
+      "Rapier theme"
+    ],
+    "fontFamily": "Geist, system-ui, sans-serif"
+  },
+  "target": "es2022",
+  "strictIIFE": true,
+  "strictRecipeSha256": "f17d9757fd29a0adc2faeda9e213eea0ed589d473f9d5815b7c818f32b3ddb14",
+  "removedShims": [
+    {
+      "path": "antlr4/src/antlr4/polyfills/codepointat.js",
+      "sha256": "24abc448627005c567fa46477a0ef7fa2c8923d52f8a8446277e3ffa1ae16492"
+    },
+    {
+      "path": "antlr4/src/antlr4/polyfills/fromcodepoint.js",
+      "sha256": "4fadce57e908646c37ad6cd31d23c0da15110172a6a82aef8c2bd391ab1bd0b0"
+    }
+  ],
+  "core": "4.5.0",
+  "antlr4": "4.11.0",
+  "marked": "4.3.0",
+  "license": "AGPL-3.0-only",
+  "thirdPartyLicenses": {
+    "@zenuml/core": "MIT",
+    "antlr4": "BSD-3-Clause",
+    "marked": "MIT"
+  },
+  "noticesSha256": "7adbc88a847da9d15890added92c5ba91aac82ae01a5b8ea5272cdf1b2b45dd8",
+  "bytes": 421169,
+  "sha256": "95e0460dd5f9784e7e26628cd08a31db063216015a5eb8677a250e634b5e1093",
+  "sha384": "g5vdITVAGyvxD4BJdaFJjNZKvlTUXxXlJkqeFyfXREsJVsopr/iH4DC8gPhuEjDK"
+}

@@ -1,0 +1,33 @@
+{
+  "name": "rapier",
+  "displayName": "Rapier - Markdown Editor & Art",
+  "version": "1.2.53+skills.02886125d5bf80192d1887d34e178d3626afb1f98da970fe3c5488c2815fdb93",
+  "description": "Rapier is a Markdown editor and art studio you share with your agent. Write documents together on one live page, draw diagrams you can drag, and paint watercolors that blend and dry. Every agent change is marked and undoable. Keep it as Markdown, Word, PDF or one offline HTML file. Free, no account.",
+  "author": {
+    "name": "Jack Skipworth",
+    "url": "https://rapier.website"
+  },
+  "homepage": "https://rapier.website/agents",
+  "repository": "https://github.com/jackskip22/rapier",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "markdown",
+    "editor",
+    "documents",
+    "writing",
+    "drawing",
+    "diagrams",
+    "notes",
+    "offline",
+    "review",
+    "diff",
+    "embed",
+    "mcp",
+    "self-contained markdown",
+    "art",
+    "painting",
+    "collaboration"
+  ],
+  "icon": "./icon-512.png",
+  "privacyPolicyUrl": "https://mcp.rapier.website/privacy.html"
+}

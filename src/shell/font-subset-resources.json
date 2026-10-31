@@ -1,0 +1,14 @@
+{
+  "version": "font-subset-3",
+  "files": [
+    {
+      "name": "subset",
+      "version": "3",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.53/plugins/rapier-font-subset-3.js",
+      "file": "plugins/rapier-font-subset-3.js",
+      "path": "shell/vendor/font-subset/rapier-font-subset-3.js",
+      "bytes": 1207570,
+      "sri": "eyBreJCziFoHQdGSPtvd0S2IRcHna191kq83/ps/rafZwWWd6reInBALyPdLQmdL"
+    }
+  ]
+}

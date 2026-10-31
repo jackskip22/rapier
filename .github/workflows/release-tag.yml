@@ -1,0 +1,85 @@
+# A release tags itself. A push to release-tag or main whose head commit's subject is "Rapier <version>" (the
+# publication commit) creates the lightweight tag v<version> at that commit. An existing tag is never moved: the run
+# passes when it already names this commit and fails when it names another. Every page's jsDelivr routes name this
+# tag, so the publisher pushes release-tag first and moves main (the website, npm) only once the tag exists.
+# Its notes are the version's CHANGELOG.md section (the stager refuses a version without one), then a line for each file it attaches.
+# Its GitHub release attaches Rapier.exe when it names this version itself and rapier-linux when it is the recorded Linux build
+# (any version, named in the notes), so releases/latest/download/rapier-linux always answers.
+name: release-tag
+on:
+  push:
+    branches: [main, release-tag]
+permissions:
+  contents: write
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          set -eu
+          subject=$(git log -1 --format=%s "$GITHUB_SHA")
+          version=$(printf '%s\n' "$subject" | sed -n 's/^Rapier \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')
+          if [ -z "$version" ]; then echo "not a release commit: $subject"; exit 0; fi
+          tag="v$version"
+          existing=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
+          if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then echo "::error::$tag already names $existing, not $GITHUB_SHA"; exit 1; fi
+          if [ "$existing" = "$GITHUB_SHA" ]; then echo "$tag already names $GITHUB_SHA"
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            echo "tagged $tag at $GITHUB_SHA"
+          fi
+          # The plug-ins repository also tags cdn-v<version>: a commit off main holding only the files a page fetches from the CDN
+          # (the prefixes in cdn-paths.txt, at the paths main has them). jsDelivr serves one ref only under 50 MiB, and every route
+          # names this tag. An existing cdn tag is never moved: it must hold the tree this commit yields.
+          if git cat-file -e "$GITHUB_SHA:cdn-paths.txt" 2>/dev/null; then
+            cdn="cdn-$tag"
+            index=$(mktemp -u)
+            git show "$GITHUB_SHA:cdn-paths.txt" > "$index.paths"
+            git ls-tree -r -z "$GITHUB_SHA" | python3 -I -c 'import sys; keep=open(sys.argv[1]).read().split(); out=sys.stdout.buffer; [out.write(m[0].split()[0]+b" "+m[0].split()[2]+b"\t"+m[1]+b"\0") for m in (r.split(b"\t",1) for r in sys.stdin.buffer.read().split(b"\0") if r) if any(m[1].decode().startswith(p) for p in keep)]' "$index.paths" | GIT_INDEX_FILE="$index" git update-index -z --index-info
+            tree=$(GIT_INDEX_FILE="$index" git write-tree)
+            rm -f "$index" "$index.paths"
+            existing_cdn=$(git ls-remote origin "refs/tags/$cdn" | cut -f1)
+            if [ -n "$existing_cdn" ]; then
+              git fetch --quiet --depth=1 origin "refs/tags/$cdn"
+              if [ "$(git rev-parse FETCH_HEAD^{tree})" != "$tree" ]; then echo "::error::$cdn already holds another tree than $GITHUB_SHA yields"; exit 1; fi
+              echo "$cdn already holds the tree of $GITHUB_SHA"
+            else
+              commit=$(GIT_AUTHOR_NAME=rapier.website GIT_AUTHOR_EMAIL=noreply@rapier.website GIT_COMMITTER_NAME=rapier.website GIT_COMMITTER_EMAIL=noreply@rapier.website git commit-tree "$tree" -p "$GITHUB_SHA" -m "Rapier $version: the files a page fetches from the CDN")
+              git tag "$cdn" "$commit"
+              git push origin "refs/tags/$cdn"
+              echo "tagged $cdn at $commit"
+            fi
+          fi
+          # The release lists what this version ships: Rapier.exe only when it names this version itself (an app kept from an
+          # earlier release never stands as this one), rapier-linux as recorded, and the newest release is always "latest".
+          if [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GH_TOKEN:-}" ]; then
+            set --
+            # The notes open with the version's CHANGELOG.md section; a root without a changelog (a fixture) keeps the short line.
+            if [ -f CHANGELOG.md ]; then
+              notes=$(python3 -I -c 'import sys; v=sys.argv[1]; L=open("CHANGELOG.md",encoding="utf-8").read().split("\n"); s=next((i for i,l in enumerate(L) if l=="## "+v or l.startswith("## "+v+" ")),None); sys.exit("CHANGELOG.md has no section for "+v) if s is None else None; e=next((i for i in range(s+1,len(L)) if L[i].startswith("## ")),len(L)); print("\n".join(L[s+1:e]).strip())' "$version")
+            else notes="Rapier $version."; fi
+            if [ -f Rapier.exe ] && [ "$(python3 -I -c 'import re,sys; m=re.search("ProductVersion\0".encode("utf-16-le")+rb"(?:\0\0)*((?:[0-9.]\0)+)\0\0",open("Rapier.exe","rb").read()); print(m.group(1).decode("utf-16-le") if m else "")')" = "$version" ]; then
+              set -- "$@" Rapier.exe; notes=$(printf '%s\n\n%s' "$notes" "Rapier.exe: the portable Windows app (it needs the Microsoft Edge WebView2 Runtime).")
+            fi
+            # rapier-linux is attached when it is the build rapier-linux.json records (the file's own length and SHA-256): the site
+            # ships the newest Linux build, which can be older than the release, and the Latest release must always carry it.
+            if [ -f rapier-linux ] && [ -f rapier-linux.json ]; then
+              built=$(python3 -I -c 'import hashlib,json; d=json.load(open("rapier-linux.json")); b=open("rapier-linux","rb").read(); print(d["version"] if d["sha256"]==hashlib.sha256(b).hexdigest() and d["bytes"]==len(b) else "")')
+              if [ -n "$built" ]; then
+                set -- "$@" rapier-linux
+                if [ "$built" = "$version" ]; then notes=$(printf '%s\n\n%s' "$notes" "rapier-linux: the Linux app (it opens in Chromium or another Chromium-based browser).")
+                else notes=$(printf '%s\n\n%s' "$notes" "rapier-linux: the Linux app, build $built (it opens in Chromium or another Chromium-based browser); the next Linux build replaces it."); fi
+              fi
+            fi
+            if gh release view "$tag" > /dev/null 2>&1; then
+              attached=$(gh release view "$tag" --json assets --jq '.assets[].name')
+              for asset in "$@"; do printf '%s\n' "$attached" | grep -qx "$asset" || gh release upload "$tag" "$asset"; done
+              echo "release $tag lists: $attached $*"
+            else
+              gh release create "$tag" "$@" --verify-tag --latest --title "Rapier $version" --notes "$notes"
+            fi
+          fi

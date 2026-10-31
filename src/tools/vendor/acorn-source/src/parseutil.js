@@ -1,0 +1,181 @@
+import {types as tt} from "./tokentype.js"
+import {Parser} from "./state.js"
+import {lineBreak, skipWhiteSpace} from "./whitespace.js"
+import {isIdentifierChar} from "./identifier.js"
+
+const pp = Parser.prototype
+
+// ## Parser utilities
+
+const literal = /^(?:'((?:\\[^]|[^'\\])*?)'|"((?:\\[^]|[^"\\])*?)")/
+pp.strictDirective = function(start) {
+  if (this.options.ecmaVersion < 5) return false
+  for (;;) {
+    // Try to find string literal.
+    skipWhiteSpace.lastIndex = start
+    start += skipWhiteSpace.exec(this.input)[0].length
+    let match = literal.exec(this.input.slice(start))
+    if (!match) return false
+    if ((match[1] || match[2]) === "use strict") {
+      skipWhiteSpace.lastIndex = start + match[0].length
+      let spaceAfter = skipWhiteSpace.exec(this.input), end = spaceAfter.index + spaceAfter[0].length
+      let next = this.input.charAt(end)
+      return next === ";" || next === "}" ||
+        (lineBreak.test(spaceAfter[0]) &&
+         !(/[(`.[+\-/*%<>=,?^&]/.test(next) ||
+           next === "!" && this.input.charAt(end + 1) === "=" ||
+           next === "i" && keywordOpAt(this, end)))
+    }
+    start += match[0].length
+
+    // Skip semicolon, if any.
+    skipWhiteSpace.lastIndex = start
+    start += skipWhiteSpace.exec(this.input)[0].length
+    if (this.input[start] === ";")
+      start++
+  }
+}
+
+// Scan for `in` or `instanceof` at the given position, knowing that
+// there's an `i` there.
+function keywordOpAt(parser, pos) {
+  let end = pos + 1, stop = Math.min(parser.input.length, pos + 11)
+  while (end < stop) {
+    let ch = parser.fullCharCodeAt(end)
+    if (!isIdentifierChar(ch, true)) break
+    end += ch <= 0xffff ? 1 : 2
+  }
+  return end === pos + 2 && parser.input.slice(pos, end) === "in" ||
+    end === pos + 10 && parser.input.slice(pos, end) === "instanceof"
+}
+
+// Predicate that tests whether the next token is of the given
+// type, and if yes, consumes it as a side effect.
+
+pp.eat = function(type) {
+  if (this.type === type) {
+    this.next()
+    return true
+  } else {
+    return false
+  }
+}
+
+// Tests whether parsed token is a contextual keyword.
+
+pp.isContextual = function(name) {
+  return this.type === tt.name && this.value === name && !this.containsEsc
+}
+
+// Consumes contextual keyword if possible.
+
+pp.eatContextual = function(name) {
+  if (!this.isContextual(name)) return false
+  this.next()
+  return true
+}
+
+pp.catchStackOverflow = function(f) {
+  try {
+    return f()
+  } catch (e) {
+    if (e instanceof Error && (/\bstack\b.*\b(exceeded|overflow)\b/i.test(e.message) || /\btoo much recursion\b/i.test(e.message)))
+      this.raise(this.start, "Not enough stack space to parse input")
+    else
+      throw e
+  }
+}
+
+// Asserts that following token is given contextual keyword.
+
+pp.expectContextual = function(name) {
+  if (!this.eatContextual(name)) this.unexpected()
+}
+
+// Test whether a semicolon can be inserted at the current position.
+
+pp.canInsertSemicolon = function() {
+  return this.type === tt.eof ||
+    this.type === tt.braceR ||
+    lineBreak.test(this.input.slice(this.lastTokEnd, this.start))
+}
+
+pp.insertSemicolon = function() {
+  if (this.canInsertSemicolon()) {
+    if (this.options.onInsertedSemicolon)
+      this.options.onInsertedSemicolon(this.lastTokEnd, this.lastTokEndLoc)
+    return true
+  }
+}
+
+// Consume a semicolon, or, failing that, see if we are allowed to
+// pretend that there is a semicolon at this position.
+
+pp.semicolon = function() {
+  if (!this.eat(tt.semi) && !this.insertSemicolon()) this.unexpected()
+}
+
+pp.afterTrailingComma = function(tokType, notNext) {
+  if (this.type === tokType) {
+    if (this.options.onTrailingComma)
+      this.options.onTrailingComma(this.lastTokStart, this.lastTokStartLoc)
+    if (!notNext)
+      this.next()
+    return true
+  }
+}
+
+// Expect a token of a given type. If found, consume it, otherwise,
+// raise an unexpected token error.
+
+pp.expect = function(type) {
+  this.eat(type) || this.unexpected()
+}
+
+// Raise an unexpected token error.
+
+pp.unexpected = function(pos) {
+  this.raise(pos != null ? pos : this.start, "Unexpected token")
+}
+
+export class DestructuringErrors {
+  constructor() {
+    this.shorthandAssign =
+    this.trailingComma =
+    this.parenthesizedAssign =
+    this.parenthesizedBind =
+    this.doubleProto =
+      -1
+  }
+}
+
+pp.checkPatternErrors = function(refDestructuringErrors, isAssign) {
+  if (!refDestructuringErrors) return
+  if (refDestructuringErrors.trailingComma > -1)
+    this.raiseRecoverable(refDestructuringErrors.trailingComma, "Comma is not permitted after the rest element")
+  let parens = isAssign ? refDestructuringErrors.parenthesizedAssign : refDestructuringErrors.parenthesizedBind
+  if (parens > -1) this.raiseRecoverable(parens, isAssign ? "Assigning to rvalue" : "Parenthesized pattern")
+}
+
+pp.checkExpressionErrors = function(refDestructuringErrors, andThrow) {
+  if (!refDestructuringErrors) return false
+  let {shorthandAssign, doubleProto} = refDestructuringErrors
+  if (!andThrow) return shorthandAssign >= 0 || doubleProto >= 0
+  if (shorthandAssign >= 0)
+    this.raise(shorthandAssign, "Shorthand property assignments are valid only in destructuring patterns")
+  if (doubleProto >= 0)
+    this.raiseRecoverable(doubleProto, "Redefinition of __proto__ property")
+}
+
+pp.checkYieldAwaitInDefaultParams = function() {
+  if (this.yieldPos && (!this.awaitPos || this.yieldPos < this.awaitPos))
+    this.raise(this.yieldPos, "Yield expression cannot be a default value")
+  if (this.awaitPos)
+    this.raise(this.awaitPos, "Await expression cannot be a default value")
+}
+
+pp.isSimpleAssignTarget = function(expr) {
+  if (expr.type === "ParenthesizedExpression")
+    return this.isSimpleAssignTarget(expr.expression)
+  return expr.type === "Identifier" || expr.type === "MemberExpression"
+}

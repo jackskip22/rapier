@@ -1,0 +1,433 @@
+{
+  "id": "./rapier.html",
+  "name": "Rapier - Markdown Editor & Art",
+  "short_name": "Rapier",
+  "description": "Free Markdown editor and notes app for Android and the web. Write on the formatted page, draw and paint, and work offline. No account, ads or tracking.",
+  "start_url": "./rapier.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-new"
+  },
+  "handle_links": "preferred",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "file",
+          "accept": [
+            "text/*",
+            "application/json",
+            "application/xml",
+            "application/javascript",
+            "application/x-yaml",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/gif",
+            "image/avif",
+            "image/jxl",
+            "image/svg+xml",
+            "image/openraster",
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+            "application/zip",
+            ".adoc",
+            ".asciidoc",
+            ".avif",
+            ".bash",
+            ".c",
+            ".cc",
+            ".cfg",
+            ".cjs",
+            ".clj",
+            ".cljs",
+            ".conf",
+            ".cpp",
+            ".cs",
+            ".css",
+            ".csv",
+            ".cxx",
+            ".dart",
+            ".diff",
+            ".dockerfile",
+            ".docx",
+            ".dotx",
+            ".editorconfig",
+            ".env",
+            ".erl",
+            ".ex",
+            ".exs",
+            ".fish",
+            ".fs",
+            ".fsx",
+            ".gif",
+            ".gitattributes",
+            ".gitignore",
+            ".go",
+            ".gql",
+            ".gradle",
+            ".graphql",
+            ".groovy",
+            ".h",
+            ".hcl",
+            ".hh",
+            ".hpp",
+            ".hrl",
+            ".htm",
+            ".html",
+            ".ini",
+            ".java",
+            ".jpeg",
+            ".jpg",
+            ".js",
+            ".json",
+            ".jsonc",
+            ".jsx",
+            ".jxl",
+            ".kt",
+            ".less",
+            ".log",
+            ".lua",
+            ".m",
+            ".markdown",
+            ".md",
+            ".mdown",
+            ".mjs",
+            ".mm",
+            ".nim",
+            ".npmrc",
+            ".nvmrc",
+            ".ora",
+            ".patch",
+            ".pdf",
+            ".php",
+            ".pl",
+            ".pm",
+            ".png",
+            ".prettierrc",
+            ".properties",
+            ".proto",
+            ".ps1",
+            ".psd1",
+            ".psm1",
+            ".py",
+            ".r",
+            ".rb",
+            ".rs",
+            ".rst",
+            ".sass",
+            ".scala",
+            ".scss",
+            ".sh",
+            ".sol",
+            ".sql",
+            ".styl",
+            ".svelte",
+            ".svg",
+            ".swift",
+            ".tex",
+            ".textpack",
+            ".tf",
+            ".tfvars",
+            ".toml",
+            ".ts",
+            ".tsv",
+            ".tsx",
+            ".txt",
+            ".vb",
+            ".vue",
+            ".webp",
+            ".xhtml",
+            ".xml",
+            ".yaml",
+            ".yml",
+            ".zig",
+            ".zip",
+            ".zsh"
+          ]
+        }
+      ]
+    }
+  },
+  "file_handlers": [
+    {
+      "action": "./rapier.html",
+      "accept": {
+        "image/openraster": [
+          ".ora"
+        ],
+        "application/pdf": [
+          ".pdf"
+        ],
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+          ".docx"
+        ],
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template": [
+          ".dotx"
+        ],
+        "application/zip": [
+          ".textpack",
+          ".zip"
+        ],
+        "text/markdown": [
+          ".md",
+          ".markdown",
+          ".mdown"
+        ],
+        "application/javascript": [
+          ".js",
+          ".mjs",
+          ".cjs"
+        ],
+        "text/typescript": [
+          ".ts",
+          ".tsx"
+        ],
+        "application/json": [
+          ".json",
+          ".jsonc",
+          ".prettierrc"
+        ],
+        "text/html": [
+          ".html",
+          ".htm",
+          ".xhtml"
+        ],
+        "application/xml": [
+          ".xml",
+          ".svg"
+        ],
+        "text/css": [
+          ".css"
+        ],
+        "application/x-yaml": [
+          ".yml",
+          ".yaml"
+        ],
+        "text/csv": [
+          ".csv"
+        ],
+        "text/tab-separated-values": [
+          ".tsv"
+        ],
+        "text/x-diff": [
+          ".diff",
+          ".patch"
+        ],
+        "text/plain": [
+          ".adoc",
+          ".asciidoc",
+          ".bash",
+          ".c",
+          ".cc",
+          ".cfg",
+          ".clj",
+          ".cljs",
+          ".conf",
+          ".cpp",
+          ".cs",
+          ".cxx",
+          ".dart",
+          ".dockerfile",
+          ".editorconfig",
+          ".env",
+          ".erl",
+          ".ex",
+          ".exs",
+          ".fish",
+          ".fs",
+          ".fsx",
+          ".gitattributes",
+          ".gitignore",
+          ".go",
+          ".gql",
+          ".gradle",
+          ".graphql",
+          ".groovy",
+          ".h",
+          ".hcl",
+          ".hh",
+          ".hpp",
+          ".hrl",
+          ".ini",
+          ".java",
+          ".jsx",
+          ".kt",
+          ".less",
+          ".log",
+          ".lua",
+          ".m",
+          ".mm",
+          ".nim",
+          ".npmrc",
+          ".nvmrc",
+          ".php",
+          ".pl",
+          ".pm",
+          ".properties",
+          ".proto",
+          ".ps1",
+          ".psd1",
+          ".psm1",
+          ".py",
+          ".r",
+          ".rb",
+          ".rs",
+          ".rst",
+          ".sass",
+          ".scala",
+          ".scss",
+          ".sh",
+          ".sol",
+          ".sql",
+          ".styl",
+          ".svelte",
+          ".swift",
+          ".tex",
+          ".tf",
+          ".tfvars",
+          ".toml",
+          ".txt",
+          ".vb",
+          ".vue",
+          ".zig",
+          ".zsh"
+        ],
+        "image/png": [
+          ".png"
+        ],
+        "image/jpeg": [
+          ".jpg",
+          ".jpeg"
+        ],
+        "image/webp": [
+          ".webp"
+        ],
+        "image/gif": [
+          ".gif"
+        ],
+        "image/avif": [
+          ".avif"
+        ],
+        "image/svg+xml": [
+          ".svg"
+        ],
+        "image/jxl": [
+          ".jxl"
+        ]
+      },
+      "launch_type": "single-client",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Notes",
+      "short_name": "Notes",
+      "description": "Open Notes",
+      "url": "./notes",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Draw",
+      "short_name": "Draw",
+      "description": "Start a new drawing",
+      "url": "./draw",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Watercolor",
+      "short_name": "Watercolor",
+      "description": "Paint with watercolor",
+      "url": "./watercolor",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "New document",
+      "short_name": "New",
+      "description": "Start a new blank document",
+      "url": "./rapier.html?new=1",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Welcome guide",
+      "short_name": "Welcome",
+      "description": "Open the Rapier welcome / user guide",
+      "url": "./rapier.html?welcome=1",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "protocol_handlers": [
+    {
+      "protocol": "web+rapier",
+      "url": "./rapier.html?share-url=%s"
+    }
+  ]
+}

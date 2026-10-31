@@ -1,0 +1,10 @@
+.rapier-math-view .rapier-jxl-view__body{gap:var(--space-4)}
+.rapier-math-view__preview{display:flex;align-items:center;justify-content:center;min-height:128px;padding:var(--space-4);overflow-x:auto;background:var(--color-surface-2);color:var(--color-text);font-size:1.75rem}
+.rapier-math-view__preview svg{flex:none}
+.rapier-math-view__said{min-height:1.4em;overflow-wrap:anywhere}
+.rapier-math-view__tex{min-height:96px;max-height:40vh;background:var(--color-surface-2);font:var(--fw-regular) var(--text-base)/1.5 var(--font-mono)}
+.rapier-math-view__keys{display:grid;grid-template-columns:repeat(6,minmax(0,1fr))}
+.rapier-math-view__keys .math-strip__fix{grid-column:1/-1}
+@media (pointer:fine){.rapier-math-view__keys>:not(.math-strip__fix){display:none}}
+.rapier-math-view__out{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.rapier-math-view__out .settings-action-btn{justify-content:center;text-align:center}
