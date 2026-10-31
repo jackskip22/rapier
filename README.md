@@ -5,7 +5,7 @@ Rapier is a minimalistic writing app designed to be fast and beautiful on any de
 Everything is plain Markdown. Pictures, drawings and paintings are embedded inside the file. Documents in Rapier are single files you can open in other Markdown apps or any browser, now or in 20 years.
 
 - **On the web:** [rapier.website](https://rapier.website). Add it to your home screen to use it offline.
-- **As a file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html), or the read-only
+- **As a single HTML file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html), or the read-only
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html). Open it in a browser.
 - **On Android:** [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app has no Internet permission.
 - **On Windows (beta):** [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file. If SmartScreen warns, choose **More info**, then **Run anyway**.
