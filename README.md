@@ -1,7 +1,8 @@
 # Rapier - Markdown Editor & Art
 
-A Markdown editor you write, draw and paint in, alone or with your AI assistant. Made for your phone; works in any
-browser. Text and pictures stay in one Markdown file. Free and offline, with no ads, tracking or account.
+Rapier is a minimalistic writing app designed to be fast and beautiful on any device, but the Android app provides the best experience. It also has a Draw mode with an SVG editor, freehand brushes, watercolors and typographic art. Supports Mermaid diagrams and flowcharts.
+
+Everything is plain Markdown. Pictures, drawings and paintings are embedded inside the file. Documents in Rapier are single files you can open in other Markdown apps or any browser, now or in 20 years.
 
 - **On the web:** [rapier.website](https://rapier.website). Add it to your home screen to use it offline.
 - **As a file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html), or the read-only
