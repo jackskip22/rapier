@@ -1,42 +1,42 @@
 {
-  "version": "1.2.53",
+  "version": "1.2.54",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 418496,
-      "sha256": "29b59fd397cc929dd95044f3b2e6429ab8dc4f045a5a92412cdf63f456874e1a",
-      "gzip": 403023,
+      "bytes": 418489,
+      "sha256": "bc24d5937e0a50707a45d7a75b4ddf1e051bbd3902bbda5d41c3e68a8962e4fd",
+      "gzip": 402800,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-10-31T16:30:54.817Z",
+      "builtAt": "2026-11-02T15:32:13.947Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
       "canonical": true,
       "parts": {
         "core": {
-          "raw": 1069298,
-          "gzip": 341338,
-          "base124": 333638
+          "raw": 1069344,
+          "gzip": 341390,
+          "base124": 334164
         },
         "licenses": {
           "raw": 88151,
-          "gzip": 24861,
-          "base124": 24376
+          "gzip": 24795,
+          "base124": 24412
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 2222631,
-      "sha256": "f381430b206e0d624d498596e5d670c4aea7b3ade413c750ea260f68f21c6455",
+      "bytes": 2166450,
+      "sha256": "9c06ec9fb7cb314361ec1c84612a440736f02c1312c2ad56a1302830062f7269",
       "budget": {
         "warn": 1800000,
-        "refuse": 2225000
+        "refuse": 2235000
       },
       "spans": [
         {
@@ -71,27 +71,21 @@
         },
         {
           "element": "rapier-jxl-worker",
-          "name": "codec.mjs",
-          "bytes": 39183,
-          "sha256": "0613ab94b9758d0348fe8c8150a188719f5a0a4f950c0b918380d31ffb438e4a"
+          "name": "jpeg.worker.mjs",
+          "bytes": 416052,
+          "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
         },
         {
           "element": "rapier-jxl-worker",
           "name": "still.worker.mjs",
-          "bytes": 815562,
-          "sha256": "5008b66b00e61da09190dac2edef6cba878c780a6e4fdfb3997d0191393415b2"
+          "bytes": 841471,
+          "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
         },
         {
           "element": "rapier-jxl-worker",
-          "name": "decode.worker.mjs",
-          "bytes": 375592,
-          "sha256": "e1bb52c720e7a17c246ac1763feff495727e9a21d2c7038440319f21e3158737"
-        },
-        {
-          "element": "rapier-jxl-worker",
-          "name": "jpeg.worker.mjs",
-          "bytes": 465611,
-          "sha256": "d066498e85e258939886fde4aa4b26250bb441ab5d9953fba01057bb88d34ff4"
+          "name": "codec.mjs",
+          "bytes": 53394,
+          "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
         },
         {
           "element": "rapier-platform-runtime",
@@ -127,19 +121,19 @@
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
           "bytes": 28077,
-          "sha256": "87d0f2139a2ab97581a142f28669421f14ffc28e6362e5ea7032491a80f5d560"
+          "sha256": "95eef07b4aac3ed63bab0323db58053f1f53dcd0df7a55de7f02d507a7fdf028"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 856,
-          "sha256": "5ba60ba99cc804c8a1c968a33af7774510d0a413fa1a6013e292a9b197254ef2"
+          "sha256": "e89e5fb92fb6ca0d261ca8f3b785906761c7228285c14dd58bc1806faabd663e"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
-          "bytes": 9395,
-          "sha256": "dd254cbee9f9036e54ac08803f44a1a0bc56404860f784528874d35ad10c5be6"
+          "bytes": 9824,
+          "sha256": "5d3ae7b966fa0d03bede9d4f10321f5bef324d65007505aa571d45381056fb96"
         },
         {
           "element": "rapier-styles-runtime",
@@ -150,8 +144,8 @@
         {
           "element": "rapier-styles-runtime",
           "name": "rapier-styles.json",
-          "bytes": 203976,
-          "sha256": "a9ad07bc3ce6cff1b4b982c99fdf5f5b0b7e23f2784d8aa5bbec7976d0497e61"
+          "bytes": 205705,
+          "sha256": "b778539175afa5cbb5ae23e2bc4224a59dd668c0bf7ea7058a3e0e3f598373c6"
         },
         {
           "element": "rapier-styles-runtime",
@@ -168,28 +162,28 @@
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-ui.html",
-          "bytes": 164941,
-          "sha256": "fc6ac3f2b45449dd0c6eaa8b86d73b1f18c7d14f11214cdd92c78c51e6650cfc"
+          "bytes": 166939,
+          "sha256": "79ab5fcefd90b7205f71c659b34434085d270e7477e2f5ff3a5dc023894894a4"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2509990,
-          "sha256": "31847694fb6c85a56a909afd8a7421b5a2abed08ac07ed3b9623c6bbd01d4594"
+          "bytes": 2510652,
+          "sha256": "fcea93de851b790602b78607bd5b162a1bcfcb8391f7e4f788f815ecc94c9087"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2421163,
-          "sha256": "1ef259224e8ed308de81f420782f50cd95fe461354a85b688bc1de4f15e48e45"
+          "bytes": 2427196,
+          "sha256": "3640fb134baa18ad5a6e88e5d2cbd08d8e1d3dd932666e6b851c9ffbf83de8da"
         }
       ],
       "parts": [
         {
           "id": "document",
-          "file": "rapier-document-b810191eb7e28b08.txt",
-          "bytes": 902202,
-          "sri": "VYQTHGuqS4ISc4aYa91g/idtqjaf4lk61DePflyl4imCIawkNv4oxVt9/8AWZgCm",
+          "file": "rapier-document-b2e601b2a8e8a372.txt",
+          "bytes": 902216,
+          "sri": "7fyX2KT7Yplxw9EtYSMLTYDrsXD3dmcRo0TrauGhHeo81Vf0rguNo3GvOFtyCqi2",
           "scripts": [
             "editor/document-layout.js"
           ],
@@ -202,9 +196,9 @@
         },
         {
           "id": "presets",
-          "file": "rapier-presets-c160c74defdd6d64.txt",
-          "bytes": 252327,
-          "sri": "YVJa5QMsemrRAhLgSJi0EezLnEzTIy5nUtwF2tCY2ZHYGYrpaWA9TuB3gAhTP/hb",
+          "file": "rapier-presets-1513f1f816892b85.txt",
+          "bytes": 252362,
+          "sri": "27avtVXTUAWkEKWucZNpzlEZ48VOsB4vHPLAGnwCytAXFbRGaRgp2WaAh71dt61M",
           "scripts": [
             "presets/browser.js",
             "editor/composer.js"
@@ -224,9 +218,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-9379f5f41ea42395.txt",
-          "bytes": 595040,
-          "sri": "Dl86isJW6Dz2Rl9qf2UqZkA4omTvZ5axvw1z+gn2S5bB1kIXP3a+G5QvgyilXsYu",
+          "file": "rapier-drawing-2b519b2df965a94b.txt",
+          "bytes": 609915,
+          "sri": "3jrpHjtqWG1UdRmxJ0vRexfyqzTc14PXY2g9zAjDczlu4BVBH0eIJmL5GY5nc+dh",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -318,6 +312,13 @@
             "images/jxl/quantization-params.mjs",
             "images/jxl/quantization-defaults.mjs",
             "images/jxl/coefficient-orders.mjs",
+            "images/jxl/block-split.mjs",
+            "images/jxl/photo-split-ladder.mjs",
+            "images/jxl/kernels.mjs",
+            "images/jxl/wasm-modules.mjs",
+            "images/jxl/build-version.mjs",
+            "images/jxl/arena.mjs",
+            "images/jxl/memory-device.mjs",
             "images/jxl/photo-v6-search.mjs",
             "images/jxl/exact-region.mjs",
             "images/jxl/reconstruct.mjs",
@@ -370,17 +371,28 @@
             "images/jxl/job-drive.mjs",
             "images/jxl/parallel-serve.mjs",
             "images/jxl/v7/drive.mjs",
+            "images/jxl/v7/first-region.mjs",
+            "images/jxl/toc-permutation.mjs",
+            "images/jxl/section-order.mjs",
+            "images/jxl/v7/first-region-option.mjs",
             "images/jxl/v7/input.mjs",
             "images/jxl/v7/surface.mjs",
+            "images/jxl/v7/webgl-read.mjs",
+            "images/jxl/v7/video.mjs",
             "images/jxl/v7/records.mjs",
             "images/jxl/v7/ownership.mjs",
+            "images/jxl/v7/bands.mjs",
+            "images/jxl/layers-core.mjs",
+            "images/jxl/v7/band-size.mjs",
+            "images/jxl/v7/band-recode.mjs",
+            "images/jxl/photo-hdr.mjs",
+            "images/jxl/v7/rows.mjs",
+            "images/jxl/v7/texture.mjs",
             "images/jxl/v7/acceleration.mjs",
             "images/jxl/v7/kernels-ready.mjs",
             "images/jxl/capture-wasm-error.mjs",
             "images/jxl/v7/webgpu.mjs",
             "images/jxl/gpu-gate.mjs",
-            "images/jxl/wasm-modules.mjs",
-            "images/jxl/build-version.mjs",
             "draw/paint-gpu.mjs",
             "draw/paint-gpu-flat.mjs",
             "draw/paint-gpu-wet.mjs",
@@ -418,9 +430,9 @@
         },
         {
           "id": "jxl",
-          "file": "rapier-jxl-0ee49ecee3c534b7.txt",
-          "bytes": 18864,
-          "sri": "kkJrdL7VT1Ko8tBQR+iR1qeRlY+x66sboRbs3FiefKYf1BTTNjv4/5aMhNtOyfLQ",
+          "file": "rapier-jxl-fd853457686046c0.txt",
+          "bytes": 19249,
+          "sri": "mZ3WW6NN1aiWvlYb5L9srPwqUXWRHTjkGbhsVbwo2kjOhm/G9FdsSH+9tlB/xu1O",
           "scripts": [
             "jxl/view.js"
           ],
@@ -436,9 +448,9 @@
         },
         {
           "id": "convert",
-          "file": "rapier-convert-446116d4c2490a5d.txt",
+          "file": "rapier-convert-ce9993d53eaa3d2b.txt",
           "bytes": 5765,
-          "sri": "je4vh4AuL5eGcPg1KcWmVBC4JBXhAKd3A6czbxi6Uxa0nsYrm8ZdEmumjlxITemo",
+          "sri": "TKptGhnLnBUtV949yoek7tuq52xgBcadIP7GtLSmWfBvKnpneKiAxMh39VgHo1PO",
           "scripts": [
             "interchange/convert-view.js"
           ],
@@ -447,9 +459,9 @@
         },
         {
           "id": "diagrams",
-          "file": "rapier-diagrams-0d2f28282f0b6f68.txt",
-          "bytes": 5999,
-          "sri": "p0b7i2Ym46ukZarCktHQNNjmnsgySCbRE7hrFkBj0g5m/ZZzSDrsdeA6PRwaAM8C",
+          "file": "rapier-diagrams-ac734bd96cca0a61.txt",
+          "bytes": 6027,
+          "sri": "a8TTz7rxUHdWGROpI6+byUrL7wPYqmoIG3gQDCdnZMI4DVrm9nkQFtYbSv7hNx6e",
           "scripts": [
             "diagrams/view.js"
           ],
@@ -471,9 +483,9 @@
         },
         {
           "id": "jxlcomplete",
-          "file": "rapier-jxlcomplete-e73f7203e7005d56.txt",
-          "bytes": 280220,
-          "sri": "pRXnwYb6RTMxNu7wPIrISq3s7f6hylfPiVmZuH5uN86V6PPdvn4cCi9JxN2siVX+",
+          "file": "rapier-jxlcomplete-6a9485958048c3cf.txt",
+          "bytes": 408775,
+          "sri": "/8p2GwpRoFjBzrq0t2Yo3rMUnU5ckbbXyfnjBQyJolsbknUgtcIktxoBnS/P8Rt0",
           "scripts": [
             "jxl/complete.js"
           ],
@@ -481,10 +493,25 @@
           "globals": []
         },
         {
+          "id": "jxlscene",
+          "file": "rapier-jxlscene-f111abacfa132eb7.txt",
+          "bytes": 5292,
+          "sri": "BXgKIWkDg+sb7JsV4Nq0M6bqB+8i6V8izXHbVcRM8qrUEuiH7gjAZ1Mdu5VILbcO",
+          "scripts": [
+            "jxl/scene.js"
+          ],
+          "modules": [
+            "jxl/scene.mjs"
+          ],
+          "globals": [
+            "RapierJxlScene"
+          ]
+        },
+        {
           "id": "diff",
-          "file": "rapier-diff-c50f5275a5d61fa1.txt",
-          "bytes": 4950,
-          "sri": "AlKWtOOLqL1t2ZNsBsQ1Z0bd5LB27WiVzdnGBfbyPbyBBcoATvWd2yyCO3ImXxGi",
+          "file": "rapier-diff-db504af244d3811c.txt",
+          "bytes": 4957,
+          "sri": "7CyYuiy12goKmDR2uSmHv+m2LdUYsMxc/vuxIUT4UG6Vr+XovSA4XU7cXcuLfVLF",
           "scripts": [
             "editor/diff-view.js"
           ],
@@ -493,9 +520,9 @@
         },
         {
           "id": "mathview",
-          "file": "rapier-mathview-0cc4ac83dec19845.txt",
+          "file": "rapier-mathview-51295d5bb3d6be28.txt",
           "bytes": 4843,
-          "sri": "yTwL0tqTo9fIzQxBSHBhccSULDPgEh9Cf9OG++xVnwi4jo/qnzogVGm5rWUIBSa0",
+          "sri": "enxF3u5o9r/WiqJq/lFLxFDaKkBiZfKvUxVngFzZ4xOSQwkwp6BnN4z148u5hcy8",
           "scripts": [
             "editor/math-view.js"
           ],
@@ -504,9 +531,9 @@
         },
         {
           "id": "fonts",
-          "file": "rapier-fonts-08ecbafaf40fcde2.txt",
-          "bytes": 10553,
-          "sri": "pHCA0CXmfCFofXACtwev80H+6cqo2U21l3axR4Mcv0ohaqV7xUZY4ytpb11nEiib",
+          "file": "rapier-fonts-de9caf35c6d03566.txt",
+          "bytes": 10588,
+          "sri": "PzkQhVrl9YmWCtHb0vvj+9fsmeD4AFJlNQr0wmdtih0cZfDTYNE9hqbJ+Vf5x0tk",
           "scripts": [
             "editor/font-library.js"
           ],
@@ -524,9 +551,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-688c15deb5ff680f.txt",
-          "bytes": 394872,
-          "sri": "tuX9HSx41QuKNhMbIq1YghpHDDCt5/813XiYyXI/gHKBgnKfndm8oaNGxI65wBxI",
+          "file": "rapier-notes-45bea7dc52c994c5.txt",
+          "bytes": 394599,
+          "sri": "GDo1tVb2iCZ7dkxD79/RvnqNWvFCQ8u0DBxdUJnWO9zS56/0o9II5CTZgwTZ3WZ1",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -788,8 +815,7 @@
           "applyPrintCapitals"
         ],
         "kit/render-sanitize.mjs": [
-          "createInertHtmlSanitizer",
-          "options"
+          "createInertHtmlSanitizer"
         ],
         "agent/door-identity.mjs": [
           "deriveInvocationKey",
@@ -1024,9 +1050,6 @@
           "usePaintRasterPort",
           "encodePaintRaster"
         ],
-        "images/paint-raster.mjs": [
-          "configurePaintRasterDecoder"
-        ],
         "images/jxl-native.mjs": [
           "readNativeJXL",
           "jxlNativeTraits"
@@ -1077,6 +1100,10 @@
           "captureSupported",
           "requireCapture"
         ],
+        "images/jxl/v7/capture-core.mjs": [
+          "prepareCapture",
+          "captureWith"
+        ],
         "images/jxl/v7/run-capture.mjs": [
           "prepareCapture",
           "admitCapture",
@@ -1089,38 +1116,55 @@
           "webgpuUsable",
           "webgpuSetting"
         ],
+        "images/jxl/v7/rows.mjs": [
+          "isRowBridge",
+          "rowBridge",
+          "bridgedRows"
+        ],
+        "images/jxl/photo-hdr.mjs": [
+          "hdrRoute",
+          "hdrSteps",
+          "hdrLossySteps"
+        ],
+        "images/jxl/v7/band-size.mjs": [
+          "BAND_PIXELS",
+          "COMPACT_WHOLE",
+          "WHOLE_BYTES",
+          "wholeBudget"
+        ],
+        "images/jxl/layers-core.mjs": [
+          "LIMITS",
+          "LAYER_BLEND_MODES"
+        ],
         "images/jxl/v7/ownership.mjs": [
-          "DEFAULT_INPUT_BYTES",
           "DEFAULT_PIXELS",
+          "SNAPSHOTS",
+          "withCost",
           "MAX_NODES",
           "record",
           "dimensions",
           "measure",
           "snapshot"
         ],
+        "images/jxl/v7/surface.mjs": [
+          "foreignSpace"
+        ],
+        "images/jxl/v7/webgl-read.mjs": [
+          "readWebGL"
+        ],
+        "images/jxl/section-order.mjs": [
+          "grid",
+          "sectionInfo",
+          "admitRegion"
+        ],
+        "images/jxl/toc-permutation.mjs": [
+          "readTOCPermutation"
+        ],
         "images/jxl/parallel-drive.mjs": [
           "drain"
         ],
         "images/jxl/parallel-serve.mjs": [
           "serveParallel"
-        ],
-        "images/jxl/kernels.mjs": [
-          "configureKernels",
-          "ensureKernels",
-          "kernelMode",
-          "kernelRequest",
-          "disableEntropyKernels",
-          "prepareKernels"
-        ],
-        "images/jxl/kernels-bytes.mjs": [
-          "SIMD",
-          "SIMD_PROBE"
-        ],
-        "images/jxl/jpeg-kernels.mjs": [
-          "jpegKernels"
-        ],
-        "images/jxl/jpeg-kernels-bytes.mjs": [
-          "JPEG_KERNELS"
         ],
         "images/jxl/ac-group.mjs": [
           "acGroupEncoder",
@@ -1158,17 +1202,35 @@
           "CAPTURE_BASE",
           "scanColoursScript",
           "admitCapture",
+          "captureBandShape",
+          "captureBand",
           "encodeCaptureBytes"
+        ],
+        "images/jxl/screen-crop.mjs": [
+          "pixelKeys",
+          "screenCrop",
+          "writeScreenBackground",
+          "screenRegions",
+          "commonSample",
+          "screenColumns"
         ],
         "images/jxl/capture-kernels.mjs": [
           "WEIGHTED_BANDS",
           "WEIGHTED_CONTEXT",
+          "LOG_MANTISSA",
           "compileCaptureKernels",
           "prepareCaptureKernels",
           "captureWeighted",
+          "captureHold",
+          "captureRelease",
+          "capturePrices",
           "captureCopies",
           "captureWeightedPieces",
           "SCAN_WORDS",
+          "captureLowestInk",
+          "captureCropEdges",
+          "captureRowsUnlike",
+          "captureColumnsUnlike",
           "captureScan",
           "treeArena",
           "captureLiterals",
@@ -1178,22 +1240,6 @@
         ],
         "images/jxl/capture-kernels-bytes.mjs": [
           "CAPTURE"
-        ],
-        "images/jxl/wasm-modules.mjs": [
-          "wasmBundle",
-          "configureWasm",
-          "configureModules",
-          "suppliedWasm",
-          "hasWasmModule",
-          "compileWasm",
-          "wasmModule"
-        ],
-        "images/jxl/screen-crop.mjs": [
-          "pixelKeys",
-          "screenCrop",
-          "writeScreenBackground",
-          "screenRegions",
-          "screenColumns"
         ],
         "images/jxl/source.mjs": [
           "readSource"
@@ -1403,7 +1449,56 @@
           "epfInverseSigma"
         ],
         "images/jxl/photo-v6-blocks.mjs": [
-          "fullBlocksOnDevice"
+          "fullBlocksOnDevice",
+          "E7_LOW",
+          "E7_SCALE",
+          "grainRegime"
+        ],
+        "images/jxl/memory-device.mjs": [
+          "BAND_PIXELS",
+          "COMPACT_WHOLE"
+        ],
+        "images/jxl/block-split.mjs": [
+          "serveBlockSplit"
+        ],
+        "images/jxl/kernels.mjs": [
+          "configureKernels",
+          "ensureKernels",
+          "kernelMode",
+          "kernelRequest",
+          "disableEntropyKernels",
+          "prepareKernels"
+        ],
+        "images/jxl/kernels-bytes.mjs": [
+          "SIMD",
+          "SIMD_JPEG",
+          "SIMD_UPLOAD",
+          "SIMD_PROBE"
+        ],
+        "images/jxl/jpeg-kernels.mjs": [
+          "jpegKernels",
+          "capJpegKernels",
+          "releaseJpegKernels"
+        ],
+        "images/jxl/jpeg-kernels-bytes.mjs": [
+          "JPEG_KERNELS"
+        ],
+        "images/jxl/wasm-text.mjs": [
+          "KEY",
+          "storedWasmByte",
+          "wasmBytes"
+        ],
+        "images/jxl/wasm-modules.mjs": [
+          "wasmBundle",
+          "configureWasm",
+          "configureModules",
+          "suppliedWasm",
+          "hasWasmModule",
+          "compileWasm",
+          "wasmModule"
+        ],
+        "images/jxl/photo-split-ladder.mjs": [
+          "encodeSplitLadder"
         ],
         "images/jxl/varblocks.mjs": [
           "nzBucket",
@@ -1450,7 +1545,6 @@
         "images/jxl/photo-job.mjs": [
           "photoJob",
           "photoJobSteps",
-          "v6Effort",
           "photoProducer"
         ],
         "images/jxl/photo-v6.mjs": [
@@ -1458,17 +1552,15 @@
         ],
         "images/jxl/photo-split.mjs": [
           "SPLIT_MIN_PIXELS",
-          "splitBands",
           "dcStep",
           "heldPieces",
-          "serveSplit",
           "addCounts",
           "splitImage",
+          "splitShape",
           "photoSplitBands",
           "splitHasAlpha",
           "splitSteps",
           "splitEnd",
-          "splitIds",
           "splitRelease",
           "encodeSplit"
         ],
@@ -1477,7 +1569,8 @@
         ],
         "images/jxl/lf-coding.mjs": [
           "RUNGS",
-          "plainOrFixedLfCoder"
+          "plainOrFixedLfCoder",
+          "plainBound"
         ],
         "images/jxl/sampled.mjs": [
           "sampleClusterPlan",
@@ -1496,10 +1589,8 @@
           "weightedTables"
         ],
         "images/jxl/vardct.mjs": [
-          "COEFF_FREQ_CONTEXT",
-          "COEFF_NUM_NONZERO_CONTEXT",
-          "encodeVarDCT",
-          "walkACGroup"
+          "writeModularStream",
+          "encodeVarDCT"
         ],
         "images/jxl/screen.mjs": [
           "encodeScreen"
@@ -1818,8 +1909,7 @@
           "BLEND_MODES",
           "writeAnimatedImageHeader",
           "writeAnimatedFrame",
-          "metadataKey",
-          "compositionMetadataKey"
+          "metadataKey"
         ],
         "images/jxl/metadata.mjs": [
           "withMetadata",
@@ -1832,7 +1922,9 @@
           "decompressBrotli"
         ],
         "images/jxl/prefix.mjs": [
-          "codeLengths"
+          "codeLengths",
+          "compactCode",
+          "prefixCodeBits"
         ],
         "images/jxl/v7/edit-changes.mjs": [
           "METADATA",
@@ -1902,9 +1994,6 @@
           "canonicalCodes",
           "entropyLog2"
         ],
-        "images/jxl/v7/primitives.mjs": [
-          "pixelLimit"
-        ],
         "agent/will.mjs": [
           "terminatorWidth"
         ],
@@ -1966,7 +2055,8 @@
           "VERSION",
           "RELEASE_TAG",
           "CDN_TAG",
-          "CDN_ORIGIN"
+          "CDN_ORIGIN",
+          "PUBLISHED_NPM_VERSIONS"
         ],
         "agent/editor.mjs": [
           "validPreference",
@@ -1989,57 +2079,58 @@
         "images/jxl/container-advanced.mjs",
         "images/jxl/v7/container.mjs",
         "images/jxl/v7/inspect-edit.mjs",
+        "images/jxl/wasm-text.mjs",
+        "images/jxl/jpeg-kernels-bytes.mjs",
+        "images/jxl/jpeg-kernels.mjs",
+        "images/jxl/kernels-bytes.mjs",
         "images/jxl/worker-assets.mjs",
         "images/jxl/worker-reservation.mjs",
         "images/jxl/int-ops.mjs",
         "images/jxl/gpu-setup.mjs",
-        "images/jxl/screen-crop.mjs",
         "images/jxl/capture-kernels-bytes.mjs",
         "images/jxl/capture-kernels.mjs",
+        "images/jxl/screen-crop.mjs",
         "images/jxl/gpu-drive.mjs",
         "images/jxl/ac-group.mjs",
-        "images/jxl/jpeg-kernels-bytes.mjs",
-        "images/jxl/jpeg-kernels.mjs",
-        "images/jxl/kernels-bytes.mjs",
-        "images/jxl/kernels.mjs",
         "images/jxl/v7/capture-options.mjs",
         "images/jxl/v7/run-capture.mjs",
+        "images/jxl/v7/capture-core.mjs",
         "images/jxl/v7/capture-support.mjs",
         "images/jxl/v7/capture.mjs",
         "draw/flowchart-raise.mjs",
         "draw/flowchart-mermaid.mjs"
       ],
       "jxl": {
-        "version": "8.0.1",
-        "source": "313b73b7741b8633750c5fe17432152172ac7bfbb1df2a6317dd24046a9871bc",
+        "version": "8.1.0",
+        "source": "0bb3d78496eb68fbe69bf940af6f5de42cf5b06a133cd1dd0ca49054a0b257e3",
         "page": {
-          "codec.mjs": {
-            "bytes": 39183,
-            "sha256": "0613ab94b9758d0348fe8c8150a188719f5a0a4f950c0b918380d31ffb438e4a"
+          "jpeg.worker.mjs": {
+            "bytes": 416052,
+            "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
           },
           "still.worker.mjs": {
-            "bytes": 815562,
-            "sha256": "5008b66b00e61da09190dac2edef6cba878c780a6e4fdfb3997d0191393415b2"
+            "bytes": 841471,
+            "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
           },
-          "decode.worker.mjs": {
-            "bytes": 375592,
-            "sha256": "e1bb52c720e7a17c246ac1763feff495727e9a21d2c7038440319f21e3158737"
-          },
-          "jpeg.worker.mjs": {
-            "bytes": 465611,
-            "sha256": "d066498e85e258939886fde4aa4b26250bb441ab5d9953fba01057bb88d34ff4"
+          "codec.mjs": {
+            "bytes": 53394,
+            "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
           }
         },
         "parts": {
           "jxlcomplete": {
+            "decode.worker.mjs": {
+              "bytes": 352423,
+              "sha256": "bec005ad7839bd5088a3bf64dab4e90bd4399fa820c2f9b2d03d6e0df8e83125"
+            },
             "animation.worker.mjs": {
-              "bytes": 828644,
-              "sha256": "80ef29bfa61a67fe4cd1aa01b6e19a28cb34faec3a78e4c03940b7cfcf9679bc"
+              "bytes": 854561,
+              "sha256": "5abfb9c2c0b872a7cac4439fde7826f1b0ec4282ef1a1b060617bb51ae4abb97"
             }
           }
         }
       },
-      "builtAt": "2026-10-31T16:33:36.939Z",
+      "builtAt": "2026-11-02T15:37:21.340Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
@@ -2285,8 +2376,8 @@
       "sha256": "d4a1f3b38cae1633130aefb58d1a13f59551ae00fceac99557a94960720783f0"
     },
     "dist/images/jxl/v7/primitives.mjs": {
-      "bytes": 3358,
-      "sha256": "ce8c9d276dd2d6d83b164b0f94623aab1880d2741a30a15bccb75931e98ae7ee"
+      "bytes": 3435,
+      "sha256": "117dc574bfc2f4abe250718953de62d5a2d4bcdb715450cb511dbd2cca9a881d"
     },
     "dist/images/jxl/v7/inspect.mjs": {
       "bytes": 6436,
@@ -2297,16 +2388,16 @@
       "sha256": "3782172f6ecbfd47dbfd29a49a223b90e889c664013c87f753a1f7a05e1a976a"
     },
     "dist/images/jxl/decode-header.mjs": {
-      "bytes": 13697,
-      "sha256": "ddaa75a6049323afa2fdb5168cfb6bee62fd182f7d39449ebf2c13345558284e"
+      "bytes": 13806,
+      "sha256": "043525b4233a5d88a7b15976977410217eb371f43ac4b08e61ffdbca83ab2564"
     },
     "dist/images/jxl/decode-entropy.mjs": {
-      "bytes": 19460,
-      "sha256": "4c894532aaca601945c1d8c4d3534495665229e0f41f35a97cec4bec00ba0552"
+      "bytes": 19508,
+      "sha256": "70b0eff60664eaf397348fd990b44529ab31e4077dc62596b3e9857fa6606234"
     },
     "dist/images/jxl/decode-tables.mjs": {
-      "bytes": 5574,
-      "sha256": "17037dc31a6998df05d040698a1b0a4684a2aaee913e0e5454ebd15398fb9174"
+      "bytes": 5622,
+      "sha256": "a0963d02110391492e8613905ce8fa513acafc1975d0a00f3f85b630744dfa21"
     },
     "dist/images/jxl/fault.mjs": {
       "bytes": 115,
@@ -2325,8 +2416,8 @@
       "sha256": "e1c42d87d9f614741c9aa54c90af99af84b8f4fc3ca4806baee35ac11a84b22d"
     },
     "dist/images/jxl/limits.mjs": {
-      "bytes": 231,
-      "sha256": "e560c63ac16c3b48dd9fdde5745221504b6bf571f1833357d6dc8f6f8b7190d3"
+      "bytes": 263,
+      "sha256": "16276e9107602d1c78d7fea546452884e5570a71e8159f8c0a2ece3b62c6262b"
     },
     "dist/images/jxl/container.mjs": {
       "bytes": 10227,
@@ -2353,20 +2444,20 @@
       "sha256": "114fc1b62b67f6715d370577719ef735f204168bcdcaf58283ffe21c10ed843a"
     },
     "dist/images/jxl/brotli.mjs": {
-      "bytes": 30847,
-      "sha256": "8c18d7b02c9206bd5e95f6395ed4de6fc2b45cb3fde35d0d53e8c0994f4dffaa"
+      "bytes": 30911,
+      "sha256": "9edb575e1ce524507f67eede852ff9450792da14a130671fa0aaa5740463ab44"
     },
     "dist/images/jxl/bits.mjs": {
-      "bytes": 4664,
-      "sha256": "f285dc54296a5b5d0269e7ec7297044d128fbea17a946cc5d69a2b22593adf59"
+      "bytes": 4880,
+      "sha256": "c63fd98d25da44a5eb9e98ee3549d79c7a90c788ba91da68461afa5c5d07bcd7"
     },
     "dist/images/jxl/prefix.mjs": {
-      "bytes": 10520,
-      "sha256": "2a9048230dfaaffadb785bd75104e750485f8e05fb46d77687bfa7c67868e153"
+      "bytes": 16732,
+      "sha256": "08df2bd6dcd8f401d94a0fd9e06f3187ba732dda4d76ae9d5420fe493d72bd45"
     },
     "dist/images/jxl/entropy.mjs": {
-      "bytes": 20561,
-      "sha256": "68479e2686eb3be5d0e028e8f716bfcb21b2b823475c0cf4740b98eb2891bb4a"
+      "bytes": 20533,
+      "sha256": "fd6c46088b4f70959ed693cfbd87f0768613fa335eed4578b2e7f263cfa30cff"
     },
     "dist/images/jxl/container-advanced.mjs": {
       "bytes": 23151,
@@ -2401,16 +2492,16 @@
       "sha256": "1a80d5e9183b4dfa3500652dce40b99997ddf54ee0c1ca1cea033a5a388bbd9b"
     },
     "dist/images/jxl/kernel-hooks.mjs": {
-      "bytes": 490,
-      "sha256": "1a828b5ba1f8ff47264f3c8bfa14f3f2ffc76b29565b643600fc1ae8e154be78"
+      "bytes": 504,
+      "sha256": "af5de7bcdbde66fe31c5d0b0837152b4a673ceeb2e6dbef2c3648a161e828e71"
     },
     "dist/images/jxl/screen-codes.mjs": {
-      "bytes": 1506,
-      "sha256": "1694736f9c126f5c4ab2e87c4e7717e3e249638e8872e28ba125e318313337f9"
+      "bytes": 1522,
+      "sha256": "e9e11565c2ac42119932d89c15d1ade2cdebae209789f583b54fab1790361123"
     },
     "dist/images/jxl/icc-transform.mjs": {
-      "bytes": 11271,
-      "sha256": "d362fff189c5ba81906398ded52acfec6a9f268d0af85ee8a4273e48d70fe996"
+      "bytes": 11347,
+      "sha256": "256437c232c65fde381648d3b9d8ea99d8e989d877c85de426e2d0159ee7c306"
     },
     "dist/images/limits.mjs": {
       "bytes": 1061,
@@ -2593,8 +2684,8 @@
       "sha256": "f7dc57c4add1f30fe1740d055f3d79db78bd281036dd53e5a958e838782d2203"
     },
     "dist/version.mjs": {
-      "bytes": 220,
-      "sha256": "28159467290b91aac9c6815ce3154d1ff8cfcf6bd8a386125e20e8afc8bcedce"
+      "bytes": 369,
+      "sha256": "f30adc3f710553a89d091acbe69e570b2595df18b881df1fe12e7b60b4ee21ff"
     },
     "dist/agent/visual.mjs": {
       "bytes": 10397,
@@ -2761,12 +2852,12 @@
       "sha256": "bb772b761c5b3b3d434442f658c5e3673ee4cf42e9e89349ccb96cc5c3a05b55"
     },
     "dist/images/jxl/v7/still.mjs": {
-      "bytes": 6056,
-      "sha256": "a8fd026e12f0de4cb508cd66dc5e51813f8ae6035a8adeefb62bb50dcbaf4d97"
+      "bytes": 8859,
+      "sha256": "18869771b91cc6873c83113c2edc27a97d9b40142c9c978b6b39ee01f3d996c0"
     },
     "dist/images/jxl/effort-job.mjs": {
-      "bytes": 21541,
-      "sha256": "0a5e2294607cadba160e2f9d5803c43aeee4646bfad136137df3ea4fc30d6b47"
+      "bytes": 22185,
+      "sha256": "8104f3260b5456fe0e0cfd305771a868f33b5c5b47c14fd8c8f45e22e5d088e5"
     },
     "dist/images/jxl/modular-channel.mjs": {
       "bytes": 4114,
@@ -2809,16 +2900,16 @@
       "sha256": "cd42a247efbad84baa5099c4992112241ee2ad678643f7dd338a7bc6716ebf6b"
     },
     "dist/images/jxl/photo-xyb.mjs": {
-      "bytes": 32918,
-      "sha256": "0ffa115618a9c480e218c7e90aa96eff803ea5d24b2916bf682e6f2bcae0a79d"
+      "bytes": 33093,
+      "sha256": "6ad61b877a3c7ddaf405db0ee2a6466d8813afbb2540bd4028d4b0910539f201"
     },
     "dist/images/jxl/exact-math.mjs": {
       "bytes": 2898,
       "sha256": "c1a5954fcd284b11acec558778e7d64e731993e6bf32c3e27502a392dd0e4ffe"
     },
     "dist/images/jxl/photo-v6.mjs": {
-      "bytes": 16201,
-      "sha256": "964faed98d3d34a68232295606832e38d60c6d5f9a41724d70d96ce3231170ac"
+      "bytes": 17567,
+      "sha256": "6819c75ec74535757f64406f47a248ee9fc367f92d3b71afa98d68f77bcb4c8b"
     },
     "dist/images/jxl/memory-plan.mjs": {
       "bytes": 12214,
@@ -2837,40 +2928,40 @@
       "sha256": "c26f95f35919d8debac516cd78a373660ad278eb277566c75555a7c610a4857f"
     },
     "dist/images/jxl/photo-split.mjs": {
-      "bytes": 23660,
-      "sha256": "0d2fb0708a49d8a23982fa81e10ecaa88b4d2a30b8ead179aab12eaee418db64"
+      "bytes": 27087,
+      "sha256": "5e836a3ebea7321e3516390db53057bbcff81e2b337820b7124a79065472cf3b"
     },
     "dist/images/jxl/photo-v6-settings.mjs": {
-      "bytes": 1566,
-      "sha256": "68f81b5503a72c6b74e4212aafee230d6a1ee744b485dc420cef3f4435adb150"
+      "bytes": 1667,
+      "sha256": "ea7d86a3276ab668e39887234d2dbf68193b03531f445a8952b1c6bb8b443dc2"
     },
     "dist/images/jxl/vardct.mjs": {
-      "bytes": 54148,
-      "sha256": "2c9be8ce0ddde23374485a1b497c1de662d2721b7f9b266db277a3549e7f20c7"
+      "bytes": 56896,
+      "sha256": "952686a7b1543c5ec49fdf2c8ab6061f98fc348a634a8e004d8b9e3042196e75"
     },
     "dist/images/jxl/jpeg-tables.mjs": {
       "bytes": 424,
       "sha256": "15229956db62aa59ee88be7ef9c122f509a354aa1b170979d037848be7d2d57b"
     },
     "dist/images/jxl/lf-coding.mjs": {
-      "bytes": 5591,
-      "sha256": "d28991ce5ac091cc6107f1f0e777e0921e5f1bc9864cf1105a13e1ca619a3ae3"
+      "bytes": 6648,
+      "sha256": "166a9ad751ac96999ba27510d5d0551318450d80ad9cf09c3f70cdf9113dd682"
     },
     "dist/images/jxl/sampled.mjs": {
-      "bytes": 56232,
-      "sha256": "58996911df85ccceb5bf840f4d61a0291bd9fb4be53e23819ea7913c4c5969db"
+      "bytes": 56354,
+      "sha256": "89a9c1ab99f8ee637f6d4a41ebc98dbef6e21e68b220f10b24bd7384ad0eff1c"
     },
     "dist/images/jxl/weighted.mjs": {
       "bytes": 4989,
       "sha256": "09b0b714b0b6fe7511eec459892db8d004debe6ad449cb5d0ae7959e3c0bf6d0"
     },
     "dist/images/jxl/weighted-policy.mjs": {
-      "bytes": 892,
-      "sha256": "a40141927b4ffee9edae940138638d40fe81765ad0d7c476df68fedf6c945214"
+      "bytes": 908,
+      "sha256": "e11910d92331a317ed3659ae5e3440f0b191c87fc508af82a2a7f8c7ead2a3c4"
     },
     "dist/images/jxl/ans.mjs": {
-      "bytes": 22388,
-      "sha256": "005b34c219a1bef7446d67afd8ab4e971ecb12edeab9b22519352fdac6368398"
+      "bytes": 23011,
+      "sha256": "06611a5d7e8f4d5c2fb23cf4fc1bb7ada854f1cc647a9d231c38b2a403622518"
     },
     "dist/images/jxl/context-map.mjs": {
       "bytes": 7182,
@@ -2889,8 +2980,8 @@
       "sha256": "d2bd8841c66b01fa0e7633a82b1992896454d82aab79fbcf7eb186436554a9fa"
     },
     "dist/images/jxl/coefficient-ans.mjs": {
-      "bytes": 9161,
-      "sha256": "60e05e5e750da93256b538cdc5e445c5a1f245c3a413782f694e94f822fbcb3f"
+      "bytes": 9397,
+      "sha256": "146e0c241933da0fc865c0128f68b82622b7a3b268e14fc4d5fdae245bc29d8d"
     },
     "dist/images/jxl/screen-search.mjs": {
       "bytes": 4630,
@@ -2921,16 +3012,16 @@
       "sha256": "3c1906cff81990c509e7055b084c08a0ae7e0e50a2e955a10ccdd88da9043d5b"
     },
     "dist/images/jxl/photo-split-ladder.mjs": {
-      "bytes": 7680,
-      "sha256": "106f10e9fe4f0f65fab9fbf1e934add2a52e7597e89f950a29dbb4550a9f64a8"
+      "bytes": 10055,
+      "sha256": "62f37c796c8a31ea4ee74e98d9ddc01c4f9d9301a8266a67f3b5bde28b0f80db"
     },
     "dist/images/jxl/photo-v6-blocks.mjs": {
-      "bytes": 11241,
-      "sha256": "9ad953d2e05274cb4d7d3d3f6e78f334dc8533943379787373c0485c21aa9451"
+      "bytes": 13671,
+      "sha256": "ff3e9c0a643fef55f82c5d54c1a86b1d6317c28b7799006ccdef8e3a321448f2"
     },
     "dist/images/jxl/varblocks.mjs": {
-      "bytes": 62554,
-      "sha256": "9c49c65da6dc93f03b498b08c33a9c32be7e630cbece977c432eab1edcf151e1"
+      "bytes": 63365,
+      "sha256": "c689292090e4aa3f10c228d3b959a2e83cb0be3fa6e0a7c5a63582e0f00c408a"
     },
     "dist/images/jxl/aq.mjs": {
       "bytes": 10899,
@@ -2956,6 +3047,46 @@
       "bytes": 5785,
       "sha256": "dafe34903a1df95780b1ea46209f7b6b6a610f6c52d61525b26921ba4f446aa1"
     },
+    "dist/images/jxl/block-split.mjs": {
+      "bytes": 16535,
+      "sha256": "938a81cc91ef5f1b59e2996fe68d6149f0eb58b634fdb277ae3d4bbd33feb2a7"
+    },
+    "dist/images/jxl/kernels.mjs": {
+      "bytes": 77436,
+      "sha256": "67cb213fd1152574b3a11c4936086e4c6cc3fad7eb753e9c6518c5ecdc3faf73"
+    },
+    "dist/images/jxl/wasm-modules.mjs": {
+      "bytes": 5207,
+      "sha256": "de6d7b12ae94c3b7089ea1fc94582b3346bf03621407a046302fb491a41a1716"
+    },
+    "dist/images/jxl/build-version.mjs": {
+      "bytes": 141,
+      "sha256": "1228426fb5387d72301b88d4dedab332b2ac64d4354ef3e709b297572f1874ad"
+    },
+    "dist/images/jxl/wasm-text.mjs": {
+      "bytes": 239,
+      "sha256": "cc2e5a141970c5db392307397f50a9d83913cb289a4ade23f988cd346fc212d1"
+    },
+    "dist/images/jxl/arena.mjs": {
+      "bytes": 73,
+      "sha256": "0674e9cd4f0bda416524af6a3e5e42d65c231efc8a0d9a5afc74912eeaa95e8b"
+    },
+    "dist/images/jxl/jpeg-kernels.mjs": {
+      "bytes": 20397,
+      "sha256": "69eba6915dce9098d7294eee034406781ecd139f6c612b16d2562d401f06d487"
+    },
+    "dist/images/jxl/jpeg-kernels-bytes.mjs": {
+      "bytes": 13551,
+      "sha256": "9c3a9c2cd69566d9dd5bcef3bd9cdca00e772d981625c8767fc6fcec9e0eeffa"
+    },
+    "dist/images/jxl/kernels-bytes.mjs": {
+      "bytes": 90233,
+      "sha256": "320097224a83b63bee120223319bac8da1b8e27735c4a0ce221d3fb564c40e58"
+    },
+    "dist/images/jxl/memory-device.mjs": {
+      "bytes": 1141,
+      "sha256": "b13957f5bdbed7ac134e0316cea4de2ea38c42d43f30b7268298b1ca01c8ec2b"
+    },
     "dist/images/jxl/photo-v6-search.mjs": {
       "bytes": 29212,
       "sha256": "35cd8deb22b39e42dde5c303ab964232127e9deeca69ae7c0286730220f56afc"
@@ -2965,32 +3096,32 @@
       "sha256": "faace6e36bfbd93f7cd7f526818c7a024d5b3170cd0bf58ea819d4229a8e62b1"
     },
     "dist/images/jxl/reconstruct.mjs": {
-      "bytes": 26961,
-      "sha256": "f58d65ddf0d343f6f608bf3e16d8a647cd4239cd1c9e4e393c6c2119c6035e73"
+      "bytes": 26907,
+      "sha256": "7f0c91ddb4dfc40083f0ea16287a5d5150e3eb57748584525c9bef91353933eb"
     },
     "dist/images/jxl/butteraugli.mjs": {
       "bytes": 33946,
       "sha256": "b9b90cb661c8d22f917976b9e9220b889b9f38efc98063ad04316f11e5dc216b"
     },
     "dist/images/jxl/ssimulacra2.mjs": {
-      "bytes": 26295,
-      "sha256": "3230755225df43fcf3b07ee6f03f060b5cf4251f3459133cfc5327181383d897"
+      "bytes": 26365,
+      "sha256": "368a1a83021c41c5cbf9794702f671ecbb0ca39731fbc751e8d0bee0da04727b"
     },
     "dist/images/jxl/worker-assets.mjs": {
       "bytes": 157,
       "sha256": "aa61dba687715e2264b894378c3c6a3f6a7a639db74abc075ad6ef710579e95b"
     },
     "dist/images/jxl/worker-reservation.mjs": {
-      "bytes": 9169,
-      "sha256": "973bdab6a9437e5a20927edcdc11d2ffa1cc585a97abf7e62fa448b0524ab2f8"
+      "bytes": 9201,
+      "sha256": "2427d1cc7a594441a49113d7fd052526a2fb048a525142025ce5ec400ce8b3b5"
     },
     "dist/images/jxl/s2-cells.mjs": {
-      "bytes": 8482,
-      "sha256": "484e3df56ef4ffc269c0c7082ef46b23627e4d5e7488cfef0b5bd2d3e6b2b0c3"
+      "bytes": 8497,
+      "sha256": "7094ee65cc9bd3e2f0649bc179e4697fffe93be732bc4c4bd4983449b3330b2f"
     },
     "dist/images/jxl/int-spec.mjs": {
-      "bytes": 14795,
-      "sha256": "fb003594887170dd5a8c153389da61bb189ac18653de161f0a04a85baea689fb"
+      "bytes": 14892,
+      "sha256": "a4da3e849ffbd3fcd4d31978ff7912f5b78d7be3e2ec942f74e02b435c81066c"
     },
     "dist/images/jxl/int-ops.mjs": {
       "bytes": 4155,
@@ -3041,16 +3172,16 @@
       "sha256": "3bda40666b8d6e88ebce6ec8203fb3d9803d7143c44894a42688652b8df01da7"
     },
     "dist/images/jxl/channels.mjs": {
-      "bytes": 15682,
-      "sha256": "8b40aa9e93e4f9383460ed54900e5828610c9782d55e3912970526e7f167f982"
+      "bytes": 15807,
+      "sha256": "36e85b36512615ee78ce51b266c87a9b59599037e5f1486818bc1322f3344b7d"
     },
     "dist/images/jxl/icc.mjs": {
       "bytes": 3441,
       "sha256": "167414f7810f3928f542c899507b680e6febeeec566898f98e36b191febcb85d"
     },
     "dist/images/jxl/channel-lossless.mjs": {
-      "bytes": 2215,
-      "sha256": "9e68fa51f97f38c421c0b3d2dc8c3ed8537c21ea9357aaf4e7b7e4e4975c936a"
+      "bytes": 2683,
+      "sha256": "a93488c5cf63850fbe6d0d1554e7fffd38c9371275943e03d0811b35f913d26b"
     },
     "dist/images/jxl/planar-squeeze.mjs": {
       "bytes": 9556,
@@ -3133,48 +3264,40 @@
       "sha256": "3fb62eb750d274525339c47bfdd600b2d6dca5aed00a6508dc239f3bf8ae0f67"
     },
     "dist/images/jxl/jpeg-reconstruction.mjs": {
-      "bytes": 38982,
-      "sha256": "75c1718d9b4b2ef493c3feb1a0c21585f1ede85d0d7511a37214388d02554712"
+      "bytes": 41413,
+      "sha256": "ec9ae6a1b6512c30be70ec421c93e121773262c5065b3ccbd0857cf6b15ee3a1"
     },
     "dist/images/jxl/jpeg-coefficients.mjs": {
-      "bytes": 34245,
-      "sha256": "bd3db010c15096b99b0c64a1b248a844351fc8146aabcd8e645c06140596dbf1"
+      "bytes": 35883,
+      "sha256": "e97b90d219cd7fa1370d43f0d486b5550107cab983a39f9c5b7888d52649cf3e"
     },
     "dist/images/jxl/source.mjs": {
       "bytes": 21481,
       "sha256": "b0ff12dce34e012bb4a5f9cd8eedc630d67688a14931ebf403011f686c711b8e"
     },
     "dist/images/jxl/capture-codec.mjs": {
-      "bytes": 49374,
-      "sha256": "49c48d69ce495de49103046d92766773139acfa9f794dd221f3120ebbc9be993"
+      "bytes": 55535,
+      "sha256": "b92d9451f241291ff940521491cbecf7b7dd78d47f786781bc9f388735652613"
     },
     "dist/images/jxl/screen-crop.mjs": {
-      "bytes": 7492,
-      "sha256": "5e792d6063fe4ef272d310c5c6c04af7daa7591f12ab4c95a5fe05653b0c3a15"
+      "bytes": 9788,
+      "sha256": "bc4107b3f7ad8c7fccfbd225e184beda64250ed2838803b42bba06e86b262152"
     },
     "dist/images/jxl/capture-kernels.mjs": {
-      "bytes": 12472,
-      "sha256": "8222b828316cd0f9d972854c56c10658246a8cc8efc7c39fe2130bfe27f96081"
-    },
-    "dist/images/jxl/wasm-modules.mjs": {
-      "bytes": 5163,
-      "sha256": "d4bcfad2277eaeb818486ee39d982780248f8b8cc6a602003474cad77d16003b"
-    },
-    "dist/images/jxl/build-version.mjs": {
-      "bytes": 141,
-      "sha256": "1228426fb5387d72301b88d4dedab332b2ac64d4354ef3e709b297572f1874ad"
+      "bytes": 19339,
+      "sha256": "2fdadeae6233629e388e1699ecc76d54b0f4d03bae752da3ec4948b184c832b7"
     },
     "dist/images/jxl/capture-wasm-error.mjs": {
       "bytes": 324,
       "sha256": "df4a38d14f0ee969331c2329102f02b1a4adb98dd2b7256f4cf6590a36cc5b1c"
     },
     "dist/images/jxl/capture-kernels-bytes.mjs": {
-      "bytes": 14125,
-      "sha256": "280a0d82f7c07252cfe4bac87500f3337937a077a7a61cdd1eb7733033b1f329"
+      "bytes": 8523,
+      "sha256": "9c7eb3d94b581d09009ac0715124efa6a65442f15f742c400626490065fcb9b4"
     },
     "dist/images/jxl/v7/instant.mjs": {
-      "bytes": 1648,
-      "sha256": "1512a7c361258017874cc3289b9acd862d5009e76551026f23b38d2fd32e6e92"
+      "bytes": 595,
+      "sha256": "d9b44b0ebccf5e9dc0ba9fb35c5df758050b730b391d350a8f8c21d30b1294d9"
     },
     "dist/images/jxl/index.mjs": {
       "bytes": 2509,
@@ -3193,8 +3316,8 @@
       "sha256": "686515342870a9abe45b95e55636bf5f67c165412bf80165e5b041df2340682a"
     },
     "dist/images/jxl/layers-core.mjs": {
-      "bytes": 10110,
-      "sha256": "0f75acfd9da67d560f731ad33e75b48b33172584bef28c2ed85a333dbd081b4f"
+      "bytes": 10151,
+      "sha256": "6781607b5376e859e4e7cc605a8cc5fb14496997a02fcdf026bdd3b608970ed2"
     },
     "dist/images/jxl/gpu-gate.mjs": {
       "bytes": 194,
@@ -3217,16 +3340,16 @@
       "sha256": "f113ad13120e8c9fc91b9803372b293d1879a4adfc3c46ccb4ed0278e910fc46"
     },
     "dist/images/jxl/gpu-s2-cells.mjs": {
-      "bytes": 13134,
-      "sha256": "6a86d303ee888a4c6df8a4ae11d8b6256afd66268da4fb4c6a3106c63c6259c1"
+      "bytes": 13115,
+      "sha256": "01cf5d82b1027ccd6388e39092eafa617cc5db591c48bcbb96820c3dccc08c94"
     },
     "dist/images/jxl/v7/common.mjs": {
       "bytes": 3970,
       "sha256": "129e19176364d5d8335a0a2660015dd16e7507285a7d4411715bda0486bcd86c"
     },
     "dist/images/jxl/v7/encode-options.mjs": {
-      "bytes": 3076,
-      "sha256": "40e661764b67fdc02e4f4c1f5594326d43aadfd7e657d43ea9c1873bfbf1d44e"
+      "bytes": 3065,
+      "sha256": "1f9ee09abebe7d5bc3a18d7e7448611afb381fd79342a4c379dc9759e04b5f63"
     },
     "dist/images/jxl/v7/fidelity.mjs": {
       "bytes": 1812,
@@ -3252,41 +3375,73 @@
       "bytes": 13505,
       "sha256": "38964e6dee8f4520147ec6d34d036f682bfc1427d653745490d8ce87c22eaa75"
     },
-    "dist/images/jxl/kernels.mjs": {
-      "bytes": 75434,
-      "sha256": "61cd5e66a5ded06616abb9852babc63db35b419ef9d698304692bf3c1ab92e1e"
-    },
-    "dist/images/jxl/jpeg-kernels.mjs": {
-      "bytes": 20161,
-      "sha256": "066aa32a94598f5581ff3718db3ca730fd2e29a2842fa24000d071937954f2cc"
-    },
-    "dist/images/jxl/jpeg-kernels-bytes.mjs": {
-      "bytes": 35823,
-      "sha256": "c945b3803886489ab62c19450f2b7ea690d0221b48f41db321306d14fac32f64"
-    },
-    "dist/images/jxl/kernels-bytes.mjs": {
-      "bytes": 93047,
-      "sha256": "bcf105e2ce44e0381786dcab6edb2a51765abc0b418f7f09adae3be82105e4bb"
-    },
     "dist/images/jxl/v7/drive.mjs": {
       "bytes": 53,
       "sha256": "6246c9e5615ebdfb74ff648046450e56114d337ff1cbf2505cda3d80119e461e"
     },
+    "dist/images/jxl/v7/first-region.mjs": {
+      "bytes": 2343,
+      "sha256": "2e4a4eab9a5ec25db03ad90832019b843372e1b306cb2b58761d67ecb04be310"
+    },
+    "dist/images/jxl/toc-permutation.mjs": {
+      "bytes": 5464,
+      "sha256": "97cf74ffec69138b61f0336deaac622749eae61fd777a84f81b84b2aeb585c3d"
+    },
+    "dist/images/jxl/section-order.mjs": {
+      "bytes": 4092,
+      "sha256": "e785fcffe86855d39913edd11988315b312ce17708947720c0607938142985e6"
+    },
+    "dist/images/jxl/v7/first-region-option.mjs": {
+      "bytes": 906,
+      "sha256": "cffe9f1be30964944dd62538817d133b42de8faedd76d55790772101e10d585a"
+    },
     "dist/images/jxl/v7/input.mjs": {
-      "bytes": 3413,
-      "sha256": "3eb455bcdc5a87d42d8f8bfcb9016435b7943d60da62fda031c2f32a80f4f58a"
+      "bytes": 3433,
+      "sha256": "a56469418c8eaa733f0798158f69e4aedef30ab638fa67f23c5c59a14ba58e58"
     },
     "dist/images/jxl/v7/surface.mjs": {
-      "bytes": 3751,
-      "sha256": "34241cfd7893ca91f6ca67b299c9d6df4cdfffdc27dd198cce600509b6d98370"
+      "bytes": 6156,
+      "sha256": "0c7c99c81cc4f449791b905290edff05d8783f4860a742d30248abae861fa98e"
+    },
+    "dist/images/jxl/v7/webgl-read.mjs": {
+      "bytes": 4349,
+      "sha256": "09c281d11ee3c13f2babefd9533e8f229c7640da7f1f260df87948e14c880689"
+    },
+    "dist/images/jxl/v7/video.mjs": {
+      "bytes": 597,
+      "sha256": "cb626f08193362a5727dd987914d9fbf7da97499d5a15dae9e603208656f79cd"
     },
     "dist/images/jxl/v7/records.mjs": {
       "bytes": 587,
       "sha256": "a5ffee52d858cd2fac6b6cbf5b747ac21f8f1a4dc9b21de528d21a5e0f09218a"
     },
     "dist/images/jxl/v7/ownership.mjs": {
-      "bytes": 6664,
-      "sha256": "a79fff27d645664f0bc662b8ead9e65ca39b38f72dfb4c54a2b0b0c2f104afe4"
+      "bytes": 6729,
+      "sha256": "9b2c6f3a7c5b7fb4743a3a45e4534ef46f6b6b513852f0a6129eb904c66627ad"
+    },
+    "dist/images/jxl/v7/bands.mjs": {
+      "bytes": 2364,
+      "sha256": "fed88572b947150dfcd695f472de9c2330f31bd6bcf91c7769eb8d92a92829bb"
+    },
+    "dist/images/jxl/v7/band-size.mjs": {
+      "bytes": 529,
+      "sha256": "6054f1074f04a22f54a08bdbbe4f1e19c44cdc9d7eef0fdf983b6fe6c5fda6fa"
+    },
+    "dist/images/jxl/v7/band-recode.mjs": {
+      "bytes": 1993,
+      "sha256": "85f109ddca96bdf235df6e22d1f6cb6d1e9bd5d73373dbaf3b0e8f98ef4a01c5"
+    },
+    "dist/images/jxl/photo-hdr.mjs": {
+      "bytes": 3532,
+      "sha256": "0a6aaed477c1460164fbbe66748e0a3e751143d36cc66f9e91e9c6a751e4b9f9"
+    },
+    "dist/images/jxl/v7/rows.mjs": {
+      "bytes": 3780,
+      "sha256": "a8474ee81772defefbff26103fe8028a4a9bb339955072aaf8e1032c170ba2d7"
+    },
+    "dist/images/jxl/v7/texture.mjs": {
+      "bytes": 5708,
+      "sha256": "36718ba235485e4e6425e27d2037752a9abae4352e268dcf582c114ee02ef1c0"
     },
     "dist/images/jxl/v7/acceleration.mjs": {
       "bytes": 2314,
@@ -3301,24 +3456,28 @@
       "sha256": "87c4efd9df0b5a9f9b8267e1dff6c4eafe568358b88bd1e59cee7edd64caafb8"
     },
     "dist/images/jxl/v7/capture.mjs": {
-      "bytes": 2193,
-      "sha256": "e10bb66298134aeea5c4fd914b24a6936d77b4d5c0c575c9a4cbe86400883e30"
+      "bytes": 461,
+      "sha256": "bd23478acf53f1a517fab9ee55d2c617e0ac8bcdaf26de5af7ffbcdcb8f03516"
+    },
+    "dist/images/jxl/v7/capture-core.mjs": {
+      "bytes": 2846,
+      "sha256": "021dd0d2f1d28737af52def792f8a7e158a22c2323a8eef9fa2cac689503f96f"
     },
     "dist/images/jxl/v7/run-capture.mjs": {
-      "bytes": 2784,
-      "sha256": "23a946b8977e5e15678c4b66bd096eadc8dd1161f5a85aee0aa3280569981465"
+      "bytes": 4689,
+      "sha256": "cbc0244d251a206befdc9a7a166eda38b08667fc990f03728edc15697f7662df"
     },
     "dist/images/jxl/v7/capture-options.mjs": {
-      "bytes": 714,
-      "sha256": "d0401fb75180398a4ca57769ba0594c40bb00201e10b0a693871644b0166937e"
+      "bytes": 988,
+      "sha256": "b6525cddc305493c1540b9e995a1ccb29d83c76e38775355f4b96167c9651576"
     },
     "dist/images/jxl/v7/capture-boot.mjs": {
-      "bytes": 1035,
-      "sha256": "65e9ffe9662f26ff98bf255b01f98264d94aa9cbf150acc815aa80890b9506f6"
+      "bytes": 1097,
+      "sha256": "8eaf0b566f6a144d3cd836c399fd871dc77309b517d88fe2344cceb0dd6ac750"
     },
     "dist/images/jxl/v7/capture-support.mjs": {
-      "bytes": 1143,
-      "sha256": "c93b173484edfd184701f919dcfc407499382f0954cf6b1218f590a3e369f931"
+      "bytes": 1148,
+      "sha256": "81918709cffc6839969c2fe139c23e216faa81651254fe5ee6b8bd2d1d5f77ed"
     },
     "dist/draw/paint-gpu.mjs": {
       "bytes": 98729,
@@ -3661,12 +3820,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 2254336,
-      "sha256": "c7fcf1d308ec264ba96529745eeb860737f47da1dd68d02a9ea7524760750509"
+      "bytes": 2198848,
+      "sha256": "68ba1accae8167745a22204b71d216efdb96ff5651377206ded51d527624a4d8"
     },
     "dist/dist/chatgpt/rapier.html": {
-      "bytes": 6495679,
-      "sha256": "d0081eac45021a54559fbc762a7acbe35a4c21ac7ed2798b6ceb2727b0a74e56"
+      "bytes": 6588529,
+      "sha256": "b41e11e061a6351f0e721e1b8da913da9f6fb2c89667c13e2b4d240f8fa2d1c1"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -3676,53 +3835,57 @@
       "bytes": 4210,
       "sha256": "50b8aa84b051df09cf11b99afc00f160aad6baa43cc7a523f1b49cc3d6f6a75a"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-document-b810191eb7e28b08.txt": {
-      "bytes": 902202,
-      "sha256": "b810191eb7e28b0882396a8a7e22138e99d62fdc5363f7bb6a19e194fd40b631"
+    "dist/dist/chatgpt/editor-assets/rapier-document-b2e601b2a8e8a372.txt": {
+      "bytes": 902216,
+      "sha256": "b2e601b2a8e8a372deebaf5e203f9c4ff4f1f8d0fe636280233dfc01efd9054b"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-presets-c160c74defdd6d64.txt": {
-      "bytes": 252327,
-      "sha256": "c160c74defdd6d64c610015883754e3a73efd1ce72cf3586486a35d0c99fc4c9"
+    "dist/dist/chatgpt/editor-assets/rapier-presets-1513f1f816892b85.txt": {
+      "bytes": 252362,
+      "sha256": "1513f1f816892b8556b8241a6e78bcd877f5bfa44400e8ecf6147beaab63d46c"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-drawing-9379f5f41ea42395.txt": {
-      "bytes": 595040,
-      "sha256": "9379f5f41ea42395c8e610e7bc5bc98d5e8053c5496a02c46845c1e09db688b1"
+    "dist/dist/chatgpt/editor-assets/rapier-drawing-2b519b2df965a94b.txt": {
+      "bytes": 609915,
+      "sha256": "2b519b2df965a94b74a75e28d1051479faadd13a214ed3e5da2b38cb2e4f43b6"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-jxl-0ee49ecee3c534b7.txt": {
-      "bytes": 18864,
-      "sha256": "0ee49ecee3c534b712347a1a21d2a1524b999917475c2a811ae25fd6872a5930"
+    "dist/dist/chatgpt/editor-assets/rapier-jxl-fd853457686046c0.txt": {
+      "bytes": 19249,
+      "sha256": "fd853457686046c0107d1161bca00243aef7dd01ec1b1c16c4a5c088219672db"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-convert-446116d4c2490a5d.txt": {
+    "dist/dist/chatgpt/editor-assets/rapier-convert-ce9993d53eaa3d2b.txt": {
       "bytes": 5765,
-      "sha256": "446116d4c2490a5d04b5f51e51078c8115f2ff819156250b708df2f1e82ba2af"
+      "sha256": "ce9993d53eaa3d2be714551d8420e7a6f6a44a7b025b8ca8f4369ba41dc8af6e"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-diagrams-0d2f28282f0b6f68.txt": {
-      "bytes": 5999,
-      "sha256": "0d2f28282f0b6f68dd191c8fdf0b4eb3462918d2fef15566f9c535212bb5bcd4"
+    "dist/dist/chatgpt/editor-assets/rapier-diagrams-ac734bd96cca0a61.txt": {
+      "bytes": 6027,
+      "sha256": "ac734bd96cca0a61999c4b8413be2a9b0106738e42a0699b1dc8ebc957e9cbc3"
     },
     "dist/dist/chatgpt/editor-assets/rapier-diagramtheme-31e471e2bc1f912d.txt": {
       "bytes": 7205,
       "sha256": "31e471e2bc1f912dd820feb86001f2c982dc3b72d5d2e47a694aec9a8a7508a8"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-jxlcomplete-e73f7203e7005d56.txt": {
-      "bytes": 280220,
-      "sha256": "e73f7203e7005d5662e260edb90c2953449fb28ebc7806dc150c073136c9756f"
+    "dist/dist/chatgpt/editor-assets/rapier-jxlcomplete-6a9485958048c3cf.txt": {
+      "bytes": 408775,
+      "sha256": "6a9485958048c3cf6da16a223de1547c4235e72f2f7c22cde6be67fe90ce7a02"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-diff-c50f5275a5d61fa1.txt": {
-      "bytes": 4950,
-      "sha256": "c50f5275a5d61fa17732b28c2702967b78778f4c2a8ce4a59c6b056d94f74c3a"
+    "dist/dist/chatgpt/editor-assets/rapier-jxlscene-f111abacfa132eb7.txt": {
+      "bytes": 5292,
+      "sha256": "f111abacfa132eb780b9555e15cfc22a9c4a6bdff3c8308b898aeeab60202f21"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-mathview-0cc4ac83dec19845.txt": {
+    "dist/dist/chatgpt/editor-assets/rapier-diff-db504af244d3811c.txt": {
+      "bytes": 4957,
+      "sha256": "db504af244d3811ca0015001b40bf969715040b6805d8b7c7d930967b94c5d2b"
+    },
+    "dist/dist/chatgpt/editor-assets/rapier-mathview-51295d5bb3d6be28.txt": {
       "bytes": 4843,
-      "sha256": "0cc4ac83dec19845de4580e1fb8f1ad0ba9f21abcc56c04723ce0bbd23c8a6ba"
+      "sha256": "51295d5bb3d6be28376897ebacae39b6fae6b75a99db90ae81fa8211529188a0"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-fonts-08ecbafaf40fcde2.txt": {
-      "bytes": 10553,
-      "sha256": "08ecbafaf40fcde20986c077749adf4155057d77c040dd51af3e186fe0373c5e"
+    "dist/dist/chatgpt/editor-assets/rapier-fonts-de9caf35c6d03566.txt": {
+      "bytes": 10588,
+      "sha256": "de9caf35c6d03566efecc3250bf25baf7c75059fe13022599f8871c02cc5534f"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-notes-688c15deb5ff680f.txt": {
-      "bytes": 394872,
-      "sha256": "688c15deb5ff680fc77d2acee52520bd706d457877dbc8b313ab3263996a643a"
+    "dist/dist/chatgpt/editor-assets/rapier-notes-45bea7dc52c994c5.txt": {
+      "bytes": 394599,
+      "sha256": "45bea7dc52c994c5d30e60a5197cff9965b8b8863c657054745c6b8c6a0969ba"
     },
     "dist/dist/chatgpt/editor-assets/rapier-plugin-math-971908eb6249a60c.txt": {
       "bytes": 453195,
@@ -3774,7 +3937,7 @@
     },
     "dist/dist/chatgpt/rapier-skills.json": {
       "bytes": 1559443,
-      "sha256": "bf90e64bb1d251bf2f5087f75c069be872adaeb1975f160a6e1d3f30d4a40c08"
+      "sha256": "ea5cf08abf4f078e049d989e2f71724400888726b7e464b131a89a630179dec7"
     }
   }
 }

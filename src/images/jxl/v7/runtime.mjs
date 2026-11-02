@@ -1,4 +1,5 @@
 import {check, fail, object} from './primitives.mjs';
+import {wasmBytes} from '../wasm-text.mjs';
 import {runCodec} from './run-codec.mjs';
 import {prepareCapture} from './run-capture.mjs';
 import {requireWebGPU} from './webgpu.mjs';
@@ -22,7 +23,8 @@ export async function run(operation, input, options = {}, hooks = {}) {
     catch (error) { if (!error?.lost || hooks.signal?.aborted) throw error; }
   }
   if (hooks.helpers && !hooks.lane) await helperPool().catch(() => {});
-  return runCodec(operation, input, options, hooks, hooks.helpers && !hooks.lane ? helpersDrive : undefined);
+  try { return await runCodec(operation, input, options, hooks, hooks.helpers && !hooks.lane ? helpersDrive : undefined); }
+  finally { if (typeof ImageBitmap === 'function' && input instanceof ImageBitmap || typeof VideoFrame === 'function' && input instanceof VideoFrame) input.close(); }
 }
 
 async function helpersDrive(steps, hooks, gpu, pixels) {
@@ -47,7 +49,7 @@ const PREPARE = {
   restore: () => import('../jpeg-reconstruction.mjs'),
   decode: () => Promise.all([import('../decode-parallel.mjs'), import('../decode-image.mjs'), import('../decode-parts.mjs'),
     Promise.all([import('../wasm-modules.mjs'), import('../decode-kernels-bytes.mjs')])
-      .then(([{compileWasm}, {DECODE_KERNELS}]) => compileWasm('decode', () => Uint8Array.from(DECODE_KERNELS, c => c.charCodeAt(0))))]),
+      .then(([{compileWasm}, {DECODE_KERNELS}]) => compileWasm('decode', () => wasmBytes(DECODE_KERNELS)))]),
   format: () => Promise.all([kernels(), import('./author.mjs')]),
 };
 export async function prepare(operation, {webgpu} = {}) {

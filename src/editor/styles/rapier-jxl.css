@@ -26,3 +26,6 @@
 .rapier-jxl-view__more{display:flex;flex-direction:column;gap:var(--space-2);margin:0}
 .rapier-jxl-view__more .rapier-jxl-view__title{margin:0}
 .rapier-jxl-view__facts{margin:0;padding-left:1.25em;list-style:disc outside;display:flex;flex-direction:column;gap:var(--space-1)}
+.rapier-jxl-scene__stage{width:100%;aspect-ratio:1;background:var(--color-surface-2)}
+.rapier-jxl-scene__canvas{display:block;width:100%;height:100%}
+.rapier-jxl-view__more>.rapier-jxl-view__part{margin-top:0}

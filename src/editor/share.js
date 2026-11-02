@@ -119,6 +119,8 @@ async function _rapierPortableChoices(source, options = {}) {
   const payloads = _rapierUniquePayloads(Array.from(document.querySelectorAll('script')).filter(row =>
     _RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) && row.id !== 'rapier-apps-runtime' && row.id !== 'rapier-first-paint-runtime' && row.parentNode !== document.head &&
     !optional.has(row.id) && !/^rapier-(?:part|plugin)-/.test(row.id)));
+  const complete = typeof RapierParts === 'undefined' ? null : await RapierParts.element('jxlcomplete', {availableOnly: true}).catch(() => null);
+  if (complete) payloads.push({outerHTML: complete});
   const required = _rapierPortableRequiredPlugins(source, options);
   const used = new Set([...required].map(key => key.startsWith('letters-') ? 'drawing' : key));
   for (const id of options.also || []) used.add(id);

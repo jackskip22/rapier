@@ -6,7 +6,7 @@ const _rapierEmbeddedImages = (() => {
   let rootId = '', authority = '', currentSource = '', frame = 0, epoch = 0, clock = 0;
   let primed = null, suspended = false, warned = false, foregroundCodecs = 0;
   const JXL_PROBE = '/woAELASCAgQAJwCSxibnHGEAziAAzggSsA5BQEAIESACBABIkDk/5F7+h5aZ1dVVVUlSZIQUHd3d3d3////v1VvZmZmBv7fv+e/h8acc661z71JkiQEVFVVVVVV////z72vu7u7G/7fv+e/h8acc661z71JkiQEVFVVVVVV////z72vu7u7G/7fv+e/h8acc661z71JkiQEVFVVVVVV////z72vu7u7+wIiAHhAelzgYWg=';
-  let jxlReadable = false, jxlProbeSettled = false, damagedWarned = false;
+  let jxlReadable = false, damagedWarned = false;
   const here = () => globalThis.RapierPlatform?.environment.here || 'This browser';
   const jxlRemedy = () => globalThis.RapierPlatform?.environment.updateEngine || 'Try another browser.';
   const jxlProbed = (async () => {
@@ -15,7 +15,6 @@ const _rapierEmbeddedImages = (() => {
       await new Promise((ok, no) => { image.onload = ok; image.onerror = () => no(new Error('no decoder')); image.src = 'data:image/jxl;base64,' + JXL_PROBE; });
       jxlReadable = image.naturalWidth === 1 && image.naturalHeight === 1;
     } catch (_) { jxlReadable = false; }
-    jxlProbeSettled = true;
   })();
   function jxlDisplayable() { return jxlReadable || window.__rapierJxlReadableTest === true; }
   function whenJxlDisplayKnown() { return jxlProbed.then(() => jxlDisplayable()); }
@@ -37,7 +36,7 @@ const _rapierEmbeddedImages = (() => {
   }
   const MODULE_FILES = Object.freeze({
     'rapier-jxl': {file: 'still.worker.mjs'},
-    'rapier-jxl/decode': {file: 'decode.worker.mjs'},
+    'rapier-jxl/decode': {file: 'decode.worker.mjs', part: 'jxlcomplete'},
     'rapier-jxl/jpeg': {file: 'jpeg.worker.mjs'},
     'rapier-jxl/animation': {file: 'animation.worker.mjs', part: 'jxlcomplete'},
   });
@@ -170,6 +169,29 @@ const _rapierEmbeddedImages = (() => {
       image.src = url;
     });
   }
+  async function fallbackPixels(bytes, {signal, maxPixels = 64000000} = {}) {
+    signal?.throwIfAborted();
+    const info = assets.inspectJPEGXL(bytes), size = assets.imageDimensions(bytes, 'image/jxl');
+    if (bytes.byteLength > assets.IMAGE_LIMITS.bytes || !assets.validCarriedDimensions(size.width, size.height) || size.width * size.height > maxPixels)
+      throw Object.assign(new Error('JPEG XL exceeds the picture budget'), {code: 'JXL_LIMIT'});
+    if (info.animated) throw Object.assign(new Error('This JPEG XL needs animation playback'), {code: 'JXL_UNSUPPORTED'});
+    const pixels = await codec('decode', bytes, {format: 'uint8', colorSpace: 'srgb', unpremultiplyAlpha: true,
+      partial: false, maxInputBytes: assets.IMAGE_LIMITS.bytes, maxPixels, maxDimension: assets.IMAGE_LIMITS.dimension}, {signal});
+    signal?.throwIfAborted();
+    if (pixels.width !== size.width || pixels.height !== size.height || !(pixels.data instanceof Uint8ClampedArray || pixels.data instanceof Uint8Array) || pixels.data.length !== size.width * size.height * 4 || pixels.partial)
+      throw new Error('JPEG XL decoder returned a different raster');
+    return pixels;
+  }
+  globalThis.RapierImageInspection.configurePaintRasterDecoder(async (bytes, {signal} = {}) => {
+    if (await whenJxlDisplayKnown()) return null;
+    try { return await fallbackPixels(bytes, {signal, maxPixels: 12000000}); }
+    catch (cause) {
+      signal?.throwIfAborted();
+      if (cause?.code === 'IMAGE_CANCELLED' || cause?.name === 'AbortError') throw cause;
+      throw Object.assign(new Error('This browser cannot verify this painting JPEG XL.', {cause}),
+        {code: ['JXL_DECODE', 'JXL_INPUT'].includes(cause?.code) ? 'paint_raster_damaged' : 'paint_raster_decoder_unavailable'});
+    }
+  });
   async function jxlDamaged(bytes) {
     const whole = await globalThis.RapierImageInspection?.jxlWhole?.(bytes);
     return whole == null ? null : !whole;
@@ -275,37 +297,59 @@ const _rapierEmbeddedImages = (() => {
       assertCurrent(stamp, capturedAuthority);
       const dimensions = {width: prepared.width, height: prepared.height};
       const containerDamaged = prepared.containerDamaged;
-      let url = prepared.url || record.url, type = prepared.type;
+      const url = prepared.url || input, type = prepared.type;
       if (type !== record.codec) throw new Error('image_codec_invalid');
-      const displayUrl = presentationURL(prepared.blob);
+      let displayUrl = presentationURL(prepared.blob);
+      let displayBytes = prepared.blob.size;
       let retained = false;
       try {
       let native, undisplayable = false;
-      let damaged = false;
+      let damaged = false, fallbackFailure = null;
       try {
         if (containerDamaged) throw new Error('JPEG XL container is unreadable');
+        if (!prepared.damaged && !prepared.animated && type === 'image/jxl' && !await whenJxlDisplayKnown()) {
+          const pixels = await fallbackPixels(assets.decodeDataImage(input), options);
+          const shown = await canvasUrl(context => context.putImageData(new ImageData(new Uint8ClampedArray(pixels.data.buffer, pixels.data.byteOffset, pixels.data.byteLength), pixels.width, pixels.height), 0, 0), pixels.width, pixels.height);
+          const blob = new Blob([assets.decodeDataImage(shown)], {type: 'image/png'});
+          releaseURL(displayUrl);
+          displayUrl = presentationURL(blob); displayBytes = blob.size;
+        } else if (type === 'image/svg+xml' && !await whenJxlDisplayKnown()) {
+          const text = nestedJxl({type, url});
+          if (text) {
+            const shown = (await portableSvg({type, url}, text, options)).url;
+            const blob = new Blob([assets.decodeDataImage(shown)], {type});
+            releaseURL(displayUrl);
+            displayUrl = presentationURL(blob); displayBytes = blob.size;
+            if (prepared.darkBlob) {
+              const inked = await portableSvg({type}, await prepared.darkBlob.text(), options);
+              prepared = {...prepared, darkBlob: new Blob([assets.decodeDataImage(inked.url)], {type})};
+            }
+          }
+        }
         const image = await nativeImage(displayUrl, options);
         native = {width: image.naturalWidth, height: image.naturalHeight};
         image.removeAttribute('src');
         if (prepared.damaged) native = null;
-      } catch (_) { options.signal.throwIfAborted(); }
+      } catch (error) { options.signal.throwIfAborted(); fallbackFailure = error; }
       assertCurrent(stamp, capturedAuthority);
       if (native) {
         if (native.width !== dimensions.width || native.height !== dimensions.height) throw new Error('Embedded image dimensions do not match its record');
       } else {
         if (record.codec === 'image/jxl') {
           await jxlProbed;
-          damaged = containerDamaged || prepared.damaged === true || !prepared.playbackUnavailable && jxlDisplayable();
-          url = noticeUrl(dimensions.width, dimensions.height, damaged);
+          damaged = containerDamaged || prepared.damaged === true || ['JXL_DECODE', 'JXL_INPUT'].includes(fallbackFailure?.code) || !prepared.playbackUnavailable && jxlDisplayable();
+          releaseURL(displayUrl);
+          displayUrl = noticeUrl(dimensions.width, dimensions.height, damaged); displayBytes = displayUrl.length;
           native = {width: dimensions.width, height: dimensions.height};
           undisplayable = true;
-        } else throw new Error('This image could not be displayed');
+        } else throw Object.assign(new Error('This image could not be displayed'),
+          ['IMAGE_JXL_UNREADABLE', 'IMAGE_DAMAGED'].includes(fallbackFailure?.code) ? {code: fallbackFailure.code} : {});
       }
       if (damaged) notifyDamaged();
       assertCurrent(stamp, capturedAuthority);
-      const row = {url, relative, displayUrl: undisplayable ? url : displayUrl, width: dimensions.width, height: dimensions.height, type, signature, used: ++clock,
+      const row = {url, relative, displayUrl, width: dimensions.width, height: dimensions.height, type, signature, used: ++clock,
         animated: prepared.animated, recipe: prepared.recipe, recipeError: prepared.recipeError, resources: prepared.resources, undisplayable, damaged,
-        cost: (url === signature ? 0 : url.length) + signature.length + prepared.blob.size};
+        cost: (url === signature ? 0 : url.length) + signature.length + displayBytes};
       const displaced = cache.get(signature);
       if (displaced) releasePresentation(displaced);
       cache.delete(signature);
@@ -383,13 +427,12 @@ const _rapierEmbeddedImages = (() => {
   async function portable(source, id, {png = false} = {}) {
     const row = await rasterRecord(source, id, indexForSource(source));
     if (row.damaged) throw Object.assign(new Error('This picture is damaged and can’t be converted.'), {code: 'IMAGE_DAMAGED'});
-    if (!png && !row.animated && assets.dataImage(row.signature)?.codec === 'image/jxl')
-      return smallestPortable({...row, type: 'image/jxl', url: row.signature});
+    if (!png && !row.animated && row.type === 'image/jxl') return smallestPortable(row);
     if (row.undisplayable) throw Object.assign(new Error(here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: 'IMAGE_JXL_UNREADABLE'});
     const nested = nestedJxl(row);
     if (nested) return portableSvg(row, nested);
     if (row.type === 'image/png' || !png && row.type !== 'image/jxl') return row;
-    const image = await nativeImage(row.url);
+    const image = await nativeImage(row.displayUrl || row.url);
     try {
       return {...row, type: 'image/png', url: await canvasUrl(context => context.drawImage(image, 0, 0, row.width, row.height), row.width, row.height)};
     } finally { image.removeAttribute('src'); }
@@ -401,17 +444,16 @@ const _rapierEmbeddedImages = (() => {
     try { text = new TextDecoder().decode(assets.decodeDataImage(row.url)); } catch (_) { return null; }
     return text.includes('data:image/jxl;base64,') ? text : null;
   }
-  async function portableSvg(row, text) {
-    await jxlProbed;
-    if (!jxlDisplayable()) throw Object.assign(new Error(here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: 'IMAGE_JXL_UNREADABLE'});
+  async function portableSvg(row, text, {signal} = {}) {
     const converted = new Map();
     for (const match of text.matchAll(NESTED_JXL_RE)) {
       const url = match[3];
       if (converted.has(url)) continue;
       let exact = null;
-      try { exact = await globalThis.RapierImageInspection.portablePaintPNG(url); }
+      try { exact = await globalThis.RapierImageInspection.portablePaintPNG(url, {signal}); }
       catch (error) {
-        if (error?.name === 'AbortError') throw error;
+        signal?.throwIfAborted();
+        if (error?.name === 'AbortError' || error?.code === 'IMAGE_CANCELLED') throw error;
         if (error?.code === 'paint_raster_damaged')
           throw Object.assign(new Error('The paint inside this drawing is damaged and cannot be converted. Its bytes are kept unchanged.'), {code: 'IMAGE_DAMAGED'});
       }
@@ -586,7 +628,7 @@ const _rapierEmbeddedImages = (() => {
         if (recordFor(id, documentIndex().index)?.url !== row.signature) { image.removeAttribute('data-rapier-asset-state'); schedule(); return; }
         if (row.animated) image.setAttribute('data-rapier-animation', row.signature); else image.removeAttribute('data-rapier-animation');
         image.dataset.rapierAssetState = 'ready';
-        if (row.undisplayable && !row.damaged || jxlProbeSettled && !jxlDisplayable() && nestedJxl(row)) noticeWhenSeen(image, row.signature);
+        if (row.undisplayable && !row.damaged) noticeWhenSeen(image, row.signature);
         if (row.undisplayable) image.setAttribute('aria-description', row.damaged ? 'This JPEG XL picture appears damaged and cannot be shown. Its saved bytes are kept unchanged.' : 'This JPEG XL picture cannot be shown by ' + here().toLowerCase() + '. Its saved bytes are intact.');
         else image.removeAttribute('aria-description');
         globalThis.RapierImageFlow?.schedule();
@@ -594,6 +636,7 @@ const _rapierEmbeddedImages = (() => {
         if (suspended || !image.isConnected || presented.get(image) !== ticket || stamp !== rapier.identity.authority || imageKey(image) !== id) return;
         if (recordFor(id, documentIndex().index)?.url !== ticket.signature) { image.removeAttribute('data-rapier-asset-state'); schedule(); return; }
         if (error.code === 'IMAGE_CANCELLED' || error.code === 'IMAGE_VANISHED' || error.name === 'AbortError') { image.removeAttribute('data-rapier-asset-state'); schedule(); return; }
+        ticket.needsJxl = error.code === 'IMAGE_JXL_UNREADABLE' && !jxlDisplayable();
         image.dataset.rapierAssetState = 'error';
         image.setAttribute('aria-description', 'Embedded image unavailable: ' + error.message);
         if (!warned) { warned = true; showToast('Couldn’t show a picture. It’s still saved.', 'error'); }
@@ -783,7 +826,7 @@ const _rapierEmbeddedImages = (() => {
       }
       if (!result && !row.undisplayable) {
         try {
-          const image = await nativeImage(row.url);
+          const image = await nativeImage(row.displayUrl || row.url);
           try {
             const made = rasterPortable(image, row.width, row.height);
             if (made && (row.type === 'image/jxl' || made.type === 'image/jpeg' && made.url.length < row.url.length)) result = {...row, ...made};
@@ -818,13 +861,13 @@ const _rapierEmbeddedImages = (() => {
       const id = imageKey(image) || image.getAttribute('src');
       if (!resolved.has(id)) {
         const row = await rasterRecord(source, id, index, {signal});
-        const jxl = convert && !row.animated && (assets.dataImage(row.signature)?.codec === 'image/jxl' || !!nestedJxl(row));
+        const jxl = convert && !row.animated && (row.type === 'image/jxl' || !!nestedJxl(row));
         let shown;
         const named = error => { if (error && typeof error === 'object' && /^IMAGE_/.test(error.code || '')) Object.assign(error, {picture: imageKey(image) || '', alt: image.getAttribute('alt') || ''}); return error; };
-        if (jxl && !row.damaged) shown = await smallestPortable(assets.dataImage(row.signature)?.codec === 'image/jxl' ? {...row, type: 'image/jxl', url: row.signature} : row).catch(error => { throw named(error); });
+        if (jxl && !row.damaged) shown = await smallestPortable(row).catch(error => { throw named(error); });
         else if (row.undisplayable || row.damaged) {
           if (jxl) throw named(Object.assign(new Error(row.damaged ? 'This picture is damaged and can’t be converted.' : here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: row.damaged ? 'IMAGE_DAMAGED' : 'IMAGE_JXL_UNREADABLE'}));
-          shown = row.animated ? row : {...row, url: row.signature};
+          shown = row;
         } else shown = row;
         resolved.set(id, shown);
         if (substitutions && jxl) substitutions.set(row.signature, shown.url);
@@ -1337,6 +1380,22 @@ const _rapierEmbeddedImages = (() => {
     const base = title || (String(rapier.document.filename || '').replace(/\.[a-z0-9]+$/i, '') || 'document') + ' ' + (position + 1);
     await _download(new Blob([bytes], {type: mime}), base + '.' + ext);
   }
+  addEventListener('rapier:part', event => {
+    if (event.detail?.id !== 'jxlcomplete' || event.detail.status !== 'ready') return;
+    const retry = new Set();
+    for (const [key, row] of cache) if (row.type === 'image/jxl' && row.undisplayable && !row.damaged && !row.animated) {
+      retry.add(key); releasePresentation(row); cache.delete(key);
+    }
+    const images = [...host.querySelectorAll('img[data-rapier-asset],img[data-rapier-image-url]')];
+    if (!retry.size && !images.some(image => presented.get(image)?.needsJxl)) return;
+    const index = documentIndex().index;
+    for (const image of images) {
+      const signature = recordFor(imageKey(image), index)?.url, ticket = presented.get(image);
+      if (!retry.has(signature) && !(ticket?.needsJxl && ticket.signature === signature)) continue;
+      presented.delete(image); image.removeAttribute('data-rapier-asset-state');
+    }
+    schedule();
+  });
   schedule();
   async function present(source, id) {
     const row = await rasterRecord(source, id, indexForSource(source));

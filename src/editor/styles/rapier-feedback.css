@@ -1,0 +1,42 @@
+#feedback-overlay .feedback-panel { max-width: 440px; }
+#feedback-overlay .feedback-kinds {
+  display: grid; grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 0; margin: 0 0 var(--space-4);
+}
+#feedback-overlay .feedback-kinds label { position: relative; min-width: 0; }
+#feedback-overlay .feedback-kinds input {
+  position: absolute; width: 1px; height: 1px; opacity: 0;
+}
+#feedback-overlay .feedback-kinds span {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 46px; padding: 8px 4px; background: var(--color-surface-2);
+  color: var(--color-text); font: 600 0.9rem 'Geist Mono', monospace;
+  text-transform: uppercase; cursor: pointer;
+}
+#feedback-overlay .feedback-kinds input:checked + span {
+  background: var(--color-text); color: var(--color-bg);
+}
+#feedback-overlay .feedback-kinds input:focus-visible + span {
+  text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: .2em;
+}
+#feedback-overlay .feedback-label {
+  display: block; margin-bottom: var(--space-2); font-size: 0.95rem;
+}
+#feedback-overlay textarea {
+  display: block; box-sizing: border-box; width: 100%; max-height: min(35dvh, 280px);
+  min-height: 124px; resize: vertical; padding: 12px;
+  background: var(--color-surface-2); border: 0; border-radius: 0;
+  color: var(--color-text); font: inherit; line-height: 1.45;
+  touch-action: auto!important;
+}
+#feedback-overlay .feedback-help {
+  margin: var(--space-3) 0; font-size: 0.85rem; line-height: 1.4;
+  color: var(--color-text-subtle);
+}
+#feedback-overlay #feedback-status:empty { display: none; }
+#feedback-overlay #feedback-status { color: var(--color-text); }
+#feedback-overlay #feedback-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+#feedback-overlay .settings-panel__body { overflow: auto; }
+@media (prefers-reduced-motion: reduce) {
+  #feedback-overlay .settings-panel { transition: none; }
+}

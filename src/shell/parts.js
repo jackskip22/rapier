@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.53/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.54/';
 	const PART_DIRECTORY = 'parts/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();
@@ -51,10 +51,16 @@ const RapierParts = (() => {
 		}
 		throw failure || new Error('could not download ' + pin.id);
 	}
-	async function body(pin) {
+	async function body(pin, availableOnly = false) {
 		if (document.readyState === 'loading') await new Promise(done => document.addEventListener('DOMContentLoaded', done, {once: true}));
 		const element = carried(pin);
 		if (element) return element.textContent;
+		if (availableOnly) {
+			if (pin.held) return Promise.race([pin.held, Promise.resolve(null)]).catch(() => null);
+			if (sealed() || local()) return null;
+			const bytes = await stored(pin);
+			return bytes ? new TextDecoder('utf-8', {fatal: true}).decode(bytes) : null;
+		}
 		return pin.held ||= held(pin).then(bytes => new TextDecoder('utf-8', {fatal: true}).decode(bytes)).catch(error => { pin.held = null; throw error; });
 	}
 	async function held(pin) {
@@ -160,10 +166,11 @@ const RapierParts = (() => {
 		say(id, 'absent');
 		return true;
 	}
-	async function element(id) {
+	async function element(id, {availableOnly = false} = {}) {
 		const pin = pins.get(id);
 		if (!pin) throw new Error('This Rapier does not carry ' + id);
-		return '<script type="application/rapier-runtime" id="rapier-part-' + id + '">' + await body(pin) + '</script>\n';
+		const text = await body(pin, availableOnly);
+		return text === null ? null : '<script type="application/rapier-runtime" id="rapier-part-' + id + '">' + text + '</script>\n';
 	}
 	async function check(id) {
 		const pin = pins.get(id);

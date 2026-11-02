@@ -64,9 +64,12 @@
 		moreTitle.id = 'rapier-jxl-compare'; more.setAttribute('aria-labelledby', moreTitle.id);
 		for (const fact of C.COMPARE.lines) facts.append(make('li', 'rapier-jxl-view__note', fact));
 		more.append(moreTitle, facts, make('p', 'rapier-jxl-view__note', C.COMPARE.basis));
-		body.append(fold, more);
+		const scene = make('section', 'rapier-jxl-view__more'), sceneTitle = make('h2', 'rapier-jxl-view__title', C.SCENE.title), stage = make('div', 'rapier-jxl-scene__stage');
+		sceneTitle.id = 'rapier-jxl-scene'; scene.setAttribute('aria-labelledby', sceneTitle.id);
+		scene.append(sceneTitle, make('p', 'rapier-jxl-view__note', C.SCENE.note), stage);
+		body.append(fold, more, scene);
 		root.append(bar, body);
-		return {info, root, shut, input, group, modes, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
+		return {info, root, shut, input, group, modes, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
 	}
 
 	function paint(row) {
@@ -289,13 +292,26 @@
 		root.addEventListener('dragleave', event => { if (!root.contains(event.relatedTarget)) view.pick.removeAttribute('data-over'); });
 		root.addEventListener('drop', event => { if (!event.dataTransfer?.files.length) return; event.preventDefault(); view.pick.removeAttribute('data-over'); add([...event.dataTransfer.files]); });
 		root.addEventListener('paste', event => { const files = [...event.clipboardData?.files || []].filter(file => /^(image|video)\//.test(file.type)); if (files.length) { event.preventDefault(); add(files); } });
+		sceneWhenNear(view);
 		overall();
 		view.pick.querySelector('input').focus({preventScroll: true});
 		if (view.chosen?.length) { const chosen = view.chosen; view.chosen = null; view.input.value = ''; add(chosen); }
 	}
+	function sceneWhenNear(self) {
+		if (!_rapierPartAvailable('jxlscene')) { self.scene.hidden = true; return; }
+		self.near = new IntersectionObserver(entries => {
+			if (!entries.some(entry => entry.isIntersecting)) return;
+			self.near.disconnect(); self.near = null;
+			RapierParts.check('jxlscene').catch(() => {}).then(() => RapierParts.need('jxlscene')).then(() => {
+				if (view === self && !self.mounted) self.mounted = _rapierJxlScenePart.mount(self.scene, self.stage);
+			}, () => { if (view === self) self.stage.replaceWith(make('p', 'rapier-jxl-view__note', C.SCENE.missing)); });
+		}, {root: self.stage.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
+		self.near.observe(self.stage);
+	}
 	function close() {
 		if (!view) return;
 		view.controller?.abort();
+		view.near?.disconnect(); view.mounted?.unmount();
 		const done = view;
 		view = null;
 		done.follow?.popup.end();

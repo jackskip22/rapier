@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {readFile, writeFile, mkdir, rm, copyFile, cp, readdir} from 'node:fs/promises';
+import {readFile, writeFile, mkdir, rm, copyFile, cp, readdir, chmod} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {gzipSync, brotliCompressSync, constants} from 'node:zlib';
@@ -7,6 +7,8 @@ import {createHash} from 'node:crypto';
 import {join, dirname, resolve, relative, basename} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {checkBudgets} from './jxl-budgets.mjs';
+import {shrinkShaders} from './jxl-shaders.mjs';
+import acorn from '../agent/vendor/acorn.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..'), codec = join(repo, 'images/jxl'), v7 = join(codec, 'v7');
 const {GPU_FROM} = await import(pathToFileURL(join(codec, 'gpu-gate.mjs')).href);
@@ -27,24 +29,29 @@ export const TERSER_VERSION = '5.51.2';
 const terserRoot = process.env.TERSER ? resolve(process.env.TERSER) : dirname(createRequire(import.meta.url).resolve('terser/package.json'));
 const terser = createRequire(import.meta.url)(terserRoot), terserVersion = JSON.parse(await readFile(join(terserRoot, 'package.json'), 'utf8')).version;
 if (terserVersion !== TERSER_VERSION) throw new Error('rapier-jxl 7.0 builds with terser ' + TERSER_VERSION + ', not ' + terserVersion + '.');
-const version = '8.0.1';
+const version = '8.1.0';
 
-export const ONE_FILE = ['index', 'upload', 'capture', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'polyfill', 'snapdom'];
+export const ONE_FILE = ['index', 'upload', 'capture', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'polyfill', 'serve'];
 export const WASM_MODULES = ['index', 'upload', 'capture', 'animation', 'format', 'decode', 'jpeg'];
 export const WORKER_FILES = ['still', 'upload', 'capture', 'animation', 'format', 'decode', 'jpeg'];
 export const HELPER_FILES = ['still', 'upload', 'animation', 'format'];
-const MODULE_FILE = /^\.\/(index|upload|capture|animation|format|decode|jpeg|helpers)\.mjs$/;
+const MODULE_FILE = /^\.\/(index|upload|capture|animation|format|decode|jpeg|codec|helpers)\.mjs$/;
 const common = {absWorkingDir: repo, bundle: true, minify: true, format: 'esm', target: 'es2022', legalComments: 'none', logLevel: 'warning',
   external: ['node:*'], define: {__RAPIER_JXL_VERSION__: JSON.stringify(version)}, banner: {js: '/*! rapier-jxl ' + version + ' | MIT */'}};
 
 await rm(out, {recursive: true, force: true});
 await mkdir(dist, {recursive: true});
+const shaders = {name: 'shaders', setup(build) {
+  build.onLoad({filter: /[\\/](gpu-[\w-]+|int-ops)\.mjs$/}, async ({path}) => ({contents: shrinkShaders(await readFile(path, 'utf8')), loader: 'js'}));
+}};
 const moduleFiles = {name: 'module-files', setup(build) {
-  build.onResolve({filter: MODULE_FILE}, ({path, importer}) => importer === join(v7, 'codec.mjs') ? {path, external: true} : undefined);
+  build.onResolve({filter: MODULE_FILE}, ({path, importer}) => importer === join(v7, 'codec-modules.mjs') || importer === join(v7, 'cli.mjs') ? {path, external: true} : undefined);
 }};
 const built = {metafile: {inputs: {}, outputs: {}}}, contents = {};
 async function oneFile(name, file = name + '.mjs', from = v7) {
-  const {metafile} = await esbuild.build({...common, metafile: true, plugins: [moduleFiles], entryPoints: [join(from, file)], outfile: join(dist, file)});
+  const define = {...common.define, __RAPIER_JXL_UPLOAD__: String(/^upload(\.|$)/.test(name)), __RAPIER_JXL_JPEG__: String(/^jpeg(\.|$)/.test(name)),
+    __RAPIER_JXL_METADATA__: String(/^metadata(\.|$)/.test(name))};
+  const {metafile} = await esbuild.build({...common, define, metafile: true, plugins: [moduleFiles, shaders], entryPoints: [join(from, file)], outfile: join(dist, file)});
   Object.assign(built.metafile.inputs, metafile.inputs); Object.assign(built.metafile.outputs, metafile.outputs);
   const [output] = Object.values(metafile.outputs);
   const loads = output.imports.filter(edge => !(edge.external && (edge.path.startsWith('node:') || MODULE_FILE.test(edge.path))));
@@ -52,6 +59,7 @@ async function oneFile(name, file = name + '.mjs', from = v7) {
   contents[name] = Object.keys(output.inputs);
 }
 for (const name of ONE_FILE) await oneFile(name);
+await oneFile('cli');
 for (const name of WORKER_FILES) await oneFile(name + '.worker', name + '.worker.mjs');
 for (const name of HELPER_FILES) await oneFile(name + '.helper', name + '.helper.mjs');
 await oneFile('helpers');
@@ -83,17 +91,27 @@ await oneFile('wasm-modules', 'wasm-modules.mjs', codec);
 
 for (const file of await readdir(dist)) {
   const path = join(dist, file), module = file.endsWith('.mjs');
-  const {code} = await terser.minify(await readFile(path, 'utf8'), {module, ecma: 2020, compress: false, mangle: true, format: {comments: /^!/}});
+  const command = file === 'cli.mjs', source = (await readFile(path, 'utf8')).replace(/^#![^\n]*\n/, '');
+  let {code} = await terser.minify(source, {module, ecma: 2020, compress: false, mangle: true, format: {comments: /^!/}});
+  if (/^upload(?:\.|$)/.test(file)) {
+    const nodes = acorn.parse(code, {ecmaVersion: 'latest', sourceType: 'module'}).body, functions = [], statements = [];
+    for (const node of nodes) (node.type === 'FunctionDeclaration' ? functions : statements).push(code.slice(node.start, node.end));
+    const packed = code.slice(0, nodes[0]?.start ?? code.length) + [...statements, ...functions].join('\n');
+    if (gzipSync(packed, {level: 9}).length < gzipSync(code, {level: 9}).length) code = packed;
+  }
+  if (command) code = '#!/usr/bin/env node\n' + code;
   await writeFile(path, code);
+  if (command) await chmod(path, 0o755);
   for (const [key, output] of Object.entries(built.metafile.outputs)) if (basename(key) === file) output.bytes = Buffer.byteLength(code);
 }
 
+const {wasmBytes} = await import(join(codec, 'wasm-text.mjs'));
 const {CAPTURE} = await import(join(codec, 'capture-kernels-bytes.mjs'));
 const {SIMD} = await import(join(codec, 'kernels-bytes.mjs'));
 const {JPEG_KERNELS} = await import(join(codec, 'jpeg-kernels-bytes.mjs'));
 const {DECODE_KERNELS} = await import(join(codec, 'decode-kernels-bytes.mjs'));
 for (const [name, text] of [['capture',CAPTURE],['simd',SIMD],['jpeg',JPEG_KERNELS],['decode',DECODE_KERNELS]])
-  await writeFile(join(dist, name + '.wasm'), Uint8Array.from(text, c => c.charCodeAt(0)));
+  await writeFile(join(dist, name + '.wasm'), wasmBytes(text));
 const conditions = name => ({workerd: `./dist/${name}.workerd.mjs`, 'edge-light': `./dist/${name}.edge-light.mjs`});
 for (const condition of ['workerd','edge-light']) {
   const load = name => `import ${name} from './${name}.wasm${condition === 'edge-light' ? '?module' : ''}';`, names = ['capture','simd','jpeg','decode'];
@@ -132,7 +150,7 @@ const sideEffects = ['./dist/polyfill.mjs', ...WORKER_FILES.map(name => `./dist/
   ...[...WASM_MODULES, 'wasm'].flatMap(name => Object.values(conditions(name)))];
 const {repository, homepage, bugs, keywords} = JSON.parse(await readFile(join(codec, 'package.json'), 'utf8'));
 await writeFile(join(out, 'package.json'), JSON.stringify({name: 'rapier-jxl', version, type: 'module', license: 'MIT',
-  description: 'JPEG XL for pictures, captures and exact JPEG reconstruction.', repository, homepage, bugs, keywords, exports, types: './types/index.d.mts',
+  description: 'JPEG XL for pictures, captures and exact JPEG reconstruction.', repository, homepage, bugs, keywords, bin: {'rapier-jxl': 'dist/cli.mjs'}, exports, types: './types/index.d.mts',
   sideEffects, files: ['dist', 'types', 'examples', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES', ...(changelog ? ['CHANGELOG.md'] : [])],
   engines: {node: '^20.16.0 || >=22.3.0'}}, null, 1) + '\n');
 
@@ -142,7 +160,7 @@ const sizes = {esbuild: esbuild.version, terser: terserVersion, node: process.ve
 for (const file of (await readdir(dist)).filter(name => name.endsWith('.mjs')).sort()) sizes.files[file] = measure(await readFile(join(dist, file)));
 const gz = file => sizes.files[file].gzip;
 sizes.modules = {still: gz('index.mjs'), upload: gz('upload.mjs'), capture: gz('capture.mjs'), animation: gz('animation.mjs'), format: gz('format.mjs'),
-  decode: gz('decode.mjs'), jpeg: gz('jpeg.mjs'), metadata: gz('metadata.mjs'), codec: gz('codec.mjs'), polyfill: gz('polyfill.mjs'), snapdom: gz('snapdom.mjs'),
+  decode: gz('decode.mjs'), jpeg: gz('jpeg.mjs'), metadata: gz('metadata.mjs'), codec: gz('codec.mjs'), polyfill: gz('polyfill.mjs'), serve: gz('serve.mjs'), cli: gz('cli.mjs'),
   captureQueued: gz('codec.mjs') + gz('capture.worker.mjs'), uploadQueued: gz('codec.mjs') + gz('upload.worker.mjs'), stillQueued: gz('codec.mjs') + gz('still.worker.mjs')};
 checkBudgets(sizes.modules);
 let readme = await readFile(join(v7, 'README.md'), 'utf8');

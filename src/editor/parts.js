@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-var _rapierDrawPart = null, _rapierFontsPart = null, _rapierJxlPart = null, _rapierJxlCompletePart = null, _rapierDiffPart = null, _rapierDiagramsPart = null, _rapierConvertPart = null, _rapierMathPart = null, _rapierNotesPart = null, _rapierDocumentPart = null, _rapierComposerPart = null, _rapierPresetPart = null;
+var _rapierDrawPart = null, _rapierFontsPart = null, _rapierJxlPart = null, _rapierJxlCompletePart = null, _rapierJxlScenePart = null, _rapierDiffPart = null, _rapierDiagramsPart = null, _rapierConvertPart = null, _rapierMathPart = null, _rapierNotesPart = null, _rapierDocumentPart = null, _rapierComposerPart = null, _rapierPresetPart = null;
 async function _rapierOpenPresets() {
 	if (!_rapierSettlePendingDocumentChange()) return;
 	const capture = _rapierCaptureEngineDialogTarget(), stamp = Object.freeze(_rapierMutationStamp());

@@ -20,7 +20,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.53`.
+https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.52`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:

@@ -8,6 +8,7 @@ import {jxlWhole} from './jxl-native.mjs';
 import {portablePaintPNG, validatePaintRaster} from './paint-raster.mjs';
 import {inspectGIF} from './gif.mjs';
 export {jxlWhole, portablePaintPNG, validatePaintRaster};
+export {configurePaintRasterDecoder} from './paint-raster.mjs';
 
 export function inkForPaper(text, {dark = true, paperInk = null} = {}) {
   if (!/<metadata id="rapier-(?:draw|element)">/.test(text) || text.includes('<g data-rapier-background="paper"')) return text;

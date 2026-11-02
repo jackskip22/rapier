@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {receiveFeedback} from './feedback-server.js';
 const ORIGIN = 'https://rapier.website';
 const PAGE = '/index.html';
 export function doorAssetPath(path) {
@@ -89,6 +90,10 @@ export const DOORS = Object.freeze({
 			Object.freeze(['How it works', 'The JPEG XL encoder is part of Rapier, which is one offline HTML file. Your browser reads each picture, or plays each video frame by frame, and the encoder writes the JPEG XL file on your device. Nothing is uploaded. A JPEG is carried into JPEG XL without decoding it, then restored and checked against the original before you download.']),
 			Object.freeze(['Why JPEG XL', 'In Lossless mode a JPEG converts to a smaller file and restores the exact original. Other pictures come out smaller at the same quality. JPEG XL also holds transparency, high dynamic range and animation.']),
 			Object.freeze(['How rapier-jxl compares', '17% smaller files than libjxl and libvips at the same quality (effort 7, 2,560-pixel photos). 12% smaller uploads than libvips at the same quality (effort 3, 2,560-pixel photos). The upload encoder downloads 182 KB; libvips in the browser downloads 2.9 MB. Half the memory of libvips for a 12-megapixel upload. Measured against libjxl 0.12.0 and wasm-vips 0.0.19, same SSIMULACRA 2 score.']),
+			Object.freeze(['Save a 3D scene', 'A WebGL scene saved as JPEG XL while it keeps drawing, on this device: the view on screen or the whole world as a 4096 by 2048 panorama, exact, fast or smallest. Each file is opened again and compared with the scene. With a VR headset, the panorama surrounds you.']),
+			Object.freeze(['Large pictures and panoramas', 'With the full encoder, firstRegion puts a chosen rectangle earlier in the file so it can appear sooner. Use it for the first view of a large picture or panorama. It does not track the viewer or stream separate tiles.']),
+			Object.freeze(['Keep HDR image data', 'The full encoder accepts floating-point image data, keeping bright lighting values for later rendering instead of flattening them into an 8-bit screenshot. Describe the color space correctly. Showing HDR brightness still needs a compatible display and viewer.']),
+			Object.freeze(['Save a GPU texture', 'Pass a supported WebGPU texture and its device to the full encoder; the texture needs COPY_SRC usage. This avoids an intermediate PNG or JPEG, not GPU readback. Keep the texture alive until encoding finishes. The upload module does not accept GPU textures.']),
 			Object.freeze(['Use rapier-jxl in your site or app', 'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies. It encodes lossless and lossy pictures and animations, carries a JPEG exactly, and keeps alpha and HDR. The upload encoder is about 182 KB gzipped; the full encoder about 294 KB. Run npm install rapier-jxl, then import {encode} from rapier-jxl/upload: encode(file) returns the JPEG XL bytes.', Object.freeze([Object.freeze(['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl']), Object.freeze(['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl'])])]),
 		])}),
 	'/diff': Object.freeze({name: 'Compare documents', title: 'Compare text, Word and PDF files online, free | Rapier',
@@ -469,6 +474,7 @@ export default {
 		const url = new URL(request.url);
 		if (env && env.DOOR_TRACE) console.log('door-worker ' + url.pathname);
 		const plain = () => env.ASSETS.fetch(request);
+		if (url.pathname === '/api/feedback') return receiveFeedback(request,env);
 		try {
 			const method = request.method.toUpperCase();
 			if (method !== 'GET' && method !== 'HEAD') return plain();

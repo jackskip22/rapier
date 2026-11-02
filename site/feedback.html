@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="referrer" content="no-referrer">
+<title>Feedback — Rapier</title>
+<style>
+:root{color-scheme:light dark;font-family:Arial,sans-serif}
+*{box-sizing:border-box}
+body{background:#f9f9f9;color:#111;margin:0;padding:clamp(18px,5vw,40px);font-size:16px}
+main{max-width:540px;margin:0 auto}
+header{font-family:monospace;letter-spacing:-.04em;font-size:24px;margin-bottom:64px}
+h1{font-size:clamp(42px,11vw,66px);font-weight:400;letter-spacing:-.06em;line-height:1;margin:0 0 25px}
+p{line-height:1.5}
+fieldset{border:0;padding:0;margin:0 0 22px;display:grid;grid-template-columns:repeat(3,1fr)}
+legend{position:absolute;clip:rect(0 0 0 0);width:1px;height:1px;overflow:hidden}
+label.kind{position:relative;text-align:center}
+.kind input{position:absolute;opacity:0}
+.kind span{display:block;padding:16px 4px;background:#e9e9e9;font:600 16px monospace;text-transform:uppercase;cursor:pointer}
+.kind input:checked+span{background:#111;color:#fff}
+.kind input:focus-visible+span{text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.2em}
+label[for=message]{display:block;margin-bottom:10px}
+textarea{display:block;width:100%;height:160px;padding:14px;border:0;border-radius:0;background:#e9e9e9;color:#111;font:inherit;resize:vertical}
+button{display:block;width:100%;padding:18px 12px;background:#111;color:#fff;border:0;border-radius:0;margin-top:20px;font:600 16px monospace;text-transform:uppercase;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+small{display:block;line-height:1.5;color:#555;margin-top:13px}
+#status{min-height:24px}
+a{color:inherit}
+@media(prefers-color-scheme:dark){body{background:#0b0b0b;color:#f5f5f5}.kind span,textarea{background:#202020;color:#fff}.kind input:checked+span,button{background:#f5f5f5;color:#111}small{color:#aaa}}
+</style>
+</head>
+<body>
+<main>
+<header>rapier</header>
+<h1>feedback</h1>
+<form id="form">
+<fieldset>
+<legend>Feedback type</legend>
+<label class="kind"><input type="radio" name="kind" value="bug" checked><span>bug</span></label>
+<label class="kind"><input type="radio" name="kind" value="idea"><span>idea</span></label>
+<label class="kind"><input type="radio" name="kind" value="other"><span>other</span></label>
+</fieldset>
+<label for="message">What would you like us to know?</label>
+<textarea id="message" maxlength="1600" required placeholder="Tell us what happened or what could be better."></textarea>
+<small>No account needed. Your report is recorded to help improve Rapier. Please avoid sensitive information.</small>
+<p id="status" role="status" aria-live="polite"></p>
+<button type="submit" id="send">Send report</button>
+</form>
+</main>
+<script>
+(() => {
+  'use strict';
+  const form=document.getElementById('form');
+  const message=document.getElementById('message');
+  const status=document.getElementById('status');
+  const send=document.getElementById('send');
+  const encoder=new TextEncoder();
+  const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+  let prepared=null, sending=false, complete=false, revision=0, pending=null;
+  const kind=()=>form.querySelector('input[name=kind]:checked').value;
+  const hash=location.hash;
+  // Clear the fragment before making any request, including on validation failure.
+  if(hash)history.replaceState(null,'',location.pathname+location.search);
+  try {
+    if(hash.startsWith('#r=')){
+      const raw=hash.slice(3);
+      if(raw.length>5400||!/^[a-zA-Z0-9_-]+$/.test(raw))throw Error('This report link is invalid.');
+      const padded=raw.replace(/-/g,'+').replace(/_/g,'/');
+      const bytes=Uint8Array.from(atob(padded),ch=>ch.charCodeAt(0));
+      const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+      if(!['bug','idea','other'].includes(data.kind)||typeof data.message!=='string'||
+         data.message.length>1600||encoder.encode(data.message).length>3000||
+         !data.message.trim()||!uuid.test(data.id))throw Error('This report link is invalid.');
+      const choice=form.querySelector('input[name=kind][value='+data.kind+']');
+      choice.checked=true;message.value=data.message;
+      prepared={
+        version:typeof data.version==='string'&&data.version.length<=40&&
+          /^[a-zA-Z0-9.-]*$/.test(data.version)?data.version||'web':'web',
+        source:typeof data.source==='string'&&data.source.length<=32&&
+          /^[a-zA-Z0-9-]+$/.test(data.source)?data.source:'browser'
+      };
+      pending={revision,body:{id:data.id,kind:data.kind,message:data.message.trim(),
+        version:prepared.version,source:prepared.source}};
+    }else if(hash)throw Error('This report link is invalid.');
+  }catch(_){status.textContent='This report link is invalid.';}
+
+  function edited(){
+    revision++; pending=null;
+    if(complete){complete=false;send.textContent='Send report';}
+    status.textContent='';
+    if(!sending)send.disabled=false;
+  }
+  message.addEventListener('input',edited);
+  form.querySelectorAll('input[name=kind]').forEach(input=>input.addEventListener('change',edited));
+
+  async function submit(){
+    if(sending||complete)return;
+    const content=message.value.trim();
+    if(!content||content.length>1600||encoder.encode(content).length>3000){
+      status.textContent='Please enter a shorter message.';return;
+    }
+    const attempt=pending?.revision===revision?pending:{revision,body:{
+      id:crypto.randomUUID(),kind:kind(),message:content,
+      version:prepared?.version||'web',source:prepared?.source||'website'
+    }};
+    pending=attempt;
+    sending=true;send.disabled=true;
+    status.textContent='Sending…';
+    try{
+      const response=await fetch('/api/feedback',{method:'POST',credentials:'omit',
+        headers:{'content-type':'application/json'},body:JSON.stringify(attempt.body)});
+      if(!response.ok)throw Error(response.status===429?'Too many reports. Please try again later.':'Could not send. Please try again.');
+      const receipt=await response.json();
+      if(receipt.received!==true||receipt.id!==attempt.body.id)
+        throw Error('Delivery was not confirmed. Please retry.');
+      if(revision===attempt.revision){
+        complete=true;message.value='';pending=null;
+        status.textContent='Feedback received. Thank you.';
+        send.textContent='Received';send.disabled=true;
+      }else{
+        status.textContent='Earlier feedback received. Your new draft is unchanged.';
+      }
+    }catch(error){
+      if(revision===attempt.revision)
+        status.textContent=error.message||'Could not send. Please retry.';
+    }finally{
+      sending=false;
+      if(!complete)send.disabled=false;
+    }
+  }
+  form.addEventListener('submit',event=>{event.preventDefault();void submit();});
+  if(prepared)void submit();
+})();
+</script>
+</body>
+</html>

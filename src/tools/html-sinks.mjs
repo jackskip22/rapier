@@ -18,7 +18,7 @@ function* sourceFiles() {
 			const current = stack.pop();
 			for (const name of readdirSync(current).sort()) {
 				const path = join(current, name);
-				if (statSync(path).isDirectory()) { if (name !== 'vendor' && name !== 'node_modules') stack.push(path); continue; }
+				if (statSync(path).isDirectory()) { if (name !== 'vendor' && name !== 'node_modules' && name !== 'examples') stack.push(path); continue; }
 				if (/\.(?:js|mjs)$/.test(name)) yield path;
 			}
 		}

@@ -18,6 +18,10 @@ export const COMPARE = Object.freeze({
 		'The upload encoder downloads 182 KB; libvips in the browser downloads 2.9 MB.',
 		'Half the memory of libvips for a 12-megapixel upload.']),
 	basis: 'Measured against libjxl 0.12.0 and wasm-vips 0.0.19, same SSIMULACRA 2 score.'});
+export const SCENE = Object.freeze({
+	title: 'Save a 3D scene',
+	note: 'A WebGL scene saved as JPEG XL while it keeps drawing, on this device.',
+	missing: 'The scene could not load. Reload the page and try again.'});
 export const ABOUT = Object.freeze([
 	'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies.',
 	'It encodes lossless and lossy pictures, carries a JPEG exactly, and keeps alpha and HDR.',

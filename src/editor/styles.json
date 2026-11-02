@@ -72,5 +72,9 @@
   {
     "id": "rapier-todo-style",
     "path": "notes/rapier-todo.css"
+  },
+  {
+    "id": "rapier-feedback-style",
+    "path": "editor/styles/rapier-feedback.css"
   }
 ]

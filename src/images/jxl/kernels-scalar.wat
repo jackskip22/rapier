@@ -5,21 +5,6 @@
 ;; SIMD averages add one to negative sums before >>1, matching JavaScript's /2 |0.
 (module
   (import "env" "memory" (memory 1 272))
-  (global $table (mut i32) (i32.const 0))
-  (global $out (mut i32) (i32.const 0))
-  (global $writing (mut i32) (i32.const 0))
-  (global $acc (mut i64) (i64.const 0))
-  (global $pending (mut i32) (i32.const 0))
-  ;; The residual tokens' hybrid-integer configuration (split, msb, lsb; splittoken is 1 << split), and the histogram
-  ;; layout: a bin per context of $stride entries, LZ77 length tokens at $lenbase. A raw histogram ($raw) holds a
-  ;; literal's own value in its own bin and the 33 length tokens in its last 33.
-  (global $split (mut i32) (i32.const 0))
-  (global $msb (mut i32) (i32.const 0))
-  (global $lsb (mut i32) (i32.const 0))
-  (global $splittoken (mut i32) (i32.const 1))
-  (global $stride (mut i32) (i32.const 257))
-  (global $lenbase (mut i32) (i32.const 224))
-  (global $raw (mut i32) (i32.const 0))
   (func $residual
     (export "residual")
     (param $p i32)
@@ -129,184 +114,145 @@
         (br_if $xs (i32.lt_u (local.get $x) (local.get $w))))
       (local.set $y (i32.add (local.get $y) (i32.const 1)))
       (br_if $ys (i32.lt_u (local.get $y) (local.get $h)))))
-  (func $bits
-    (param $n i32)
-    (param $v i32)
-    (global.set $acc
-      (i64.or
-        (global.get $acc)
-        (i64.shl (i64.extend_i32_u (local.get $v)) (i64.extend_i32_u (global.get $pending)))))
-    (global.set $pending (i32.add (global.get $pending) (local.get $n)))
-    (block $done
-      (loop $bytes
-        (br_if $done (i32.lt_u (global.get $pending) (i32.const 8)))
-        (i32.store8 (global.get $out) (i32.wrap_i64 (global.get $acc)))
-        (global.set $out (i32.add (global.get $out) (i32.const 1)))
-        (global.set $acc (i64.shr_u (global.get $acc) (i64.const 8)))
-        (global.set $pending (i32.sub (global.get $pending) (i32.const 8)))
-        (br $bytes))))
-  (func $emit
-    (param $context i32)
-    (param $value i32)
-    (param $run i32)
-    (local $symbol i32)
-    (local $n i32)
-    (local $nbits i32)
-    (local $extra i32)
-    (local $below i32)
-    (local $at i32)
-    (if
-      (local.get $run)
-      (then
-        ;; An LZ77 length, split 4: a value below 16 is its own token, above it n + 12 with n raw bits.
-        (if
-          (i32.lt_u (local.get $value) (i32.const 16))
-          (then (local.set $symbol (i32.add (local.get $value) (global.get $lenbase))))
-          (else
-            (local.set $n (i32.sub (i32.const 31) (i32.clz (local.get $value))))
-            (local.set $symbol (i32.add (i32.add (local.get $n) (i32.const 12)) (global.get $lenbase)))
-            (local.set $nbits (local.get $n))
-            (local.set $extra
-              (i32.and (local.get $value) (i32.sub (i32.shl (i32.const 1) (local.get $n)) (i32.const 1)))))))
-      (else
-        (if
-          (global.get $raw)
-          (then
-            ;; The literal's own bin; a value past the histogram is not counted, as a write past an array's end.
-            (if (i32.ge_u (local.get $value) (global.get $stride)) (then (return)))
-            (local.set $symbol (local.get $value)))
-          (else
-            (if
-              (i32.lt_u (local.get $value) (global.get $splittoken))
-              (then (local.set $symbol (local.get $value)))
-              (else
-                (local.set $n (i32.sub (i32.const 31) (i32.clz (local.get $value))))
-                (if
-                  (i32.eqz (i32.or (global.get $msb) (global.get $lsb)))
-                  (then
-                    ;; Every bit under the top one raw.
-                    (local.set $symbol (i32.add (global.get $splittoken) (i32.sub (local.get $n) (global.get $split))))
-                    (local.set $nbits (local.get $n))
-                    (local.set $extra
-                      (i32.and (local.get $value) (i32.sub (i32.shl (i32.const 1) (local.get $n)) (i32.const 1)))))
-                  (else
-                    (local.set $below (i32.sub (local.get $value) (i32.shl (i32.const 1) (local.get $n))))
-                    (local.set $nbits (i32.sub (i32.sub (local.get $n) (global.get $msb)) (global.get $lsb)))
-                    (local.set $symbol
-                      (i32.add
-                        (global.get $splittoken)
-                        (i32.or
-                          (i32.or
-                            (i32.shl
-                              (i32.sub (local.get $n) (global.get $split))
-                              (i32.add (global.get $msb) (global.get $lsb)))
-                            (i32.shl
-                              (i32.shr_u (local.get $below) (i32.sub (local.get $n) (global.get $msb)))
-                              (global.get $lsb)))
-                          (i32.and
-                            (local.get $below)
-                            (i32.sub (i32.shl (i32.const 1) (global.get $lsb)) (i32.const 1))))))
-                    (local.set $extra
-                      (i32.and
-                        (i32.shr_u (local.get $value) (global.get $lsb))
-                        (i32.sub (i32.shl (i32.const 1) (local.get $nbits)) (i32.const 1))))))))))))
-    (if
-      (global.get $writing)
-      (then
-        (local.set $at
-          (i32.add
-            (global.get $table)
-            (i32.shl (i32.add (i32.mul (local.get $context) (global.get $stride)) (local.get $symbol)) (i32.const 3))))
-        (call $bits (i32.load (local.get $at)) (i32.load offset=4 (local.get $at)))
-        (if (local.get $nbits) (then (call $bits (local.get $nbits) (local.get $extra)))))
-      (else
-        (local.set $at
-          (i32.add
-            (global.get $table)
-            (i32.shl (i32.add (i32.mul (local.get $context) (global.get $stride)) (local.get $symbol)) (i32.const 2))))
-        (i32.store (local.get $at) (i32.add (i32.load (local.get $at)) (i32.const 1))))))
-  (func $context
-    (param $contexts i32)
-    (param $i i32)
-    (result i32)
-    (if
-      (result i32)
-      (local.get $contexts)
-      (then (i32.load (i32.add (local.get $contexts) (i32.shl (local.get $i) (i32.const 2)))))
-      (else (i32.const 0))))
+  ;; The count and write passes share one token loop. A zero run emits its first
+  ;; literal, then either the remaining short literals or one length at the next
+  ;; pixel's context. Prefix and raw bits share a local 64-bit reservoir.
   (func $tokens
     (export "tokens")
-    (param $values i32)
-    (param $contexts i32)
-    (param $n i32)
-    (param $table i32)
-    (param $out i32)
-    (param $writing i32)
-    (param $acc i32)
-    (param $pending i32)
-    (param $split i32)
-    (param $msb i32)
-    (param $lsb i32)
-    (param $rawlen i32)
+    (param $values i32) (param $contexts i32) (param $n i32)
+    (param $table i32) (param $out i32) (param $writing i32)
+    (param $acc i32) (param $pending i32)
+    (param $split i32) (param $msb i32) (param $lsb i32) (param $rawlen i32)
     (result i32)
-    (local $i i32)
-    (local $run i32)
-    (local $v i32)
-    (local $j i32)
-    (global.set $table (local.get $table))
-    (global.set $out (local.get $out))
-    (global.set $writing (local.get $writing))
-    (global.set $acc (i64.extend_i32_u (local.get $acc)))
-    (global.set $pending (local.get $pending))
-    (global.set $split (local.get $split))
-    (global.set $msb (local.get $msb))
-    (global.set $lsb (local.get $lsb))
-    (global.set $splittoken (i32.shl (i32.const 1) (local.get $split)))
-    (global.set $raw (i32.ne (local.get $rawlen) (i32.const 0)))
-    (global.set $stride (select (local.get $rawlen) (i32.const 257) (local.get $rawlen)))
-    (global.set $lenbase (select (i32.sub (local.get $rawlen) (i32.const 33)) (i32.const 224) (local.get $rawlen)))
+    (local $i i32) (local $next i32) (local $run i32) (local $copy i32)
+    (local $ctx i32) (local $v i32) (local $symbol i32) (local $log i32)
+    (local $nbits i32) (local $extra i32) (local $below i32) (local $at i32)
+    (local $raw i32) (local $stride i32) (local $lenbase i32) (local $splittoken i32)
+    (local $output i32) (local $reservoir i64)
+    (local.set $raw (i32.ne (local.get $rawlen) (i32.const 0)))
+    (local.set $stride (select (local.get $rawlen) (i32.const 257) (local.get $rawlen)))
+    (local.set $lenbase (select (i32.sub (local.get $rawlen) (i32.const 33)) (i32.const 224) (local.get $rawlen)))
+    (local.set $splittoken (i32.shl (i32.const 1) (local.get $split)))
+    (local.set $output (local.get $out))
+    (local.set $reservoir (i64.extend_i32_u (local.get $acc)))
     (block $done
-      (loop $next
+      (loop $nextToken
         (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
-        (local.set $v (i32.load (i32.add (local.get $values) (i32.shl (local.get $i) (i32.const 2)))))
-        (local.set $run (i32.const 1))
-        (if
-          (i32.eqz (local.get $v))
+        (local.set $ctx (if (result i32) (local.get $contexts)
+          (then (i32.load (i32.add (local.get $contexts) (i32.shl (local.get $i) (i32.const 2)))))
+          (else (i32.const 0))))
+        (local.set $copy (i32.gt_u (local.get $run) (i32.const 7)))
+        (if (local.get $copy)
           (then
-            (block $endrun
-              (loop $zeros
-                (br_if $endrun (i32.ge_u (i32.add (local.get $i) (local.get $run)) (local.get $n)))
-                (br_if $endrun
-                  (i32.load
-                    (i32.add
-                      (local.get $values)
-                      (i32.shl (i32.add (local.get $i) (local.get $run)) (i32.const 2)))))
-                (local.set $run (i32.add (local.get $run) (i32.const 1)))
-                (br $zeros)))))
-        (call $emit (call $context (local.get $contexts) (local.get $i)) (local.get $v) (i32.const 0))
-        (if
-          (i32.gt_u (local.get $run) (i32.const 7))
-          (then
-            (call $emit
-              (call $context (local.get $contexts) (i32.add (local.get $i) (i32.const 1)))
-              (i32.sub (local.get $run) (i32.const 8))
-              (i32.const 1)))
+            (local.set $v (i32.sub (local.get $run) (i32.const 8)))
+            (local.set $next (i32.add (local.get $i) (i32.sub (local.get $run) (i32.const 1))))
+            (local.set $run (i32.const 0)))
           (else
-            (local.set $j (i32.const 1))
-            (block $shortdone
-              (loop $short
-                (br_if $shortdone (i32.ge_u (local.get $j) (local.get $run)))
-                (call $emit
-                  (call $context (local.get $contexts) (i32.add (local.get $i) (local.get $j)))
-                  (i32.const 0)
-                  (i32.const 0))
-                (local.set $j (i32.add (local.get $j) (i32.const 1)))
-                (br $short)))))
-        (local.set $i (i32.add (local.get $i) (local.get $run)))
-        (br $next)))
-    (i32.store (i32.sub (local.get $out) (i32.const 8)) (i32.wrap_i64 (global.get $acc)))
-    (i32.store (i32.sub (local.get $out) (i32.const 4)) (global.get $pending))
-    (i32.sub (global.get $out) (local.get $out)))
+            (local.set $v (i32.load (i32.add (local.get $values) (i32.shl (local.get $i) (i32.const 2)))))
+            (local.set $next (i32.add (local.get $i) (i32.const 1)))
+            (if (local.get $run)
+              (then (local.set $run (i32.sub (local.get $run) (i32.const 1))))
+              (else (if (i32.eqz (local.get $v)) (then
+                (local.set $run (i32.const 1))
+                (block $endRun
+                  (loop $zeros
+                    (br_if $endRun (i32.ge_u (i32.add (local.get $i) (local.get $run)) (local.get $n)))
+                    (br_if $endRun (i32.load (i32.add (local.get $values)
+                      (i32.shl (i32.add (local.get $i) (local.get $run)) (i32.const 2)))))
+                    (local.set $run (i32.add (local.get $run) (i32.const 1)))
+                    (br $zeros)))
+                (if (i32.le_u (local.get $run) (i32.const 7))
+                  (then (local.set $run (i32.sub (local.get $run) (i32.const 1)))))))))))
+        (local.set $nbits (i32.const 0)) (local.set $extra (i32.const 0))
+        (block $emitted
+          (if
+            (local.get $copy)
+            (then
+              ;; An LZ77 length, split 4: a value below 16 is its own token, above it n + 12 with n raw bits.
+              (if
+                (i32.lt_u (local.get $v) (i32.const 16))
+                (then (local.set $symbol (i32.add (local.get $v) (local.get $lenbase))))
+                (else
+                  (local.set $log (i32.sub (i32.const 31) (i32.clz (local.get $v))))
+                  (local.set $symbol (i32.add (i32.add (local.get $log) (i32.const 12)) (local.get $lenbase)))
+                  (local.set $nbits (local.get $log))
+                  (local.set $extra
+                    (i32.and (local.get $v) (i32.sub (i32.shl (i32.const 1) (local.get $log)) (i32.const 1)))))))
+            (else
+              (if
+                (local.get $raw)
+                (then
+                  ;; The literal's own bin; a value past the histogram is not counted, as a write past an array's end.
+                  (if (i32.ge_u (local.get $v) (local.get $stride)) (then (br $emitted)))
+                  (local.set $symbol (local.get $v)))
+                (else
+                  (if
+                    (i32.lt_u (local.get $v) (local.get $splittoken))
+                    (then (local.set $symbol (local.get $v)))
+                    (else
+                      (local.set $log (i32.sub (i32.const 31) (i32.clz (local.get $v))))
+                      (if
+                        (i32.eqz (i32.or (local.get $msb) (local.get $lsb)))
+                        (then
+                          ;; Every bit under the top one raw.
+                          (local.set $symbol (i32.add (local.get $splittoken) (i32.sub (local.get $log) (local.get $split))))
+                          (local.set $nbits (local.get $log))
+                          (local.set $extra
+                            (i32.and (local.get $v) (i32.sub (i32.shl (i32.const 1) (local.get $log)) (i32.const 1)))))
+                        (else
+                          (local.set $below (i32.sub (local.get $v) (i32.shl (i32.const 1) (local.get $log))))
+                          (local.set $nbits (i32.sub (i32.sub (local.get $log) (local.get $msb)) (local.get $lsb)))
+                          (local.set $symbol
+                            (i32.add
+                              (local.get $splittoken)
+                              (i32.or
+                                (i32.or
+                                  (i32.shl
+                                    (i32.sub (local.get $log) (local.get $split))
+                                    (i32.add (local.get $msb) (local.get $lsb)))
+                                  (i32.shl
+                                    (i32.shr_u (local.get $below) (i32.sub (local.get $log) (local.get $msb)))
+                                    (local.get $lsb)))
+                                (i32.and
+                                  (local.get $below)
+                                  (i32.sub (i32.shl (i32.const 1) (local.get $lsb)) (i32.const 1))))))
+                          (local.set $extra
+                            (i32.and
+                              (i32.shr_u (local.get $v) (local.get $lsb))
+                              (i32.sub (i32.shl (i32.const 1) (local.get $nbits)) (i32.const 1))))))))))))
+          (if
+            (local.get $writing)
+            (then
+              (local.set $at
+                (i32.add
+                  (local.get $table)
+                  (i32.shl (i32.add (i32.mul (local.get $ctx) (local.get $stride)) (local.get $symbol)) (i32.const 3))))
+              (local.set $log (i32.load (local.get $at)))
+              (local.set $reservoir (i64.or (local.get $reservoir)
+                (i64.shl
+                  (i64.or (i64.extend_i32_u (i32.load offset=4 (local.get $at)))
+                    (i64.shl (i64.extend_i32_u (local.get $extra)) (i64.extend_i32_u (local.get $log))))
+                  (i64.extend_i32_u (local.get $pending)))))
+              (local.set $pending (i32.add (local.get $pending) (i32.add (local.get $log) (local.get $nbits))))
+              ;; The output arena reserves eight bytes per input plus padding. One
+              ;; full store may overlap only bytes this call has not returned yet.
+              (i64.store (local.get $output) (local.get $reservoir))
+              (local.set $output (i32.add (local.get $output) (i32.shr_u (local.get $pending) (i32.const 3))))
+              (local.set $reservoir (i64.shr_u (local.get $reservoir)
+                (i64.extend_i32_u (i32.and (local.get $pending) (i32.const -8)))))
+              (local.set $pending (i32.and (local.get $pending) (i32.const 7))))
+            (else
+              (local.set $at
+                (i32.add
+                  (local.get $table)
+                  (i32.shl (i32.add (i32.mul (local.get $ctx) (local.get $stride)) (local.get $symbol)) (i32.const 2))))
+              (i32.store (local.get $at) (i32.add (i32.load (local.get $at)) (i32.const 1)))))
+        )
+        (local.set $i (local.get $next))
+        (br $nextToken)))
+    (i32.store (i32.sub (local.get $out) (i32.const 8)) (i32.wrap_i64 (local.get $reservoir)))
+    (i32.store (i32.sub (local.get $out) (i32.const 4)) (local.get $pending))
+    (i32.sub (local.get $output) (local.get $out)))
   (func $fill
     (export "fill")
     (param $src i32)

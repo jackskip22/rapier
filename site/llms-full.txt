@@ -12,11 +12,12 @@ Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/
 
 # Rapier - Markdown Editor & Art
 
-A Markdown editor you write, draw and paint in, alone or with your AI assistant. Made for your phone; works in any
-browser. Text and pictures stay in one Markdown file. Free and offline, with no ads, tracking or account.
+Rapier is a minimalistic writing app designed to be fast and beautiful on any device, but the Android app provides the best experience. It also has a Draw mode with an SVG editor, freehand brushes, watercolors and typographic art. Supports Mermaid diagrams and flowcharts.
+
+Everything is plain Markdown. Pictures, drawings and paintings are embedded inside the file. Documents in Rapier are single files you can open in other Markdown apps or any browser, now or in 20 years.
 
 - **On the web:** [rapier.website](https://rapier.website). Add it to your home screen to use it offline.
-- **As a file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html), or the read-only
+- **As a single HTML file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html), or the read-only
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html). Open it in a browser.
 - **On Android:** [Google Play](https://play.google.com/store/apps/details?id=app.rapier). The app has no Internet permission.
 - **On Windows (beta):** [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30), the whole app in one file. If SmartScreen warns, choose **More info**, then **Run anyway**.
@@ -2781,7 +2782,7 @@ description: "Make a .rapier.html file: the whole Rapier editor with your Markdo
 
 ## Start here
 
-Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the helper installed with this skill (below) when Node 22, a supported file surface and a Rapier `.html` page to build on are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.53 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
+Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the helper installed with this skill (below) when Node 22, a supported file surface and a Rapier `.html` page to build on are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.52 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
@@ -2856,7 +2857,7 @@ node cli.mjs notes.md --editor page.html out.html                       # a name
 
 It never overwrites: an existing output is refused, so pick a new name. Write the Markdown as Self-contained Markdown
 first (`rapier-markdown`) so pictures, layout and color travel inside the page. On their own computer, the person can
-make the same pages with the published package: `npx -- rapier-html@1.2.53 notes.md`, with the options above and no
+make the same pages with the published package: `npx -- rapier-html@1.2.52 notes.md`, with the options above and no
 `--editor`.
 
 ## When to use it
@@ -2971,7 +2972,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.53`.
+https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.52`.
 Rapier renders it exactly and writes it back byte for byte; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -3177,7 +3178,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.53
+npm install rapier-embed@1.2.52
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -3265,7 +3266,7 @@ The reader on its own page opens a document at an address on its own origin: `ht
 
 Keep the helper, page and plug-in manifest on one version. For version 1.2.46:
 
-1. Install the helper: `npm install rapier-embed@1.2.53`.
+1. Install the helper: `npm install rapier-embed@1.2.52`.
 2. Create `public/vendor/rapier/` and save the reader into it from
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.46/embed/rapier-reader.html`.
 3. Fetch its plug-ins from the same version's manifest:
@@ -3299,7 +3300,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.32 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.53.
+Totals: the reader, 9.32 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.54.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -4633,7 +4634,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.53
+npm install rapier-embed@1.2.52
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -4721,7 +4722,7 @@ The reader on its own page opens a document at an address on its own origin: `ht
 
 Keep the helper, page and plug-in manifest on one version. For version 1.2.46:
 
-1. Install the helper: `npm install rapier-embed@1.2.53`.
+1. Install the helper: `npm install rapier-embed@1.2.52`.
 2. Create `public/vendor/rapier/` and save the reader into it from
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.46/embed/rapier-reader.html`.
 3. Fetch its plug-ins from the same version's manifest:
@@ -4755,7 +4756,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.32 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.53.
+Totals: the reader, 9.32 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.54.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -5158,37 +5159,40 @@ document as one offline file.
 
 # Rapier JXL
 
-JPEG XL encoder in JavaScript, WebGPU accelerated at high effort levels. Screenshot encoder about 30 KB
-gzipped, upload encoder about 182 KB, full image encoder about 294 KB with lossless, lossy, HDR, exact
-alpha and WebAssembly. Separate modules for animation, JPEG transcoding and decoding. Each module is one file.
-Browsers, workers, Node, Deno, Bun, Cloudflare Workers. MIT, no dependencies.
+JPEG XL encoder in JavaScript and WebAssembly, with WebGPU acceleration at higher effort levels.
 
-- 17% smaller files than libjxl and libvips at the same quality (effort 7, 2,560-pixel photos).
-- 12% smaller uploads than libvips at the same quality (effort 3, 2,560-pixel photos).
-- Uploads faster than libvips in Chrome (2,560-pixel and 12-megapixel photos), and nearly twice as fast with 3 helpers.
-- The upload encoder downloads 182 KB; libvips in the browser downloads 2.9 MB.
-- Half the memory of libvips for a 12-megapixel upload.
+- 39 KB gzip capture encoder for screenshots and canvas.
+- 182 KB gzip upload encoder, includes capture.
+- 308 KB gzip full still image encoder with lossless, lossy, HDR and exact alpha. Used by [rapier.html](https://rapier.website)
+- Separate modules for animation, JPEG transcoding, serving and decoding. Modules are single files.
+- Browsers, workers, Node, Deno, Bun, Cloudflare Workers.
+- No dependencies.
+- MIT.
+
+## Stats
+
+- About 15% smaller files than libjxl and libvips at the same quality (effort 7, 2,560px photos).
+- Compared to libvips: about 11% smaller uploads at the same quality (effort 3, 2,560px photos) and half the memory for a 12 MP upload.
+- Large photo uploads are about 3× faster with 3 helpers.
+
+Size and memory: 8.0.0 photo benchmarks.
 
 ```sh
 npm install rapier-jxl
 ```
 
-## Modules
+## Command line
 
-| | For | Gzip |
-| --- | --- | ---: |
-| `rapier-jxl/capture` | Exact screenshots | 30 KB |
-| `rapier-jxl/upload` | Photos before upload, effort 1–3 | 182 KB |
-| `rapier-jxl` | Full still encoder, WebGPU at effort 7–9 | 294 KB |
-| `rapier-jxl/animation` | Animations, with the full encoder | 299 KB |
-| `rapier-jxl/format` | Layers, patches, splines, extra channels | 319 KB |
-| `rapier-jxl/decode` | Decoder | 146 KB |
-| `rapier-jxl/jpeg` | Lossless JPEG recompression | 182 KB |
-| `rapier-jxl/metadata` | Header, Exif, XMP and boxes | 27 KB |
-| `rapier-jxl/codec` | A worker and queue over any module | 13 KB |
-| `rapier-jxl/polyfill` | Display without native support | 22 KB |
+```sh
+npx rapier-jxl photo.png                  # photo.jxl beside it
+npx rapier-jxl photo.jpg                  # exact, restorable byte for byte
+npx rapier-jxl photos/ --out dist/        # every PNG, JPEG and GIF in the folder
+npx rapier-jxl hero.png --max-bytes 100KB # lower quality to fit, keeping dimensions
+npx rapier-jxl photo.jxl                  # back to photo.jpg, or photo.png
+```
 
-One file each; nothing loads after the import. `upload` contains `capture`; `rapier-jxl` contains both.
+`--quality 1–100` (default 90), `--effort 1–9` (default 7), `--lossless`, `--max-bytes`, `--out`, `--jobs` (helpers).
+Automatic output names never replace files; `--out` can replace the named output. Exact encoding refuses if the size limit cannot be met.
 
 ## Upload
 
@@ -5199,7 +5203,7 @@ import {encode} from 'rapier-jxl/upload';
 const compress = file => encode(file, {fidelity: {quality: 82}});
 ```
 
-With `createCodec`, `helpers` splits each picture across worker threads (see Workers and queues).
+With `createCodec`, `helpers` can split pictures across worker threads (see Workers and queues).
 
 ## Encode
 
@@ -5211,16 +5215,38 @@ const picture = {data: new Uint8Array([240, 120, 40, 255]), width: 1, height: 1}
 await writeFile('picture.jxl', await encode(picture, {fidelity: {quality: 90}}));
 ```
 
-Takes RGBA `{data, width, height}`, `ImageData`, a canvas, an `ImageBitmap`, a `Blob` or a decoded image, and returns a
-`Uint8Array`. For animations, `rapier-jxl/animation`'s `encode` also takes `{width, height, frames}`.
+Takes RGBA `{data, width, height}`, `ImageData`, a canvas (2D, WebGL or WebGPU), an `ImageBitmap`, a `VideoFrame`, a
+`Blob` or a decoded image, and returns a `Uint8Array`. Samples are 8 or 16-bit integers, `Float16Array` or
+`Float32Array`; HDR floats compress lossy too. For animations, `rapier-jxl/animation`'s `encode` also takes
+`{width, height, frames}`.
 
 - `fidelity`: `{quality: 1–100}`, default 90. `'exact'` is lossless.
 - `effort`: 1–9, default 7.
 - `webgpu`: efforts 7–9 use WebGPU when available. `'required'` fails without it; `false` turns it off.
+- `features: {firstRegion: {x, y, width, height}}`: that part comes first in the file, so a page shows it first while the
+  rest loads. Same pixels.
+- `maxPixels`: default 40 MP. Raise it, to 16,384 × 16,384, for larger pictures; they are coded in bands, and `decode`
+  reopens them with the same option.
+
+WebGPU texture input: `encode({texture, device})` (rgba8unorm, bgra8unorm, rgba16float, rgba32float; it
+needs `COPY_SRC`). Colors are sRGB and linear for float formats by default. To save a WebGPU canvas, pass
+`{texture: context.getCurrentTexture(), device}`. A snapshot of the canvas right after drawing can be blank.
+
+`rapier-jxl/upload` takes every input except GPU textures and has no lossy HDR or `features`.
+
+Huge pictures can load a band of rows at a time, in every encoder and through `createCodec`:
+
+```js
+import {encode} from 'rapier-jxl';
+
+// Each band: rows y to y + count - 1, as {data} (RGBA) or a canvas. Here, a flat test picture.
+const rows = (y, count) => ({data: new Uint8Array(16384 * count * 4).fill(128)});
+const panorama = await encode({width: 16384, height: 8192, rows}, {maxPixels: 16384 * 8192});
+```
 
 | Effort | Use |
 | ---: | --- |
-| 1 | Live previews |
+| 1 | Previews, screenshots |
 | 2 | Phone uploads |
 | 3 | Upload queues |
 | 4 | Server encoding |
@@ -5237,7 +5263,8 @@ import {capture} from 'rapier-jxl/capture';
 const screenshot = await capture({data: new Uint8Array([10, 20, 30, 0]), width: 1, height: 1});
 ```
 
-- Takes a canvas, `ImageData`, an `ImageBitmap`, a `Blob` or RGBA. Exact by default.
+- Canvas (2D, WebGL or WebGPU), `ImageData`, an `ImageBitmap`, a `VideoFrame`, a `Blob` or 8-bit RGBA. Exact by
+  default.
 - `fidelity: {maxError: 1–8}`: lossy, each sample within that error.
 
 ## JPEG, decoding, metadata
@@ -5251,6 +5278,37 @@ import {header} from 'rapier-jxl/metadata';
 const roundTrip = async jpeg => restore(await recompress(jpeg));
 const pixels = async file => decode(file);
 const size = file => header(file); // synchronous, from a file or its first bytes
+```
+
+## Serving
+
+For recompressed JPEGs, `serve` answers `image/jxl` to compatible browsers and the exact original JPEG to others, with `Vary: Accept`, ETag, `304` and `HEAD`. `Cache-Control` defaults to `private, no-cache`;
+pass `cacheControl: 'public, max-age=31536000, immutable'` for public, content-addressed URLs.
+
+```js
+import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
+import {serve} from 'rapier-jxl/serve';
+
+// photo.jxl, made once: npx rapier-jxl photo.jpg
+const stored = await readFile('photo.jxl');
+createServer((req, res) => serve(stored, req, res)).listen(3000);
+```
+
+Cloudflare Workers, Deno and Bun pass the `Request` and return the `Response`:
+
+```javascript
+import {serve} from 'rapier-jxl/serve';
+
+// Cloudflare Workers, the file in R2 under a hashed key, so it may be cached publicly
+export default {async fetch(request, env) {
+  const object = await env.IMAGES.get('photo.3f9a2c.jxl');
+  if (!object) return new Response('Not found', {status: 404});
+  return serve(new Uint8Array(await object.arrayBuffer()), request, {cacheControl: 'public, max-age=31536000, immutable'});
+}};
+// Deno and Bun
+Deno.serve(request => serve(stored, request));
+Bun.serve({fetch: request => serve(stored, request)});
 ```
 
 ## Workers and queues
@@ -5267,7 +5325,7 @@ try {
 }
 ```
 
-- In browsers the module runs in a worker (upload: 202 KB). Node, Deno and Bun run it in the calling thread.
+- In browsers, the module runs in a worker (upload: 207 KB). Node, Deno and Bun run it in the calling thread.
 - `helpers` adds up to 16 worker threads.
 - Errors carry a `code`, such as `JXL_INPUT`, `JXL_OPTIONS`, `JXL_WASM` or `JXL_WEBGPU`.
 
@@ -5289,12 +5347,6 @@ try {
 - esbuild: copy `rapier-jxl/dist/*.worker.mjs` and `*.helper.mjs` beside the bundle.
 
 Node 20.16+, Deno, Bun, Cloudflare Workers. ESM.
-
-## Compatibility
-
-8.x keeps every import, export, option, default and error code, and may add new ones. Output is deterministic within a
-version; a later version may write smaller files at the same fidelity. Recompressed JPEGs restore exactly in every
-later version.
 
 ## License
 

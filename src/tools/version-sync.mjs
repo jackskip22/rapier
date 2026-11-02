@@ -4,7 +4,7 @@ import {withPluginTable} from './embed-plugin-table.mjs';
 import {existsSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {VERSION, CDN_TAG} from '../version.mjs';
+import {VERSION, CDN_TAG, PUBLISHED_NPM_VERSIONS} from '../version.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const VERSIONED_FILES = ['.claude-plugin/plugin.json', 'packages/rapier-embed/package.json', 'skills/rapier-html/package.json', 'kit/package.json', 'server/package.json',
@@ -40,7 +40,7 @@ export async function syncVersion({check = false, absent = 'refuse', root = ROOT
 		if (absent === 'skip' && !existsSync(path)) { missing.push(rel); continue; }
 		const text = await read(rel); if (text === null) continue;
 		const next = rel.endsWith('.json') ? text.replace(/("version"\s*:\s*")[^"]*(")/, (all, open, close) => open + VERSION + close)
-			: text.replace(/\b((?:npx(?:[ \t]+--)?|npm[ \t]+install)[ \t]+rapier-(?:html|embed|markdown-kit))(?:@[^\s`"']+)?/g, (_, command) => command + '@' + VERSION);
+			: text.replace(/\b((?:npx(?:[ \t]+--)?|npm[ \t]+install)[ \t]+(rapier-(?:html|embed|markdown-kit)))(?:@[^\s`"']+)?/g, (_, command, name) => command + '@' + PUBLISHED_NPM_VERSIONS[name]);
 		if (rel.endsWith('.json') && !/"version"\s*:/.test(text)) {
 			if (!check) throw new Error(rel + ' has no "version" field to write');
 			problems.push({path: rel, line: 1, message: 'No version field'}); continue;

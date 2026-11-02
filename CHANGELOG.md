@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.54 (2026-11-02)
+
+- Send feedback and bug reports from Settings.
+- Save a 3D view or panorama as JPEG XL.
+
 ## 1.2.53 (2026-10-31)
 
 - Pictures use rapier-jxl 8.0.1: uploads encode 25-34% faster on one thread.

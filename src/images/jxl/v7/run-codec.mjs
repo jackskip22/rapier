@@ -3,6 +3,7 @@ import {bytes, check, dimensions, fail, object, isCaller, pixelLimit} from './pr
 import {exactFidelity, measuredFidelity} from './fidelity.mjs';
 import {runCapture} from './run-capture.mjs';
 import {requireWebGPU} from './webgpu.mjs';
+import {needsBands} from './band-size.mjs';
 
 async function preloadCaptureCoder(data, width, height, codec) {
   try {
@@ -95,19 +96,30 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
       await acceleration(hooks.webgpu, 0, 0, codec.effort, 'codestream features');
       return finish(encodePhotoSteps(data, width, height, {...codec,...options.features}));
     }
-    const gpu = await acceleration(hooks.webgpu, width, height, codec.quality < 100 ? codec.effort : 0, describedRoute(data, codec));
     await preloaded;
-    if (codec.effort === 1) {
-      const {coreSteps} = await (instant ?? import('./instant.mjs'));
-      return drain(coreSteps(data, width, height, codec, !!gpu), hooks, gpu);
+    const encodePicture = async ({data, width, height}, hooks) => {
+      const gpu = await acceleration(hooks.webgpu, width, height, codec.quality < 100 ? codec.effort : 0, describedRoute(data, codec));
+      if (codec.effort === 1) {
+        const {coreSteps} = await (instant ?? import('./instant.mjs'));
+        return drain(coreSteps(data, width, height, codec, !!gpu), hooks, gpu);
+      }
+      const {effortJob} = await (encoder ?? import('../effort-job.mjs'));
+      const search = codec.quality < 100 && codec.effort >= 8 ? (await import('./search.mjs')).searchV6 : undefined;
+      const writer = codec.quality < 100 && codec.effort >= 6 ? (await (blocks ?? (cachedBlocks ||= import('../photo-v6-blocks.mjs')))).photoAnsSteps : undefined;
+      const deep = codec.effort >= 4 ? await (cachedDeep ||= import('../exact-ladder.mjs').then(({EXACT_LADDER}) => EXACT_LADDER)) : null;
+      check(hooks.signal);
+      const hdr = codec.quality < 100 && (data instanceof Float32Array || codec.sampleFormat === 'float16') ? (await import('../photo-hdr.mjs')).HDR : null;
+      const steps = effortJob(data, width, height, codec, !!gpu, undefined, search, writer, deep, hdr);
+      return drive ? drive(steps, hooks, gpu, width * height) : drain(steps, hooks, gpu);
+    };
+    if (needsBands(width, height, codec, data)) {
+      const [{encodeBands}, {recodeBand}, {HDR}] = await Promise.all([import('./bands.mjs'), import('./band-recode.mjs'), import('../photo-hdr.mjs')]);
+      const writer = codec.quality < 100 && codec.effort >= 6 ? (await (blocks ?? (cachedBlocks ||= import('../photo-v6-blocks.mjs')))).photoAnsSteps : undefined;
+      const search = codec.quality < 100 && codec.effort >= 8 ? (await import('./search.mjs')).searchV6 : undefined;
+      return encodeBands({width, height, read: (y, rows) => ({...source, data: data.subarray(y * width * 4, (y + rows) * width * 4), width, height: rows})},
+        (band, bandHooks) => encodePicture(band, {...hooks, ...bandHooks}), (band, target) => recodeBand(band, normalized, target, HDR, writer, search), drain, hooks);
     }
-    const {effortJob} = await (encoder ?? import('../effort-job.mjs'));
-    const search = codec.quality < 100 && codec.effort >= 8 ? (await import('./search.mjs')).searchV6 : undefined;
-    const writer = codec.quality < 100 && codec.effort >= 6 ? (await (blocks ?? (cachedBlocks ||= import('../photo-v6-blocks.mjs')))).photoAnsSteps : undefined;
-    const deep = codec.effort >= 4 ? await (cachedDeep ||= import('../exact-ladder.mjs').then(({EXACT_LADDER}) => EXACT_LADDER)) : null;
-    check(hooks.signal);
-    const steps = effortJob(data, width, height, codec, !!gpu, undefined, search, writer, deep);
-    return drive ? drive(steps, hooks, gpu, width * height) : drain(steps, hooks, gpu);
+    return encodePicture({data, width, height}, hooks);
   }
   if (operation === 'recompress') {
     const allowed = new Set(['effort','icc','maxPixels','signal','onProgress']);
@@ -144,6 +156,10 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
       const [{decodeBands}, {decodeOptions}, {loadPart}] = await (decodeModules ??= Promise.all([import('../decode-parallel.mjs'), import('../decode-image.mjs'), import('../decode-parts.mjs')]).catch(error => { decodeModules = undefined; throw error; }));
       check(hooks.signal);
       const limits = {...bounds, maxPixels: Math.min(bounds.maxPixels ?? Infinity, hooks.maxPixels ?? 40000000)};
+      if (bounds.region !== undefined) {
+        const {admitRegion} = await import('./region.mjs');
+        limits.region = admitRegion(bounds.region);
+      }
       let dictionary;
       for (;;) try { result = decodeBands(input, decodeOptions(dictionary ? {...limits, dictionary} : limits)); break; }
       catch (error) {
@@ -153,6 +169,7 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
         check(hooks.signal);
       }
       Object.assign(result, decodedFields(result));
+      if (limits.region) result.region = {...limits.region};
       for (const frame of [result, ...(result.frames ?? []), result.preview]) clamped(frame);
     }
     check(hooks.signal); hooks.onProgress?.(1); return result;

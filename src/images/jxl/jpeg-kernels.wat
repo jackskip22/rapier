@@ -111,7 +111,7 @@
       (local.set $n (f64.add (f64.convert_i32_u (i32.load (i32.add (local.get $a) (local.get $s))))
         (f64.convert_i32_u (i32.load (i32.add (local.get $b) (local.get $s))))))
       (local.set $total (f64.add (local.get $total) (local.get $n)))
-      (local.set $bits (f64.sub (local.get $bits) (call $pop (local.get $n))))
+      (local.set $bits (f64.sub (local.get $bits) (if (result f64) (f64.lt (local.get $n) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $n)) (i32.const 3)))) (else (call $pop (local.get $n))))))
       (local.set $s (i32.add (local.get $s) (i32.const 4)))
       (br $symbol)))
     (f64.add (local.get $bits) (call $pop (local.get $total))))
@@ -119,22 +119,23 @@
   (func $row (param $i i32) (result i32) (i32.add (global.get $ROWS) (i32.shl (local.get $i) (i32.const 8))))
   (func $bits (param $i i32) (result f64) (f64.load (i32.add (global.get $BITS) (i32.shl (local.get $i) (i32.const 3)))))
 
-;; Cluster i's populationBits terms, after its row changed.
-  (func $terms (export "terms") (param $i i32)
+;; Cluster i's populationBits terms and entropyBits, after its row changed. The sum is in symbol order.
+  (func $terms (export "terms") (param $i i32) (result f64)
     (local $s i32) (local $row i32) (local $pops i32) (local $count f64) (local $term f64) (local $total f64) (local $sum f64)
     (local.set $row (call $row (local.get $i)))
     (local.set $pops (i32.add (global.get $POPS) (i32.shl (local.get $i) (i32.const 9))))
     (block $done (loop $symbol
       (br_if $done (i32.eq (local.get $s) (i32.const 64)))
       (local.set $count (f64.convert_i32_u (i32.load (i32.add (local.get $row) (i32.shl (local.get $s) (i32.const 2))))))
-      (local.set $term (call $pop (local.get $count)))
+      (local.set $term (if (result f64) (f64.lt (local.get $count) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $count)) (i32.const 3)))) (else (call $pop (local.get $count)))))
       (f64.store (i32.add (local.get $pops) (i32.shl (local.get $s) (i32.const 3))) (local.get $term))
       (local.set $total (f64.add (local.get $total) (local.get $count)))
       (local.set $sum (f64.add (local.get $sum) (local.get $term)))
       (local.set $s (i32.add (local.get $s) (i32.const 1)))
       (br $symbol)))
     (f64.store (i32.add (global.get $TOTALS) (i32.shl (local.get $i) (i32.const 3))) (local.get $total))
-    (f64.store (i32.add (global.get $SUMS) (i32.shl (local.get $i) (i32.const 3))) (local.get $sum)))
+    (f64.store (i32.add (global.get $SUMS) (i32.shl (local.get $i) (i32.const 3))) (local.get $sum))
+    (f64.add (f64.neg (local.get $sum)) (call $pop (local.get $total))))
 
   ;; mergedBits(cluster i, OWN): where OWN's count is 0 the term is the cluster's own, already in POPS.
   (func $mergedOwn (param $i i32) (result f64)
@@ -149,7 +150,7 @@
         (f64.convert_i32_u (local.get $c))))
       (local.set $total (f64.add (local.get $total) (local.get $n)))
       (local.set $bits (f64.sub (local.get $bits)
-        (if (result f64) (local.get $c) (then (call $pop (local.get $n)))
+        (if (result f64) (local.get $c) (then (if (result f64) (f64.lt (local.get $n) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $n)) (i32.const 3)))) (else (call $pop (local.get $n)))))
           (else (f64.load (i32.add (local.get $pops) (i32.shl (local.get $s) (i32.const 3))))))))
       (local.set $s (i32.add (local.get $s) (i32.const 1)))
       (br $symbol)))
@@ -162,7 +163,7 @@
   (func $seedBest (export "seedBest") (param $k i32) (param $ownBits f64) (result i32)
     (local $i i32) (local $best i32) (local $low f64) (local $increase f64) (local $s i32) (local $m i32) (local $c i32)
     (local $ownTotal f64) (local $row i32) (local $pops i32) (local $merged f64) (local $estimate f64) (local $margin f64)
-    (local $bound f64) (local $j i32)
+    (local $bound f64) (local $j i32) (local $n f64)
     ;; OWN's nonzero symbols (byte offsets) and total.
     (block $listed (loop $symbol
       (br_if $listed (i32.eq (local.get $s) (i32.const 64)))
@@ -186,8 +187,9 @@
         (br_if $terms (i32.eq (local.get $j) (local.get $m)))
         (local.set $s (i32.load (i32.add (global.get $NONZERO) (i32.shl (local.get $j) (i32.const 2)))))
         (local.set $estimate (f64.sub (local.get $estimate) (f64.sub
-          (call $pop (f64.add (f64.convert_i32_u (i32.load (i32.add (local.get $row) (i32.shl (local.get $s) (i32.const 2)))))
+          (block (result f64) (local.set $n (f64.add (f64.convert_i32_u (i32.load (i32.add (local.get $row) (i32.shl (local.get $s) (i32.const 2)))))
             (f64.convert_i32_u (i32.load (i32.add (global.get $OWN) (i32.shl (local.get $s) (i32.const 2)))))))
+            (if (result f64) (f64.lt (local.get $n) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $n)) (i32.const 3)))) (else (call $pop (local.get $n)))))
           (f64.load (i32.add (local.get $pops) (i32.shl (local.get $s) (i32.const 3)))))))
         (local.set $j (i32.add (local.get $j) (i32.const 1)))
         (br $term)))
@@ -275,6 +277,7 @@
       (param $tables i32) (param $back i32) (param $best i32) (param $next i32) (result i32)
     (local $t i32) (local $i i32) (local $j i32) (local $end i32) (local $low f64) (local $lowAt i32) (local $cost f64)
     (local $table i32) (local $stay f64) (local $change f64) (local $swap i32) (local $at i32)
+    (local $cost2 f64) (local $c f64) (local $sym i32)
     (block $contexts (loop $context
       (br_if $contexts (i32.eq (local.get $t) (local.get $n)))
       (local.set $low (f64.const inf)) (local.set $lowAt (i32.const 0)) (local.set $i (i32.const 0))
@@ -285,9 +288,26 @@
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $scan)))
       (local.set $end (i32.load (i32.add (local.get $offsets) (i32.shl (i32.add (local.get $t) (i32.const 1)) (i32.const 2)))))
+      ;; Each histogram's cost into next, two histograms a pass over the context's terms (each sum in term order).
       (local.set $i (i32.const 0))
-      (block $histograms (loop $histogram
-        (br_if $histograms (i32.eq (local.get $i) (local.get $k)))
+      (block $paired (loop $pair2
+        (br_if $paired (i32.ge_s (i32.add (local.get $i) (i32.const 1)) (local.get $k)))
+        (local.set $table (i32.add (local.get $tables) (i32.shl (local.get $i) (i32.const 9))))
+        (local.set $cost (f64.const 0)) (local.set $cost2 (f64.const 0))
+        (local.set $j (i32.load (i32.add (local.get $offsets) (i32.shl (local.get $t) (i32.const 2)))))
+        (block $terms2 (loop $term2
+          (br_if $terms2 (i32.ge_s (local.get $j) (local.get $end)))
+          (local.set $c (f64.convert_i32_u (i32.load (i32.add (local.get $sparse) (i32.shl (i32.add (local.get $j) (i32.const 1)) (i32.const 2))))))
+          (local.set $sym (i32.add (local.get $table) (i32.shl (i32.load (i32.add (local.get $sparse) (i32.shl (local.get $j) (i32.const 2)))) (i32.const 3))))
+          (local.set $cost (f64.add (local.get $cost) (f64.mul (local.get $c) (f64.load (local.get $sym)))))
+          (local.set $cost2 (f64.add (local.get $cost2) (f64.mul (local.get $c) (f64.load offset=512 (local.get $sym)))))
+          (local.set $j (i32.add (local.get $j) (i32.const 2)))
+          (br $term2)))
+        (f64.store (i32.add (local.get $next) (i32.shl (local.get $i) (i32.const 3))) (local.get $cost))
+        (f64.store offset=8 (i32.add (local.get $next) (i32.shl (local.get $i) (i32.const 3))) (local.get $cost2))
+        (local.set $i (i32.add (local.get $i) (i32.const 2)))
+        (br $pair2)))
+      (if (i32.lt_s (local.get $i) (local.get $k)) (then
         (local.set $table (i32.add (local.get $tables) (i32.shl (local.get $i) (i32.const 9))))
         (local.set $cost (f64.const 0))
         (local.set $j (i32.load (i32.add (local.get $offsets) (i32.shl (local.get $t) (i32.const 2)))))
@@ -298,6 +318,11 @@
               (f64.load (i32.add (local.get $table) (i32.shl (i32.load (i32.add (local.get $sparse) (i32.shl (local.get $j) (i32.const 2)))) (i32.const 3)))))))
           (local.set $j (i32.add (local.get $j) (i32.const 2)))
           (br $term)))
+        (f64.store (i32.add (local.get $next) (i32.shl (local.get $i) (i32.const 3))) (local.get $cost))))
+      (local.set $i (i32.const 0))
+      (block $histograms (loop $histogram
+        (br_if $histograms (i32.eq (local.get $i) (local.get $k)))
+        (local.set $cost (f64.load (i32.add (local.get $next) (i32.shl (local.get $i) (i32.const 3)))))
         (if (local.get $t)
           (then (local.set $stay (f64.load (i32.add (local.get $best) (i32.shl (local.get $i) (i32.const 3)))))
             (local.set $change (f64.add (local.get $low) (local.get $switch))))
@@ -1267,7 +1292,7 @@
         (i32.store (i32.add (i32.add (local.get $owns) (i32.shl (local.get $t) (i32.const 8))) (local.get $s)) (local.get $c))
         (local.set $f (f64.convert_i32_u (local.get $c)))
         (local.set $total (f64.add (local.get $total) (local.get $f)))
-        (local.set $bits (f64.sub (local.get $bits) (call $pop (local.get $f))))
+        (local.set $bits (f64.sub (local.get $bits) (if (result f64) (f64.lt (local.get $f) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $f)) (i32.const 3)))) (else (call $pop (local.get $f))))))
         (local.set $s (i32.add (local.get $s) (i32.const 4)))
         (br $sum)))
       (local.set $ownBits (f64.add (local.get $bits) (call $pop (local.get $total))))
@@ -1284,24 +1309,20 @@
             (local.set $s (i32.add (local.get $s) (i32.const 4)))
             (br $copy)))
           (f64.store (i32.add (global.get $BITS) (i32.shl (local.get $k) (i32.const 3))) (local.get $ownBits))
-          (call $terms (local.get $k))
+          (drop (call $terms (local.get $k)))
           (i32.store (i32.add (local.get $assign) (i32.shl (local.get $t) (i32.const 2))) (local.get $k))
           (local.set $k (i32.add (local.get $k) (i32.const 1))))
         (else
-          ;; A merge: the row gains OWN, then its entropyBits again.
+          ;; A merge: the row gains OWN; terms also returns entropyBits, without another population pass.
           (local.set $row (call $row (local.get $best)))
-          (local.set $s (i32.const 0)) (local.set $total (f64.const 0)) (local.set $bits (f64.const 0))
+          (local.set $s (i32.const 0))
           (block $merged (loop $merge
             (br_if $merged (i32.eq (local.get $s) (i32.const 256)))
             (local.set $c (i32.add (i32.load (i32.add (local.get $row) (local.get $s))) (i32.load (i32.add (global.get $OWN) (local.get $s)))))
             (i32.store (i32.add (local.get $row) (local.get $s)) (local.get $c))
-            (local.set $f (f64.convert_i32_u (local.get $c)))
-            (local.set $total (f64.add (local.get $total) (local.get $f)))
-            (local.set $bits (f64.sub (local.get $bits) (call $pop (local.get $f))))
             (local.set $s (i32.add (local.get $s) (i32.const 4)))
             (br $merge)))
-          (f64.store (i32.add (global.get $BITS) (i32.shl (local.get $best) (i32.const 3))) (f64.add (local.get $bits) (call $pop (local.get $total))))
-          (call $terms (local.get $best))
+          (f64.store (i32.add (global.get $BITS) (i32.shl (local.get $best) (i32.const 3))) (call $terms (local.get $best)))
           (i32.store (i32.add (local.get $assign) (i32.shl (local.get $t) (i32.const 2))) (local.get $best))))
       (local.set $t (i32.add (local.get $t) (i32.const 1)))
       (br $context)))

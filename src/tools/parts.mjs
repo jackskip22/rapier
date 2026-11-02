@@ -23,6 +23,7 @@ export const PARTS = Object.freeze([
   {id: 'diagrams', label: 'Diagrams', scripts: ['diagrams/view.js'], styles: ['rapier-diagrams-style'], globals: {}},
   {id: 'diagramtheme', label: 'Diagram theme', scripts: [], styles: [], globals: {RapierDiagramTheme: 'shell/diagram-theme.mjs'}},
   {id: 'jxlcomplete', label: 'JPEG XL complete', scripts: ['jxl/complete.js'], styles: [], globals: {}},
+  {id: 'jxlscene', label: '3D scene', scripts: ['jxl/scene.js'], styles: [], globals: {RapierJxlScene: 'jxl/scene.mjs'}},
   {id: 'diff', label: 'Compare', scripts: ['editor/diff-view.js'], styles: ['rapier-diff-style'], globals: {}},
   {id: 'mathview', label: 'Equation editor', scripts: ['editor/math-view.js'], styles: ['rapier-math-style'], globals: {}},
   {id: 'fonts', label: 'Font library', scripts: ['editor/font-library.js'], styles: [],

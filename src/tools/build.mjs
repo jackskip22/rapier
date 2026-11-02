@@ -970,9 +970,9 @@ const vendorGroupSpans = await Promise.all(vendorIds.map(browserVendorSpans));
 const vendorPacks = Promise.all(vendorIds.map((id, at) => packedSpans(id, 'text/rapier-vendor', vendorGroupSpans[at])));
 const {checkVendor} = await import('./jxl-vendor.mjs');
 { const problems = checkVendor(); if (problems.length) throw new Error('images/vendor/rapier-jxl: ' + problems.join('; ')); }
-const JXL_PAGE_FILES = ['codec.mjs', 'still.worker.mjs', 'decode.worker.mjs', 'jpeg.worker.mjs'];
-const JXL_PART_FILES = {jxlcomplete: ['animation.worker.mjs']};
-const JXL_MARKS = {jxlcomplete: 'RAPIER_JXL_ANIMATION_FILES'};
+const JXL_PAGE_FILES = ['jpeg.worker.mjs', 'still.worker.mjs', 'codec.mjs'];
+const JXL_PART_FILES = {jxlcomplete: ['decode.worker.mjs', 'animation.worker.mjs']};
+const JXL_MARKS = {jxlcomplete: 'RAPIER_JXL_COMPLETE_FILES'};
 const jxlPin = JSON.parse(await read('images/vendor/rapier-jxl/PIN.json'));
 const jxlVendored = Object.fromEntries(await Promise.all([...JXL_PAGE_FILES, ...Object.values(JXL_PART_FILES).flat()].map(async name => [name, await read('images/vendor/rapier-jxl/' + name)])));
 const jxlWorker = JXL_PAGE_FILES.map(name => jxlVendored[name]).join('\n');
@@ -980,9 +980,9 @@ const jxl = {version: jxlPin.version, source: jxlPin.source.digest, page: Object
   parts: Object.fromEntries(Object.entries(JXL_PART_FILES).map(([part, names]) => [part, Object.fromEntries(names.map(name => [name, jxlPin.files[name]]))]))};
 for (const [part, names] of Object.entries(JXL_PART_FILES)) {
   if (!editorSlices.parts.has(part)) throw new Error('No part ' + part + ' to carry ' + names.join(', '));
-  const slice = editorSlices.parts.get(part), mark = new RegExp(`(['"])${JXL_MARKS[part]}\\1`, 'g');
+  const slice = editorSlices.parts.get(part), mark = new RegExp(`JSON\\.parse\\((['"])${JXL_MARKS[part]}\\1\\)`, 'g');
   if ((slice.match(mark) || []).length !== 1) throw new Error('The part ' + part + ' has no one ' + JXL_MARKS[part] + ' mark');
-  editorSlices.parts.set(part, slice.replace(mark, () => JSON.stringify(JSON.stringify(Object.fromEntries(names.map(name => [name, jxlVendored[name]]))))));
+  editorSlices.parts.set(part, slice.replace(mark, () => JSON.stringify(Object.fromEntries(names.map(name => [name, jxlVendored[name]])))));
 }
 if (editorSlices.parts.has('fonts')) {
   const slice = editorSlices.parts.get('fonts'), mark = /(['"])RAPIER_FONT_CATALOG_PIN\1/g, pin = JSON.parse(await read('fonts/catalog-pin.json'));

@@ -176,16 +176,14 @@
         "supportsJXL"
       ]
     },
-    "./snapdom": {
-      "runtime": "./dist/snapdom.mjs",
-      "types": "./types/snapdom.d.mts",
+    "./serve": {
+      "runtime": "./dist/serve.mjs",
+      "types": "./types/serve.d.mts",
       "values": [
-        "jxl",
-        "supported"
+        "serve"
       ],
       "declaredValues": [
-        "jxl",
-        "supported"
+        "serve"
       ]
     },
     "./upload": {
@@ -227,6 +225,7 @@
   },
   "options": {
     "capture": [
+      "features",
       "fidelity",
       "maxPixels",
       "onProgress",
@@ -258,7 +257,9 @@
       "maxPixels",
       "maxTotalSamples",
       "onProgress",
+      "partial",
       "planes",
+      "region",
       "renderSpotColors",
       "signal",
       "unpremultiplyAlpha"
@@ -292,6 +293,7 @@
     ],
     "encode.features": [
       "coefficientOrders",
+      "firstRegion",
       "level",
       "lfFrames",
       "noise",
@@ -406,18 +408,6 @@
       "maxBoxes",
       "maxBytes",
       "signal"
-    ],
-    "snapdom.plugin": [
-      "capture",
-      "encode",
-      "maxError",
-      "prepare"
-    ],
-    "snapdom.toJxl": [
-      "maxError",
-      "onProgress",
-      "quality",
-      "signal"
     ]
   },
   "typeFiles": [
@@ -449,7 +439,7 @@
     "types/jpeg.d.mts",
     "types/metadata.d.mts",
     "types/polyfill.d.mts",
-    "types/snapdom.d.mts",
+    "types/serve.d.mts",
     "types/types.d.mts",
     "types/upload.d.mts",
     "types/wasm.d.mts"
@@ -559,7 +549,9 @@
       "applyOrientation",
       "colorSpace",
       "format",
+      "partial",
       "planes",
+      "region",
       "renderSpotColors",
       "unpremultiplyAlpha"
     ],
@@ -752,15 +744,11 @@
       "workerFactory",
       "workers"
     ],
-    "types/snapdom.d.mts#JxlExportOptions": [
-      "maxError",
-      "quality"
-    ],
-    "types/snapdom.d.mts#JxlPluginOptions": [
-      "capture",
-      "encode",
-      "maxError",
-      "prepare"
+    "types/serve.d.mts#ServeOptions": [
+      "cacheControl",
+      "etag",
+      "maxPixels",
+      "signal"
     ],
     "types/types.d.mts#AnimationOptions": [
       "effort",
@@ -768,6 +756,7 @@
       "fidelity"
     ],
     "types/types.d.mts#CaptureOptions": [
+      "features",
       "fidelity",
       "readAs"
     ],

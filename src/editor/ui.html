@@ -554,6 +554,13 @@
 
 
 
+			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
+			<div class="settings-section__title">feedback</div>
+			<div class="settings-action-row">
+				<button type="button" class="settings-action-btn" id="feedback-report-open">report</button>
+			</div>
+			<!-- RAPIER_EDITOR_ONLY_END -->
+
 			<!-- RAPIER_NOTES_BEGIN -->
 			<div id="settings-notes-section">
 				<div class="navigator-title-row" style="margin-bottom:var(--space-2)">
@@ -987,10 +994,10 @@
 				</button>
 			</div>
 			<template data-rapier-later><div class="licenses-app privacy-words">
-				<p>Rapier needs no account signup and uses no analytics or advertising. It collects no personal information from anyone,
-					children included. Your files stay on your device until you save, share,
-					back up or sync them. Sync writes plain files to the storage you choose. You keep
-					or delete local files; Delete forever removes notes and their history.</p>
+				<p>Rapier needs no account signup and uses no analytics or advertising. Your files stay on your device
+					until you save, share, back up or sync them. Sync writes plain files to the storage you
+					choose. You keep or delete local files; Delete forever removes notes and their history.</p>
+				<p>When you send feedback, your report is recorded to help improve Rapier. Please avoid sensitive information.</p>
 				<p>The Android editor has no Internet permission. It records audio only when you press Record, into your
 					notes. Google Play handles purchases, reviews and optional plugin downloads under its policy.</p>
 				<p>Sharing a document through the hosted agent door (mcp.rapier.website) sends the content you choose there
@@ -2431,6 +2438,33 @@ SOFTWARE.</pre>
 	</div>
 </div>
 <!-- RAPIER_NOTES_END -->
+
+<!-- Feedback is composed locally. Only the person's Send action transfers these words. -->
+<div class="settings-overlay restore-modal-overlay" id="feedback-overlay" inert aria-hidden="true"
+     role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+  <div class="settings-panel export-choice-panel feedback-panel">
+    <div class="settings-panel__body">
+      <div class="navigator-title-row">
+        <h2 id="feedback-title" class="settings-section__title">feedback</h2>
+        <button type="button" class="navigator-close" id="feedback-close" aria-label="close feedback">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="feedback-kinds" role="radiogroup" aria-label="feedback type">
+        <label><input type="radio" name="feedback-kind" value="bug" checked><span>bug</span></label>
+        <label><input type="radio" name="feedback-kind" value="idea"><span>idea</span></label>
+        <label><input type="radio" name="feedback-kind" value="other"><span>other</span></label>
+      </div>
+      <label class="feedback-label" for="feedback-message">what would you like us to know?</label>
+      <textarea id="feedback-message" rows="5" maxlength="1600" placeholder="Tell us what happened or what could be better."></textarea>
+      <p class="feedback-help" id="feedback-explain">No account needed. Send opens your browser. Your report is recorded to help improve Rapier. Please avoid sensitive information.</p>
+      <p class="feedback-help" id="feedback-status" role="status" aria-live="polite"></p>
+      <div class="settings-action-row">
+        <button type="button" class="settings-action-btn" id="feedback-submit" disabled>send</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ════════ -->
 <div class="settings-overlay restore-modal-overlay" id="confirm-overlay" inert aria-hidden="true"
