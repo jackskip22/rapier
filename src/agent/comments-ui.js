@@ -256,6 +256,5 @@
   globalThis.RapierCommentsUI = Object.freeze({project, open, keepDraft: () => keepActiveDraft()});
   const entry = button('Comments', event => { void open(event).catch(() => message('Comments could not open. Finish the current edit and try again.')); });
   entry.id = 'document-comments';
-  const anchor = document.getElementById('agent-row');
-  anchor?.before(entry);
+  document.getElementById('navigator-actions')?.append(entry);
 })();

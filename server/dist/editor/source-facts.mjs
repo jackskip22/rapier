@@ -2,8 +2,20 @@
 
 function _rapierLineStartOffsets(source) {
 	const offsets = [0];
-	const endings = /\r\n?|\n/g;
-	while (endings.exec(source)) offsets.push(endings.lastIndex);
+	if (source.indexOf('\r') < 0) {
+		for (let at = source.indexOf('\n'); at >= 0; at = source.indexOf('\n', at + 1)) offsets.push(at + 1);
+		return offsets;
+	}
+	const len = source.length;
+	for (let i = 0; i < len; i++) {
+		const c = source.charCodeAt(i);
+		if (c === 0x0d) {
+			if (i + 1 < len && source.charCodeAt(i + 1) === 0x0a) i++;
+			offsets.push(i + 1);
+		} else if (c === 0x0a) {
+			offsets.push(i + 1);
+		}
+	}
 	return offsets;
 }
 
@@ -204,7 +216,29 @@ function _rapierCollectTokenFacts(markdown, tokens, slugBase, normalizeReference
 function _rapierAttachFactsToParsedBlocks(blocks, facts) {
 	if (!Array.isArray(blocks)) return blocks;
 	blocks._rapierFacts = Array.isArray(facts) ? facts.slice() : [];
-	if (!Array.isArray(facts) || !facts.length) return blocks;
+	if (!Array.isArray(facts) || !facts.length || !blocks.length) return blocks;
+	let isSorted = true;
+	for (let i = 1; i < blocks.length; i++) {
+		if (Number(blocks[i]._sourceStart) < Number(blocks[i - 1]._sourceStart)) { isSorted = false; break; }
+	}
+	if (isSorted) {
+		for (const fact of facts) {
+			const start = Number(fact && fact.sourceStart);
+			const end = Number(fact && fact.sourceEnd);
+			if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
+			let low = 0, high = blocks.length - 1, candidate = -1;
+			while (low <= high) {
+				const middle = (low + high) >> 1;
+				if (Number(blocks[middle]._sourceStart) <= start) { candidate = middle; low = middle + 1; }
+				else high = middle - 1;
+			}
+			const owner = candidate >= 0 ? blocks[candidate] : null;
+			if (!owner || end > Number(owner._sourceEnd)) continue;
+			if (!Array.isArray(owner._rapierFacts)) owner._rapierFacts = [];
+			owner._rapierFacts.push(fact);
+		}
+		return blocks;
+	}
 	const ordered = blocks
 		.map((block, index) => ({ block, index }))
 		.sort((a, b) => Number(a.block._sourceStart) - Number(b.block._sourceStart));
@@ -232,11 +266,14 @@ function _rapierAttachFactsToParsedBlocks(blocks, facts) {
 	return blocks;
 }
 
-function _splitByTokenStream(markdown, parser, env = {}, preTokens = null) {
+function _splitByTokenStream(markdown, parser, env = {}, preTokens = null, lineOffsets = null) {
 	const tokens = preTokens || parser.parse(markdown, env);
-	const inlineCandidates = tokens.reduce((total, token) =>
-		total + (Array.isArray(token.children) ? token.children.length : 0), 0);
-	const offsets = _rapierLineStartOffsets(markdown);
+	let inlineCandidates = 0;
+	for (let i = 0; i < tokens.length; i++) {
+		const ch = tokens[i].children;
+		if (Array.isArray(ch)) inlineCandidates += ch.length;
+	}
+	const offsets = lineOffsets || _rapierLineStartOffsets(markdown);
 	const tokenFacts = _rapierCollectTokenFacts(markdown, tokens, _rapierHeadingSlugBase, parser.utils.normalizeReference, env, offsets);
 	const blocks = [];
 

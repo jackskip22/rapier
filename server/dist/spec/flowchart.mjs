@@ -39,6 +39,10 @@ const FLOWCHART_SHAPES = [['([', '])', 'stadium'], ['((', '))', 'circle'], ['[('
 const FLOWCHART_EDGES = [['<-.->', true, true, true, false], ['<-->', true, true, false, false], ['-.->', false, true, true, false],
   ['-->', false, true, false, false], ['---', false, false, false, false], ['-.-', false, false, true, false], ['==>', false, true, false, true]];
 const FLOWCHART_RESERVED = new Set(['flowchart', 'graph', 'subgraph', 'end', 'classDef', 'class', 'style', 'click', 'href', 'direction', 'linkStyle']);
+const flowchartAccessibility = text => {
+  const acc = /^acc(Title|Descr)([ \t]*)([:{])/.exec(text);
+  return acc && !(acc[1] === 'Title' && acc[3] === '{' && !acc[2]) ? acc : null;
+};
 const flowchartFail = code => { throw {flowchart: true, code}; };
 const flowchartCompare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const flowchartSpace = cursor => { while (cursor.s[cursor.p] === ' ' || cursor.s[cursor.p] === '\t') cursor.p++; };
@@ -61,7 +65,7 @@ function flowchartStatements(source) {
     const c = source[i];
     if (fresh && !quote && c !== ' ' && c !== '\t') {
       fresh = false;
-      const acc = c === 'a' ? /^acc(?:Title|Descr)[ \t]*[:{]/.exec(source.slice(i, i + 24)) : null;
+      const acc = c === 'a' ? flowchartAccessibility(source.slice(i, i + 24)) : null;
       if (acc) {
         let end = i;
         if (acc[0].endsWith('{')) { end = source.indexOf('}', i); if (end < 0) flowchartFail('flowchart_syntax'); end++; }
@@ -270,11 +274,11 @@ export function parseFlowchart(source, sourceLabels = null) {
     };
     for (const row of statements) {
       const statement = row.text, cursor = {s: statement, p: 0, base: row.start}, first = statement.match(/^[A-Za-z][A-Za-z0-9]*(?=[ \t]|$)/)?.[0];
-      const acc = /^acc(Title|Descr)[ \t]*([:{])/.exec(statement);
+      const acc = flowchartAccessibility(statement);
       if (acc) {
         const key = acc[1] === 'Title' ? 'title' : 'description';
-        if (key === 'title' && acc[2] === '{') flowchartFail('flowchart_syntax');
-        const text = statement.slice(acc[0].length, acc[2] === '{' ? -1 : undefined).replace(/\r\n?/g, '\n').split('\n')
+        if (key === 'title' && acc[3] === '{') flowchartFail('flowchart_syntax');
+        const text = statement.slice(acc[0].length, acc[3] === '{' ? -1 : undefined).replace(/\r\n?/g, '\n').split('\n')
           .map(line => line.trim()).join('\n').trim();
         if (!text || meta[key] !== undefined) flowchartFail('flowchart_syntax');
         if (text.length > FLOWCHART_LIMITS.labelChars) flowchartFail('flowchart_label_limit');

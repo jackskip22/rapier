@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Jack Skipworth. See LICENSE-MIT.
 // Feather callout paths retain the copyright and MIT notice in agent/vendor/NOTICE.txt.
 import {tuneMarkdownEngine} from './md-engine.mjs';
-import {fontDataUrl as rapierFontDataUrl} from './md-marks.mjs';
+import {fontDataUrl as rapierFontDataUrl, INK_OPEN_PREFIX, PAGE_BREAK_MARKER} from './md-marks.mjs';
 import {typography as rapierTypography, matchInkOpen as rapierMatchInkOpen, isInkClose as rapierIsInkClose,
   inkOpenBody as rapierInkOpenBody, parseInkOpen as rapierParseInkOpen, isPageBreakBlock as rapierIsPageBreakBlock} from './md-marks.mjs';
 import {installMathRules} from '../math/markdown-rules.mjs';
@@ -39,19 +39,66 @@ const RAPIER_MARKDOWN_SPEC = Object.freeze({
 	rules: Object.freeze({ mathBlock: 'temml_math_block' }),
 });
 
-const _rapierLinkifyCandidate = {names: null, pattern: null};
+const _rapierLinkifyCandidate = {names: null, schemaRe: null, tldsRef: null, tldSet: null, maxTld: 6};
+function _rapierLinkFlags(text, linkify) {
+	const len = text.length;
+	if (len < 4) return 0;
+	const names = linkify.re.get_schema_names();
+	if (_rapierLinkifyCandidate.names !== names) {
+		_rapierLinkifyCandidate.names = names;
+		_rapierLinkifyCandidate.schemaRe = new RegExp(names.source, 'i');
+	}
+	let flags = 0;
+	if (text.indexOf(':') >= 0 || text.indexOf('/') >= 0 || text.indexOf('w') >= 0 || text.indexOf('W') >= 0) {
+		if (_rapierLinkifyCandidate.schemaRe.test(text)) flags |= 1;
+	}
+	const dotFirst = text.indexOf('.');
+	if (dotFirst < 0) return flags;
+	const atPos = text.indexOf('@');
+	if (atPos > 0 && text.indexOf('.', atPos + 2) > 0) flags |= 4;
+	if (!linkify.__opts__.fuzzyLink) return flags;
+	if (linkify.__opts__.fuzzyIP && /\d\.\d/.test(text)) return flags | 2;
+	const tlds = linkify.__opts__.tlds;
+	if (_rapierLinkifyCandidate.tldsRef !== tlds) {
+		_rapierLinkifyCandidate.tldsRef = tlds;
+		const set = new Set();
+		let max = 2;
+		for (let i = 0; i < tlds.length; i++) {
+			const t = tlds[i].toLowerCase();
+			set.add(t);
+			if (t.length > max) max = t.length;
+		}
+		_rapierLinkifyCandidate.tldSet = set;
+		_rapierLinkifyCandidate.maxTld = max;
+	}
+	const tldSet = _rapierLinkifyCandidate.tldSet, maxTld = _rapierLinkifyCandidate.maxTld;
+	for (let dot = dotFirst; dot !== -1 && dot + 2 < len; dot = text.indexOf('.', dot + 1)) {
+		if (dot === 0) continue;
+		const c1 = text.charCodeAt(dot + 1) | 32;
+		if (!((c1 >= 0x61 && c1 <= 0x7a) || c1 > 127)) continue;
+		if (c1 === 0x78 && (text.charCodeAt(dot + 2) | 32) === 0x6e && text.charCodeAt(dot + 3) === 0x2d && text.charCodeAt(dot + 4) === 0x2d) return flags | 2;
+		let end = dot + 2;
+		const limit = Math.min(len, dot + 1 + maxTld + 1);
+		while (end < limit) {
+			const c = text.charCodeAt(end);
+			if ((c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a) || (c >= 0x30 && c <= 0x39) || c === 0x2d || c > 127) end++;
+			else break;
+		}
+		const labelLen = end - (dot + 1);
+		if (labelLen >= 2 && labelLen <= maxTld && tldSet.has(text.slice(dot + 1, end).toLowerCase())) return flags | 2;
+	}
+	return flags;
+}
+function _rapierMayContainLink(text, linkify) {
+	return _rapierLinkFlags(text, linkify) !== 0;
+}
 function _rapierLinkifyText(state) {
 	const md = state.md;
 	if (!md.options.linkify) return;
-	const names = md.linkify.re.get_schema_names();
-	if (_rapierLinkifyCandidate.names !== names) {
-		_rapierLinkifyCandidate.names = names;
-		_rapierLinkifyCandidate.pattern = new RegExp(names.source + '|@|\\.[^ \\t\\n\\v\\f\\r]', 'i');
-	}
-	const candidate = _rapierLinkifyCandidate.pattern;
+	const linkify = md.linkify;
 	for (let at = 0; at < state.tokens.length; at++) {
 		const block = state.tokens[at];
-		if (block.type !== 'inline' || !candidate.test(block.content)) continue;
+		if (block.type !== 'inline' || !_rapierMayContainLink(block.content, linkify)) continue;
 		const children = block.children;
 		const source = block.content;
 		let htmlDepth = 0, wholeSource, changes;
@@ -66,8 +113,8 @@ function _rapierLinkifyText(state) {
 				if (/^<a[>\s]/i.test(child.content) && htmlDepth > 0) htmlDepth--;
 				if (/^<\/a\s*>/i.test(child.content)) htmlDepth++;
 			}
-			if (htmlDepth || child.type !== 'text' || !candidate.test(child.content)) continue;
-			let matches = md.linkify.match(child.content);
+			if (htmlDepth || child.type !== 'text' || !_rapierMayContainLink(child.content, linkify)) continue;
+			let matches = linkify.match(child.content);
 			if (!matches?.length) continue;
 			wholeSource ??= md.linkify.test(source);
 			if (!wholeSource) break;
@@ -202,16 +249,24 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	{
 		const taskLists = instance.core.ruler.__rules__.find(rule => rule.name === 'github-task-lists').fn;
 		instance.core.ruler.at('github-task-lists', function rapierTaskLists(state) {
-			const stranded = [], levels = new Set();
+			if (state.src.indexOf('[') < 0) return;
+			const stranded = [];
+			let levelMask = 0;
+			const levels = new Set();
 			for (let at = 0; at < state.tokens.length; at++) {
-				const token = state.tokens[at];
-				if (token.type === 'list_item_open' && !levels.has(token.level - 1)) stranded.push(token);
-				levels.add(token.level);
+				const token = state.tokens[at], lv = token.level;
+				if (token.type === 'list_item_open') {
+					const prev = lv - 1;
+					if (!(prev >= 0 && prev < 31 ? (levelMask & (1 << prev)) : levels.has(prev))) stranded.push(token);
+				}
+				if (lv >= 0 && lv < 31) levelMask |= (1 << lv);
+				else levels.add(lv);
 			}
 			for (const item of stranded) item.type = '';
 			try { taskLists(state); } finally { for (const item of stranded) item.type = 'list_item_open'; }
 		});
 		instance.core.ruler.after('github-task-lists', 'rapier-empty-task-lists', function rapierEmptyTaskLists(state) {
+			if (state.src.indexOf('[') < 0 && state.src.indexOf('"type="checkbox"') < 0) return;
 			const tokens = state.tokens || [];
 			for (let index = 0; index < tokens.length; index++) {
 				const token = tokens[index];
@@ -305,7 +360,8 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 			const originalHtmlBlock = htmlBlockRule.fn;
 			const inkAwareHtmlBlock = function rapierInkAwareHtmlBlock(state, startLine, endLine, silent) {
 				const start = state.bMarks[startLine] + state.tShift[startLine];
-				if (state.src.charCodeAt(start) === 0x3C && rapierMatchInkOpen(state.src.slice(start, start + 2048))) return false;
+				if (state.src.charCodeAt(start) !== 0x3C) return false;
+				if (state.src.startsWith(INK_OPEN_PREFIX, start) && rapierMatchInkOpen(state.src.slice(start, start + 2048))) return false;
 				return originalHtmlBlock(state, startLine, endLine, silent);
 			};
 			inkAwareHtmlBlock.rapierInkAware = true;
@@ -313,9 +369,10 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		}
 		rapierTypography.install(instance);
 		instance.core.ruler.after('rapier-typography', 'rapier-ink', function rapierInkPairs(state) {
+			if (state.src.indexOf(INK_OPEN_PREFIX) < 0) return;
 			for (let at = 0; at < state.tokens.length; at++) {
 				const blockToken = state.tokens[at];
-				if (blockToken.type !== 'inline' || !Array.isArray(blockToken.children) || blockToken.content.indexOf('<') < 0) continue;
+				if (blockToken.type !== 'inline' || !Array.isArray(blockToken.children) || blockToken.content.indexOf(INK_OPEN_PREFIX) < 0) continue;
 				const children = blockToken.children;
 				const stack = [];
 				let depth = 0;
@@ -348,6 +405,7 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 	}
 	{
 		instance.core.ruler.after('block', 'rapier-page-break', function rapierPageBreak(state) {
+			if (state.src.indexOf(PAGE_BREAK_MARKER) < 0) return;
 			for (let at = 0; at < state.tokens.length; at++) {
 				const token = state.tokens[at];
 				if (token.type !== 'html_block' || !rapierIsPageBreakBlock(token.content)) continue;
@@ -411,9 +469,90 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 			match.url = www ? 'http://' + raw : raw;
 			return match;
 		};
-		const nativeMatch = linkify.match;
+		const nativeMatch = linkify.match, nativeTest = linkify.test;
+		let MatchCtor = null;
+		linkify.test = function (source) {
+			const flags = _rapierLinkFlags(source, this);
+			if (!flags) return false;
+			return nativeTest.call(this, source);
+		};
 		linkify.match = function (source) {
-			const matches = nativeMatch.call(this, source);
+			const flags = _rapierLinkFlags(source, this);
+			if (!flags) return null;
+			if (!MatchCtor) {
+				const sample = nativeMatch.call(this, 'http://a.com');
+				if (sample?.[0]) MatchCtor = Object.getPrototypeOf(sample[0]).constructor;
+			}
+			let matches;
+			if (!MatchCtor || flags === 7) {
+				matches = nativeMatch.call(this, source);
+			} else {
+				const list = [];
+				const r = (flags & 1) ? this.re.get_schema_search() : null;
+				const n = (flags & 2) && this.__opts__.fuzzyLink && this.__schemas__['http:'] ? this.re.get_fuzzy_link_search() : null;
+				const s = (flags & 4) && this.__opts__.fuzzyEmail && this.__schemas__['mailto:'] ? this.re.get_fuzzy_mail_host_search() : null;
+				const o = s ? this.re.get_mail_name_validator() : null;
+				if (r) r.lastIndex = 0;
+				if (n) n.lastIndex = 0;
+				if (s) s.lastIndex = 0;
+				let i, a, u, c = !r, l = !n, h = !s, p = 0;
+				for (;;) {
+					const f = Math.max(p - 1, 0);
+					if (s && o && !h && (!a || a.index < p)) {
+						if (s.lastIndex < f) s.lastIndex = f;
+						for (;;) {
+							const t = s.exec(source);
+							if (!t) { h = true; a = undefined; break; }
+							const m = o.exec(source.slice(Math.max(0, t.index - 65), t.index));
+							if (m) {
+								a = {schema: 'mailto:', index: t.index - m[1].length, lastIndex: t.index + t[0].length};
+								if (a.index >= p) break;
+								if (s.lastIndex < f) s.lastIndex = f;
+							}
+						}
+					}
+					if (n && !l && (!i || i.index < p)) {
+						if (n.lastIndex < f) n.lastIndex = f;
+						for (;;) {
+							const t = n.exec(source);
+							if (!t) { l = true; i = undefined; break; }
+							i = {schema: '', index: t.index + t[1].length, lastIndex: t.index + t[0].length};
+							if (i.index >= p) break;
+							if (n.lastIndex < f) n.lastIndex = f;
+						}
+					}
+					let d, g = a;
+					if (!g || (i && (i.index < g.index || (i.index === g.index && i.lastIndex > g.lastIndex)))) g = i;
+					if (!c) {
+						for (;;) {
+							if (!u) {
+								if (r.lastIndex < f) r.lastIndex = f;
+								const t = r.exec(source);
+								if (!t) { c = true; break; }
+								u = {schema: t[2], index: t.index + t[1].length, lastIndex: t.index + t[0].length};
+							}
+							if (u.index < p) { u = undefined; continue; }
+							if (g && u.index > g.index) break;
+							const t = u;
+							u = undefined;
+							const len = this.testSchemaAt(source, t.schema, t.lastIndex);
+							if (len) { d = {schema: t.schema, index: t.index, lastIndex: t.lastIndex + len}; break; }
+						}
+					}
+					let m = d;
+					if (!m || (a && (a.index < m.index || (a.index === m.index && a.lastIndex > m.lastIndex)))) m = a;
+					if (!m || (i && (i.index < m.index || (i.index === m.index && i.lastIndex > m.lastIndex)))) m = i;
+					if (!m) break;
+					if (m === a) a = undefined;
+					else if (m === i) i = undefined;
+					const item = new MatchCtor(source, m.schema, m.index, m.lastIndex);
+					if (item.schema) this.__schemas__[item.schema].normalize(item, this);
+					else this.normalize(item);
+					list.push(item);
+					p = m.lastIndex;
+				}
+				matches = list.length ? list : null;
+			}
 			if (!matches) return matches;
 			const result = [];
 			let end = 0;
@@ -428,18 +567,20 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 		linkify.matchAtStart = function (source) { return refineLink(nativeMatchAtStart.call(this, source), source); };
 		const inlineLinkify = instance.inline.ruler.__rules__.find(rule => rule.name === 'linkify').fn;
 		instance.inline.ruler.at('linkify', function rapierInlineLinkify(state, silent) {
-			if (state.src.charCodeAt(state.pos) === 0x3a) {
-				const prefix = state.src.slice(Math.max(0, state.pos - 5), state.pos).toLowerCase();
-				const width = prefix.endsWith('https') ? 5 : prefix.endsWith('http') ? 4 : 0;
-				if (width && !allowedStart(state.src, state.pos - width)) return false;
-			}
+			const pos = state.pos, src = state.src;
+			if (pos + 3 > state.posMax || src.charCodeAt(pos) !== 0x3a || src.charCodeAt(pos + 1) !== 0x2f || src.charCodeAt(pos + 2) !== 0x2f) return false;
+			const prefix = src.slice(Math.max(0, pos - 5), pos).toLowerCase();
+			const width = prefix.endsWith('https') ? 5 : prefix.endsWith('http') ? 4 : 0;
+			if (width && !allowedStart(src, pos - width)) return false;
 			return inlineLinkify(state, silent);
 		});
 	}
 	const disallowedTag = /<\/?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext)(?=[ \t\n\v\f\r/>])/gi;
+	const disallowedTest = /<\/?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext)(?=[ \t\n\v\f\r/>])/i;
 	instance.core.ruler.push('rapier-tagfilter', function rapierTagfilter(state) {
+		if (state.src.indexOf('<') < 0 || !disallowedTest.test(state.src)) return;
 		const filter = token => {
-			if (token.type === 'html_inline' || token.type === 'html_block') {
+			if ((token.type === 'html_inline' || token.type === 'html_block') && disallowedTest.test(token.content)) {
 				token.content = token.content.replace(disallowedTag, tag => '&lt;' + tag.slice(1));
 			}
 		};
@@ -449,6 +590,15 @@ function _rapierApplyMarkdownSpec(instance, root, spec = RAPIER_MARKDOWN_SPEC) {
 			if (token.type === 'inline' && token.content.indexOf('<') >= 0) for (const child of token.children || []) filter(child);
 		}
 	});
+	const emojiRule = instance.core.ruler.__rules__.find(rule => rule.name === 'emoji');
+	if (emojiRule) {
+		const origEmoji = emojiRule.fn;
+		const emojiQuickRe = /:|<3|<\/3|<\\3|[8BXx][-']?[()]/;
+		instance.core.ruler.at('emoji', function rapierEmoji(state) {
+			if (!emojiQuickRe.test(state.src)) return;
+			origEmoji(state);
+		});
+	}
 	if (spec.core && spec.core.retainReferenceDefinitions) {
 		instance.core.ruler.disable('strip_references');
 	}

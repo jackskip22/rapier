@@ -93,16 +93,17 @@ export const DOORS = Object.freeze({
 		])}),
 	// /jxl answers the JPEG XL searches: what goes in, what comes out, and the steps. Each claim is the
 	// converter's (jxl/convert.mjs, jxl/frames.mjs, jxl/png.mjs); the sizes are its own results for the card's painting (og-card.mjs).
-	'/jxl': Object.freeze({name: 'JPEG XL converter', title: 'Free JPEG XL converter: PNG, JPG, GIF and video to JXL | Rapier',
-		description: 'Convert PNG, JPG, GIF, WebP and video to JPEG XL (JXL), free, in your browser. Lossless or lossy; under Lossless a JPEG restores exactly. Offline.',
+	'/jxl': Object.freeze({name: 'JPEG XL converter', title: 'Free JPEG XL converter and animated JXL maker: PNG, JPG, GIF, video | Rapier',
+		description: 'Convert PNG, JPG, GIF and video to JPEG XL (JXL), or make an animated JXL from GIFs, videos and pictures. Free, in your browser, offline.',
 		image: 'og-jxl-flowers.png', imageSize: [1200, 630], imageAlt: 'Watercolor flowers painted in Rapier. flowers.png: 710 KB to 428 KB, lossless. flowers.jpg: 152 KB to 125 KB, restores the JPEG exactly.',
 		h1: 'Free JPEG XL converter', view: 'jxl', encoder: Object.freeze({name: 'rapier-jxl', repository: 'https://github.com/jackskip22/rapier-jxl', package: 'https://www.npmjs.com/package/rapier-jxl'}), related: ['/paint', '/draw', '/notes'],
-		features: Object.freeze(['JPG, PNG, GIF, WebP, AVIF and APNG to JPEG XL', 'MP4, WebM and MOV to animated JPEG XL', 'Lossless, High or Medium quality', 'Exact JPEG recompression', 'Keeps transparency, 16-bit PNG, color profiles and HDR', 'Runs offline on your device', 'Many files at once, zip download']),
+		features: Object.freeze(['JPG, PNG, GIF, WebP, AVIF and APNG to JPEG XL', 'MP4, WebM and MOV to animated JPEG XL', 'Animated JPEG XL maker: GIFs, videos and pictures in one frame strip; reorder, skip, copy, reverse, boomerang; delays and loops', 'Lossless, High or Medium quality', 'Exact JPEG recompression', 'Keeps transparency, 16-bit PNG, color profiles and HDR', 'Runs offline on your device', 'Many files at once, zip download']),
 		lead: 'Convert PNG, JPG, GIF and video to JPEG XL (JXL), free. Files are made on your device, offline; nothing is uploaded. Choose the quality: Lossless, High or Medium. Under Lossless a JPEG converts exactly: smaller, and the original restores byte for byte.',
 		howTo: Object.freeze([
 			Object.freeze(['How to convert PNG or JPG to JPEG XL', Object.freeze(['Choose or drop pictures: JPG, PNG, WebP, AVIF or any picture your browser opens.', 'Choose the quality: Lossless, High or Medium. Effort keeps the picture: more effort makes a smaller file and takes longer. Under Lossless a JPEG converts exactly.', 'Download each .jxl file, or all of them as one zip.'])]),
 			Object.freeze(['How to convert a video to animated JPEG XL', Object.freeze(['Choose or drop an MP4, WebM or MOV.', 'The first time, download JPEG XL complete: free, once, then offline.', 'Up to 30 frames a second, without sound. A long or large video is scaled down or cut, and its row says so.', 'Download the .jxl file.'])]),
 			Object.freeze(['How to convert a GIF to animated JXL', Object.freeze(['Choose or drop an animated GIF, APNG or animated WebP.', 'The first time, download JPEG XL complete: free, once, then offline.', 'Choose the quality: Lossless, or High or Medium for a smaller file. Frame timing is kept.', 'Download the .jxl file.'])]),
+			Object.freeze(['How to make an animated JPEG XL', Object.freeze(['Tap animated at the top.', 'Choose or drop a GIF, APNG, animated WebP, a video or several pictures (JPG, PNG, WebP, HEIC). For a video, set the start, the end, the frames a second and the size.', 'Drag frames to reorder them; skip, copy or delete them; set a delay for one, several or all, and the loops.', 'Tap Make JPEG XL, compare it with the original, then Download.'])]),
 		]),
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
@@ -113,6 +114,9 @@ export const DOORS = Object.freeze({
 			Object.freeze(['What does it keep?', 'Transparency, 16-bit PNG (Lossless), color profiles such as Display P3 and Adobe RGB, and HDR PNGs (PQ or HLG). Video sound is dropped.']),
 			Object.freeze(['How many pictures can I convert?', 'Any number. Rapier converts a few at a time; Cancel stops it. If the device runs out of memory, finished files are kept.']),
 			Object.freeze(['Which browsers open JPEG XL?', 'Chrome 155, Firefox 158 and Safari 17 and later. Safari does not play animated JPEG XL. Any browser can make the files here.']),
+			Object.freeze(['How do I make an animated JPEG XL?', 'Tap animated, then choose or drop a GIF, APNG, animated WebP, a video or several pictures. Order the frames, set their delays, then Make JPEG XL and download the .jxl file.']),
+			Object.freeze(['Why does my viewer show a still picture?', 'Some viewers and image libraries decode only the first frame of a JPEG XL. Open the file in a browser that plays it, or in a viewer built on libjxl with animation turned on.']),
+			Object.freeze(['Is animated JPEG XL smaller than a GIF?', 'Yes. Lossless keeps every frame of a GIF exactly and the file is smaller. High and Medium are smaller still.']),
 		]),
 		sections: Object.freeze([
 			Object.freeze(['How it works', 'The JPEG XL encoder is part of Rapier, which is one offline HTML file. Your browser reads each picture, or plays each video frame by frame, and the encoder writes the JPEG XL file on your device. Nothing is uploaded. A JPEG is carried into JPEG XL without decoding it, then restored and checked against the original before you download.']),

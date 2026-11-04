@@ -155,7 +155,7 @@
 <div class="format-toolbar__tip" id="format-toolbar-tip" aria-hidden="true"></div>
 <div class="format-toolbar" id="format-toolbar" role="toolbar" aria-label="text formatting" aria-hidden="true"
 		 data-expanded="false"
-		 data-overflow-right="false" onmousedown="event.preventDefault()">
+		 data-overflow-right="false">
 	<div class="format-toolbar__scroll rapier-hscroll__surface" id="format-toolbar-scroll">
 		<div class="format-toolbar__compact" role="presentation">
 		<button type="button" class="fmt-btn" data-cmd="bold" data-action="command" data-command="format.bold" data-tip="bold" aria-label="bold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h8a4 4 0 0 1 0 8H6z"/><path d="M6 12h9a4 4 0 0 1 0 8H6z"/></svg></button>
@@ -267,8 +267,7 @@
 </div>
 
 <!-- ── Text style derivative strip ────────-->
-<div class="heading-picker" id="heading-picker" role="menu" aria-label="text style"
-		 onmousedown="event.preventDefault()">
+<div class="heading-picker" id="heading-picker" role="menu" aria-label="text style">
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn fmt-btn--sm" data-cmd="p" data-action="pick-style" data-command="format.paragraph" data-tip="paragraph" aria-label="paragraph">P</button>
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn fmt-btn--sm" data-cmd="h1" data-action="pick-style" data-command="format.heading-1" data-tip="heading 1" aria-label="heading 1">H1</button>
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn fmt-btn--sm" data-cmd="h2" data-action="pick-style" data-command="format.heading-2" data-tip="heading 2" aria-label="heading 2">H2</button>
@@ -279,8 +278,7 @@
 </div>
 
 <!-- ── Text colour derivative strip. The stored value is always the literal hex; a name here is only a label. -->
-<div class="color-picker" id="color-picker" role="menu" aria-label="text color"
-		 onmousedown="event.preventDefault()">
+<div class="color-picker" id="color-picker" role="menu" aria-label="text color">
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-red" data-action="pick-color" data-value="#b32034" data-tip="red" aria-label="red text color"><span class="color-swatch color-swatch--red" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-orange" data-action="pick-color" data-value="#c2410c" data-tip="orange" aria-label="orange text color"><span class="color-swatch color-swatch--orange" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="color-gold" data-action="pick-color" data-value="#865818" data-tip="gold" aria-label="gold text color"><span class="color-swatch color-swatch--gold" aria-hidden="true"></span></button>
@@ -298,8 +296,7 @@
 </div>
 
 <!-- ── Highlight strip. A colour writes `<mark style="background-color:…">`; plain highlight writes `==`. -->
-<div class="highlight-picker" id="highlight-picker" role="menu" aria-label="highlight color" aria-orientation="horizontal"
-		 onmousedown="event.preventDefault()">
+<div class="highlight-picker" id="highlight-picker" role="menu" aria-label="highlight color" aria-orientation="horizontal">
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="highlight-default" data-action="pick-highlight" data-value="default" data-tip="default highlight" aria-label="default highlight"><span class="highlight-swatch highlight-swatch--default" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="highlight-green" data-action="pick-highlight" data-value="green" data-tip="green highlight" aria-label="green highlight"><span class="highlight-swatch highlight-swatch--green" aria-hidden="true"></span></button>
 	<button type="button" tabindex="-1" role="menuitemradio" aria-checked="false" class="fmt-btn" data-cmd="highlight-red" data-action="pick-highlight" data-value="red" data-tip="red highlight" aria-label="red highlight"><span class="highlight-swatch highlight-swatch--red" aria-hidden="true"></span></button>
@@ -310,7 +307,7 @@
 </div>
 
 <!-- Annotation tools remain available while the document scrolls. -->
-<div class="ink-strip" id="ink-strip" role="toolbar" aria-label="document annotation" aria-hidden="true" inert onmousedown="if(event.target.closest('button'))event.preventDefault()">
+<div class="ink-strip" id="ink-strip" role="toolbar" aria-label="document annotation" aria-hidden="true" inert>
 	<div class="ink-strip__tools">
 		<button type="button" class="fmt-btn" data-action="ink-scroll" aria-label="scroll document" aria-pressed="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg><span>scroll</span></button>
 		<button type="button" class="fmt-btn" data-action="ink-draw" aria-label="draw annotations" aria-pressed="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19c3-9 5-14 7-14 5 0-5 14 0 14 2 0 4-6 6-6 2 0 0 6 3 6"/></svg><span>draw</span></button>
@@ -339,8 +336,7 @@
 </div>
 
 <!-- ── Divider style derivative strip ────────-->
-<div class="hr-style-picker" id="hr-style-picker" role="menu" aria-label="divider style"
-		 onmousedown="event.preventDefault()">
+<div class="hr-style-picker" id="hr-style-picker" role="menu" aria-label="divider style">
 	<button type="button" tabindex="-1" role="menuitem" class="fmt-btn" data-action="pick-divider" data-value="divider-dash" data-tip="solid line (---)" aria-label="solid line divider">
 		<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/></svg>
 	</button>
@@ -495,7 +491,7 @@
 				<!-- RAPIER_EDITOR_ONLY_BEGIN -->
 				<div class="settings-action-pair" id="settings-save-pair">
 					<button type="button" class="settings-action-btn" id="settings-save-btn"
-									data-action="save-document">save</button>
+									data-action="save-document"><span class="settings-save-word">save</span><svg class="settings-save-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></button>
 					<button type="button" class="settings-action-btn" id="settings-save-as-btn" hidden
 									data-action="save-as-document">save as</button>
 				</div>
@@ -514,12 +510,18 @@
 			</div>
 
 			<!-- RAPIER_EDITOR_ONLY_BEGIN -->
-			<!-- DRAW in the settings panel as well as the floating bar: the bar's own brush, at the stroke of the view icons
-			     above, centred under compare with equal air above and below; it opens a fresh canvas exactly as /draw does,
-			     and the address stays where it is. -->
-			<button type="button" class="settings-draw-btn" id="settings-draw-btn" data-action="open-draw" aria-label="draw a picture" data-tip="draw">
-				<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0-12.8 10.2"/><path d="M21 3a16 16 0 0 1-10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>
-			</button>
+			<!-- The row under compare: the JPEG XL converter's picture under the left column, on the axis of
+			     new, save and share, and Draw's brush under the right, on the axis of open, save as and copy, each at the stroke of
+			     the view icons above with equal air above and below. JPEG XL opens the converter /jxl shows; Draw opens a fresh
+			     canvas exactly as /draw does, and the address stays where it is. -->
+			<div class="settings-door-row" id="settings-door-row">
+				<button type="button" class="settings-draw-btn settings-jxl-btn" id="settings-jxl-btn" data-action="open-jxl" aria-label="JPEG XL" data-tip="JPEG XL">
+					<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+				</button>
+				<button type="button" class="settings-draw-btn" id="settings-draw-btn" data-action="open-draw" aria-label="draw a picture" data-tip="draw">
+					<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0-12.8 10.2"/><path d="M21 3a16 16 0 0 1-10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>
+				</button>
+			</div>
 
 			<div id="settings-upload-section" hidden>
 				<div class="settings-section__title">upload</div>
@@ -2549,6 +2551,15 @@ SOFTWARE.</pre>
 				<button type="button" class="settings-action-btn" id="agent-access-share" hidden>SHARE WITH AN AGENT</button>
 			</div>
 			<!-- ── Agent row. -->
+			<div class="navigator-actions" id="navigator-actions">
+				<button type="button" class="settings-action-btn navigator-outline-action" data-outline-fold-tools
+							id="navigator-fold" data-action="navigator-fold"
+							aria-label="collapse all sections" aria-pressed="false">COLLAPSE</button>
+				<button type="button" class="settings-action-btn navigator-outline-action"
+							id="navigator-reorder"
+							aria-label="reorder sections" aria-controls="navigator-outline"
+							aria-pressed="false" hidden>REORDER</button>
+			</div>
 			<div class="agent-row" id="agent-row" hidden>
 				<div class="agent-row__line">
 					<button type="button" class="agent-row__who" id="agent-row-who" aria-expanded="false" aria-controls="agent-self"
@@ -2557,7 +2568,7 @@ SOFTWARE.</pre>
 					<span class="agent-row__under" id="agent-row-under"></span>
 					<span class="agent-row__queued" id="agent-row-queued" hidden></span>
 					<button type="button" class="agent-row__verb" id="agent-row-jump" hidden
-									aria-label="go to the change" onmousedown="event.preventDefault()">GO TO CHANGE</button>
+									aria-label="go to the change">GO TO CHANGE</button>
 				</div>
 				<div class="agent-self" id="agent-self" hidden>
 					<p class="agent-self__lede">Give your agent a name and a mark. It wears them at the circle while it works.</p>
@@ -2580,9 +2591,6 @@ SOFTWARE.</pre>
 							 autocomplete="off" spellcheck="false" placeholder="filter headings"
 							 aria-label="filter headings" aria-controls="navigator-outline"
 							 aria-describedby="navigator-status">
-				<button type="button" class="settings-action-btn navigator-outline-action" data-outline-fold-tools
-								id="navigator-fold" data-action="navigator-fold"
-								aria-label="collapse all sections" aria-pressed="false">COLLAPSE</button>
 			</div>
 			<div id="navigator-status" class="sr-only" role="status"
 					 aria-live="polite" aria-atomic="true"></div>

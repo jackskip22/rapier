@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-var _rapierDrawPart = null, _rapierFontsPart = null, _rapierJxlPart = null, _rapierJxlCompletePart = null, _rapierJxlScenePart = null, _rapierDiffPart = null, _rapierDiagramsPart = null, _rapierConvertPart = null, _rapierMathPart = null, _rapierNotesPart = null, _rapierDocumentPart = null, _rapierComposerPart = null, _rapierPresetPart = null;
+var _rapierDrawPart = null, _rapierFontsPart = null, _rapierJxlPart = null, _rapierJxlMakerPart = null, _rapierJxlCompletePart = null, _rapierJxlScenePart = null, _rapierDiffPart = null, _rapierDiagramsPart = null, _rapierConvertPart = null, _rapierMathPart = null, _rapierNotesPart = null, _rapierDocumentPart = null, _rapierComposerPart = null, _rapierPresetPart = null;
 async function _rapierOpenPresets() {
 	if (!_rapierSettlePendingDocumentChange()) return;
 	const capture = _rapierCaptureEngineDialogTarget(), stamp = Object.freeze(_rapierMutationStamp());
@@ -195,8 +195,8 @@ if (_rapierPartAvailable('drawing')) _rapierBootFactsPublished.then(() => setTim
 	RapierParts.warm('drawing');
 }, 1500), () => {});
 addEventListener('pointerdown', event => {
-	const control = event.target instanceof Element ? event.target.closest('[data-command="insert.draw"], [data-action="open-draw"], .rapier-image-tools__draw, [data-action="notes-open"]') : null;
-	const id = !control ? null : control.matches('[data-action="notes-open"]') ? 'notes' : 'drawing';
+	const control = event.target instanceof Element ? event.target.closest('[data-command="insert.draw"], [data-action="open-draw"], .rapier-image-tools__draw, [data-action="notes-open"], [data-action="open-jxl"]') : null;
+	const id = !control ? null : control.matches('[data-action="notes-open"]') ? 'notes' : control.matches('[data-action="open-jxl"]') ? 'jxl' : 'drawing';
 	if (id && _rapierPartAvailable(id) && !RapierParts.ready(id)) RapierParts.need(id).catch(() => {});
 }, true);
 

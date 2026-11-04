@@ -200,6 +200,7 @@ body{--diagram-inner-line:color-mix(in srgb,var(--color-text) 12%,var(--color-bg
 .link-dialog__status[data-error]{color:var(--color-error)}
 .link-dialog__spacer{flex:1}
 html{--notes-beside:clamp(360px,40vw,640px)}
+@supports (animation-timeline: --a) and (timeline-scope: --a){body{timeline-scope: --rapier-page;}}
 .link-dialog input:not([type="checkbox"]):not([type="radio"]),
 .link-dialog select,
 .link-dialog textarea{touch-action: auto!important;}
@@ -219,11 +220,6 @@ html{--notes-beside:clamp(360px,40vw,640px)}
 	background: transparent;
 	color: var(--color-text);
 	cursor: pointer;}
-.settings-action-btn.navigator-outline-action{flex: 0 0 auto;
-	width: auto;
-	min-width: 112px;
-	justify-content: center;}
-.settings-action-btn.navigator-outline-action[hidden]{display: none;}
 .theme-switcher--joined{gap: 0;
 	padding: 0;}
 .theme-switcher--joined .theme-switcher__btn[data-sz]{height: 48px;

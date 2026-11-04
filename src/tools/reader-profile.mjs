@@ -99,6 +99,7 @@ const CUT = [
 	'share-image-compat-toggle', 'share-ledger-authors', 'share-send-back',
 	'settings-open-chevron', 'recent-drawer', 'view-mode-toggle', 'settings-pro-section', 'about-review-row',
 	'agent-access', 'agent-row', 'goto-line-form', 'goto-line-range', 'restore-notice',
+	'navigator-reorder',
 	'share-live-document', 'drawing-plugin-row', 'notes-plugin-row',
 ];
 

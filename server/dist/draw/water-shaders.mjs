@@ -101,6 +101,9 @@ fn footprint(p:vec2<f32>) -> f32 {
  return mix(tip,wet,u.v[5].z)*mix(1.0,tooth,u.v[5].w);
 }
 fn gaussian(p:vec2<f32>) -> f32 { let d=brushDistance(p); return exp(-pow(dot(d,d),u.v[6].z)); }
+// The share a stamp takes away. Lift takes its strength times the brush (at most .9). The Eraser (strength above 1) is a crisp
+// disc: all of the paint where the brush is above .7, none below .3, so it leaves no film and reaches no further than its edge.
+fn liftShare(g:f32) -> f32 { let a=u.v[6].y; return select(a*g, smoothstep(.3,.7,g), a>1.0); }
 `;
 
 const fillFront = `
@@ -126,8 +129,8 @@ const body = {
  splat: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return u.v[7]*gaussian(uv(p)); }`,
  fillInk: fillFront+`@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let amount=fillWeight(p,false);return Pair(u.v[7]*amount,u.v[8]*amount); }`,
  fillWet: fillFront+`@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return vec4<f32>(u.v[14].w*fillWeight(p,true),0,0,0); }`,
- liftInk: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let f=vec4<f32>(u.v[6].y*gaussian(uv(p))); return Pair(f,f); }`,
- liftWet: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return vec4<f32>(u.v[6].y*gaussian(uv(p))); }`,
+ liftInk: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> Pair { let f=vec4<f32>(liftShare(gaussian(uv(p)))); return Pair(f,f); }`,
+ liftWet: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> { return vec4<f32>(liftShare(gaussian(uv(p)))); }`,
  velocity: `@fragment fn fragment(@builtin(position) p:vec4<f32>) -> @location(0) vec4<f32> {
  let q=uv(p);let displacement=u.v[1].x*sample(t0,q).xy/u.v[0].zw;
  let v=sample(t0,q-displacement).xy*u.v[2].y*smoothstep(0.005,0.2,sample(t1,q).r);

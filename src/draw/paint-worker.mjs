@@ -31,7 +31,7 @@ export function createPaintWorker({postMessage, spawnRows, isolated = false} = {
  const agentJobs=new Map(), displays=new Map(), histories=new Map(), definitions=new Map(), historyBrushes=new Map(), resumedBrushes=new Map();
  const gpuSheets=new Map(); let gpuMode='off', gpuDevice=null, gpuTask=null, gpuLost=null;
  const gpuReady=(attempt=0)=>{ if(gpuMode==='off')return Promise.resolve(null); return gpuTask??=openPaintDevice({software:gpuMode==='software',timeoutMs:20000}).then(d=>{gpuDevice=d;setPaintReplayGpu(d);d.lost?.then(info=>{gpuLost=d.paintLost=info||{reason:'unknown'};gpuDevice=null;for(const g of gpuSheets.values())g.lost=gpuLost;});return d;},error=>{
-  if(attempt>=3||gpuMode==='off'||['No WebGPU.','Only a software adapter.'].includes(error?.message))return null;
+  if(attempt>=3||gpuMode==='off'||['No WebGPU.','No WebGPU adapter.','Only a software adapter.'].includes(error?.message))return null;
   return new Promise(r=>setTimeout(r,2000*(attempt+1))).then(()=>{gpuTask=null;return gpuReady(attempt+1);}); }); };
  const oilBrush=brush=>!!brush?.oilEngine&&!brush.erasing;
  const oilReady=async(width=1,height=1)=>{

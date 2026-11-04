@@ -11,9 +11,9 @@
 	let strip, keys, kind = '', queued = false;
 
 	function context() {
-		if (!coarse.matches || globalThis.rapier?.access?.readOnly) return null;
-		const ta = document.getElementById('source-textarea');
-		if (ta && document.activeElement === ta) return {kind: 'source', ta};
+		if (!coarse.matches || rapier.access.readOnly) return null;
+		const ta = document.getElementById('source-textarea'), docKind = rapier.document.docKind;
+		if (ta && document.activeElement === ta) return docKind === 'text' ? null : {kind: docKind === 'code' ? 'code' : 'source', ta};
 		const sel = getSelection(), node = sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
 		const at = node && (node.nodeType === 1 ? node : node.parentElement);
 		const edit = at?.closest('.block-edit');
@@ -23,11 +23,15 @@
 
 	function press(name, at) {
 		if (name === 'tab' || name === 'outdent') {
-			if (at.kind === 'source') at.ta.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', code: 'Tab', shiftKey: name === 'outdent', bubbles: true, cancelable: true}));
+			if (at.ta) at.ta.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', code: 'Tab', shiftKey: name === 'outdent', bubbles: true, cancelable: true}));
 			else _rapierIndentCode(at.edit, name === 'outdent');
 			return;
 		}
-		document.execCommand('insertText', false, name);
+		if (!at.ta) { document.execCommand('insertText', false, name); return; }
+		const ta = at.ta;
+		if (!ta.dispatchEvent(new InputEvent('beforeinput', {bubbles: true, cancelable: true, inputType: 'insertText', data: name}))) return;
+		ta.setRangeText(name, ta.selectionStart, ta.selectionEnd, 'end');
+		ta.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: name}));
 	}
 
 	function build() {

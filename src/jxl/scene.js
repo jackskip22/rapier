@@ -31,7 +31,7 @@
 		return state;
 	}
 
-	function mount(section, stage) {
+	function mount(section, stage, keep) {
 		const canvas = make('canvas', 'rapier-jxl-scene__canvas');
 		canvas.setAttribute('aria-label', '3D scene');
 		const side = Math.max(256, Math.min(2048, Math.round(stage.clientWidth * (devicePixelRatio || 1))));
@@ -68,9 +68,9 @@
 			text.append(make('div', 'rapier-jxl-view__row-name', name), line); node.append(text); list.prepend(node);
 			return {node, line};
 		}
-		function actions(node, url, name) {
+		function actions(node, url, name, blob) {
 			const box = make('div', 'rapier-jxl-view__row-actions');
-			for (const [label, act] of [['Open', () => window.open(url, '_blank', 'noopener')], ['Download', () => { const link = make('a'); link.href = url; link.download = name; document.body.append(link); link.click(); link.remove(); }]]) {
+			for (const [label, act] of [['Open', () => { if (window.RapierPlatform?.host?.canShare) void _rapierShareFile({blob, filename: name, mime: 'image/jxl'}); else window.open(url, '_blank', 'noopener'); }], ['Download', () => void keep(blob, name)]]) {
 				const button = make('button', 'settings-action-btn', label); button.type = 'button'; button.addEventListener('click', act); box.append(button);
 			}
 			node.append(box);
@@ -82,7 +82,7 @@
 				let max = 0;
 				for (let i = 0; i < pixels.length; i++) if (i % 4 !== 3) { const d = Math.abs(back.data[i] - pixels[i]); if (d > max) max = d; }
 				return max === 0 ? 'opened again: identical' : 'opened again: largest change ' + max + ' of 255';
-			} catch (_) { return 'not opened again'; }
+			} catch (error) { return /^Google Play /.test(String(error?.message)) ? 'not opened again: ' + error.message : 'not opened again'; }
 		}
 		const targetFor = kind => {
 			const [w, h] = kind === 'panorama' ? PANORAMA : [canvas.width, canvas.height], held = targets[kind];
@@ -107,7 +107,7 @@
 				if (kind === 'panorama') last = blob;
 				const seconds = ((t1 - t0) / 1000).toFixed(1) + ' s', frameWords = lost + (lost === 1 ? ' frame' : ' frames') + ' dropped';
 				working.line.textContent = size(bytes.length) + ' · ' + seconds + ' · ' + frameWords;
-				actions(working.node, url, name);
+				actions(working.node, url, name, blob);
 				const words = await reopened(bytes, target);
 				if (!closed) working.line.textContent = size(bytes.length) + ' · ' + seconds + ' · ' + frameWords + ' · ' + words;
 				vr.hidden = !(last && offersVr);

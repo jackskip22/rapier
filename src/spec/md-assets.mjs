@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Pure text and markdown-it tokens: no DOM, no byte decoding, no globalThis.Rapier* (MIT kit; decoders stay in images/assets.mjs).
 import {isWordSidecarBlock} from './word-sidecar.mjs';
+import {tuneMarkdownEngine} from './md-engine.mjs';
 import {sourceFacts, sourceView, sourceEdit} from '../kit/ledger/source.mjs';
 
 export const IMAGE_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, sourceChars: 64 * 1024 * 1024, dimension: 16384, pixels: 24000000, assets: 1024});
@@ -66,27 +67,22 @@ function parserFor(factory = configured || globalThis.markdownit) {
   if (configured && factory === globalThis.markdownit) return configured;
   if (typeof factory !== 'function') return fail('markdown_parser_unavailable');
   let parser = parsers.get(factory);
-  if (!parser) { parser = installMarkdownImages(factory({html: true, maxNesting: 20})); parsers.set(factory, parser); }
+  if (!parser) { parser = installMarkdownImages(tuneMarkdownEngine(factory({html: true, maxNesting: 20}))); parsers.set(factory, parser); }
   return parser;
 }
 export {parserFor as markdownParser};
 export const markdownBodyOffset = source => splitSource ? splitSource(source).bodyOffset : 0;
 
-const BLOCK_WINDOW = 1024, TABLE_STEP = 128, WINDOW_END = Symbol('block window end');
-const LINE_TABLES = ['bMarks', 'eMarks', 'tShift', 'sCount', 'bsCount'];
-const lineIndex = key => typeof key === 'string' && /^(?:0|[1-9]\d*)$/.test(key);
-let unheldLine = null;
-const unheldLines = new Proxy(Array.prototype, {
-  get: (target, key, table) => unheldLine && lineIndex(key) ? unheldLine(table, Number(key)) : Reflect.get(target, key, table),
-  set: (target, key, value, table) => unheldLine && lineIndex(key) ? unheldLine(table, Number(key), true, value) : Reflect.set(target, key, value, table),
-});
+const BLOCK_WINDOW = 1024, WINDOW_END = Symbol('block window end');
 
 export function eachBlockWindow(source, bodyOffset, parser, env, visit, keepNul = false) {
   for (const window of blockWindows(source, bodyOffset, parser, env, keepNul)) visit(window);
 }
 
 export function* blockWindows(source, bodyOffset, parser, env, keepNul = false) {
-  const lineEnds = source.slice(bodyOffset).replace(/\r\n?/g, '\n'), body = keepNul ? lineEnds : lineEnds.replace(/\0/g, '\ufffd');
+  const rawSlice = bodyOffset ? source.slice(bodyOffset) : source;
+  const lineEnds = rawSlice.indexOf('\r') >= 0 ? rawSlice.replace(/\r\n?/g, '\n') : rawSlice;
+  const body = keepNul || lineEnds.indexOf('\0') < 0 ? lineEnds : lineEnds.replace(/\0/g, '\ufffd');
   let pair = source.indexOf('\r\n', bodyOffset), shift = bodyOffset;
   const sourceOffset = at => {
     while (pair >= 0 && at + shift > pair) { shift++; pair = source.indexOf('\r\n', pair + 2); }
@@ -94,89 +90,52 @@ export function* blockWindows(source, bodyOffset, parser, env, keepNul = false) 
     return at + shift;
   };
   const tokens = [];
-  let origin = 0, first = 0, state;
+  const state = new parser.block.State(body, parser, env, tokens);
+  state.rapierSourceSlice = (from, to) => source.slice(sourceOffset(from), sourceOffset(to));
+  const totalLines = state.lineMax;
+  let origin = 0, first = 0, windowStartLine = 0;
   const report = () => ({tokens, firstLine: first, lineStart: line => {
     if (!line) return sourceOffset(origin);
-    const end = Object.hasOwn(state.eMarks, line - 1) ? state.eMarks[line - 1] : body.length;
+    const absLine = first + line - 1;
+    const end = absLine >= 0 && absLine < totalLines ? state.eMarks[absLine] : body.length;
     return end < body.length ? sourceOffset(end + 1) : undefined;
   }});
-  let lines = 0;
-  for (let at = body.indexOf('\n'); at !== -1; at = body.indexOf('\n', at + 1)) lines++;
-  if (lines <= BLOCK_WINDOW) {
-    state = new parser.block.State(body, parser, env, tokens);
-    state.rapierSourceSlice = (from, to) => source.slice(sourceOffset(from), sourceOffset(to));
-    parser.block.tokenize(state, state.line, state.lineMax);
+  if (totalLines <= BLOCK_WINDOW) {
+    parser.block.tokenize(state, state.line, totalLines);
     yield report(); return;
   }
-  state = new parser.block.State(body.slice(body.lastIndexOf('\n') + 1), parser, env, tokens);
-  state.rapierSourceSlice = (from, to) => source.slice(sourceOffset(from), sourceOffset(to));
-  lines += state.lineMax;
-  state.src = body;
-  const tables = new WeakMap();
-  for (const name of LINE_TABLES) { state[name].length = 0; tables.set(Object.setPrototypeOf(state[name], unheldLines), name); }
-  let frontier = 0, ended = false, betweenBlocks = false;
-  const fill = line => {
-    while (!ended && line >= state.bMarks.length) {
-      const held = state.bMarks.length;
-      let until = frontier;
-      for (let more = held ? Math.max(TABLE_STEP, held - BLOCK_WINDOW) : BLOCK_WINDOW; more && until < body.length; more--) {
-        const end = body.indexOf('\n', until);
-        until = end < 0 ? body.length : end + 1;
-      }
-      const scanned = new parser.block.State(body.slice(frontier, until), parser, env, []);
-      ended = until === body.length;
-      const added = ended ? scanned.lineMax + 1 : scanned.lineMax;
-      for (const name of LINE_TABLES) {
-        const old = state[name], next = scanned[name], offset = name === 'bMarks' || name === 'eMarks' ? frontier : 0, table = [];
-        for (let at = 0; at < held; at++) table.push(old[at]);
-        for (let at = 0; at < added; at++) table.push(next[at] + offset);
-        old.length = 0;
-        tables.set(table, name);
-        state[name] = Object.setPrototypeOf(table, unheldLines);
-      }
-      frontier = until;
-    }
-  };
-  const answer = (table, line, write, value) => {
-    const name = tables.get(table);
-    if (line >= state[name].length) {
-      if (betweenBlocks) throw WINDOW_END;
-      fill(line);
-    }
-    const current = state[name], held = Object.hasOwn(current, line);
-    if (!write) return held ? current[line] : undefined;
-    if (held) current[line] = value;
-    else Object.defineProperty(current, line, {value, writable: true, enumerable: true, configurable: true});
-    return true;
-  };
   const skipEmptyLines = state.skipEmptyLines;
   state.skipEmptyLines = function (line) {
-    if (this.level || line !== this.line || !line) return skipEmptyLines.call(this, line);
-    if (line >= BLOCK_WINDOW) throw WINDOW_END;
-    betweenBlocks = true;
-    line = skipEmptyLines.call(this, line);
-    betweenBlocks = false;
-    return line;
-  };
-  for (;;) {
-    for (let at = origin; at < body.length; at++) {
-      const code = body.charCodeAt(at);
-      if (code === 10) { origin = at + 1; first++; }
-      else if (!parser.utils.isSpace(code)) break;
+    if (this.level || line !== this.line || line === windowStartLine) return skipEmptyLines.call(this, line);
+    if (line - windowStartLine >= BLOCK_WINDOW) throw WINDOW_END;
+    const next = skipEmptyLines.call(this, line);
+    if (next - windowStartLine >= BLOCK_WINDOW) {
+      this.line = windowStartLine + BLOCK_WINDOW;
+      throw WINDOW_END;
     }
-    frontier = origin; ended = false; betweenBlocks = false;
-    state.line = 0; state.lineMax = lines - first; state.rapierFirstLine = first;
-    const outer = unheldLine;
-    unheldLine = answer;
+    return next;
+  };
+  for (let startLine = 0; startLine < totalLines;) {
+    startLine = skipEmptyLines.call(state, startLine);
+    if (startLine >= totalLines) break;
+    windowStartLine = startLine;
+    first = startLine;
+    origin = startLine === 0 ? 0 : state.eMarks[startLine - 1] + 1;
+    state.line = startLine;
+    state.rapierFirstLine = first;
     let finished = true;
-    try { parser.block.tokenize(state, 0, state.lineMax); }
+    try { parser.block.tokenize(state, startLine, totalLines); }
     catch (error) { if (error !== WINDOW_END) throw error; finished = false; }
-    finally { unheldLine = outer; }
+    if (first !== 0) {
+      for (let i = 0; i < tokens.length; i++) {
+        const m = tokens[i].map;
+        if (m) { m[0] -= first; m[1] -= first; }
+      }
+    }
     yield report();
     if (finished) return;
     tokens.length = 0;
-    origin = state.eMarks[state.line - 1] + 1; first += state.line;
-    for (const name of LINE_TABLES) state[name].length = 0;
+    startLine = state.line;
   }
 }
 
@@ -184,7 +143,7 @@ const INVALID_PERCENT_PAYLOAD = /[^A-Za-z0-9._~:\/?@+$,;=%-]/;
 const isHexUnit = code => code >= 48 && code <= 57 || code >= 65 && code <= 70 || code >= 97 && code <= 102;
 let lastScan = null;
 export function dataImage(url) {
-  if (typeof url !== 'string' || url.length > IMAGE_LIMITS.sourceChars) return null;
+  if (typeof url !== 'string' || url.length < 15 || (url.charCodeAt(0) | 32) !== 0x64 || url.charCodeAt(4) !== 0x3a || url.length > IMAGE_LIMITS.sourceChars) return null;
   if (url.length > 4096) {
     if (lastScan?.url !== url) lastScan = {url, image: scanDataImage(url)};
     return lastScan.image && {...lastScan.image};

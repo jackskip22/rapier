@@ -2,7 +2,7 @@
 import {markdownSourcePositions} from "./md-source.mjs";
 
 export function fontDataUrl(url) {
-	if (typeof url !== 'string') return null;
+	if (typeof url !== 'string' || url.length < 28 || (url.charCodeAt(0) | 32) !== 0x64 || url.charCodeAt(4) !== 0x3a) return null;
 	const match = /^data:font\/(woff2|woff|ttf|otf);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(url);
 	if (!match || match[2].length % 4) return null;
 	const padding = match[2].endsWith('==') ? 2 : match[2].endsWith('=') ? 1 : 0;
@@ -25,6 +25,8 @@ const inkReader = () => {
 	const INK_OPEN_BODY = '(' + INK_KINDS.join('|') + ')(?: ([1-9]\\d{0,5}))?(?: (' + COLOR_VALUE + '))?(?: w=([1-9]\\d?))?(?: box=(\\d{1,6}),(\\d{1,6}))?(?: at=(' + INK_INT + '),(' + INK_INT + '))?'
 		+ '(?: (' + INK_INT + ',' + INK_INT + '(?: ' + INK_INT + ',' + INK_INT + ')*))?';
 	const INK_OPEN_PATTERN = '<!--ink ' + INK_OPEN_BODY + '-->';
+	const INK_OPEN_EXACT_RE = new RegExp('^' + INK_OPEN_PATTERN + '$');
+	const INK_OPEN_PREFIX_RE = new RegExp('^' + INK_OPEN_PATTERN);
 
 	function readInkMatch(match) {
 		const linked = match[1] === 'arrow' || match[1] === 'end';
@@ -53,17 +55,17 @@ const inkReader = () => {
 	}
 
 	function parseInkOpen(comment) {
-		if (typeof comment !== 'string') return null;
-		const match = new RegExp('^' + INK_OPEN_PATTERN + '$').exec(comment);
+		if (typeof comment !== 'string' || !comment.startsWith('<!--ink ')) return null;
+		const match = INK_OPEN_EXACT_RE.exec(comment);
 		return match && readInkMatch(match);
 	}
 
 	function parseInkBody(body) {
 		return typeof body === 'string' ? parseInkOpen('<!--ink ' + body + '-->') : null;
 	}
-	return { TEXT_COLOR_NAMES, COLOR_NAME_ALT, COLOR_VALUE, INK_KINDS, INK_PATH_MAX, INK_INT_MAX, INK_OPEN_PATTERN, readInkMatch, parseInkOpen, parseInkBody };
+	return { TEXT_COLOR_NAMES, COLOR_NAME_ALT, COLOR_VALUE, INK_KINDS, INK_PATH_MAX, INK_INT_MAX, INK_OPEN_PATTERN, INK_OPEN_EXACT_RE, INK_OPEN_PREFIX_RE, readInkMatch, parseInkOpen, parseInkBody };
 };
-const { TEXT_COLOR_NAMES, COLOR_VALUE, INK_KINDS, INK_PATH_MAX, INK_INT_MAX, INK_OPEN_PATTERN, readInkMatch, parseInkOpen, parseInkBody } = inkReader();
+const { TEXT_COLOR_NAMES, COLOR_VALUE, INK_KINDS, INK_PATH_MAX, INK_INT_MAX, INK_OPEN_PATTERN, INK_OPEN_EXACT_RE, INK_OPEN_PREFIX_RE, readInkMatch, parseInkOpen, parseInkBody } = inkReader();
 export { readInkMatch, parseInkOpen, parseInkBody };
 
 const TEXT_COLOR_HEX_TO_NAME = Object.freeze(
@@ -262,7 +264,7 @@ export function createTypography({normalizeFontFamily, fontFamilyCss, FONT_STACK
 		md.core.ruler.after('linkify', 'rapier-typography', state => {
 			for (let at = 0; at < state.tokens.length; at++) {
 				const block = state.tokens[at];
-				if (block.type !== 'inline' || !block.children || block.content.indexOf('<') < 0) continue;
+				if (block.type !== 'inline' || !block.children || block.content.indexOf('<') < 0 || !/<span/i.test(block.content)) continue;
 				const stack = []; let depth = 0, overflow = 0;
 				for (const token of block.children) {
 					if (token.type !== 'html_inline') { depth += token.nesting || 0; continue; }
@@ -297,7 +299,8 @@ export const typography = createTypography({normalizeFontFamily, fontFamilyCss, 
 export function typographySourceRanges(source, parser) { return markdownSourcePositions(source, parser).typography; }
 
 const INK_CLOSE = '<!--/ink-->';
-export { INK_KINDS, INK_CLOSE, INK_PATH_MAX, INK_INT_MAX, INK_OPEN_PATTERN };
+const INK_OPEN_PREFIX = '<!--ink ';
+export { INK_KINDS, INK_CLOSE, INK_PATH_MAX, INK_INT_MAX, INK_OPEN_PATTERN, INK_OPEN_PREFIX };
 
 const inkInt = (value, name) => {
 	if (!Number.isInteger(value) || Math.abs(value) > INK_INT_MAX) throw new TypeError('ink: ' + name + ' must be an integer within ' + INK_INT_MAX);
@@ -344,16 +347,16 @@ export function formatInkRun(mark, content) {
 }
 
 export function matchInkOpen(text) {
-	if (typeof text !== 'string') return null;
-	const match = new RegExp('^' + INK_OPEN_PATTERN).exec(text);
+	if (typeof text !== 'string' || !text.startsWith('<!--ink ')) return null;
+	const match = INK_OPEN_PREFIX_RE.exec(text);
 	if (!match) return null;
 	const mark = readInkMatch(match);
 	return mark && { mark, length: match[0].length };
 }
 
 export function inkOpenBody(opener) {
-	if (typeof opener !== 'string') return null;
-	const match = new RegExp('^' + INK_OPEN_PATTERN + '$').exec(opener);
+	if (typeof opener !== 'string' || !opener.startsWith('<!--ink ')) return null;
+	const match = INK_OPEN_EXACT_RE.exec(opener);
 	return match && readInkMatch(match) ? opener.slice(8, -3) : null;
 }
 export function formatInkOpenFromBody(body) {
@@ -736,5 +739,5 @@ export function isPageBreakLine(text) {
 }
 
 export function isPageBreakBlock(text) {
-	return typeof text === 'string' && /^<!--md-break:v1 page-->\r?\n?$/.test(text);
+	return typeof text === 'string' && text.startsWith(PAGE_BREAK_MARKER) && (text.length === 23 || (text.length === 24 && (text.charCodeAt(23) === 0x0a || text.charCodeAt(23) === 0x0d)) || (text.length === 25 && text.charCodeAt(23) === 0x0d && text.charCodeAt(24) === 0x0a));
 }

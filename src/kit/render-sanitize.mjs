@@ -121,7 +121,7 @@ function prepareMathSource(input, DOMParser) {
 	return sourceRoot ? root.outerHTML : root;
 }
 
-function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeRasterDataUrl, chromeOwnsId = id => /^rapier-(?!anchor-)/.test(id)}) {
+function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeRasterDataUrl, chromeOwnsId = id => /^(?:rapier-(?!anchor-)|Rapier[A-Z]|_rapier)/.test(id)}) {
 	if (![parseFragment, serialize, sanitizeHtml, safeRasterDataUrl, chromeOwnsId].every(port => typeof port === 'function'))
 		throw new TypeError('The inert HTML sanitizer requires every parser and filtering port');
 	const uri = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
@@ -184,7 +184,7 @@ function createInertHtmlSanitizer({parseFragment, serialize, sanitizeHtml, safeR
 					const key = name.toLowerCase();
 					const value = name === 'value' ? inputValue : inputValue.trim();
 					if (forbiddenAttributes.has(key) || key.startsWith('on')) continue;
-					if (key === 'id' && chromeOwnsId(value)) continue;
+					if ((key === 'id' || key === 'name') && chromeOwnsId(value)) continue;
 					if (/((--!?|])>)|<\/(style|script|title|xmp|textarea|noscript|iframe|noembed|noframes)/i.test(value)
 						|| key === 'attributename' && value.includes('href')) continue;
 					const data = /^data-[\-\w.\u00b7-\uffff]+$/.test(key), aria = /^aria-[\-\w]+$/.test(key);
@@ -372,7 +372,7 @@ function _rapierInstallDocumentSanitizeHooks() {
 			data.keepAttr = !!data.attrValue;
 			return;
 		}
-		if (String(data.attrName || '').toLowerCase() === 'id' && _rapierChromeOwnsId(value)) { data.keepAttr = false; return; }
+		if (/^(?:id|name)$/.test(String(data.attrName || '').toLowerCase()) && _rapierChromeOwnsId(value)) { data.keepAttr = false; return; }
 		if (_rapierRemoteContent.allowed || _rapierSanitizeRuntime.context === 'source') return;
 		const attribute = String(data.attrName || '').toLowerCase();
 		if (attribute === 'alt' || attribute === 'title') return;
@@ -502,7 +502,7 @@ function escapeRapierHtmlText(value) {
 
 function _rapierChromeOwnsId(id) {
 	if (!_rapierSanitizeRuntime.chromeIds) _rapierSanitizeRuntime.chromeIds = new Set(Array.from(typeof document?.querySelectorAll === 'function' ? document.querySelectorAll('[id]') : [], element => element.id));
-	return _rapierSanitizeRuntime.chromeIds.has(String(id)) || /^rapier-(?!anchor-)/.test(id);
+	return _rapierSanitizeRuntime.chromeIds.has(String(id)) || /^(?:rapier-(?!anchor-)|Rapier[A-Z]|_rapier)/.test(id);
 }
 
 const RAPIER_BIDI_CONTROL = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;

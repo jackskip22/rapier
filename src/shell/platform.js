@@ -940,7 +940,21 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		return globalThis._rapierAcceptedExternalIntakeId !== id;
 	}
 
+	var _nativeOperationTools = new Map();
+	function _nativeOperationCall(detail) {
+		var callId = detail && typeof detail.callId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(detail.callId) ? detail.callId : '';
+		if (!callId || !_nativeCapability('operations')) return;
+		var answer = function (body) { _nativeHostNotify('operations.result', Object.assign({ callId: callId }, body)); };
+		var tool = _nativeOperationTools.get(String(detail.name || '')), args = detail.arguments;
+		if (!tool) { answer({ ok: false, error: 'unknown_tool' }); return; }
+		if (!args || typeof args !== 'object' || Array.isArray(args)) { answer({ ok: false, error: 'invalid_arguments' }); return; }
+		Promise.resolve().then(function () { return tool.execute(args, { agent: 'android', id: callId }); }).then(function (result) {
+			answer({ ok: true, result: result });
+		}, function (error) { answer({ ok: false, error: String(error && error.message || 'operation failed').slice(0, 500) }); });
+	}
+
 	function _nativeHostEvent(name, detail) {
+		if (name === 'operations.call') { _nativeOperationCall(detail); return; }
 		if (name === 'capabilities.changed') {
 			Promise.resolve(_nativeHostRuntime.ready).then(function () {
 				if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return;
@@ -4015,6 +4029,14 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			openRecent: function (entry) {
 				if (!entry || !_nativeCapability('recents')) return false;
 				return _nativeHostCall('recent.open', { path: entry.path || entry.name }).then(function () { return true; });
+			},
+			get registerOperations() {
+				return _nativeCapability('operations') ? function (tools) {
+					_nativeOperationTools = new Map(tools.map(function (tool) { return [tool.name, tool]; }));
+					return _nativeHostCall('operations.listed', { tools: tools.map(function (tool) {
+						return { name: tool.name, title: tool.title, description: tool.description, inputSchema: tool.inputSchema, annotations: tool.annotations };
+					}) });
+				} : null;
 			},
 			launcherIconState: function () {
 				if (!_nativeCapability('launcherIcon')) return null;

@@ -156,7 +156,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | Plug-in | Adds | Size | Pages |
 | --- | --- | --- | --- |
 | `flowchart` | Draws Mermaid flowcharts and graphs natively, in the editor's own style. | 0.36 MB | The reader |
-| `docx` | Opens a Word document (.docx) as a Markdown document: headings, lists, tables, pictures and comments. | 0.92 MB | The reader |
+| `docx` | Opens a Word document (.docx) as a Markdown document: headings, lists, tables, pictures and comments. | 0.94 MB | The reader |
 | `math` | Typesets TeX math ($...$ and $$...$$) as SVG. | 0.74 MB | Both |
 | `diagrams` | Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more. | 1.14 MB (2 files) | Both |
 | `pdf` | Opens a PDF as a Markdown document: its text layer, or each page as a picture. Fetches the pdf.js files itself. | 6.16 MB (198 files) | Both |
@@ -167,7 +167,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.32 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.54.
+Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.55.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import

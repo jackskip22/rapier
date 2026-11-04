@@ -21,7 +21,8 @@ export class WaterContact {
  radius(pressure,speed){
   if(this.params.firm===false)pressure*=.72;
   const p=this.profile,m=3**(2*(this.params.size-.5))*this.radiusScale;
-  if(this.tool==='lift'||this.tool==='erase')return (.012+.03*pressure)*m;
+  if(this.tool==='erase')return .04*m;
+  if(this.tool==='lift')return (.012+.03*pressure)*m;
   if(this.tool==='pen')return (.0016+.0042*pressure)*clip(1.12-.3*speed,.55,1.12)*m;
   const radius=.8*m*(p.size[0]+(p.size[1]-p.size[0])*clip(pressure)**p.pressureSize)*clip(1-speed*p.speedThin,.4,1);
   return this.tool==='water'?radius*1.3*(1+.12*Math.min(speed,2.5)):radius;
@@ -47,7 +48,7 @@ export class WaterContact {
  _dab(s,x,y,pressure,vx,vy,dwell=1,moving=true){
   const p=this.profile,P=this.params,r=this.radius(pressure,s.speed),gpu=this.gpu;
   if(P.firm===false)pressure*=.72;
-  if(this.tool==='lift'||this.tool==='erase'){gpu.stamp({x,y,r,brush:this.brush,lift:Math.min(.9,.22*dwell),circular:true,erase:this.tool==='erase'});return;}
+  if(this.tool==='lift'||this.tool==='erase'){gpu.stamp({x,y,r,brush:this.brush,lift:this.tool==='erase'?1.5:Math.min(.9,.22*dwell),circular:true,erase:this.tool==='erase'});return;}
   if(this.tool==='pen'){
    const dose=(.9+1.6*pressure)*clip(1.25-.45*s.speed,.6,1.25)*(.5+P.load)*.5/1.8*dwell;
    const color=Float32Array.from(this.coefficients,(c,i)=>c*dose*(i===7?3:1));

@@ -26,7 +26,7 @@
 		heading.append(title, info);
 		bar.append(heading, shut);
 		const body = make('div', 'rapier-jxl-view__body');
-		const note = make('p', 'rapier-jxl-view__note', 'Runs in Rapier, one offline HTML file. Your files never leave your device.');
+		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Rapier is a single HTML file that works offline. Free and open source.');
 		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input');
 		pick.append(make('span', '', 'Choose or drop pictures or videos'), input);
 		input.type = 'file'; input.accept = 'image/*,video/*'; input.multiple = true;
@@ -44,11 +44,11 @@
 		slider.type = 'range'; slider.min = String(C.EFFORT.min); slider.max = String(C.EFFORT.max); slider.step = '1'; slider.value = String(C.EFFORT.start); slider.setAttribute('aria-label', 'Effort');
 		track.setAttribute('aria-hidden', 'true'); head.setAttribute('class', 'rapier-draw-seek-head'); head.setAttribute('viewBox', '0 0 24 24'); head.setAttribute('aria-hidden', 'true');
 		for (const [name, value] of [['cx', '12'], ['cy', '12'], ['r', '10']]) ring.setAttribute(name, value);
-		head.append(ring); seek.append(track, head, slider);
-		effortRow.append(make('span', '', 'Faster'), seek, make('span', '', 'Smallest file'), level);
+		head.append(ring); seek.append(track, head, level, slider);
+		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), seek, make('span', 'rapier-jxl-view__end', 'Smallest file'));
 		const quality = make('div', 'rapier-jxl-view__part'), effort = make('div', 'rapier-jxl-view__part');
-		quality.append(make('p', 'rapier-jxl-view__note', 'Quality'), group);
-		effort.append(make('p', 'rapier-jxl-view__note', 'Effort: same picture, smaller file, more time.'), effortRow);
+		quality.append(make('p', 'rapier-jxl-view__label', 'Quality'), group);
+		effort.append(make('p', 'rapier-jxl-view__label', 'Effort'), effortRow);
 		const status = make('div', 'rapier-jxl-view__status'), line = make('div', 'rapier-progress__bar rapier-jxl-view__line'), cancel = make('button', 'settings-action-btn', 'Cancel');
 		cancel.type = 'button'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
 		const summary = make('div', 'rapier-jxl-view__summary'), count = make('div', 'rapier-jxl-view__count');
@@ -59,7 +59,7 @@
 		const files = make('div', 'rapier-jxl-view__files');
 		files.append(line, summary, help, list, all);
 		const fold = make('div', 'rapier-jxl-view__fold');
-		fold.append(note, pick, quality, effort, files, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl'));
+		fold.append(note, pick, quality, effort, files, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false));
 		const more = make('section', 'rapier-jxl-view__more'), moreTitle = make('h2', 'rapier-jxl-view__title', C.COMPARE.title), facts = make('ul', 'rapier-jxl-view__facts');
 		moreTitle.id = 'rapier-jxl-compare'; more.setAttribute('aria-labelledby', moreTitle.id);
 		for (const fact of C.COMPARE.lines) facts.append(make('li', 'rapier-jxl-view__note', fact));
@@ -67,7 +67,7 @@
 		const scene = make('section', 'rapier-jxl-view__more'), sceneTitle = make('h2', 'rapier-jxl-view__title', C.SCENE.title), stage = make('div', 'rapier-jxl-scene__stage');
 		sceneTitle.id = 'rapier-jxl-scene'; scene.setAttribute('aria-labelledby', sceneTitle.id);
 		scene.append(sceneTitle, make('p', 'rapier-jxl-view__note', C.SCENE.note), stage);
-		body.append(fold, more, scene);
+		_rapierJxlMakerPart.tabs(body, [fold, more, scene, _rapierToolAlso('/jxl')]);
 		root.append(bar, body);
 		return {info, root, shut, input, group, modes, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
 	}
@@ -98,9 +98,11 @@
 	}
 
 	const PART = 'jxlcomplete', held = () => ['ready', 'carried', 'stored'].includes(RapierParts.status(PART)?.status);
+	const unavailable = error => Object.assign(new Error(/^Google Play /.test(String(error?.message)) ? error.message : _rapierErrorWords(error, 'Not converted: needs JPEG XL complete')), {shown: true});
 	function completeFor(self, row) {
 		return async () => {
 			if (!held()) await RapierParts.check(PART).catch(() => {});
+			if (RapierParts.status(PART)?.status === 'carried') { await _rapierPartWait(PART).catch(error => { throw unavailable(error); }); return; }
 			if (held()) return;
 			if (self.declined) throw Object.assign(new Error('Not converted: needs JPEG XL complete'), {shown: true});
 			self.asking ||= (async () => {
@@ -115,9 +117,9 @@
 				};
 				addEventListener('rapier:part', follow);
 				try { await RapierParts.need(PART); }
-				catch (error) { popup.end(); throw error; }
+				catch (error) { popup.end(); throw unavailable(error); }
 				finally { removeEventListener('rapier:part', follow); }
-				self.follow = {row, popup}; follow1(self, row);
+				if (row) { self.follow = {row, popup}; follow1(self, row); } else popup.end();
 				return true;
 			})().finally(() => { self.asking = null; });
 			if (!await self.asking && !held()) throw Object.assign(new Error('Not converted: needs JPEG XL complete'), {shown: true});
@@ -209,15 +211,24 @@
 		}
 		view.list.append(fragment); overall(); void run();
 	}
-	function save(blob, name) {
-		const link = make('a'), url = URL.createObjectURL(blob);
-		link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
-		setTimeout(() => URL.revokeObjectURL(url), 4000);
+	async function save(blob, name) {
+		if (typeof window.RapierPlatform?.files?.exportArtifact !== 'function') {
+			const link = make('a'), url = URL.createObjectURL(blob);
+			link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 4000);
+			return;
+		}
+		const place = {}, saved = await _download(blob, name, place);
+		if (saved === null) showToast('Couldn’t save ' + name, 'error');
+		else if (saved === true && place.where) showToast('Saved ' + (place.name || name) + place.where, 'success');
 	}
 	function saveAll() {
 		const done = view.rows.filter(row => row.state === 'done').map(row => ({name: row.outputName, blob: row.result.blob, crc: row.result.crc, size: row.result.size}));
 		const zips = C.zipSeries(done);
-		zips.forEach((zip, at) => setTimeout(() => save(zip.blob, zips.length === 1 ? 'rapier-jxl.zip' : 'rapier-jxl-' + (at + 1) + '.zip'), at * 600));
+		void (async () => { for (const [at, zip] of zips.entries()) {
+			if (at) await new Promise(next => setTimeout(next, 600));
+			await save(zip.blob, zips.length === 1 ? 'rapier-jxl.zip' : 'rapier-jxl-' + (at + 1) + '.zip');
+		} })();
 	}
 
 	function adopt(fresh) {
@@ -259,6 +270,7 @@
 		view.wasFocus = document.activeElement;
 		for (const node of document.body.children) if (!node.inert && node.id !== 'toast-root' && node.id !== 'sr-live') { node.inert = true; view.inert.push(node); }
 		document.body.append(root);
+		view.maker = _rapierJxlMakerPart.bind(root, {save, complete: state => face.complete(state)});
 		_rapierSwitchSlide(view.group);
 		const notices = document.getElementById('toast-root');
 		if (notices) { view.notices = {root: notices, home: notices.parentElement}; root.append(notices); if (typeof _rapierScheduleToastLift === 'function') _rapierScheduleToastLift(); }
@@ -303,7 +315,7 @@
 			if (!entries.some(entry => entry.isIntersecting)) return;
 			self.near.disconnect(); self.near = null;
 			RapierParts.check('jxlscene').catch(() => {}).then(() => RapierParts.need('jxlscene')).then(() => {
-				if (view === self && !self.mounted) self.mounted = _rapierJxlScenePart.mount(self.scene, self.stage);
+				if (view === self && !self.mounted) self.mounted = _rapierJxlScenePart.mount(self.scene, self.stage, save);
 			}, () => { if (view === self) self.stage.replaceWith(make('p', 'rapier-jxl-view__note', C.SCENE.missing)); });
 		}, {root: self.stage.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
 		self.near.observe(self.stage);
@@ -317,12 +329,13 @@
 		done.follow?.popup.end();
 		for (const row of done.rows) { row.results.clear(); row.result = null; }
 		if (done.notices?.root.parentElement === done.root) done.notices.home.append(done.notices.root);
+		done.maker?.unbind();
 		done.root.remove();
 		for (const node of done.inert) node.inert = false;
 		if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('jxl', false);
 		try { done.wasFocus?.focus({preventScroll: true}); } catch (_) {}
 	}
-	const face = Object.freeze({open, close, get state() { return Object.freeze({open: !!view}); }});
+	const face = Object.freeze({open, close, save, complete: state => completeFor(state, null)(), get state() { return Object.freeze({open: !!view}); }});
 	_rapierJxlPart = face;
 	if (_rapierJxlDoor?.born) _rapierBootFactsPublished.then(open, open);
 })();

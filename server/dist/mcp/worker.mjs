@@ -19,7 +19,10 @@ import { VERSION } from '../version.mjs';
 import { mcpServer, CURRENT_DOOR } from '../tools/discovery.mjs';
 import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, guideResult, PROMPTS, promptResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
-import { wrap, carry, portableNeeds } from '../skills/rapier-html/wrap.mjs';
+import { wrap, portableNeeds } from '../skills/rapier-html/wrap.mjs';
+import {exportTemplate} from './export-template.mjs';
+import {browserWhere} from './browser-where.mjs';
+import {meter, routeClass, personOf, takeDailyShare} from './governor.mjs';
 import { parseFlowchart } from '../spec/flowchart.mjs';
 import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, publishedSchema, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
@@ -246,12 +249,20 @@ async function exportFile(env, { format, filename, docKind, text, base, file: su
   else if (format === 'markdown') file = { name: exportFilename(filename, format), mimeType: docKind === 'markdown' ? 'text/markdown' : 'text/plain', bytes: encoder.encode(text) };
   else if (format === 'html') {
     try {
-      const response = await env.ASSETS?.fetch?.(new Request('https://rapier.internal/rapier.html', {signal}));
-      if (!response?.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) return { reason: 'export_page_unavailable' };
-      const page = await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE', false, signal);
+      if (!env.ASSETS?.fetch) return { reason: 'export_page_unavailable' };
       const carries = docKind === 'markdown' ? [...(holdsDrawing(text) ? ['drawing'] : []),
         ...portableNeeds(text, {base: typeof base === 'string' ? base : base?.text, flowchart: fence => parseFlowchart(fence).ok === true})] : [];
-      const carried = carry(page, carries), options = {...(base ? {base} : {}), ...(['markdown', 'text', 'code'].includes(docKind) ? {kind: docKind} : {})};
+      const carried = await exportTemplate(env.ASSETS, carries, async etag => {
+        const response = await env.ASSETS.fetch(new Request('https://rapier.internal/rapier.html', {signal,
+          ...(etag ? {headers: {'If-None-Match': etag}} : {})}));
+        if (response?.status === 304 && etag) {
+          if (response.headers.has('Content-Type') && !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type'))) throw new Error('export page type changed');
+          return {unchanged: true, etag: response.headers.get('ETag')};
+        }
+        if (!response?.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('Content-Type') || '')) throw new Error('export page unavailable');
+        return {page: await readTextBody(response, MAX_EXPORT_BYTES, 'export page', 'EXPORT_PAGE_TOO_LARGE', false, signal), etag: response.headers.get('ETag')};
+      }, signal);
+      const options = {...(base ? {base} : {}), ...(['markdown', 'text', 'code'].includes(docKind) ? {kind: docKind} : {})};
       let bytes = encoder.encode(wrap(carried, text, filename, options));
       if (bytes.byteLength > MAX_EXPORT_BYTES) bytes = encoder.encode(wrap(carried, text, filename, {...options, readable: ''}));
       file = { name: exportFilename(filename, format), mimeType: 'text/html', bytes, fidelity: {...exportFidelity(format, docKind), carries} };
@@ -1312,6 +1323,7 @@ export function handleMcp(request, env, ctx = {}) {
 
 function handleMcpRequest(request, env, ctx) {
   const path = new URL(request.url).pathname;
+  if (!DOORS.has(path)) { const metered = meter(env, routeClass(request)); if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(metered); }
   if (path === '/.well-known/assetlinks.json') return handlePublishedPages(request, env);
   return withOrigin(request, env, async () => {
     if (new URL(request.url).pathname === '/editor') {
@@ -1741,6 +1753,8 @@ async function handleRequest(request, env, authority) {
   if (authority?.grantUnchecked && message.method !== 'tools/call' && !await oauthGrantCurrent(authority.grant, env))
     return challenged(oauthChallenge(authorityRequest, env));
   try {
+    await meter(env, 'rpc:' + String(message.method).slice(0, 40) + (message.method === 'tools/call' && typeof params.name === 'string' ? ':' + params.name.slice(0, 40) : ''),
+      door, personOf(authority, params.arguments));
     switch (message.method) {
       case 'initialize':
         if (modern) return rpcError(id, -32601, 'Method not found.', 404);
@@ -1794,6 +1808,11 @@ async function handleRequest(request, env, authority) {
         if (hostedTask && authority.grantUnchecked && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(authorityRequest, env));
         const admission = await takeToolBudget(request, env, authority, params.name, params.arguments || {}, door, meta['rapier/editorKey'], {deferOAuth: !hostedTask});
         if (admission && !admission.deferred) throw failure('TOOL_INVOCATION_ADMISSION', 'Tool invocation admission refused.', admission);
+        if (door !== 'page') {
+          const share = await takeDailyShare(env, personOf(authority, params.arguments),
+            {creating: params.name === 'open' && params.arguments?.document === undefined && params.arguments?.url === undefined});
+          if (share) throw failure('TOOL_INVOCATION_ADMISSION', 'Tool invocation admission refused.', share);
+        }
         if (door === 'page' && params.name === PAIR_STATUS) { result = await pairStatus(request, env, authority, params.arguments, cookies); break; }
         result = hostedTask
           ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door)
@@ -1933,7 +1952,7 @@ async function approvePairing(request, env, id, authority) {
     if (value.status === 'cancelled') return display(200, '<p>This browser request was canceled.</p>');
     if (value.status !== 'owner-required') return unavailable();
     const escape = text => String(text).replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
-    return display(200, `<p>Connect the browser showing <strong>${escape(value.code)}</strong> to <strong>${escape(value.filename)}</strong>?</p><p>It can read and edit this document and control its agent permissions for one day.</p><form method="post" action="${escape(url.pathname + url.search)}"><button type="submit" name="decision" value="allow" class="affirmative">Allow browser</button><button type="submit" name="decision" value="cancel" class="negative">Cancel</button></form>`);
+    return display(200, `<p>Connect the browser showing <strong>${escape(value.code)}</strong> to <strong>${escape(value.filename)}</strong>?</p>${typeof value.where === 'string' ? `<p class="where">That browser: ${escape(value.where)}.</p>` : ''}<p>It can read and edit this document and control its agent permissions for one day.</p><form method="post" action="${escape(url.pathname + url.search)}"><button type="submit" name="decision" value="allow" class="affirmative">Allow browser</button><button type="submit" name="decision" value="cancel" class="negative">Cancel</button></form>`);
   } catch { return display(503, '<p>The browser decision could not be confirmed. Retry the same request.</p>'); }
 }
 
@@ -2068,7 +2087,7 @@ async function pairStatus(request, env, page, args, cookies) {
   }
   if (args.decision) return envelope({outcome: 'refused', reason: 'pairing_not_ready', paired: false});
   if (!await takePairingStart(request, env)) return envelope({outcome: 'refused', reason: 'busy', paired: false});
-  const secret = newSecret(), started = await ask({action: 'start', secretHash: await digest(secret), codes: [newCode(), newCode(), newCode(), newCode()]});
+  const secret = newSecret(), started = await ask({action: 'start', secretHash: await digest(secret), codes: [newCode(), newCode(), newCode(), newCode()], where: browserWhere(request)});
   if (started.status === 'absent') return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unknown, deleted or expired.'));
   if (!started.code) return envelope({outcome: 'refused', reason: 'busy', paired: false});
   cookies.push(...setCookies(page.id, pendingCookie(page.id), secret, Math.ceil(PAIR_CODE_MS * 3 / 1000)));
@@ -2183,7 +2202,6 @@ export class RapierDocument {
     this.ctx = ctx;
     this.env = env;
     this.grantVerdicts = new GrantVerdicts(env);
-    this.startChecks = new WeakSet();
     this.pending = Promise.resolve();
     this.leased = null;
     this.persisted = null;
@@ -2448,7 +2466,8 @@ export class RapierDocument {
     if (this.cachedState) return this.cachedState;
     const state = readWorkspaceState(head, this.readJsonParts('state:', head.parts));
     this.verifiedMetadata = VERIFIED_STATES.get(state) || null;
-    this.cachedState = { ...state, ...this.readJsonParts('human:', head.contextParts) };
+    const human = this.readJsonParts('human:', head.contextParts);
+    this.cachedState = { ...state, ...human, clock: Math.max(Number(human.clock) || 0, Number(head.clock) || 0) };
     return this.cachedState;
   }
 
@@ -2511,12 +2530,10 @@ export class RapierDocument {
     }
     if (!input.oauthGrant && !input.connectionKey) return;
     const reference = input.oauthGrant;
-    const repeated = remembered && this.startChecks.has(input);
     if (!validGrantReference(reference) || input.ownerKey !== await digest(reference.ownerId) ||
         input.connectionKey && input.connectionKey !== await digest(reference.connectionId) ||
-        (repeated ? this.grantVerdicts.told(reference) : !await this.grantVerdicts.current(reference, {remembered})))
+        !await this.grantVerdicts.current(reference, {remembered}))
       throw failure('OAUTH_AUTHORITY_REVOKED', 'This connection no longer authorizes the pending operation.');
-    if (remembered) this.startChecks.add(input);
     input.signal?.throwIfAborted();
   }
 
@@ -2573,7 +2590,8 @@ export class RapierDocument {
       requireWorkspaceFormat(head);
       if (state.commitResults) state.commitResults = state.commitResults.filter(row => head.receipts.some(receipt => receipt.id === row.id));
       const { humanContexts, contextSequences, clock, ...canonical } = state;
-      human = jsonRecord({ humanContexts, contextSequences, clock }, CHUNK_CHARS);
+      human = jsonRecord({ humanContexts, contextSequences }, CHUNK_CHARS);
+      head.clock = Number(clock) || 0;
       head.contextBytes = human.bytes;
       if (!contextOnly) {
         const {start, head: metaHead, verified} = workspaceMetadata(canonical, null, this.verifiedMetadata);
@@ -2960,7 +2978,7 @@ export class RapierDocument {
           await this.savePairing(head, pairs => pairs.put(approved, now));
           return json({status: 'owner-approved'});
         }
-        return json(row.ownerApprovedAt ? {status: 'owner-approved'} : {status: 'owner-required', code: row.code, filename: head.filename});
+        return json(row.ownerApprovedAt ? {status: 'owner-approved'} : {status: 'owner-required', code: row.code, filename: head.filename, where: row.where});
       }
       if (['status', 'allow', 'cancel'].includes(body.action)) {
         if (!row) {
@@ -2981,7 +2999,8 @@ export class RapierDocument {
       if (row) return json({status: 'waiting', code: row.code, expiresAt: row.expiresAt});
       const code = body.codes.find(value => PAIR_CODE.test(value) && !store.code(value, now));
       if (!code) return json({ status: 'busy' });
-      await this.savePairing(head, pairs => pairs.put({code, secretHash: body.secretHash, expiresAt: now + PAIR_CODE_MS}, now));
+      const where = typeof body.where === 'string' && body.where.length <= 120 ? {where: body.where} : {};
+      await this.savePairing(head, pairs => pairs.put({code, secretHash: body.secretHash, expiresAt: now + PAIR_CODE_MS, ...where}, now));
       return json({ status: 'waiting', code, expiresAt: now + PAIR_CODE_MS });
     } catch { return new Response(null, { status: 503 }); }
   }
@@ -4181,7 +4200,7 @@ export class RapierDocument {
                 !plain(row.author) || !['human', 'agent', 'system'].includes(row.author.kind) || !boundedText(row.author.id, 160) ||
                 row.author.name !== undefined && !boundedText(row.author.name, 120) || !boundedText(row.operation, 96) ||
                 !(row.createdAt === null || Number.isSafeInteger(row.createdAt) && row.createdAt >= 0) ||
-                row.label != null && (typeof row.label !== 'string' || row.label.length > 120) ||
+                row.label != null && (typeof row.label !== 'string' || row.label.length > 120 || !row.label.isWellFormed() || /[\u0000-\u001f\u007f]/.test(row.label)) ||
                 row.turnId !== undefined && !boundedText(row.turnId, 160) ||
                 row.affectedBlockIds !== undefined && (!Array.isArray(row.affectedBlockIds) ||
                   row.affectedBlockIds.some(id => !Number.isSafeInteger(id) || id < 0)) ||

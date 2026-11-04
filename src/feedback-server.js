@@ -39,10 +39,9 @@ export async function receiveFeedback(request,env) {
       !version || !/^[0-9a-zA-Z.\-]*$/.test(version) ||
       !source || !/^[a-zA-Z0-9-]+$/.test(source))
     return answer({error:'invalid report'},400);
-  const id = text(data.id,36);
-  if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
+  const receipt = text(data.id,36);
+  if (!receipt || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(receipt))
     return answer({error:'invalid report id'},400);
-  const receipt = id || crypto.randomUUID();
   try {
     const read = () => env.FEEDBACK_DB.prepare(
       'SELECT id,kind,message,version,source FROM feedback WHERE id = ?'

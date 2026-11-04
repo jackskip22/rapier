@@ -49,6 +49,7 @@
   "draw/water-tool.js",
   "draw/water-pro.js",
   "jxl/door.js",
+  "jxl/maker.js",
   "jxl/view.js",
   "jxl/complete.js",
   "jxl/scene.js",

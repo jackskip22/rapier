@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.55 (2026-11-04)
+
+- The JPEG XL button in Settings opens the converter, on the web and in the apps.
+- Make animated JPEG XL from pictures, GIFs and videos in the converter's animated tab.
+- REORDER in the headings list moves sections by dragging.
+- The scroll circle follows the page smoothly.
+- Save shows a tick once the file is saved.
+- A list holding indented code opens formatted.
+- A quote card's picture carries only what the card shows.
+- Fixed: the watercolor Eraser clears all the paint under it.
+
 ## 1.2.54 (2026-11-02)
 
 - Send feedback and bug reports from Settings.

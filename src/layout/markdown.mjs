@@ -16,7 +16,14 @@ function validTargetLayout(value, imageOnly, listMarker = false, paragraph = tru
       (paragraph || !['lines', 'hyphens', 'caps', 'hanging'].some(key => Object.hasOwn(value, key))));
 }
 
-const whitespaceToken = token => token.type === 'text' && !token.content.trim();
+const whitespaceToken = token => {
+  if (token.type !== 'text') return false;
+  const s = token.content;
+  for (let i = 0, len = s.length; i < len; i++) {
+    if (s.charCodeAt(i) > 0x20 && !/\s/.test(s[i])) return false;
+  }
+  return true;
+};
 
 function malformedText(inline) {
   if ((inline.content || '').indexOf('<!--') < 0) return false;
@@ -31,7 +38,14 @@ function malformedText(inline) {
   return false;
 }
 
+const NO_LAYOUT_PROSE = Object.freeze({layout: {}, marker: '', markerToken: null, imageOnly: false, listMarker: false, image: null, reason: undefined});
+const NO_LAYOUT_LIST = Object.freeze({layout: {}, marker: '', markerToken: null, imageOnly: false, listMarker: true, image: null, reason: undefined});
+
 function inspectInline(inline, paragraph, listMarker) {
+  const content = inline.content || '';
+  if (content.indexOf('<!--') < 0 && (!paragraph || content.indexOf('![') < 0)) {
+    return listMarker ? NO_LAYOUT_LIST : NO_LAYOUT_PROSE;
+  }
   const children = inline.children || [];
   let candidates = 0, markerToken = null;
   for (const token of children) {
@@ -84,9 +98,33 @@ function sourceTarget(source, starts, opener, inline, info) {
   if (info.reason) result.reason = info.reason;
   if (line < map[0] || starts[line] === undefined) return {...result, reason: result.reason || 'unmapped_layout_tail'};
   const lineStart = starts[line], lineStop = starts[line + 1] ?? source.length;
-  const raw = source.slice(lineStart, source[lineStop - 1] === '\n' ? lineStop - 1 : lineStop);
-  const last = inline.content.slice(inline.content.lastIndexOf('\n') + 1).trim();
-  const atx = opener.type === 'heading_open' && /^#{1,6}$/.test(opener.markup);
+  const lineEnd = lineStop > lineStart && source.charCodeAt(lineStop - 1) === 0x0a ? lineStop - 1 : lineStop;
+  const ic = inline.content;
+  const nl = ic.lastIndexOf('\n');
+  const last = (nl < 0 ? ic : ic.slice(nl + 1)).trim();
+  const atx = opener.type === 'heading_open' && opener.markup.charCodeAt(0) === 0x23 && opener.markup.length <= 6;
+  if (!atx && last) {
+    let trimmedEnd = lineEnd;
+    while (trimmedEnd > lineStart) {
+      const ch = source.charCodeAt(trimmedEnd - 1);
+      if (ch === 0x20 || ch === 0x09) trimmedEnd--;
+      else break;
+    }
+    const candStart = trimmedEnd - last.length;
+    if (candStart >= lineStart && source.startsWith(last, candStart)) {
+      result.insert = trimmedEnd;
+      if (info.marker && !info.reason) {
+        const markerStart = trimmedEnd - info.marker.length;
+        if (markerStart < lineStart || !source.startsWith(info.marker, markerStart)) {
+          result.reason = 'unmapped_layout_tail';
+          return result;
+        }
+        result.marker = {start: markerStart, end: trimmedEnd, text: info.marker};
+      }
+      return result;
+    }
+  }
+  const raw = source.slice(lineStart, lineEnd);
   let position = -1;
   if (last) {
     const closing = atx ? /[ \t]+#+[ \t]*$/.exec(raw) : null;
@@ -117,12 +155,12 @@ function sourceTarget(source, starts, opener, inline, info) {
 
 export function annotateMarkdownLayout(state) {
   const tokens = state.tokens || [], source = typeof state.src === 'string' ? state.src : '';
-  let starts;
+  let starts = state._lineStarts;
   const items = [];
   for (let index = 0; index < tokens.length; index++) {
     const inline = tokens[index], opener = tokens[index - 1];
     if (inline.type === 'fence' && inline.level === 0 && /^html(?:\s|$)/i.test(inline.info || '') && inline.map) {
-      starts ||= lineStarts(source);
+      starts ||= (state._lineStarts = lineStarts(source));
       if (!inline.meta?.mdLayoutSource) {
         const next = tokens[index + 1], begin = starts[inline.map[0]], stop = starts[inline.map[1]] ?? source.length;
         const end = next?.type === 'html_block' && next.level === 0 && next.map?.[0] === inline.map[1]
@@ -147,7 +185,7 @@ export function annotateMarkdownLayout(state) {
         (opener?.type !== 'paragraph_open' && opener?.type !== 'heading_open')) continue;
     const info = inspectInline(inline, opener.type === 'paragraph_open', item?.first === opener && opener.type === 'paragraph_open');
     if (info.imageOnly) opener.attrSet('data-md-picture', '');
-    starts ||= lineStarts(source);
+    starts ||= (state._lineStarts = lineStarts(source));
     const target = sourceTarget(source, starts, opener, inline, info);
     inline.meta ||= {};
     if (target) inline.meta.mdLayoutSource = target;

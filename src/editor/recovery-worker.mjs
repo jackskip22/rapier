@@ -223,17 +223,21 @@ function storeRecords(text, write, db, signal, records = null) {
     current.onsuccess = () => {
       if (write.base != null && _rapierRecoveryStamp(current.result) !== write.base) { finish(null, true); tx.abort(); return; }
       try {
-        let body = null, bodyUndo = null;
+        let body = null, bodyUndo = null, bodyLedger = null;
+        const expandedUndo = new WeakMap();
         for (const row of write.records) {
           let value = row.value;
           if (row.undoRecords === true) {
             if (!Array.isArray(records) || !value.undo || value.undo.ledger !== null) throw new Error('Recovery records are not this revision\'s');
-            value = {...value, undo: {...value.undo, ledger: records}};
+            let undo = expandedUndo.get(value.undo);
+            if (!undo) { undo = {...value.undo, ledger: records}; expandedUndo.set(value.undo, undo); }
+            value = {...value, undo};
           }
           if (row.text || Object.hasOwn(value, 'canonicalText')) {
-            value = recoveryRecord(value, row.text ? text : value.canonicalText, value.undo || null, value.ledger || null,
-              row.text && row.value.undo === bodyUndo ? body : null, recordText);
-            if (row.text) { body = value.body; bodyUndo = row.value.undo; }
+            const undo = value.undo || null, ledger = value.ledger || null;
+            value = recoveryRecord(value, row.text ? text : value.canonicalText, undo, ledger,
+              row.text && body && undo === bodyUndo && ledger === bodyLedger ? body : null, recordText);
+            if (row.text) { body = value.body; bodyUndo = undo; bodyLedger = ledger; }
           }
           tx.objectStore(row.store).put(value);
         }

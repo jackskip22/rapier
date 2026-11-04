@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {gzipSync} from 'node:zlib';
 import {VERSION} from '../version.mjs';
 import {pluginPackFiles, stagePluginPack} from './stage-plugin-pack.mjs';
-import {PART_DIRECTORY, PART_IDS} from './parts.mjs';
+import {PAGE_PICTURES, PART_DIRECTORY, PART_IDS} from './parts.mjs';
 import {checkBuildInputs} from './build-reuse.mjs';
 import {digestRecords, treeRecords} from './release-digest.mjs';
 
@@ -43,6 +43,7 @@ async function pageFiles() {
       throw new Error('refused: the ' + id + ' part does not belong to the built page');
     files.push({name: PART_DIRECTORY + '/' + names[0], bytes});
   }
+  for (const name of PAGE_PICTURES) files.push({name, bytes: await readFile(join(root, name))});
   return {files, certificate: built.reuse.digest};
 }
 

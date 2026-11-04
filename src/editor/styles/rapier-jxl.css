@@ -1,5 +1,6 @@
 .rapier-jxl-view__pick{position:relative;justify-content:center;text-align:center;min-height:112px;cursor:pointer}
-.rapier-jxl-view__part{display:flex;flex-direction:column;gap:var(--space-2);margin-top:auto}
+.rapier-jxl-view__part{display:flex;flex-direction:column;gap:var(--space-2);margin-top:var(--space-8)}
+.rapier-jxl-view__label{margin:0;font:var(--fw-semibold) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase}
 .rapier-jxl-view__files{display:flex;flex-direction:column;gap:var(--space-2)}
 .rapier-jxl-view__files:not(:has(.rapier-jxl-view__row,.rapier-jxl-view__line:not([hidden]),.rapier-jxl-view__note:not(:empty))){display:none}
 @media (min-width:900px){.rapier-jxl-view__body{flex:0 1 680px}}
@@ -19,10 +20,13 @@
 .rapier-jxl-view__row .settings-action-btn{width:auto;background:var(--color-bg)}
 .rapier-jxl-view__row .navigator-close{width:48px;height:48px}
 .rapier-jxl-view__all{justify-content:center;text-align:center}
-.rapier-jxl-view__effort{display:flex;align-items:center;gap:var(--space-2);font:var(--fw-regular) var(--text-sm)/1.4 var(--font-sans)}
+.rapier-jxl-view__effort{display:flex;align-items:center;gap:var(--space-2);font:var(--fw-semibold) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase}
+.rapier-jxl-view__end{white-space:nowrap}
 .rapier-jxl-view__effort .rapier-draw-seek{flex:1 1 auto;min-width:96px}
-.rapier-jxl-view__effort-level{min-width:1ch;text-align:right;font-family:var(--font-mono)}
-.rapier-jxl-view__fold{display:flex;flex-direction:column;gap:var(--space-6);flex:none;min-height:100%}
+.rapier-draw-seek>.rapier-jxl-view__effort-level{position:absolute;left:var(--seek);top:50%;transform:translate(-50%,-50%);font:var(--fw-semibold) var(--text-sm)/1 var(--font-mono);letter-spacing:0;color:var(--color-text);pointer-events:none;transition:transform 120ms ease}
+.rapier-draw-seek--active>.rapier-jxl-view__effort-level{transform:translate(-50%,calc(-50% + 34px))}
+.rapier-jxl-view__fold{display:flex;flex-direction:column;gap:var(--space-6);flex:none}
+.rapier-jxl-view__fold>.rapier-tool-footer{margin-top:var(--space-8)}
 .rapier-jxl-view__more{display:flex;flex-direction:column;gap:var(--space-2);margin:0}
 .rapier-jxl-view__more .rapier-jxl-view__title{margin:0}
 .rapier-jxl-view__facts{margin:0;padding-left:1.25em;list-style:disc outside;display:flex;flex-direction:column;gap:var(--space-1)}

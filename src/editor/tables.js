@@ -159,10 +159,26 @@ function _rapierTableEnter(editDiv, wrapper, block, cell, opts = {}) {
 	return _tableApply(block.id, _tableRawFromDom(block.id, table), { ...position, paragraphIndex, charOffset: 0 });
 }
 
-function _rapierTableTypedRow(block, cell, position, range, offset) {
+function _rapierTableTypedRowText(cell, position, offset) {
 	const typed = position.rowIndex > 0 ? String(cell.textContent || '').replace(/[\u200b\u00a0]/g, ' ').trim() : '';
-	if (!/^\|.*[^\\]\|$/.test(typed) || offset < String(cell.textContent || '').replace(/\u200b/g, '').trimEnd().length) return false;
-	if (!_rapierTableCellsOf(cell.closest('tr')).every(each => each === cell || !String(each.textContent || '').replace(/\u200b/g, '').trim())) return false;
+	if (!/^\|.*[^\\]\|$/.test(typed) || offset < String(cell.textContent || '').replace(/\u200b/g, '').trimEnd().length) return '';
+	return _rapierTableCellsOf(cell.closest('tr')).every(each => each === cell || !String(each.textContent || '').replace(/\u200b/g, '').trim()) ? typed : '';
+}
+function _rapierTableEnterOwnsCaret(editDiv) {
+	const position = editDiv && _rapierTableActionPosition(editDiv), selection = window.getSelection && window.getSelection();
+	const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+	const cell = range && range.collapsed ? _nodeAsElement(range.startContainer)?.closest('td, th') : null;
+	if (!position || !cell || !editDiv.contains(cell)) return false;
+	const offset = _charOffsetForRangePoint(cell, range.startContainer, range.startOffset), firstParagraph = cell.querySelector(':scope > p');
+	const firstLine = !firstParagraph || firstParagraph.contains(range.startContainer) || range.startContainer === cell && range.startOffset === 0;
+	const wrapper = editDiv.closest('.block-wrapper');
+	if (position.rowIndex === 0 && position.cellIndex === 0 && offset === 0 && firstLine &&
+			_rapierShownWrappers(_editorHostEl())[0] === wrapper && !_rapierNotesOwnTheDocument()) return true;
+	return !cell.querySelector('p') && !!_rapierTableTypedRowText(cell, position, offset);
+}
+function _rapierTableTypedRow(block, cell, position, range, offset) {
+	const typed = _rapierTableTypedRowText(cell, position, offset);
+	if (!typed) return false;
 	const info = _tableInfo(block.raw), cells = _tableSplitRow(typed), at = info.dataIdxs[position.rowIndex - 1];
 	if (!cells || at === undefined || info.sepIdx < 0) return false;
 	const separator = _tableIsSeparator(typed), lines = info.lines.slice();

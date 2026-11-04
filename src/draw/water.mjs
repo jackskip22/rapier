@@ -232,7 +232,7 @@ export class WaterSurface {
   await this.ready;await this._flushContact();x=Math.floor(x*this.pixelScale-this.origin[0]);y=Math.floor(y*this.pixelScale-this.origin[1]);if(x<0||y<0||x>=this.width||y>=this.height)return null;
   const region=[x,y,x+1,y+1],values=new Float32Array(8);for(const [n,t] of [...this.gpu.ink.read,...this.gpu.fixed].entries()){const bytes=await this.gpu._readTexture(t,region),view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);for(let i=0;i<4;i++)values[(n%2)*4+i]+=halfValue(view.getUint16(i*2,true));}
   const pixels=await this.toRGBA8({x0:x,y0:y,x1:x,y1:y}),rgba=Array.from(pixels.data),hasMaterial=values.some(v=>Math.abs(v)>1e-8);
-  if(!hasMaterial){if(!rgba[3])return null;const alpha=rgba[3]/255,pigment=waterPigmentFromRGB(...rgba.slice(0,3).map(v=>v/255*alpha+1-alpha));return {...pigment,rgba,colour:'#'+rgba.slice(0,3).map(v=>v.toString(16).padStart(2,'0')).join('')};}
+  if(!hasMaterial){if(!rgba[3])return null;const alpha=rgba[3]/255,onWhite=rgba.slice(0,3).map(v=>v/255*alpha+1-alpha),pigment=waterPigmentFromRGB(...onWhite);return {...pigment,rgba,colour:'#'+onWhite.map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('')};}
   return {coefficients:Array.from(values),granulation:0,staining:0,source:'pigment',rgba,colour:'#'+waterPigmentRGB(values).map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('')};
  }
  async snapshot(_box=null){await this.ready;await this._flushContact();return {kind:'water-gpu',frame:this._frame(),tick:this.tick,material:await this.gpu.snapshot(),tips:clone([...this._tips]),bounds:clone(this._bounds)};}

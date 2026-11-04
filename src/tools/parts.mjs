@@ -17,8 +17,8 @@ export const PARTS = Object.freeze([
       RapierDrawPaintRows: 'draw/paint-parallel.mjs', RapierDrawPaintRemote: 'draw/paint-remote.mjs', RapierDrawLiquid: 'draw/liquid-gpu.mjs',
       RapierDrawLiquidWorker: 'draw/liquid-worker.mjs', RapierDrawCopier: 'draw/copier-gpu.mjs', RapierDrawWater: 'draw/water.mjs',
       RapierDrawWaterWorker: 'draw/water-worker.mjs', RapierDrawWaterPaths: 'draw/water-paths.mjs'}},
-  {id: 'jxl', label: 'JPEG XL converter', scripts: ['jxl/view.js'], styles: ['rapier-jxl-style'],
-    globals: {RapierJxlConvert: 'jxl/convert.mjs'}},
+  {id: 'jxl', label: 'JPEG XL converter', scripts: ['jxl/maker.js', 'jxl/view.js'], styles: ['rapier-jxl-style', 'rapier-jxl-maker-style'],
+    globals: {RapierJxlConvert: 'jxl/convert.mjs', RapierJxlMaker: 'jxl/maker.mjs'}},
   {id: 'convert', label: 'Document converter', scripts: ['interchange/convert-view.js'], styles: ['rapier-convert-style'], globals: {}},
   {id: 'diagrams', label: 'Diagrams', scripts: ['diagrams/view.js'], styles: ['rapier-diagrams-style'], globals: {}},
   {id: 'diagramtheme', label: 'Diagram theme', scripts: [], styles: [], globals: {RapierDiagramTheme: 'shell/diagram-theme.mjs'}},
@@ -44,6 +44,7 @@ export const PARTS = Object.freeze([
 ]);
 export const PART_IDS = Object.freeze(PARTS.map(part => part.id));
 export const PART_DIRECTORY = 'parts';
+export const PAGE_PICTURES = Object.freeze([]);
 
 export function partition({roots, partRoots, deps, order}) {
   const closure = starts => {

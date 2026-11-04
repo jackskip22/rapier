@@ -2,6 +2,19 @@
 // Original neutral adapter. The host owns Markdown structure and normalization.
 import {createMathMatcher} from './delimiters.mjs';
 
+function isMathFenceInfo(info) {
+  if (!info || info.length < 4) return false;
+  let start = 0;
+  const len = info.length;
+  while (start < len && info.charCodeAt(start) <= 0x20) start++;
+  if (start + 4 > len) return false;
+  if ((info.charCodeAt(start) | 32) !== 0x6d ||
+      (info.charCodeAt(start + 1) | 32) !== 0x61 ||
+      (info.charCodeAt(start + 2) | 32) !== 0x74 ||
+      (info.charCodeAt(start + 3) | 32) !== 0x68) return false;
+  return start + 4 === len || info.charCodeAt(start + 4) <= 0x20;
+}
+
 export function installMathRules(md, {singleDollar = false, brackets = true, ruleName = 'rapier_math', inLink = false} = {}) {
   // Block tokens share their core owner's array, including nested quotes/lists. Capture
   // fence source while the host still holds those containers' adjusted line bounds.
@@ -12,15 +25,15 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
   md.core.ruler.after('block', ruleName + '_source_release', state => authored.delete(state.tokens));
   const tokenize = md.block.tokenize;
   md.block.tokenize = function(state, startLine, endLine) {
-    const first = state.tokens.length;
+    const first = Math.max(state.tokens.length, state._mathScanned || 0);
     // A yielding host can leave tokenize at a completed block boundary by throwing.
     // Retain those completed fences before that boundary releases its line tables.
     try { return tokenize.call(this, state, startLine, endLine); }
     finally {
-      for (let index = first; index < state.tokens.length; index++) {
+      const len = state.tokens.length;
+      for (let index = first; index < len; index++) {
         const token = state.tokens[index];
-        if (token.type !== 'fence' || !token.map || token.meta?.mathSource !== undefined ||
-            String(token.info || '').trim().split(/\s+/)[0].toLowerCase() !== 'math') continue;
+        if (token.type !== 'fence' || !token.map || token.meta?.mathSource !== undefined || !isMathFenceInfo(token.info)) continue;
         const held = authored.get(state.tokens), source = held?.source ?? state.src;
         let value;
         if (!state.rapierSourceSlice && source === state.src) value = state.getLines(token.map[0], token.map[1], state.blkIndent, false);
@@ -48,6 +61,7 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
         }
         token.meta = {...token.meta, mathSource: value};
       }
+      state._mathScanned = len;
     }
   };
   // The host's image-alt renderer ignores unknown token types. Keep math as
@@ -70,7 +84,8 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
   }
   md.inline.ruler.before('escape', ruleName, (state, silent) => {
     if (!inLink && state.linkLevel > 0) return false;
-    if (state.src[state.pos] !== '$' && state.src[state.pos] !== '\\') return false;
+    const ch = state.src.charCodeAt(state.pos);
+    if (ch !== 0x24 && (!brackets || ch !== 0x5c)) return false;
     const span = match(state, state.pos, state.posMax);
     if (!span) return false;
     if (!silent) {
@@ -86,7 +101,8 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
     // An indented code block belongs to the host even when it begins with dollars.
     if (state.sCount[startLine] - state.blkIndent >= 4) return false;
     const start = state.bMarks[startLine] + state.tShift[startLine];
-    if (state.src.slice(start, start + 2) !== '$$' && (!brackets || state.src.slice(start, start + 2) !== '\\[')) return false;
+    const c0 = state.src.charCodeAt(start), c1 = state.src.charCodeAt(start + 1);
+    if (!(c0 === 0x24 && c1 === 0x24) && (!brackets || !(c0 === 0x5c && c1 === 0x5b))) return false;
     const span = match(state, start, state.eMarks[endLine - 1]);
     if (!span?.displayMode) return false;
     let last = startLine;

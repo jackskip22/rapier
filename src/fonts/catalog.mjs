@@ -17,6 +17,20 @@ export const FONT_CATALOG_ADDITIONS = Object.freeze({
 		{id: 'gf-55b38761795f856308f95177', name: 'Noto Sans Canadian Aboriginal', sourceRank: 1007, sourcePosition: 1503},
 	].map(Object.freeze)),
 });
+// Rapier's own fonts: complete OFL or Apache families that are
+// not on Google Fonts, after the ranked slice and the curated additions. Each is pinned by its complete source face and
+// its license text, both kept in this repository at `directory`; sourceUrl and licenseUrl name where they come from.
+// `tools/font-catalog.mjs --owner` converts and appends them; no popularity is claimed (sourceRank 0, their own place).
+export const FONT_CATALOG_OWNER = Object.freeze({
+	families: Object.freeze([
+		{id: 'ra-dcd3ffdc67d21c86a3e6a7e0', name: 'Geist Serif', category: 'serif', subsets: Object.freeze(['latin', 'latin-ext']), lastModified: '2026-10-30',
+			directory: 'fonts/additions/geist-serif', source: 'GeistSerif[ELSH].ttf', sourceBytes: 155752,
+			sourceSri: 'sha384-x1VZxrDhWQGkuWMjnSAeNNz3eC5v2Y5tkLa/j/hIomczfOwdzv45v/brGJJPwrkZ',
+			sourceUrl: 'https://github.com/vercel/geist-font/tree/a2357c1398c81d88ff84823a2f50af3152ee8733',
+			license: 'OFL.txt', licenseBytes: 4383, licenseSri: 'sha384-iNqi40dRpcrtDDIhSTLL46J1XQlsUsFwsHqKBT9Rvw4Dq1V1jVNrwEH6D2XBUV84',
+			licenseUrl: 'https://raw.githubusercontent.com/vercel/geist-font/a2357c1398c81d88ff84823a2f50af3152ee8733/OFL.txt'},
+	].map(Object.freeze)),
+});
 const categories = new Set(['serif', 'sans-serif', 'display', 'handwriting', 'monospace']);
 const licenses = new Set(['OFL-1.0', 'OFL-1.1', 'Apache-2.0', 'Ubuntu-font-1.0']);
 const sriPattern = /^sha384-[A-Za-z0-9+/]{64}$/;
@@ -139,21 +153,33 @@ export function admitFontCatalog(raw) {
 			if (row.id !== pin.id || row.name !== pin.name || row.sourceRank !== pin.sourceRank || row.sourcePosition !== pin.sourcePosition) fail('curated addition identity or order');
 		}
 	}
+	const owner = raw.owner === undefined ? [] : FONT_CATALOG_OWNER.families;
+	if (raw.owner !== undefined) {
+		if (!Array.isArray(raw.owner) || raw.owner.length !== owner.length) fail('owner families list');
+		for (let at = 0; at < owner.length; at++) {
+			const row = object(raw.owner[at], 'owner family');
+			if (row.id !== owner[at].id || row.name !== owner[at].name || Object.keys(row).length !== 2) fail('owner family identity or order');
+		}
+	}
 	const families = raw.families.map(admitFontFamily), ids = new Set(), names = new Set();
-	const rankedCount = families.length - additions.length;
+	const ownedFrom = families.length - owner.length, rankedCount = ownedFrom - additions.length;
 	if (rankedCount < 1) fail('ranked families');
 	const sourceBase = 'https://raw.githubusercontent.com/google/fonts/' + source.revision + '/', assetPins = new Map(), contentSizes = new Map();
 	for (let at = 0; at < families.length; at++) {
 		const family = families[at];
 		const prior = families[at - 1];
 		if (family.popularity !== at + 1 || family.sourcePosition < family.popularity || at < rankedCount && prior && (family.sourcePosition <= prior.sourcePosition || family.sourceRank < prior.sourceRank || family.sourceRank === prior.sourceRank && family.name <= prior.name) || ids.has(family.id) || names.has(family.name)) fail('family order or identity');
-		if (at >= rankedCount) {
+		const ownPin = at >= ownedFrom ? owner[at - ownedFrom] : null;
+		if (ownPin) {
+			// No popularity is claimed: its place in the catalog is its source position.
+			if (family.id !== ownPin.id || family.name !== ownPin.name || family.category !== ownPin.category || family.sourceRank !== 0 || family.sourcePosition !== family.popularity) fail('owner family identity or order');
+		} else if (at >= rankedCount) {
 			const pin = additions[at - rankedCount];
 			if (family.id !== pin.id || family.name !== pin.name || family.sourceRank !== pin.sourceRank || family.sourcePosition !== pin.sourcePosition) fail('curated addition family identity or order');
 		}
 		ids.add(family.id); names.add(family.name);
 		for (const file of [...family.files, family.license]) {
-			if (!file.sourceUrl.startsWith(sourceBase)) fail('pinned upstream source URL');
+			if (ownPin ? file.sourceUrl !== (file === family.license ? ownPin.licenseUrl : ownPin.sourceUrl) : !file.sourceUrl.startsWith(sourceBase)) fail('pinned upstream source URL');
 			const pin = assetPins.get(file.url), size = contentSizes.get(file.sri);
 			if (pin && (pin.sri !== file.sri || pin.bytes !== file.bytes) || size !== undefined && size !== file.bytes) fail('conflicting catalog file pin');
 			assetPins.set(file.url, file); contentSizes.set(file.sri, file.bytes);
@@ -185,9 +211,11 @@ export function admitFontCatalog(raw) {
 		if (entry.sourcePosition <= ordered.length || sourceNames.has(entry.name)) fail('curated addition overlaps ranked source');
 		sourceNames.add(entry.name);
 	}
+	for (const entry of owner) if (sourceNames.has(entry.name)) fail('owner family overlaps the Google source');
 	return Object.freeze({schema: FONT_CATALOG_SCHEMA, generatedAt,
 		source: Object.freeze({provider: 'google-fonts', metadata: Object.freeze({url: metadata.url, sri: metadata.sri, capturedAt}), repository: source.repository,
 			revision: source.revision, ordering: source.ordering, converter: Object.freeze({repository: converter.repository, revision: converter.revision, sri: converter.sri, brotliVersion: string(converter.brotliVersion, 'Brotli version', 64)})}),
-		exclusions, families: Object.freeze(families), ...(additions.length ? {additions} : {}), ...(groups ? {groups} : {}), ...(raw.previews === undefined ? {} : {previews: admitFontPreviewDescriptor(raw.previews)})});
+		exclusions, families: Object.freeze(families), ...(additions.length ? {additions} : {}),
+		...(owner.length ? {owner: Object.freeze(owner.map(row => Object.freeze({id: row.id, name: row.name})))} : {}), ...(groups ? {groups} : {}), ...(raw.previews === undefined ? {} : {previews: admitFontPreviewDescriptor(raw.previews)})});
 }
 

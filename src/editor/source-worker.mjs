@@ -190,14 +190,24 @@ function blockParser(md, work) {
     if (budget.used.tokens > budget.limits.tokens) refuse('wysiwyg_token_limit', budget.used.tokens, budget.limits.tokens);
     if (budget.used.nodes > budget.limits.nodes) refuse('wysiwyg_node_limit', budget.used.nodes, budget.limits.nodes);
   });
-  const split = (markdown, env, tokens) => _splitByTokenStream(markdown, md, env, tokens);
+  const split = (markdown, env, tokens, lineOffsets) => _splitByTokenStream(markdown, md, env, tokens, lineOffsets);
   const coordinates = source => {
-    const lines = [0], normalized = [0];
+    const lines = [0];
+    if (source.indexOf('\r') < 0) {
+      for (let at = source.indexOf('\n'); at >= 0; at = source.indexOf('\n', at + 1)) lines.push(at + 1);
+      return {lines, normalized: lines};
+    }
+    const normalized = [0];
     let collapsed = 0;
-    for (const match of source.matchAll(/\r\n?|\n/g)) {
-      collapsed += match[0].length - 1;
-      const end = match.index + match[0].length;
-      lines.push(end); normalized.push(end - collapsed);
+    const len = source.length;
+    for (let i = 0; i < len; i++) {
+      const c = source.charCodeAt(i);
+      if (c === 0x0d) {
+        if (i + 1 < len && source.charCodeAt(i + 1) === 0x0a) { collapsed++; i++; }
+        lines.push(i + 1); normalized.push(i + 1 - collapsed);
+      } else if (c === 0x0a) {
+        lines.push(i + 1); normalized.push(i + 1 - collapsed);
+      }
     }
     return {lines, normalized};
   };
@@ -224,31 +234,23 @@ function blockParser(md, work) {
   };
   const moveToken = (token, lineDelta, charDelta) => {
     if (!lineDelta && !charDelta) return token;
-    let map = token.map, meta = token.meta, children = token.children;
-    if (lineDelta && map) map = map.map(line => line + lineDelta);
-    if (charDelta && meta?.mdLayoutSource) {
-      const target = {...meta.mdLayoutSource};
-      for (const key of ['start', 'end', 'insert']) if (Number.isFinite(target[key])) target[key] += charDelta;
+    const oldMap = token.map, oldMeta = token.meta;
+    const map = lineDelta && oldMap ? [oldMap[0] + lineDelta, oldMap[1] + lineDelta] : oldMap;
+    let meta = oldMeta;
+    if (charDelta && oldMeta?.mdLayoutSource) {
+      const srcTarget = oldMeta.mdLayoutSource;
+      const target = {...srcTarget};
+      if (Number.isFinite(target.start)) target.start += charDelta;
+      if (Number.isFinite(target.end)) target.end += charDelta;
+      if (Number.isFinite(target.insert)) target.insert += charDelta;
       if (target.marker) target.marker = {...target.marker, start: target.marker.start + charDelta, end: target.marker.end + charDelta};
-      meta = {...meta, mdLayoutSource: target};
+      meta = {...oldMeta, mdLayoutSource: target};
     }
-    if (children) {
-      for (let index = 0; index < children.length; index++) {
-        const child = moveToken(token.children[index], lineDelta, charDelta);
-        if (child === token.children[index]) continue;
-        if (children === token.children) children = children.slice();
-        children[index] = child;
-      }
-      if (children !== token.children) {
-        const probe = Object.getOwnPropertyDescriptor(token.children, '_rapierInlineProbeId');
-        if (probe) Object.defineProperty(children, '_rapierInlineProbeId', probe);
-      }
-    }
-    if (map === token.map && meta === token.meta && children === token.children) return token;
-    const moved = Object.create(Object.getPrototypeOf(token), Object.getOwnPropertyDescriptors(token));
-    if (map !== token.map) moved.map = map;
-    if (meta !== token.meta) moved.meta = meta;
-    if (children !== token.children) moved.children = children;
+    if (map === oldMap && meta === oldMeta) return token;
+    const moved = Object.assign(Object.create(Object.getPrototypeOf(token)), token);
+    if (token._rapierInlineProbeId) Object.defineProperty(moved, '_rapierInlineProbeId', {value: token._rapierInlineProbeId, configurable: true});
+    moved.map = map;
+    moved.meta = meta;
     return moved;
   };
   const fingerprint = (record, group) => JSON.stringify(record.tokens.slice(group.first, group.stop)
@@ -325,14 +327,22 @@ function blockParser(md, work) {
           const charDelta = positions.normalized[nextLine] - old.positions.normalized[suffix.line];
           for (const token of old.tokens.slice(suffix.first)) tokens.push(moveToken(token, lineDelta, charDelta));
         }
-        const ids = new Set();
-        const collect = token => {
-          if (token._rapierInlineProbeId) ids.add(token._rapierInlineProbeId);
-          if (token.children) { if (token.children._rapierInlineProbeId) ids.add(token.children._rapierInlineProbeId); token.children.forEach(collect); }
-        };
-        tokens.forEach(collect);
-        env.__rapierInlineCandidates = [...old.env.__rapierInlineCandidates || [], ...env.__rapierInlineCandidates || []]
-          .filter(candidate => ids.has(candidate.inlineId));
+        const oldCands = old.env.__rapierInlineCandidates, newCands = env.__rapierInlineCandidates;
+        if (oldCands?.length || newCands?.length) {
+          const ids = new Set();
+          for (let i = 0; i < tokens.length; i++) {
+            const tok = tokens[i];
+            if (tok._rapierInlineProbeId) ids.add(tok._rapierInlineProbeId);
+            const ch = tok.children;
+            if (ch && ch._rapierInlineProbeId) ids.add(ch._rapierInlineProbeId);
+          }
+          const combined = [];
+          if (oldCands) for (let i = 0; i < oldCands.length; i++) if (ids.has(oldCands[i].inlineId)) combined.push(oldCands[i]);
+          if (newCands) for (let i = 0; i < newCands.length; i++) if (ids.has(newCands[i].inlineId)) combined.push(newCands[i]);
+          env.__rapierInlineCandidates = combined;
+        } else {
+          env.__rapierInlineCandidates = [];
+        }
         reuse.blocks = from + (join < 0 ? 0 : prior.length - join);
         return {source, tokens, env, references: key, positions, groups: groups(source, tokens, positions)};
       }
@@ -375,7 +385,7 @@ function blockParser(md, work) {
         blocks = split(markdown, env, await blockTokens(markdown, env));
       } else {
         parsed = await parseCompleted(markdown, references, referenceKey, reuse);
-        blocks = split(markdown, parsed.env, parsed.tokens);
+        blocks = split(markdown, parsed.env, parsed.tokens, parsed.positions?.lines);
         timing.reuse = reuse;
       }
       timing.parseMs = performance.now() - t0;

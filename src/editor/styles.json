@@ -50,6 +50,10 @@
     "path": "editor/styles/rapier-jxl.css"
   },
   {
+    "id": "rapier-jxl-maker-style",
+    "path": "editor/styles/rapier-jxl-maker.css"
+  },
+  {
     "id": "rapier-convert-style",
     "path": "editor/styles/rapier-convert.css"
   },

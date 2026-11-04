@@ -9,16 +9,17 @@ import {mintEditorKey, verifyEditorKey, EDITOR_KEY_LIFETIME_MS} from './editor-k
 import {getTool} from '../agent/catalog.mjs';
 import {validateInput} from '../agent/validate-input.mjs';
 import {JsonDepthGuard} from '../kit/json-depth.mjs';
+import {admittedUtf8Frame} from './live-admission.mjs';
+import {jsonUtf8Bytes} from '../kit/json-utf8-bytes.mjs';
 
 export const LIVE_PROTOCOL = 'rapier-live-v1';
 export const LIVE_LIMITS = Object.freeze({frameBytes: 32 * 1024 * 1024, replayBytes: 1024 * 1024,
   composingMs: 15000, helloMs: 15000, contextBytes: 4 * 1024 * 1024, heldContextMs: 10 * 60 * 1000});
-const utf8 = new TextEncoder();
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const known = (value, keys) => plain(value) && Object.keys(value).every(key => keys.includes(key));
 const secret = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
-const refused = reason => Object.assign(new Error(reason), {liveReason: reason});
+const refused = (reason, nonMutating = false) => Object.assign(new Error(reason), {liveReason: reason, nonMutating});
 const label = value => typeof value === 'string' && value.length > 0 && [...value].length <= 80 && !/[\u0000-\u001f\u007f]/.test(value);
 
 function compactRequest(request, row) {
@@ -41,32 +42,7 @@ function expandedRequest(row) {
   })};
 }
 
-function jsonBytes(value, limit = LIVE_LIMITS.frameBytes) {
-  if (value === null) return 4;
-  if (typeof value === 'boolean') return value ? 4 : 5;
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value).length : 4;
-  if (typeof value === 'string') {
-    let bytes = 2;
-    for (let index = 0; index < value.length && bytes <= limit; index++) {
-      const code = value.charCodeAt(index);
-      if (code < 0x20) bytes += [8, 9, 10, 12, 13].includes(code) ? 2 : 6;
-      else if (code === 34 || code === 92) bytes += 2;
-      else if (code < 0x80) bytes++;
-      else if (code < 0x800) bytes += 2;
-      else if (code >= 0xd800 && code <= 0xdbff && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {bytes += 4; index++;}
-      else bytes += code >= 0xd800 && code <= 0xdfff ? 6 : 3;
-    }
-    return bytes;
-  }
-  const entries = Array.isArray(value) ? value.map(item => [null, item]) : Object.entries(value).filter(([, item]) => item !== undefined);
-  let bytes = 2;
-  for (let index = 0; index < entries.length && bytes <= limit; index++) {
-    const [key, item] = entries[index];
-    bytes += (index ? 1 : 0) + (key === null ? 0 : jsonBytes(key, limit - bytes) + 1) +
-      (item === undefined ? 4 : jsonBytes(item, limit - bytes));
-  }
-  return bytes;
-}
+export const jsonBytes = (value, limit = LIVE_LIMITS.frameBytes) => jsonUtf8Bytes(value, limit);
 
 function participant(row, state) {
   const kind = row.actor === 'agent' ? 'agent' : row.actor === 'system' ? 'system' : 'human';
@@ -93,15 +69,32 @@ function record(entry, row) {
     act: liveJournal(row)};
 }
 
+export function preflightLiveEditAck(entry, row, seq, gen, limit = LIVE_LIMITS.frameBytes) {
+  const ack = {type: 'ack', seq, gen, status: 'applied', record: record(entry, row)};
+  const retryOverhead = 'duplicate'.length - 'applied'.length;
+  if (jsonBytes(ack, limit - retryOverhead) > limit - retryOverhead) throw refused('message_too_large');
+  return ack;
+}
+
 const LIVE_GRANT_RENEW_MS = 60 * 60 * 1000;
+export const LIVE_SOCKET_LIMITS = Object.freeze({peers: 32, joinsPerMinute: 64});
+export const PRESENCE_FANOUT_MS = 100;
 
 export class LiveSessions {
-  constructor(owner) { this.owner = owner; this.cached = null; this.prepared = new WeakMap(); }
+  constructor(owner) { this.owner = owner; this.cached = null; this.prepared = new WeakMap(); this.joinWindow = {start: 0, count: 0}; this.nextPresenceFanout = 0; this.presenceTimer = null; }
 
   sockets() { return (this.owner.ctx.getWebSockets?.() || []).filter(socket => socket.readyState === 1); }
   attachment(socket) { try { return socket.deserializeAttachment(); } catch { return null; } }
   close(socket, code = 1008, reason = 'session_unavailable') { try { socket.close(code, reason); } catch {} }
   reset() { this.cached = null; this.prepared = new WeakMap(); }
+  joinAdmission(now = Date.now()) {
+    if (this.sockets().length >= LIVE_SOCKET_LIMITS.peers) return 'session_full';
+    if (now < this.joinWindow.start || now - this.joinWindow.start >= 60000)
+      this.joinWindow = {start: now, count: 0};
+    if (this.joinWindow.count >= LIVE_SOCKET_LIMITS.joinsPerMinute) return 'session_busy';
+    this.joinWindow.count++;
+    return null;
+  }
   binding(head, connection = '') { return {workspace: head.documentId, connection: 'live:' + head.capabilityHash + connection}; }
   stopBinding(head, connection = '') { return {workspace: head.documentId, connection: 'live-stop:' + head.capabilityHash + connection}; }
   async grant(head, authority = {}) {
@@ -195,17 +188,22 @@ export class LiveSessions {
   }
 
   fillLive(state, from, text, gen) {
+    const lastSeq = new Map();
+    for (let i = 0; i < from; i++) {
+      const prior = state.journal[i].live;
+      if (prior) lastSeq.set(prior.client, prior.seq);
+    }
     for (let i = from; i < state.journal.length; i++) {
       const row = state.journal[i];
       const actual = transformSplices(text, row.splices);
       if (actual === null || row.baseRevision !== gen || row.revision !== gen + 1) throw refused('journal_source_mismatch');
       if (!row.live) {
         const author = participant(row);
-        let seq = 1;
-        for (let j = i - 1; j >= 0; j--) if (state.journal[j].live?.client === author.id) { seq = state.journal[j].live.seq + 1; break; }
+        const seq = lastSeq.has(author.id) ? lastSeq.get(author.id) + 1 : 1;
         row.live = {client: author.id, seq, author,
           request: compactRequest({gen, splices: parallelSplices(text, row.splices, {authoredRanges: true}), agent: row.actor === 'agent'}, row)};
       }
+      lastSeq.set(row.live.client, row.live.seq);
       text = actual;
       gen = row.revision;
     }
@@ -312,9 +310,11 @@ export class LiveSessions {
 
   catchUp(socket, doc) {
     const attached = this.attachment(socket);
-    if (!attached?.client) return;
-    for (const entry of doc.log) if (entry.gen > attached.sentGen && !this.send(socket, entry.record)) return;
+    if (!attached?.client) return false;
+    for (let index = Math.max(0, attached.sentGen - doc.base); index < doc.log.length; index++)
+      if (!this.send(socket, doc.log[index].record)) return false;
     if (attached.sentGen !== doc.gen) { attached.sentGen = doc.gen; socket.serializeAttachment(attached); }
+    return true;
   }
 
   publish(doc, head) {
@@ -326,12 +326,18 @@ export class LiveSessions {
     this.broadcastPresence(head);
   }
 
-  presences(state, head, doc = this.document(state)) {
+  presences(state, head, doc = this.document(state), joining = null) {
     const peers = [];
+    let sessions;
     for (const socket of this.sockets()) {
-      const attached = this.valid(socket, head);
-      if (!attached?.client) continue;
-      const session = state.live.sessions.find(row => row.client === attached.client);
+      const attached = socket === joining?.socket ? joining.attached : this.valid(socket, head);
+      if (!attached?.client || joining && socket !== joining.socket && attached.client === joining.attached.client) continue;
+      if (!sessions) {
+        sessions = new Map();
+        for (const row of state.live.sessions)
+          if (!sessions.has(row.client)) sessions.set(row.client, row);
+      }
+      const session = sessions.get(attached.client);
       if (!session) continue;
       const presence = attached.presence;
       if (!presence) { peers.push({client: session.client, author: session.author, gen: doc.gen, anchor: 0, head: 0, composing: false}); continue; }
@@ -374,6 +380,21 @@ export class LiveSessions {
     const peers = this.presences(this.owner.readState(head), head);
     for (const socket of sockets) if (this.valid(socket, head)?.client) this.send(socket, {type: 'presence', peers});
   }
+  schedulePresenceFanout(now = Date.now()) {
+    if (now >= this.nextPresenceFanout || this.nextPresenceFanout - now > PRESENCE_FANOUT_MS) {
+      if (this.presenceTimer !== null) clearTimeout(this.presenceTimer);
+      this.presenceTimer = null;
+      this.nextPresenceFanout = now + PRESENCE_FANOUT_MS;
+      this.broadcastPresence();
+      return;
+    }
+    if (this.presenceTimer !== null) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      this.nextPresenceFanout = Date.now() + PRESENCE_FANOUT_MS;
+      try { this.broadcastPresence(); } catch {  }
+    }, Math.max(1, this.nextPresenceFanout - now));
+  }
 
   notice(head, waiting) {
     return {type: 'changed', version: head.version, revision: head.revision, agent: head.agentCall?.id || null,
@@ -400,13 +421,13 @@ export class LiveSessions {
   }
   async context(socket, message, head, attached) {
     if (typeof this.owner.operate !== 'function' || !known(message, ['type', 'args']) || !plain(message.args) ||
-        jsonBytes(message.args) > LIVE_LIMITS.contextBytes) throw refused('invalid_context');
+        jsonBytes(message.args) > LIVE_LIMITS.contextBytes) throw refused('invalid_context', true);
     let args;
     try {
       const {document, editorKey, ...rest} = validateInput(getTool('document.human_context').inputSchema,
         {...message.args, document: 'socket', editorKey: 'socket'}, 'arguments', false);
       args = rest;
-    } catch { throw refused('invalid_context'); }
+    } catch { throw refused('invalid_context', true); }
     if (attached.contextId !== args.contextId) {
       attached.contextId = args.contextId;
       socket.serializeAttachment(attached);
@@ -469,6 +490,8 @@ export class LiveSessions {
     const verdict = await this.admit(head, key, this.binding.bind(this), access);
     if (!verdict.ok) return new Response(null, {status: 403});
     this.expire(head);
+    const admission = this.joinAdmission();
+    if (admission) return new Response(null, {status: 429, headers: {'Retry-After': '60', 'Cache-Control': 'no-store'}});
     const [client, server] = Object.values(new WebSocketPair());
     this.owner.ctx.acceptWebSocket(server);
     server.serializeAttachment({capabilityHash: head.capabilityHash,
@@ -483,49 +506,87 @@ export class LiveSessions {
 
   async hello(socket, message, state, head, attached) {
     if (!known(message, ['type', 'client', 'token', 'gen', 'name']) || message.gen !== undefined && !integer(message.gen) ||
-        message.name !== undefined && !label(message.name) || (message.client === undefined) !== (message.token === undefined)) throw refused('invalid_hello');
-    if (attached.client) throw refused('already_joined');
+        message.name !== undefined && !label(message.name) || (message.client === undefined) !== (message.token === undefined)) throw refused('invalid_hello', true);
+    if (attached.client) throw refused('already_joined', true);
+    const sourceBytes = jsonBytes(state.text);
+    if (sourceBytes > LIVE_LIMITS.frameBytes) {
+      this.send(socket, {type: 'error', reason: 'message_too_large', limitBytes: LIVE_LIMITS.frameBytes});
+      this.close(socket, 1009, 'message_too_large');
+      return;
+    }
     const doc = this.document(state);
     const from = message.gen ?? doc.gen;
-    if (from < doc.base || from > doc.gen) throw refused('generation_unavailable');
-    let session, token;
+    if (from < doc.base || from > doc.gen) throw refused('generation_unavailable', true);
+    let session, token, changed = false;
     if (message.client !== undefined) {
-      if (!/^peer_[a-f0-9]{32}$/.test(message.client) || !/^[A-Za-z0-9_-]{43}$/.test(message.token)) throw refused('invalid_resume');
+      if (!/^peer_[a-f0-9]{32}$/.test(message.client) || !/^[A-Za-z0-9_-]{43}$/.test(message.token)) throw refused('invalid_resume', true);
       session = state.live.sessions.find(row => row.client === message.client && row.tokenHash === sha256(message.token));
-      if (!session) throw refused('invalid_resume');
+      if (!session) throw refused('invalid_resume', true);
       if (message.name && message.name !== session.author.name) {
-        state = structuredClone(state);
-        session = state.live.sessions.find(row => row.client === message.client);
-        session.author = {...session.author, name: message.name};
-        await this.owner.persist(head, state, this.owner.readJournal(), false, null, undefined,
-          attached.access ? {ownerKey: head.ownerKey, access: attached.access} : null);
+        session = {...session, author: {...session.author, name: message.name}};
+        state = {...state, live: {...state.live, sessions: state.live.sessions.map(row =>
+          row.client === message.client ? session : row)}};
+        changed = true;
       }
     } else {
       token = secret();
       const client = 'peer_' + crypto.randomUUID().replaceAll('-', '');
       session = {client, tokenHash: sha256(token), author: {id: client, name: message.name || 'Person ' + (state.live.sessions.length + 1), kind: 'human'}};
-      state = structuredClone(state); state.live.sessions.push(session);
-      await this.owner.persist(head, state, this.owner.readJournal(), false, null, undefined,
-        attached.access ? {ownerKey: head.ownerKey, access: attached.access} : null);
+      state = {...state, live: {...state.live, sessions: [...state.live.sessions, session]}};
+      changed = true;
     }
-    for (const other of this.sockets()) if (other !== socket && this.attachment(other)?.client === session.client) this.close(other, 4000, 'session_resumed');
-    attached.client = session.client; attached.sentGen = doc.gen;
-    socket.serializeAttachment(attached);
-    const records = message.gen !== undefined ? doc.log.filter(row => row.gen > from).map(row => row.record) : [];
-    const batches = [[]]; let size = 0;
-    for (const row of records) {
-      const bytes = jsonBytes(row);
-      if (size && size + bytes > LIVE_LIMITS.replayBytes) {batches.push([]); size = 0;}
-      batches.at(-1).push(row); size += bytes;
-    }
-    if (!this.send(socket, {type: 'hello', client: session.client, ...(token ? {token} : {}), author: session.author,
+    const joined = {...attached, client: session.client, sentGen: doc.gen};
+    const replayStart = message.gen === undefined ? doc.log.length : from - doc.base;
+    const replaying = replayStart < doc.log.length;
+    const fullHistory = message.gen === undefined;
+    const includeLog = fullHistory || message.client === undefined;
+    const firstHello = {type: 'hello', client: session.client, ...(token ? {token} : {}), author: session.author,
       documentId: state.documentId, filename: state.filename, docKind: state.docKind, source: state.text,
       gen: doc.gen, base: doc.base, nextSeq: (doc.seen[session.client]?.seq || 0) + 1,
-      records: [], ...(message.gen === undefined ? {history: state.journal.map(liveJournal), log: doc.log.map(row => row.record)}
-        : message.client === undefined ? {log: doc.log.filter(row => row.gen <= from).map(row => row.record)} : {}),
-      replaying: records.length > 0, peers: this.presences(state, head)})) return;
-    if (records.length) {
-      for (const batch of batches) if (!this.send(socket, {type: 'replay', records: batch})) return;
+      records: [], ...(fullHistory ? {history: [], log: []} : includeLog ? {log: []} : {}),
+      replaying, peers: this.presences(state, head, doc, {socket, attached: joined})};
+    let helloBytes = jsonBytes({...firstHello, source: ''}) + sourceBytes - 2;
+    if (fullHistory && helloBytes <= LIVE_LIMITS.frameBytes) {
+      for (const row of state.journal) {
+        const projected = liveJournal(row);
+        helloBytes += jsonBytes(projected, LIVE_LIMITS.frameBytes - helloBytes) +
+          (firstHello.history.length ? 1 : 0);
+        if (helloBytes > LIVE_LIMITS.frameBytes) break;
+        firstHello.history.push(projected);
+      }
+    }
+    if (includeLog && helloBytes <= LIVE_LIMITS.frameBytes) {
+      for (const row of doc.log) {
+        if (!fullHistory && row.gen > from) continue;
+        helloBytes += jsonBytes(row.record, LIVE_LIMITS.frameBytes - helloBytes) +
+          (firstHello.log.length ? 1 : 0);
+        if (helloBytes > LIVE_LIMITS.frameBytes) break;
+        firstHello.log.push(row.record);
+      }
+    }
+    if (helloBytes > LIVE_LIMITS.frameBytes) {
+      this.send(socket, {type: 'error', reason: 'message_too_large', limitBytes: LIVE_LIMITS.frameBytes});
+      this.close(socket, 1009, 'message_too_large');
+      return;
+    }
+    if (changed) await this.owner.persist(head, structuredClone(state), this.owner.readJournal(), false, null, undefined,
+      attached.access ? {ownerKey: head.ownerKey, access: attached.access} : null);
+    for (const other of this.sockets()) if (other !== socket && this.attachment(other)?.client === session.client) this.close(other, 4000, 'session_resumed');
+    socket.serializeAttachment(joined);
+    if (!this.send(socket, firstHello)) return;
+    if (replaying) {
+      const envelopeBytes = jsonBytes({type: 'replay', records: []});
+      let batch = [], size = envelopeBytes;
+      for (let index = replayStart; index < doc.log.length; index++) {
+        const row = doc.log[index].record, bytes = jsonBytes(row);
+        if (batch.length && size + 1 + bytes > LIVE_LIMITS.replayBytes) {
+          if (!this.send(socket, {type: 'replay', records: batch})) return;
+          batch = []; size = envelopeBytes;
+        }
+        size += (batch.length ? 1 : 0) + bytes;
+        batch.push(row);
+      }
+      if (batch.length && !this.send(socket, {type: 'replay', records: batch})) return;
       this.send(socket, {type: 'ready', gen: doc.gen});
     }
     this.broadcastPresence(head);
@@ -538,7 +599,7 @@ export class LiveSessions {
         message.prejoin !== undefined && message.prejoin !== true ||
         !isUndo && (!integer(message.gen) || !Array.isArray(message.splices) ||
           message.splices.some(row => !known(row, ['at', 'remove', 'insert']) || !integer(row.at) || !integer(row.remove) || typeof row.insert !== 'string')))
-      throw refused('invalid_edit');
+      throw refused('invalid_edit', true);
     const doc = this.document(state), session = state.live.sessions.find(row => row.client === attached.client);
     const hash = sha256(canonicalJson(message));
     const retained = state.journal.find(row => row.live?.client === session.client && row.live.seq === message.seq);
@@ -598,43 +659,50 @@ export class LiveSessions {
     const next = kernel.snapshot(), stored = next.journal.at(-1);
     const {client, seq, ...request} = edit;
     stored.live = {client, seq, author: {...act.author}, request: compactRequest(request, stored), wireHash: hash};
+    const ack = preflightLiveEditAck(result.state.log.at(-1), stored, seq, result.gen);
     const described = this.owner.describe(next, head, head.version + 1, kernel.collaboration());
     await this.owner.persist(described, next, kernel.invocationJournal({readonly: true}), false, null, undefined,
       attached.access ? {ownerKey: head.ownerKey, access: attached.access} : null);
-    const accepted = this.document(next).log.at(-1);
-    this.send(socket, {type: 'ack', seq, gen: accepted.gen, status: 'applied', record: accepted.record});
+    this.send(socket, ack);
   }
 
   async message(socket, raw) {
-    let message;
+    let message, mayHaveTouchedWorkspace = false;
     try {
       if (this.owner.env.ACCESS_PROFILE === true && !await this.owner.env.accessCurrent(this.attachment(socket)?.access)) {this.close(socket); return;}
       const head = this.owner.ctx.storage.kv.get('head'), attached = this.valid(socket, head);
       if (!attached || attached.grant && !await this.owner.grantCurrent(attached.grant)) {this.close(socket); return;}
-      if (typeof raw !== 'string' || raw.length > LIVE_LIMITS.frameBytes || utf8.encode(raw).byteLength > LIVE_LIMITS.frameBytes) throw refused('message_too_large');
+      if (!admittedUtf8Frame(raw, LIVE_LIMITS.frameBytes)) throw refused('message_too_large');
       new JsonDepthGuard(128, {failure: () => refused('message_too_deep')}).write(raw);
       try { message = JSON.parse(raw); } catch { throw refused('invalid_message'); }
       if (!plain(message)) throw refused('invalid_message');
+      mayHaveTouchedWorkspace = true;
       const state = this.owner.readState(head);
       if (message.type === 'hello') return await this.hello(socket, message, state, head, attached);
-      if (!attached.client) throw refused('hello_required');
-      this.catchUp(socket, this.document(state));
+      if (!attached.client) throw refused('hello_required', true);
+      if (!this.catchUp(socket, this.document(state))) return;
       if (message.type === 'edit' || message.type === 'undo') return await this.edit(socket, message, state, head, attached);
       if (message.type === 'check' && known(message, ['type'])) { this.notify(this.owner.waiting?.() ?? 0, socket); return; }
       if (message.type === 'context') return await this.context(socket, message, head, attached);
       if (message.type !== 'presence' || !known(message, ['type', 'gen', 'anchor', 'head', 'composing']) ||
           !integer(message.gen) || !integer(message.anchor) || !integer(message.head) ||
           message.composing !== undefined && message.composing !== false &&
-          (!known(message.composing, ['anchor', 'head']) || !integer(message.composing.anchor) || !integer(message.composing.head))) throw refused('invalid_presence');
+          (!known(message.composing, ['anchor', 'head']) || !integer(message.composing.anchor) || !integer(message.composing.head))) {
+        mayHaveTouchedWorkspace = false;
+        throw refused('invalid_presence');
+      }
       const doc = this.document(state), moved = rebasePresence(doc, message, message.gen, attached.client);
       if (moved.anchor > state.text.length || moved.head > state.text.length) throw refused('invalid_presence');
       const composing = message.composing ? rebasePresence(doc, message.composing, message.gen, attached.client) : false;
       if (composing && (composing.anchor > state.text.length || composing.head > state.text.length)) throw refused('invalid_presence');
       attached.presence = {...moved, composing, at: Date.now()};
       socket.serializeAttachment(attached);
-      this.broadcastPresence(head);
+      this.schedulePresenceFanout();
     } catch (error) {
-      this.owner.cachedState = null; this.owner.cachedJournal = null; this.reset();
+      if (error?.nonMutating) mayHaveTouchedWorkspace = false;
+      if (mayHaveTouchedWorkspace) {
+        this.owner.cachedState = null; this.owner.cachedJournal = null; this.reset();
+      }
       const capacity = error.code === 'WORKSPACE_STATE_LIMIT';
       const reason = error.liveReason || (capacity ? 'workspace_state_limit' : error.code === 'DOCUMENT_UNAVAILABLE'
         ? 'session_unavailable' : error instanceof RangeError ? 'edit_conflict' : 'workspace_unacknowledged');

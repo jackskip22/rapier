@@ -21,7 +21,7 @@ export function createCustodyBridge({post, RealSocket, store, key, rules, host =
           bind(value.id, held); held.attachClient();
           return;
         }
-        parked = null;
+        parked?.socket.close(1000, 'left'); parked = null;
         const opened = new Socket(value.url, value.protocols);
         opened.url = value.url;
         bind(value.id, opened);

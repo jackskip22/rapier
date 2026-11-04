@@ -54,6 +54,7 @@ function _rapierDrawCopierSync() {
 	if (!state.open || !state.svg || !_rapierDrawCopierLive()) { _rapierDrawCopierStop(); return; }
 	const groups = [...state.svg.querySelectorAll('[data-rapier-effect="copier"]')], keep = new Set();
 	const plain = !!state.effectsCompare || ['paint', 'water'].includes(_rapierDrawTool()) || groups.length > 8;
+	if (plain && typeof _rapierDrawLean === 'function' && _rapierDrawLean()) { _rapierDrawCopierStop(); return; }
 	for (const group of groups) {
 		const key = group.dataset.effectFilter, effect = _rapierDrawCopierEffect(key), filter = key && state.svg.querySelector('filter[id="' + CSS.escape(key) + '"]');
 		if (!effect || !filter || keep.has(key)) continue;

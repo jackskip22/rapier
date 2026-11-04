@@ -78,7 +78,7 @@
 		const bar = make('div', 'rapier-convert-view__bar'), shut = closer('close');
 		bar.append(title, shut);
 		const body = make('div', 'rapier-convert-view__body');
-		const note = make('p', 'rapier-convert-view__note', 'Runs in Rapier, one offline HTML file. Your files never leave your device.');
+		const note = make('p', 'rapier-convert-view__note', 'Runs locally on your device - no uploads. Rapier is a single HTML file that works offline. Free and open source.');
 		const pick = make('label', 'settings-action-btn rapier-convert-view__pick'), input = make('input');
 		pick.append(make('span', '', 'Choose or drop Word, PDF, HTML or Markdown files'), input);
 		input.type = 'file'; input.multiple = true;

@@ -169,6 +169,7 @@ async function ownerCookie(ownerId, env) {
   const tag = base64url(new Uint8Array(await crypto.subtle.sign('HMAC', await ownerKey(env, ['sign']), encoder.encode(body))));
   return `${OWNER_COOKIE}=${body}.${tag}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${OAUTH_OWNER_SECONDS}`;
 }
+const forgetOwnerCookie = () => `${OWNER_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`;
 function browserAuthority(ownerId) {
   return Object.freeze({ownerId, connectionId: 'browser', scopes: Object.freeze(['rapier:read', 'rapier:write']), source: 'browser'});
 }
@@ -333,6 +334,10 @@ async function disconnect(request, env, api) {
     const limited = await boundedRequest(request);
     if (!limited) return json(413, {error: 'request_too_large'});
     const form = new URLSearchParams(await limited.text());
+    if (form.has('forget')) {
+      if ([...form].length !== 1 || form.get('forget') !== 'browser') return json(400, {error: 'invalid_request'});
+      return html(200, 'Browser forgotten', '<p>This browser is forgotten. It no longer opens your connections.</p>', {'Set-Cookie': forgetOwnerCookie()});
+    }
     const grantId = form.get('grant');
     if (form.getAll('grant').length !== 1 || !/^[A-Za-z0-9_-]{1,128}$/.test(grantId || '')) return json(400, {error: 'invalid_request'});
     await api.revokeGrant(grantId, ownerId);
@@ -346,7 +351,8 @@ async function disconnect(request, env, api) {
   const names = await Promise.all(grants.items.map(grant => api.lookupClient(grant.clientId).then(client => client?.clientName || grant.clientId, () => grant.clientId)));
   const rows = grants.items.map((grant, index) => `<li><p><bdi>${escapeHTML(names[index])}</bdi> — ${escapeHTML(grant.scope.join(', '))}</p><form method="post" action="/oauth/disconnect"><input type="hidden" name="grant" value="${escapeHTML(grant.id)}"><button type="submit" class="negative">Revoke connection</button></form></li>`).join('');
   return html(200, 'Rapier connections', `<p>Connections approved by this browser:</p>${rows ? `<ul>${rows}</ul>` : '<p>No active connections.</p>'}` +
-    (grants.cursor ? `<p><a href="/oauth/disconnect?cursor=${encodeURIComponent(grants.cursor)}">More connections</a></p>` : ''));
+    (grants.cursor ? `<p><a href="/oauth/disconnect?cursor=${encodeURIComponent(grants.cursor)}">More connections</a></p>` : '') +
+    '<p>Shared computer? Revoke your connections, then forget this browser.</p><form method="post" action="/oauth/disconnect"><button type="submit" name="forget" value="browser" class="negative">Forget this browser</button></form>');
 }
 
 async function signedTokenResponse(response, server, env) {

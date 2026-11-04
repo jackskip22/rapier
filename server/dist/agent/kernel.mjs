@@ -173,6 +173,7 @@ export const HINTS = {
   paint_layer_full: 'This layer has reached its image size limit. Continue on a new layer with shapes.add.',
   paint_mode_mismatch: 'Use mode:water and actions for a Water layer, or strokes for a Paint layer. Add a new layer with shapes.add to use another mode.',
   paint_sheet_invalid: 'Read the drawing again for its current material, or add a new layer with shapes.add.',
+  paint_too_large_for_server: 'This painting is larger than Rapier\'s server can open (about 2 megapixels). The person\'s editor opens it; ask them to work on it there. The drawing is unchanged.',
   paint_sample_unavailable: 'Material sampling is unavailable in this editor. Read the drawing recipe for its pigment and paper settings.',
   paint_sample_invalid: 'Sample an existing Paint or Water layer at a point in its drawing coordinates.',
   water_webgpu_unavailable: 'Water needs WebGPU in the active editor. The drawing is unchanged.',
@@ -1934,7 +1935,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
           paintSample = prepared.value;
         } else paintSample = await host.paintSample(shape, input.paintSample.point, {signal: context.signal});
       }
-      catch (error) { cancelled(context); return failure(error?.code || 'paint_sample_invalid', 'invalid'); }
+      catch (error) { cancelled(context); return failure(error?.code || 'paint_sample_invalid', error?.code === 'paint_too_large_for_server' ? 'refused' : 'invalid'); }
       cancelled(context);
       const refreshed = await refresh(context);
       if (refreshed) return refreshed;
@@ -3838,7 +3839,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
       catch (error) {
         cancelled(context);
-        return {refusal: failure(error?.code || 'paint_strokes_invalid', error?.code === 'paint_target_changed' ? 'conflict' : ['paint_history_full','paint_layer_full','water_webgpu_unavailable','WATER_BUDGET','WATER_REPLAY_BUDGET','WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error?.code) ? 'refused' : 'invalid')};
+        return {refusal: failure(error?.code || 'paint_strokes_invalid', error?.code === 'paint_target_changed' ? 'conflict' : ['paint_history_full','paint_layer_full','paint_too_large_for_server','water_webgpu_unavailable','WATER_BUDGET','WATER_REPLAY_BUDGET','WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error?.code) ? 'refused' : 'invalid')};
       }
       cancelled(context);
       if (!shape) return { refusal: failure('paint_strokes_invalid', 'invalid', {field: at + (water ? '.actions' : '.strokes')}) };
@@ -3887,7 +3888,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       }
     } catch (error) {
       cancelled(context);
-      return error?.code === 'paint_raster_decoder_unavailable' ? failure(error.code) : failure('paint_raster_invalid', 'invalid');
+      return ['paint_raster_decoder_unavailable', 'paint_too_large_for_server'].includes(error?.code) ? failure(error.code) : failure('paint_raster_invalid', 'invalid');
     }
     cancelled(context);
     const refreshed = await refresh(context);

@@ -677,7 +677,7 @@ function _rapierCutSourceMap(source, text, atoms = [], structural = false, sourc
 	}
 	return t === text.length && from.length === text.length ? { from, to, bounds } : null;
 }
-function _rapierCutSemantics(raw, options = null) {
+function _rapierCutSemantics(raw, options = null, preserveInk = false) {
 	const probe = _rapierRenderedMarkProbe(raw, 'bold', !!options?.tableCell);
 	if (!probe) return null;
 	const root = probe.root, runs = {}, empty = [];
@@ -689,6 +689,7 @@ function _rapierCutSemantics(raw, options = null) {
 	runs.font = _rapierMarkRuns(root, '[data-md-font]', 'data-md-font');
 	runs.size = _rapierMarkRuns(root, '[data-md-size]', 'data-md-size');
 	runs.formula = _rapierMarkRuns(root, '.math-rendered', 'data-math-src');
+	if (preserveInk) runs.ink = _rapierInkRuns(root).runs.map(run => ({ start: run.start, end: run.end, attr: run.body }));
 	for (const [name, selector] of [['a', 'a[href]'], ['code', 'code'], ['mark', 'mark'], ['formula', '.math-rendered'],
 			...Object.entries(RAPIER_EXACT_MARKS).map(([mark, spec]) => [mark, spec.selector])]) {
 		empty.push(name + ':' + Array.from(root.querySelectorAll(selector)).filter(element => !element.textContent && !element.querySelector('img')).length);
@@ -730,8 +731,42 @@ function _rapierCutProves(before, after, start, end, pictures, breaks = null) {
 	return keepsAtoms(before.pictures, after.pictures, pictures, atom => atom.at, atom => atom.src) &&
 		keepsAtoms(before.breaks, after.breaks, breaks, at => at, () => 'br');
 }
+function _rapierCutCommentTokens(source) {
+	const comments = [];
+	for (const match of source.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) {
+		let slashes = 0;
+		for (let at = match.index - 1; at >= 0 && source.charCodeAt(at) === 92; at--) slashes++;
+		if (!(slashes & 1)) comments.push({ index: match.index, text: match[0] });
+	}
+	return comments;
+}
+function _rapierCutCommentText(source) {
+	return JSON.stringify(_rapierCutCommentTokens(source).map(comment => comment.text));
+}
+function _rapierCutProtectedComments(source, map, start, end) {
+	if (!source.includes('<!--')) return null;
+	const at = (positions, offset, upper) => {
+		let low = 0, high = positions.length;
+		while (low < high) {
+			const mid = (low + high) >> 1;
+			if (upper ? positions[mid] <= offset : positions[mid] < offset) low = mid + 1;
+			else high = mid;
+		}
+		return low;
+	};
+	const owned = new Set();
+	for (const pair of globalThis.RapierMarkdownSpec?.pairInkSpans(source)?.runs || []) {
+		const from = at(map.from, pair.innerStart, false), to = at(map.to, pair.innerEnd, true);
+		if (from < to && start <= from && end >= to) { owned.add(pair.start); owned.add(pair.innerEnd); }
+	}
+	const protectedComments = [];
+	for (const comment of _rapierCutCommentTokens(source)) {
+		if (!owned.has(comment.index)) protectedComments.push(comment.text);
+	}
+	return JSON.stringify(protectedComments);
+}
 function _rapierPlanExactCut(raw, text, start, end, pictures = 0, options = null) {
-	const source = String(raw || ''), before = _rapierCutSemantics(source, options);
+	const source = String(raw || ''), before = _rapierCutSemantics(source, options, true);
 	const boundary = at => !(at > 0 && at < text.length && /[\ud800-\udbff]/.test(text[at - 1]) && /[\udc00-\udfff]/.test(text[at]));
 	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || end > text.length || !boundary(start) || !boundary(end)) return null;
 	if (!before || before.text !== text) return null;
@@ -769,7 +804,9 @@ function _rapierPlanExactCut(raw, text, start, end, pictures = 0, options = null
 	}
 	candidates.delete(source);
 	const strays = _rapierSpanStrays(source);
+	const comments = _rapierCutProtectedComments(source, map, start, end);
 	const valid = Array.from(candidates).filter(next => _rapierSpanStrays(next) <= strays &&
-		_rapierCutProves(before, _rapierCutSemantics(next, options), start, end, pictures, options?.breaks));
+		(!comments || _rapierCutCommentText(next) === comments) &&
+		_rapierCutProves(before, _rapierCutSemantics(next, options, true), start, end, pictures, options?.breaks));
 	return valid.length ? valid.sort((a, b) => a.length - b.length)[0] : null;
 }

@@ -676,6 +676,7 @@ html[data-rapier-host-features]:not([data-rapier-host-features~="find"]) [data-a
 html.rapier-draw-start body>*:not(.rapier-draw-surface):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
 html.rapier-jxl-start body>*:not(.rapier-jxl-view):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}
 .rapier-tool-footer{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-1)}
+.rapier-tool-footer--also{margin-top:var(--space-8)}
 .rapier-tool-footer__line{margin:0;font:var(--fw-regular) var(--text-sm)/1.4 var(--font-sans)}
 .rapier-tool-footer a{color:inherit;text-decoration:underline;text-underline-offset:.2em}
 html.rapier-diff-start body>*:not(.rapier-diff-view):not(#toast-root):not(#confirm-overlay):not(#sr-live){visibility:hidden}

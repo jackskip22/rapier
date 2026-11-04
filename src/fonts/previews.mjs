@@ -121,6 +121,9 @@ export function admitFontPreviewShard(raw, descriptor, catalog) {
 		if (!family || row.id !== family.id || row.name !== family.name) fail('family identity');
 		const selection = selectedFace(family), selected = selection.file;
 		if (row.fileSri !== selected.sri || row.sourceFont?.url !== selected.sourceUrl) fail('selected font custody');
+		// The owner's own fonts have no Google language data: their source is their own pinned file, and their specimen
+		// is their name or their own characters.
+		const own = catalog.owner?.some(entry => entry.id === family.id) === true, from = own ? selected.sourceUrl : prefix;
 		if (selection.italicFallback ? row.italicFallback !== true : row.italicFallback !== undefined) fail('italic fallback custody');
 		const location = object(row.location, 'variation location');
 		if (!Array.isArray(row.sourceAxes) || row.sourceAxes.length > 64 || Object.keys(location).length !== row.sourceAxes.length) fail('source axes or variation count');
@@ -133,19 +136,20 @@ export function admitFontPreviewShard(raw, descriptor, catalog) {
 			if (!Object.hasOwn(location, axis.tag) || location[axis.tag] !== expected) fail('preview variation location');
 			return freeze({tag: axis.tag, min: axis.min, default: axis.default, max: axis.max});
 		});
-		const out = {id: row.id, name: row.name, fileSri: pin(row.fileSri), sourceFont: sourceFile(row.sourceFont, prefix, 32 * 1024 * 1024),
+		const out = {id: row.id, name: row.name, fileSri: pin(row.fileSri), sourceFont: sourceFile(row.sourceFont, from, 32 * 1024 * 1024),
 			sourceAxes: freeze(sourceAxes), location: freeze({...location}), ...(selection.italicFallback ? {italicFallback: true} : {}), primaryScript: row.primaryScript === '' ? '' : script(row.primaryScript), primaryLanguage: row.primaryLanguage};
 		if (typeof out.primaryLanguage !== 'string' || out.primaryLanguage.length > 80 || out.primaryLanguage && !/^[A-Za-z0-9]+(?:_[A-Za-z0-9]+)*$/.test(out.primaryLanguage)) fail('primary language');
 		if (row.preview === null) { out.preview = null; out.unavailable = problem(row.unavailable); }
 		else {
 			out.preview = specimen(row.preview, prefix);
+			if (own && !['name', 'source-characters'].includes(out.preview.kind)) fail('owner family specimen');
 			if (out.preview.kind === 'name' && (out.preview.text !== family.name || row.nameUnavailable !== undefined) || out.preview.kind !== 'name' && !row.nameUnavailable || row.unavailable !== undefined) fail('name preview identity');
 		}
 		if (row.nameUnavailable !== undefined) {
 			out.nameUnavailable = problem(row.nameUnavailable);
 			if (out.nameUnavailable.text !== family.name) fail('unavailable name');
 		}
-		if (row.sample !== undefined) { out.sample = specimen(row.sample, prefix); if (out.sample.kind === 'name' || out.preview?.kind !== 'name' || row.sampleUnavailable !== undefined) fail('second sample'); }
+		if (row.sample !== undefined) { out.sample = specimen(row.sample, prefix); if (own && out.sample.kind !== 'source-characters') fail('owner family specimen'); if (out.sample.kind === 'name' || out.preview?.kind !== 'name' || row.sampleUnavailable !== undefined) fail('second sample'); }
 		if (row.sampleUnavailable !== undefined) { if (out.preview?.kind !== 'name') fail('sample unavailable'); out.sampleUnavailable = problem(row.sampleUnavailable); }
 		return freeze(out);
 	});

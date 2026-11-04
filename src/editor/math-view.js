@@ -30,7 +30,7 @@
 		heading.append(title, info);
 		bar.append(heading, shut);
 		const body = make('div', 'rapier-jxl-view__body');
-		const note = make('p', 'rapier-jxl-view__note', 'Runs in Rapier, one offline HTML file. Nothing is uploaded.');
+		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Rapier is a single HTML file that works offline. Free and open source.');
 		const preview = make('div', 'rapier-math-view__preview'), said = make('p', 'rapier-jxl-view__note rapier-math-view__said');
 		preview.setAttribute('aria-hidden', 'true'); said.setAttribute('role', 'status'); said.setAttribute('aria-live', 'polite');
 		const tex = make('textarea', 'rapier-math-view__tex');

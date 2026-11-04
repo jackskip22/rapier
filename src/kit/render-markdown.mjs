@@ -156,12 +156,16 @@ function initMarkdownIt() {
 	md.renderer.rules.softbreak = () =>
 		sourceToken('\n', '\u2060', 'rapier-source-token--softbreak');
 	md.core.ruler.before('text_join', 'rapier_escape_token', state => {
+		if (state.src.indexOf('\\') < 0) return;
 		for (let at = 0; at < state.tokens.length; at++) {
 			const token = state.tokens[at];
-			if (token.type !== 'inline' || !token.children) continue;
+			if (token.type !== 'inline' || !token.children || token.content.indexOf('\\') < 0) continue;
 			for (let next = 0; next < token.children.length; next++) {
 				const child = token.children[next];
-				if (child.type === 'text_special' && child.info === 'escape' && child.content.length === 1 && !/[\\*`[\]_]/.test(child.content)) child.type = 'rapier_escape';
+				if (child.type === 'text_special' && child.info === 'escape' && child.content.length === 1) {
+					const c = child.content.charCodeAt(0);
+					if (c !== 0x5c && c !== 0x2a && c !== 0x60 && c !== 0x5b && c !== 0x5d && c !== 0x5f) child.type = 'rapier_escape';
+				}
 			}
 		}
 	});
@@ -320,15 +324,27 @@ function initMarkdownIt() {
 	};
 
 	md.core.ruler.push('rapier_setext_rule', function (state) {
-		let lines = null;
+		let starts = null;
 		for (let at = 0; at < state.tokens.length; at++) {
 			const token = state.tokens[at];
 			if (token.type !== 'heading_open') continue;
 			if (token.markup !== '=' && token.markup !== '-') continue;
 			if (!token.map) continue;
-			if (lines === null) lines = state.src.split('\n');
-			const underline = lines[token.map[1] - 1];
-			if (typeof underline === 'string' && /^ {0,3}(?:=+|-+)[ \t]*$/.test(underline)) {
+			if (starts === null) {
+				starts = state._lineStarts;
+				if (!starts) {
+					starts = [0];
+					for (let i = state.src.indexOf('\n'); i >= 0; i = state.src.indexOf('\n', i + 1)) starts.push(i + 1);
+					state._lineStarts = starts;
+				}
+			}
+			const lineIdx = token.map[1] - 1;
+			if (lineIdx < 0 || lineIdx >= starts.length) continue;
+			const lineStart = starts[lineIdx];
+			const nextStart = starts[lineIdx + 1];
+			const lineEnd = nextStart !== undefined ? nextStart - 1 : state.src.length;
+			const underline = state.src.slice(lineStart, lineEnd);
+			if (/^ {0,3}(?:=+|-+)[ \t]*$/.test(underline)) {
 				token.attrSet('data-rapier-heading-rule', underline);
 			}
 		}
@@ -920,15 +936,15 @@ function _rapierInstallSemanticProbe(instance) {
 			return false;
 		}
 		const firstEnd = state.md.helpers.parseLinkLabel(state, labelStart, false);
-		if (firstEnd < 0) return false;
-		const firstLabel = src.slice(labelStart + 1, firstEnd);
+		if (firstEnd < 0 || firstEnd === labelStart + 1 && src.charCodeAt(firstEnd + 1) !== 0x5b && src.charCodeAt(firstEnd + 1) !== 0x28) return false;
 		const after = firstEnd + 1;
+		const afterCode = src.charCodeAt(after);
 
-		if (src.charCodeAt(after) === 0x5b) {
+		if (afterCode === 0x5b) {
 			const secondEnd = state.md.helpers.parseLinkLabel(state, after, false);
 			if (secondEnd < 0) return false;
 			const explicitLabel = src.slice(after + 1, secondEnd);
-			const rawKey = explicitLabel.length ? explicitLabel : firstLabel;
+			const rawKey = explicitLabel.length ? explicitLabel : src.slice(labelStart + 1, firstEnd);
 			record({
 				kind: image ? 'image-reference-use' : 'link-reference-use', rawKey,
 				localStart: pos, localEnd: secondEnd + 1,
@@ -938,9 +954,13 @@ function _rapierInstallSemanticProbe(instance) {
 			return false;
 		}
 
-		if (src.charCodeAt(after) === 0x28) {
+		if (afterCode === 0x28) {
 			let destinationPos = after + 1;
-			while (destinationPos < max && /[ \t\n]/.test(src.charAt(destinationPos))) destinationPos++;
+			while (destinationPos < max) {
+				const c = src.charCodeAt(destinationPos);
+				if (c === 0x20 || c === 0x09 || c === 0x0a) destinationPos++;
+				else break;
+			}
 			const first = src.charCodeAt(destinationPos);
 			if (first !== 0x23 && first !== 0x3c && first !== 0x5c && first !== 0x26) return false;
 			const destination = state.md.helpers.parseLinkDestination(src, destinationPos, max);
@@ -957,9 +977,12 @@ function _rapierInstallSemanticProbe(instance) {
 			return false;
 		}
 
+		if (!image && !state.env.references) return false;
+		const firstLabel = src.slice(labelStart + 1, firstEnd);
+		if (!firstLabel) return false;
 		const normalize = state.md.utils && state.md.utils.normalizeReference;
 		const normalized = typeof normalize === 'function' ? normalize(firstLabel) : firstLabel.trim().replace(/\s+/g, ' ').toUpperCase();
-		if ((image || (state.env.references && state.env.references[normalized])) && firstLabel) {
+		if (image || (state.env.references && state.env.references[normalized])) {
 			record({
 				kind: image ? 'image-reference-use' : 'link-reference-use', rawKey: firstLabel,
 				localStart: pos, localEnd: firstEnd + 1,
@@ -971,6 +994,7 @@ function _rapierInstallSemanticProbe(instance) {
 
 	try {
 		instance.core.ruler.before('footnote_tail', 'rapier_footnote_definition_probe', function (state) {
+			if (!state.env?.footnotes) { state.env.__rapierFootnoteDefinitions = []; return; }
 			const out = [];
 			const tokens = state && Array.isArray(state.tokens) ? state.tokens : [];
 			const signatureFor = values => {

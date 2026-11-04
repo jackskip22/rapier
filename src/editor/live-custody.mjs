@@ -4,6 +4,7 @@ import {CUSTODY_PROTOCOL} from '../mcp/custody-wire.mjs';
 import {checkpointOf, createCheckpointSchedule} from '../agent/checkpoint.mjs';
 
 export function custodySocket(RealSocket, {store, key, rules, host = {}, events = {}, clock = () => Date.now(), tickMs = 60000, handbackBytes}) {
+  let storageRefused = false;
   return class CustodySocket {
     constructor(url, protocols) {
       this.readyState = 0;
@@ -11,7 +12,7 @@ export function custodySocket(RealSocket, {store, key, rules, host = {}, events 
       this.door = null; this.local = null;
       const real = this.real = new RealSocket(url, protocols);
       real.onopen = async () => {
-        if (!rules) { this.mode = 'plain'; return this.open(); }
+        if (!rules || storageRefused) { this.mode = 'plain'; return this.open(); }
         let held = null;
         try { held = await store.read(); } catch (_) {}
         this.held = validHandover(held) ? held : null;
@@ -32,15 +33,27 @@ export function custodySocket(RealSocket, {store, key, rules, host = {}, events 
     open() { this.readyState = 1; this.onopen?.({}); }
 
     async attach(custody) {
-      this.door = new PageDoor({handover: custody, rules, host, save: value => store.write(value), handbackBytes,
+      this.door = new PageDoor({handover: custody, rules, host, save: async value => {
+        try { await store.write(value); }
+        catch (error) { void this.storageFailure(); throw error; }
+      }, handbackBytes,
         oversize: () => { if (this.mode === 'custody') void this.release(); }});
       this.local = this.door.connect();
       this.local.listeners.add(data => this.onmessage?.({data}));
       this.mode = 'custody';
       try { await store.write(this.door.custody()); }
-      catch (_) { await this.release(); return; }
+      catch (_) { await this.storageFailure(); return; }
+      if (this.mode !== 'custody' || this.real.readyState !== 1) return;
       this.checkpoints();
       this.open();
+    }
+
+    async storageFailure() {
+      storageRefused = true;
+      if (this.mode !== 'custody') return;
+      await this.release();
+      this.stopCheckpoints?.();
+      try { this.real.close(1011, 'custody_store_failed'); } catch (_) {}
     }
 
     checkpoints() {
@@ -61,7 +74,12 @@ export function custodySocket(RealSocket, {store, key, rules, host = {}, events 
       this.timer.unref?.();
       events.addEventListener?.('pagehide', hidden);
       events.addEventListener?.('visibilitychange', hidden);
-      this.stopCheckpoints = () => { clearInterval(this.timer); events.removeEventListener?.('pagehide', hidden); events.removeEventListener?.('visibilitychange', hidden); };
+      this.stopCheckpoints = () => {
+        this.stopCheckpoints = null;
+        clearInterval(this.timer);
+        events.removeEventListener?.('pagehide', hidden);
+        events.removeEventListener?.('visibilitychange', hidden);
+      };
     }
 
     async fromObject(event) {
@@ -112,6 +130,7 @@ export function custodySocket(RealSocket, {store, key, rules, host = {}, events 
     }
 
     close(code = 1000, reason = '') {
+      this.stopCheckpoints?.();
       const closing = () => { try { this.real.close(code, reason); } catch (_) {} };
       if (this.mode === 'custody' && this.real.readyState === 1) return void this.release().then(closing, closing);
       closing();

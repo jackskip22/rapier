@@ -119,8 +119,6 @@ async function _rapierPortableChoices(source, options = {}) {
   const payloads = _rapierUniquePayloads(Array.from(document.querySelectorAll('script')).filter(row =>
     _RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) && row.id !== 'rapier-apps-runtime' && row.id !== 'rapier-first-paint-runtime' && row.parentNode !== document.head &&
     !optional.has(row.id) && !/^rapier-(?:part|plugin)-/.test(row.id)));
-  const complete = typeof RapierParts === 'undefined' ? null : await RapierParts.element('jxlcomplete', {availableOnly: true}).catch(() => null);
-  if (complete) payloads.push({outerHTML: complete});
   const required = _rapierPortableRequiredPlugins(source, options);
   const used = new Set([...required].map(key => key.startsWith('letters-') ? 'drawing' : key));
   for (const id of options.also || []) used.add(id);
@@ -691,8 +689,16 @@ function _rapierQuoteHold() {
 	const {frontmatter, bodyOffset} = RapierMarkdownSpec.splitOpeningFrontmatter(source);
 	const selection = window.getSelection(), range = selection?.rangeCount ? selection.getRangeAt(0) : null;
 	_rapierQuote.held = {authority: exact.authority, revision: exact.revision, generation: exact.generation,
-		markdown: (frontmatter && exact.start >= bodyOffset ? frontmatter : '') + excerpt, picture: _rapierQuotePicture(range),
+		markdown: (frontmatter && exact.start >= bodyOffset ? _rapierQuoteLook(frontmatter) : '') + excerpt, picture: _rapierQuotePicture(range),
 		name: _rapierExportStem(metadata.filename)};
+}
+function _rapierQuoteLook(frontmatter) {
+	const spec = RapierMarkdownSpec, settings = spec.readDocumentSettings(frontmatter), patch = {};
+	for (const key of ['mainfont', 'sansfont', 'monofont', 'defaultfont']) if (settings[key]) patch[key] = settings[key].family;
+	if (settings.linestretch) patch.linestretch = settings.linestretch.factor;
+	const look = Object.keys(patch).length ? spec.updateDocumentSettings('', patch) : '';
+	if (!settings.lang) return look;
+	return look ? look.replace(/---\n$/, 'lang: ' + settings.lang + '\n---\n') : '---\nlang: ' + settings.lang + '\n---\n';
 }
 function _rapierQuoteWiden() {
 	const selection = window.getSelection();
@@ -804,7 +810,7 @@ async function _rapierShareQuoteCard() {
 		const rgba = new Uint8ClampedArray(words.width * words.height * 4);
 		for (let at = 0; at < words.alpha.length; at++) rgba.set([words.rgb[at * 3], words.rgb[at * 3 + 1], words.rgb[at * 3 + 2], words.alpha[at]], at * 4);
 		context2d.drawImage(await createImageBitmap(new ImageData(rgba, words.width, words.height)), 0, 0);
-		const blob = await _rapierPngWithText(await _rapierCanvasBlob(canvas, 'image/png'), held.markdown);
+		const blob = await _rapierPngWithText(await _rapierCanvasBlob(canvas, 'image/png'), await _rapierQuoteDrawnPictures(held.markdown, main));
 		canvas.width = canvas.height = 0;
 		task.check(); task.end();
 		return await _rapierShareFile({blob, filename: held.name + '-quote.png', mime: 'image/png'});
@@ -812,6 +818,39 @@ async function _rapierShareQuoteCard() {
 		if (error?.name !== 'AbortError') showToast('Couldn’t make the quote card.', 'error', null, error);
 		return false;
 	} finally { task.end(); frame?.remove(); }
+}
+async function _rapierQuoteDrawnPictures(markdown, main) {
+	const smaller = (src, image, width, height) => {
+		const scale = Math.min(1, width / image.naturalWidth, height / image.naturalHeight);
+		if (!(scale < 1)) return;
+		const canvas = document.createElement('canvas');
+		canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+		canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+		const type = /^data:image\/(?:jpeg|webp)[;,]/.test(src) ? src.slice(5, src.search(/[;,]/)) : 'image/png';
+		const resized = canvas.toDataURL(type, 0.92);
+		markdown = markdown.split(src).join(resized); drawn.add(resized);
+		canvas.width = canvas.height = 0;
+	};
+	const drawn = new Set();
+	for (const image of main.querySelectorAll('img')) {
+		const src = image.getAttribute('src') || '', rect = image.getBoundingClientRect();
+		if (!src.startsWith('data:image/') || !markdown.includes(src) || !image.naturalWidth || !rect.width || !rect.height) continue;
+		drawn.add(src);
+		smaller(src, image, rect.width * 2, rect.height * 2);
+	}
+	for (const src of new Set(markdown.match(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi) || [])) {
+		if (drawn.has(src)) continue;
+		let exact = 'rapier-undrawn-picture', labels = [];
+		while (markdown.includes(exact)) exact += '-';
+		markdown = markdown.split(src).join(exact)
+			.replace(new RegExp('!\\[[^\\]\\n]*\\]\\(\\s*<?' + exact + '>?(?:\\s+(?:"[^"\\n]*"|\'[^\'\\n]*\'|\\([^)\\n]*\\)))?\\s*\\)', 'g'), '')
+			.replace(new RegExp('<img\\b[^>]*\\bsrc\\s*=\\s*["\']' + exact + '["\'][^>]*>', 'gi'), '')
+			.replace(new RegExp('^ {0,3}\\[([^\\]\\n]+)\\]:[ \\t]*<?' + exact + '>?[^\\n]*(?:\\n|$)', 'gm'), (_, label) => { labels.push(label.toLowerCase()); return ''; });
+		for (const label of labels) markdown = markdown.replace(/!\[([^\]\n]*)\](?:\[([^\]\n]*)\]|(?!\())/g, (whole, text, reference) =>
+			(reference === undefined || reference === '' ? text : reference).toLowerCase() === label ? '' : whole);
+		markdown = markdown.split(exact).join('');
+	}
+	return markdown;
 }
 async function _rapierPngWithText(png, text) {
 	const bytes = new Uint8Array(await png.arrayBuffer()), encoder = new TextEncoder();

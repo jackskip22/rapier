@@ -39,7 +39,7 @@
 		heading.append(title, info);
 		bar.append(heading, shut);
 		const body = make('div', 'rapier-diff-view__body');
-		const note = make('p', 'rapier-diff-view__note', 'Runs in Rapier, one offline HTML file. Nothing is uploaded.');
+		const note = make('p', 'rapier-diff-view__note', 'Runs locally on your device - no uploads. Rapier is a single HTML file that works offline. Free and open source.');
 		const sides = SIDES.map(side), pair = make('div', 'rapier-diff-view__sides');
 		pair.append(...sides.map(each => each.root));
 		const go = make('button', 'settings-action-btn rapier-diff-view__go', 'Compare');

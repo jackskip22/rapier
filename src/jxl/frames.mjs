@@ -38,7 +38,7 @@ async function rgbaOf(image, width, height) {
 	return data;
 }
 
-export async function readAnimation(bytes, type, {signal, say = () => {}, progress = () => {}, convert = false} = {}) {
+export async function readAnimation(bytes, type, {signal, say = () => {}, progress = () => {}, convert = false, budget = FRAME_PIXELS} = {}) {
 	if (typeof ImageDecoder !== 'function' || !await ImageDecoder.isTypeSupported(type)) throw shown('This browser cannot read animations.');
 	const decoder = new ImageDecoder({data: bytes, type, premultiplyAlpha: 'none', colorSpaceConversion: convert ? 'default' : 'none', preferAnimation: true});
 	try {
@@ -55,7 +55,7 @@ export async function readAnimation(bytes, type, {signal, say = () => {}, progre
 				if (!at) {
 					width = image.displayWidth; height = image.displayHeight;
 					if (width * height > PIXELS) throw shown('Over ' + PIXELS / 1e6 + ' megapixels.');
-					kept = Math.max(1, Math.min(count, FRAMES, Math.floor(FRAME_PIXELS / (width * height))));
+					kept = Math.max(1, Math.min(count, FRAMES, Math.floor(budget / (width * height))));
 				}
 				const data = await rgbaOf(image, width, height);
 				const ms = (image.duration || 0) / 1000;
@@ -67,15 +67,16 @@ export async function readAnimation(bytes, type, {signal, say = () => {}, progre
 	} finally { decoder.close(); }
 }
 
-export function videoPlan(width, height, seconds) {
-	const long = Math.max(width, height), span = Math.min(Number.isFinite(seconds) && seconds > 0 ? seconds : SECONDS, SECONDS), frames = Math.ceil(span * FPS);
-	const floor = Math.min(1, SHORT_LONG_SIDE / long) ** 2 * width * height;
-	const most = Math.max(floor, Math.min(Math.min(1, LONG_SIDE / long) ** 2 * width * height, PIXEL_RATE / FPS, FRAME_PIXELS / frames));
+export function videoPlan(width, height, seconds, {fps = FPS, longSide = LONG_SIDE, budget = FRAME_PIXELS} = {}) {
+	const rate = Math.min(FPS, Math.max(1, fps)), side = Math.min(LONG_SIDE, Math.max(16, longSide));
+	const long = Math.max(width, height), span = Math.min(Number.isFinite(seconds) && seconds > 0 ? seconds : SECONDS, SECONDS), frames = Math.ceil(span * rate);
+	const floor = Math.min(1, Math.min(SHORT_LONG_SIDE, side) / long) ** 2 * width * height;
+	const most = Math.max(floor, Math.min(Math.min(1, side / long) ** 2 * width * height, PIXEL_RATE / rate, budget / frames));
 	const scale = Math.min(1, Math.sqrt(most / (width * height)));
 	const even = value => Math.max(2, Math.floor(value * scale / 2) * 2);
 	const size = scale < 1 ? {width: even(width), height: even(height)} : {width, height};
-	const limit = Math.min(span, Math.floor(FRAME_PIXELS / (size.width * size.height) / FPS * 10) / 10);
-	return {...size, seconds: limit, cut: limit < (Number.isFinite(seconds) ? seconds : Infinity) - 1e-3, scaled: size.width !== width || size.height !== height};
+	const limit = Math.min(span, Math.floor(budget / (size.width * size.height) / rate * 10) / 10);
+	return {...size, fps: rate, seconds: limit, cut: limit < (Number.isFinite(seconds) ? seconds : Infinity) - 1e-3, scaled: size.width !== width || size.height !== height};
 }
 
 const once = (target, name, signal) => new Promise((resolve, reject) => {
@@ -85,7 +86,7 @@ const once = (target, name, signal) => new Promise((resolve, reject) => {
 	target.addEventListener(name, done); target.addEventListener('error', failed); signal?.addEventListener('abort', aborted, {once: true});
 });
 
-export async function readVideo(file, {signal, say = () => {}, progress = () => {}} = {}) {
+export async function readVideo(file, {signal, say = () => {}, progress = () => {}, start = 0, end = Infinity, fps = FPS, longSide = LONG_SIDE, budget = FRAME_PIXELS} = {}) {
 	const video = document.createElement('video'), url = URL.createObjectURL(file), bitmaps = [];
 	video.muted = true; video.playsInline = true; video.preload = 'auto'; video.disablePictureInPicture = true;
 	video.setAttribute('aria-hidden', 'true');
@@ -102,10 +103,11 @@ export async function readVideo(file, {signal, say = () => {}, progress = () => 
 			video.currentTime = 0;
 			await once(video, 'seeked', signal);
 		}
-		const length = video.duration, plan = videoPlan(video.videoWidth, video.videoHeight, length);
-		const step = 1 / FPS;
+		const from = Math.max(0, Math.min(Number(start) || 0, Math.max(0, video.duration - 1e-3))), to = Math.min(video.duration, end > from ? end : video.duration);
+		const length = to - from, plan = videoPlan(video.videoWidth, video.videoHeight, length, {fps, longSide, budget});
+		const step = 1 / plan.fps;
 		const expected = () => {
-			const rate = Math.min(FPS, (times.length - 1) / times[times.length - 1]);
+			const rate = Math.min(plan.fps, (times.length - 1) / (times[times.length - 1] - from));
 			return Math.max(times.length, Math.round(plan.seconds * rate));
 		};
 		const shoot = () => createImageBitmap(video, {resizeWidth: plan.width, resizeHeight: plan.height, resizeQuality: 'high'});
@@ -113,14 +115,15 @@ export async function readVideo(file, {signal, say = () => {}, progress = () => 
 		let next = 0, finished = false, sound = false, attempts = 0, dropped = 0, rate = 1, presented = -1, returns = 0, returnedTo = -1;
 		const droppedNow = () => video.getVideoPlaybackQuality?.().droppedVideoFrames || 0;
 		if (video.readyState < 2) await once(video, 'loadeddata', signal);
+		if (from > 0) { video.currentTime = from; await once(video, 'seeked', signal); }
 		for (;; attempts++) {
 			try { bitmaps.push(await shoot()); break; }
 			catch (error) {
 				if (attempts >= 3) throw shown('This video stopped playing partway.');
-				video.currentTime = 0; await once(video, 'seeked', signal);
+				video.currentTime = from; await once(video, 'seeked', signal);
 			}
 		}
-		times.push(0); next = step; attempts = 0; dropped = droppedNow();
+		times.push(from); next = from + step; attempts = 0; dropped = droppedNow();
 		await new Promise((resolve, reject) => {
 			const end = () => { if (finished) return; finished = true; video.pause(); signal?.removeEventListener('abort', aborted); video.removeEventListener('ended', ended); video.removeEventListener('error', failed); };
 			const ended = () => { end(); resolve(); };
@@ -138,7 +141,7 @@ export async function readVideo(file, {signal, say = () => {}, progress = () => 
 					if (rate > 1 / 8) { rate /= 2; video.playbackRate = rate; }
 					presented = -1; back(); return;
 				}
-				if (time >= plan.seconds - 1e-6) { ended(); return; }
+				if (time >= from + plan.seconds - 1e-6) { ended(); return; }
 				if (time >= next - step / 4 && time > times[times.length - 1]) {
 					video.pause();
 					shoot().then(bitmap => {
@@ -164,7 +167,7 @@ export async function readVideo(file, {signal, say = () => {}, progress = () => 
 		});
 		signal?.throwIfAborted();
 		sound = (video.webkitAudioDecodedByteCount || 0) > 0 || !!video.audioTracks?.length || !!video.mozHasAudio;
-		const stop = Math.min(plan.seconds, length, video.currentTime || length);
+		const stop = Math.min(from + plan.seconds, to, video.currentTime || to);
 		const frames = [], canvas = new OffscreenCanvas(plan.width, plan.height), context = canvas.getContext('2d', {willReadFrequently: true});
 		for (let at = 0; at < bitmaps.length; at++) {
 			signal?.throwIfAborted();
