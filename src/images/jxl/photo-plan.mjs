@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {PHOTO_LIMITS} from './limits.mjs';
+import {targetSearch} from './target-search.mjs';
 import {complete, part, scaled} from './bits.mjs';
 import {admitOptions, admitPixels, fault, guard, job, answer} from './admit.mjs';
 import {admitSampleFormat} from './admit-samples.mjs';
@@ -23,7 +24,7 @@ export {PLAN_LIMITS as LIMITS};
 
 function planQuality(value) {
   if (!Number.isFinite(value) || value < 1 || value >= 100)
-    throw fault('JXL_INPUT', 'A retained lossy plan uses quality from 1 through less than 100; exact images use the ordinary lossless entry.');
+    throw fault('JXL_INPUT', 'A retained plan takes quality 1 to below 100; use lossless for exact.');
   return value;
 }
 
@@ -45,7 +46,7 @@ function retainedMemory(...values) {
 function planJob(steps) {
   const it = (function* () {
     let next, previous = 0;
-    while (!(next = guard(() => steps.next(it.hurry))).done) yield previous = next.value;
+    try { while (!(next = guard(() => steps.next(it.hurry))).done) yield previous = next.value; } finally { if (!next?.done) steps.return?.(); }
     it.plan = next.value;
     if (previous < 1) yield 1;
     return it.plan;
@@ -61,23 +62,23 @@ export function createPhotoPlanSteps(data, width, height, options = {}) {
   const layout = admitPhotoLayout(width, height, options, quality);
   admitPixels(data, layout.codedWidth, layout.codedHeight, PHOTO_LIMITS);
   const samples = admitSampleFormat(data, options);
-  if (!samples.native8) throw fault('JXL_INPUT', 'Retained photographic plans require eight-bit RGB samples with sRGB transfer and no ICC profile.');
+  if (!samples.native8) throw fault('JXL_INPUT', 'Retained plans need 8-bit sRGB without ICC.');
   const extras = admitPhotoExtras(data, layout, options);
   const admitted = admitStrategyOptions(options), progression = progressivePasses(options.progressive);
   const authoredOrderPasses = prepareCoefficientOrders(options.coefficientOrders, progression?.count || 1);
   const noiseLut = admitNoise(options.noise, width, height), lfLevels = admitLFFrames(options.lfFrames);
   admitPhotoFilter(options);
-  if (lfLevels && colorSpace !== 'srgb') throw fault('JXL_INPUT', 'Low-frequency frame pyramids currently require sRGB photographic pixels.');
+  if (lfLevels && colorSpace !== 'srgb') throw fault('JXL_INPUT', 'LF frame pyramids need sRGB photo pixels.');
   const maxRetainedBytes = options.maxRetainedBytes ?? PLAN_LIMITS.retainedBytes;
   if (!Number.isSafeInteger(maxRetainedBytes) || maxRetainedBytes < 1 || maxRetainedBytes > 2147483648)
-    throw fault('JXL_INPUT', 'maxRetainedBytes is a positive whole number of bytes, at most 2 GiB.');
+    throw fault('JXL_INPUT', 'maxRetainedBytes is a whole number up to 2 GiB.');
   const codedPixels = Math.ceil(layout.codedWidth / 8) * Math.ceil(layout.codedHeight / 8) * 64;
   const shapes = new Map(admitted.ids.map(id => {
     const shape = TRANSFORMS[id]; return [Math.max(shape.width, shape.height) + ':' + Math.min(shape.width, shape.height), shape.width * shape.height * 4];
   }));
   const estimate = codedPixels * (24 + 3 / 8 + 1 / 16 + 4) + [...shapes.values()].reduce((a, b) => a + b, 0)
     + retainedMemory(admitted.custom, noiseLut, authoredOrderPasses, layout, extras);
-  if (estimate > maxRetainedBytes) throw fault('JXL_MEMORY', 'The retained coefficient estimate exceeds maxRetainedBytes (' + Math.ceil(estimate) + ' bytes required).');
+  if (estimate > maxRetainedBytes) throw fault('JXL_MEMORY', 'The retained estimate exceeds maxRetainedBytes (' + Math.ceil(estimate) + ' bytes required).');
   return planJob(preparePlanSteps(data, layout.codedWidth, layout.codedHeight, {quality, colorSpace, effort, admitted, progression, noiseLut,
     lfLevels, maxRetainedBytes, authoredOrderPasses, orientation: options.orientation ?? 1, layout, extras: snapshotPhotoExtras(extras)}));
 }
@@ -166,7 +167,7 @@ function admitTarget(targetBytes, options) {
 function targetJob(steps) {
   const it = (function* () {
     let next, previous = 0;
-    while (!(next = guard(() => steps.next(it.hurry))).done) yield previous = next.value;
+    try { while (!(next = guard(() => steps.next(it.hurry))).done) yield previous = next.value; } finally { if (!next?.done) steps.return?.(); }
     it.result = next.value; it.bytes = answer(next.value.bytes);
     if (previous < 1) yield 1;
     return it.result;
@@ -175,49 +176,23 @@ function targetJob(steps) {
   return it;
 }
 
-function* targetSteps(encodeSteps, targetBytes, {minQuality, maxQuality, maxProbes, initialQuality}) {
-  let best = null, smallest = Infinity, hurry = false;
-  const probes = [];
-  const probe = function* (quality) {
-    const encoded = encodeSteps(quality); let next, bytes = null;
+function* targetSteps(encodeSteps, targetBytes, search) {
+  const candidates = targetSearch(targetBytes, search);
+  let next = candidates.next(), count = 0, hurry = false;
+  while (!next.done) {
+    const encoded = encodeSteps(next.value);
+    let step, bytes = null;
     try {
-      while (!(next = encoded.next()).done) hurry = (yield scaled(next.value, done => (probes.length + done) / maxProbes)) || hurry;
-      bytes = next.value;
+      while (!(step = encoded.next()).done)
+        hurry = (yield scaled(step.value, done => (count + done) / search.maxProbes)) || hurry;
+      bytes = step.value;
     } catch (error) { if (error.code !== 'JXL_SIZE') throw error; }
-    const length = bytes?.length ?? null; probes.push(Object.freeze({quality, bytes: length}));
-    if (length !== null) {
-      smallest = Math.min(smallest, length);
-      if (length <= targetBytes && (!best || quality > best.quality)) best = {bytes, quality};
-    }
-    return length;
-  };
-  yield* probe(maxQuality);
-  if (!best && initialQuality !== null && initialQuality !== maxQuality) yield* probe(initialQuality);
-  if (best?.quality !== maxQuality && probes.length < maxProbes && minQuality !== maxQuality && minQuality !== initialQuality && !(hurry && best)) yield* probe(minQuality);
-  if (best?.quality !== maxQuality && minQuality !== maxQuality) {
-    for (const fraction of [.75, .5, .25, .875, .625, .375, .125]) {
-      if (probes.length >= maxProbes || hurry && best) break;
-      const quality = minQuality + (maxQuality - minQuality) * fraction;
-      if (!probes.some(row => row.quality === quality)) yield* probe(quality);
-    }
-    while (probes.length < maxProbes && !(hurry && best)) {
-      const ordered = probes.map(row => row.quality).sort((a, b) => a - b);
-      let low, high;
-      if (best) {
-        low = best.quality; high = ordered.find(value => value > low);
-      } else {
-        const anchor = probes.reduce((a, b) => (b.bytes ?? Infinity) < (a.bytes ?? Infinity) ? b : a).quality;
-        const at = ordered.indexOf(anchor), left = at ? anchor - ordered[at - 1] : -1;
-        const right = at + 1 < ordered.length ? ordered[at + 1] - anchor : -1;
-        if (right >= left) { low = anchor; high = ordered[at + 1]; }
-        else { low = ordered[at - 1]; high = anchor; }
-      }
-      const quality = (low + high) / 2;
-      if (!Number.isFinite(quality) || quality === low || quality === high) break;
-      yield* probe(quality);
-    }
+    finally { encoded.return?.(); }
+    count++;
+    next = candidates.next({bytes, stop: hurry});
   }
-  if (!best) throw fault('JXL_SIZE', 'No probed quality fits the ' + targetBytes + '-byte target; ' +
-    (smallest === Infinity ? 'all candidates exceed the encoded-file limit.' : 'the smallest measured candidate has ' + smallest + ' bytes.'));
-  return Object.freeze({...best, targetBytes, probes: Object.freeze(probes)});
+  const {bytes, quality, probes, smallestBytes} = next.value;
+  if (!bytes) throw fault('JXL_SIZE', 'No probed quality fits the ' + targetBytes + '-byte target; ' +
+    (smallestBytes === null ? 'all candidates exceed the encoded-file limit.' : 'the smallest measured candidate has ' + smallestBytes + ' bytes.'));
+  return Object.freeze({bytes, quality, targetBytes, probes});
 }

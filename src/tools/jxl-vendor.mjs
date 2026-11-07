@@ -16,7 +16,7 @@ export function sourceDigest() {
   const walk = dir => { for (const entry of readdirSync(dir, {withFileTypes: true})) {
     const path = join(dir, entry.name), name = relative(codec, path);
     if (entry.isDirectory()) { if (!/^(?:test|bench|examples|fixtures|public|github)$/.test(entry.name)) walk(path); continue; }
-    if (/\.(?:mjs|js|wat)$/.test(entry.name)) files.push(name);
+    if (/\.(?:mjs|js|wat|c|h)$/.test(entry.name)) files.push(name);
   } };
   walk(codec);
   const hash = createHash('sha256');
@@ -24,8 +24,10 @@ export function sourceDigest() {
     const bytes = readFileSync(join(codec, name)), strip = stripperFor('images/jxl/' + name);
     hash.update(name + '\0' + sha256(strip ? strip(bytes.toString('utf8')) : bytes) + '\n');
   }
-  const build = readFileSync(join(repo, 'tools/jxl7-build.mjs')), stripBuild = stripperFor('tools/jxl7-build.mjs');
-  hash.update('tools/jxl7-build.mjs\0' + sha256(stripBuild ? stripBuild(build.toString('utf8')) : build));
+  for (const file of ['tools/jxl7-build.mjs', 'tools/jxl-kernel-strip.mjs']) {
+    const build = readFileSync(join(repo, file)), stripBuild = stripperFor(file);
+    hash.update(file + '\0' + sha256(stripBuild ? stripBuild(build.toString('utf8')) : build));
+  }
   return {digest: hash.digest('hex'), files: files.length};
 }
 export function checkVendor() {

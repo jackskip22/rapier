@@ -1,30 +1,37 @@
+import {resultOperation, resultReference, resultFacts, RAW_OPERATION} from './result-operation.mjs';
 import {encodeAnimationJob} from '../animation-steps.mjs';
 import {useMeasuredSearch} from '../animation-frames.mjs';
 import {searchV6} from '../photo-v6-search.mjs';
 import {described, isDecoded, fromDecoded} from './describe.mjs';
 import {isPlainRecord} from './records.mjs';
 import {surface} from './surface.mjs';
-import {check, dimensions, fail, declared, callers} from './primitives.mjs';
+import {check, dimensions, fail, declared, callers, progressOf} from './primitives.mjs';
 import {drain, encodeOptions, callOptions} from './common.mjs';
 import {own} from './ownership.mjs';
 import {acceleration} from './acceleration.mjs';
 import {requireWebGPU} from './webgpu.mjs';
 import {encode as encodeStill} from './still.mjs';
 import {DRIVE} from './drive.mjs';
-export {capture, prepare, supported, configureWasm} from './still.mjs';
+import {featureless} from './first-region-option.mjs';
+import {animationPhoto} from './animation-photo.mjs';
+export {supported, configureWasm} from './still.mjs';
+export {capture, prepare, configureDecoder} from './with-capture.mjs';
 
 const read = input => isPlainRecord(input) && isDecoded(input) ? fromDecoded(input) : input;
 const admitted = input => { try { return {input: read(input)}; } catch (error) { return {refused: Promise.reject(declared(error))}; } };
-export const encode = (input, options) => {
+const encodeBytes = (input, options) => {
   const {input: picture, refused} = admitted(input); if (refused) return refused; input = picture;
   let frames;
   try { frames = Array.isArray(input?.frames); } catch (error) { return Promise.reject(callers(error)); }
   return frames ? animate(input, options).catch(error => { throw error === options?.signal?.reason ? error : declared(error); })
-    : encodeStill(input, options);
+    : encodeStill[RAW_OPERATION](input, options);
 };
-encode[DRIVE] = (input, options, helpers) => { const {input: picture, refused} = admitted(input); if (refused) return refused; input = picture; return Array.isArray(input?.frames) ? encode(input, options) : encodeStill[DRIVE](input, options, helpers); };
+encodeBytes[DRIVE] = (input, options, helpers) => { const {input: picture, refused} = admitted(input); if (refused) return refused; input = picture; return Array.isArray(input?.frames) ? encodeBytes(input, options) : encodeStill[RAW_OPERATION][DRIVE](input, options, helpers); };
 
+export const encode = resultOperation(encodeBytes);
+export {resultJSON} from './result.mjs';
 async function animate(input, options = {}) {
+  options = featureless(options);
   const {codec: {target, ...settings}, hooks: {webgpu, maxPixels}} = callOptions(encodeOptions(options));
   check(options.signal);
   if (target !== undefined || options.features !== undefined) throw fail('JXL_OPTIONS', 'An animation takes exact or a quality, and no features.');
@@ -32,11 +39,15 @@ async function animate(input, options = {}) {
   const read = surface(input, {maxPixels, readAs: options.readAs});
   dimensions(read.width, read.height, maxPixels);
   const animation = own(read, maxPixels), codec = {...described(animation), ...settings};
-  const report = options.onProgress, onProgress = report && (fraction => { try { report(fraction); } catch (error) { throw callers(error); } });
+  resultReference(options, animation);
+  const report = options.onProgress, onProgress = progressOf(report, options.signal);
   const hooks = {signal: options.signal ?? new AbortController().signal, onProgress, maxPixels};
   if (webgpu === 'required') await requireWebGPU('required', codec.quality < 100, codec.effort);
   await acceleration(webgpu, 0, 0, codec.quality < 100 ? codec.effort : 0, 'an animation');
   check(hooks.signal);
   if (codec.quality < 100 && codec.effort >= 8) useMeasuredSearch(searchV6);
-  return drain(encodeAnimationJob(animation, codec), hooks);
+  const answer = await animationPhoto(animation, codec,
+    (coding, onProgress) => drain(encodeAnimationJob(animation, coding), {...hooks, onProgress}), hooks);
+  resultFacts(options, {kept: answer.exact ? 'pixels' : 'lossy', measurements: answer.measurements});
+  return answer.bytes;
 }

@@ -1,0 +1,17 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+	"slug": "smaller-images",
+	"publisher": "did:web:pds.rapier.website",
+	"name": "Smaller images",
+	"description": "JPEG uploads kept as JPEG XL, about a fifth smaller, and given back exactly.",
+	"keywords": ["images", "jpeg xl", "media", "storage"],
+	"license": "MIT",
+	"author": { "name": "Rapier", "url": "https://rapier.website" },
+	"security": { "email": "hello@rapier.website" },
+	// Reads media records only: names, types and sizes.
+	"capabilities": ["media:read"],
+	"allowedHosts": [],
+	"storage": {},
+	"admin": { "pages": [{ "path": "/images", "label": "Smaller images", "icon": "image" }] }
+}
+

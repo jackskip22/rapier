@@ -1,3 +1,4 @@
+import {clientFamily} from './use-observation.mjs';
 import {parseJsonStream, parseJsonChunks, JSON_STRING_LIMIT, jsonStringExceedsBytes} from './incremental-json.mjs';
 import {jsonBodyInit, jsonResponse} from './json-transport.mjs';
 import {jsonRecord} from './json-record.mjs';
@@ -896,17 +897,76 @@ function toolInputShape(descriptor) {
   return shape;
 }
 
-async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null, toolAdmission = null) {
+function observeToolSelection(observation, name, args, create = false) {
+  if (!observation) return;
+  switch (name) {
+    case 'open':
+      observation.feature(args.file ? 'open_import' : create || args.note === 'new' ? 'open_create' : 'open_resume'); break;
+    case 'read': {
+      const feature = args.cursor !== undefined || args.query !== undefined && args.search !== undefined || !args.note && (args.versions === true || args.version !== undefined) ? 'unknown' : args.guide ? 'read_guide'
+        : args.search !== undefined ? 'read_search' : args.note ? args.versions ? 'read_history' : 'read_note'
+        : args.as === 'image' ? 'read_image' : args.return_id ? 'read_return' : args.comparison ? 'read_comparison'
+        : args.state || args.preferences === true ? 'read_state'
+        : args.history && !['block', 'heading', 'lines', 'query', 'as'].some(key => Object.hasOwn(args, key)) ? 'read_history'
+        : args.as === 'outline' ? 'read_outline' : 'read_text';
+      observation.feature(feature); break;
+    }
+    case 'edit':
+      observation.feature(args.note && args.fields && !args.changes ? 'edit_note_fields'
+        : !args.note && args.changes === undefined && Object.hasOwn(args, 'filename') ? 'edit_rename' : 'edit_unspecified'); break;
+    case 'undo': observation.feature('undo'); break;
+    case 'show':
+      observation.feature(args.target === 'pair' ? 'show_pair' : args.target === 'comparison' ? 'show_comparison'
+        : args.target === 'ask' ? 'show_ask' : 'show_other'); break;
+    case 'export': {
+      if (args.to === 'save') { observation.feature('export_save'); break; }
+      if (args.to === 'sync') { observation.feature('export_sync'); break; }
+      const clipboard = args.to === 'clipboard', format = args.format || (clipboard ? 'plain' : 'markdown');
+      const known = (clipboard ? ['plain', 'markdown', 'formatted', 'complete'] : ['markdown', 'html', 'page', 'txt', 'docx', 'pdf']).includes(format);
+      observation.feature(clipboard ? 'export_clipboard' : 'export_file', known ? format === 'html' ? 'html_editor' : format : 'unknown');
+      break;
+    }
+  }
+}
+
+function observeToolOutcome(observation, result) {
+  if (!observation) return;
+  if (result.resultType === 'task') { observation.outcome('task_accepted'); return; }
+  const value = result.structuredContent;
+  if (!plain(value)) return;
+  if (value.receipt?.status === 'waiting' || value.hydration && value.hydration.status !== 'complete') { observation.outcome('unknown'); return; }
+  if (value.receipt?.status === 'declined') { observation.outcome('tool_error', 'permission'); return; }
+  if (value.outcome === 'uncertain') { observation.outcome('unknown', 'unavailable'); return; }
+  if (value.outcome === 'pending') { observation.outcome('unknown'); return; }
+  if (value.outcome === 'cancelled') { observation.outcome('cancelled', 'cancellation'); return; }
+  if (result.isError) {
+    let errorClass = value.outcome === 'conflict' ? 'conflict' : value.outcome === 'invalid' ? 'validation' : 'other';
+    switch (value.code ?? value.reason) {
+      case 'REVISION_CONFLICT': errorClass = 'conflict'; break;
+      case 'invalid_arguments': case 'INVALID_DOCUMENT_INPUT': case 'OPEN_ARGUMENTS_CONFLICT':
+      case 'INVALID_CREATE_TOKEN': case 'READ_WAIT_SELECTOR_CONFLICT': errorClass = 'validation'; break;
+      case 'TEXT_TOO_LARGE': case 'EXPORT_TOO_LARGE': case 'result_over_budget': errorClass = 'limit'; break;
+      case 'DOCUMENT_UNAVAILABLE': case 'HUMAN_AUTHORITY_REQUIRED': case 'PAIRING_PAGE_ONLY': errorClass = 'permission'; break;
+      case 'STORAGE_UNAVAILABLE': case 'editor_unavailable': case 'editor_not_present': case 'HOST_FILE_UNAVAILABLE':
+      case 'EDITOR_KEY_UNCONFIGURED': errorClass = 'unavailable'; break;
+    }
+    observation.outcome('tool_error', errorClass); return;
+  }
+  observation.outcome(['ok', 'applied', 'rebased', 'exported', 'saved', 'created', 'resumed', 'current', 'unchanged', 'shown', 'message'].includes(value.outcome) ? 'succeeded' : 'unknown');
+}
+
+async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null, toolAdmission = null, observation = null) {
+  const invalidInput = error => { observation?.outcome('tool_error', 'validation'); return inputErrorResult(error); };
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
     const descriptor = TOOL_BY_NAME.get(name);
-    try { validateInput(toolInputShape(descriptor), args, 'arguments', true); } catch (error) { if (error.code === 'invalid_arguments') return inputErrorResult(error); throw error; }
+    try { validateInput(toolInputShape(descriptor), args, 'arguments', true); } catch (error) { if (error.code === 'invalid_arguments') return invalidInput(error); throw error; }
     const {wait_ms: asked = 0, after_revision: after, ...plainArgs} = args;
     if (after === undefined) return toolError(failure('INVALID_DOCUMENT_INPUT', 'wait_ms needs after_revision, the revision you last read.'));
     if (args.search !== undefined) return toolError(failure('READ_WAIT_SELECTOR_CONFLICT',
       'after_revision and wait_ms watch this document. Read Notes with search alone.'));
     const result = await callTool(name, plainArgs, env, request, authority, hostAgent, door, editorProof, editorActivity, task, false,
-      {after, waitMs: door === '/muse' ? Math.min(asked, MUSE_WAIT_MS) : asked}, null, toolAdmission);
+      {after, waitMs: door === '/muse' ? Math.min(asked, MUSE_WAIT_MS) : asked}, null, toolAdmission, observation);
     if (!result.isError && plain(result.structuredContent) && Object.hasOwn(result.structuredContent, 'waited_ms')) {
       const {waited_ms, changed, ...value} = result.structuredContent;
       result.structuredContent = {...value, waited_ms, changed};
@@ -916,7 +976,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const descriptor = TOOL_BY_NAME.get(name);
   if (!descriptor) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
   if (name === 'open' && args?.url !== undefined) {
-    try {validateInput(toolInputShape(descriptor),args,'arguments',true);} catch(error) {if(error.code==='invalid_arguments') return inputErrorResult(error); throw error;}
+    try {validateInput(toolInputShape(descriptor),args,'arguments',true);} catch(error) {if(error.code==='invalid_arguments') return invalidInput(error); throw error;}
     if (Object.keys(args).some(key => !['url', 'agent', 'operation_id'].includes(key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a document link with url alone.'));
     let url; try {url = new URL(args.url);} catch {}
     const id = url && url.origin === new URL(request.url).origin && PAIRED_PATH.exec(url.pathname)?.[1];
@@ -933,7 +993,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   try { args = validateInput(toolInputShape(descriptor), args, 'arguments', !EDITOR_ONLY_TOOLS.has(name)); }
   catch (error) {
     if (error.code !== 'invalid_arguments') throw error;
-    return inputErrorResult(error);
+    return invalidInput(error);
   }
   if (humanNamed) args.editorKey = keyArgument;
   if (name === 'show' && args.code !== undefined && args.target !== 'pair') return toolError(failure('INVALID_DOCUMENT_INPUT', 'A browser code pairs an editor only with target:"pair": show {document, target:"pair", code}.'));
@@ -955,7 +1015,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (name === 'open' && args.file && ['document', 'text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a host file with file alone; its contents are read by the editor through the host.'));
   if (name === 'open' && args.file && (/[\\/\u0000-\u001f\u007f]/.test(args.file.name) || !args.file.resourceUri.trim())) return toolError(failure('INVALID_DOCUMENT_INPUT', 'A host file needs a filename without a path and a nonempty resource URI.'));
   if (!page && name === 'read' && args.guide && args.document === undefined) {
-    try {validateInput(descriptor.inputSchema, args, 'arguments', true);} catch (error) {if (error.code === 'invalid_arguments') return inputErrorResult(error); throw error;}
+    try {validateInput(descriptor.inputSchema, args, 'arguments', true);} catch (error) {if (error.code === 'invalid_arguments') return invalidInput(error); throw error;}
+    observation?.feature('read_guide'); observation?.dispatched();
     const guide = guideResult({topic: args.guide}, args.guide === 'water' ? agentPaintBrushRegistry() : null);
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
   }
@@ -980,7 +1041,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
       if (error.code !== 'invalid_arguments') throw error;
       if (create && args.filename !== undefined && !_rapierValidMetadata({filename: args.filename, docKind: 'markdown'}))
         return toolError(failure('INVALID_DOCUMENT_INPUT', 'filename_invalid'));
-      return inputErrorResult(error);
+      return invalidInput(error);
     }
   }
   const createNamespace = authority.source === 'oauth' ? connectedOwner + ':connection:' + authority.connectionId : connectedOwner;
@@ -1038,6 +1099,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   let response;
   try {
     if (toolAdmission?.deferred) toolAdmission.sent = true;
+    observeToolSelection(observation, name, args, create);
+    observation?.dispatched();
     const running = workspace.fetch(new Request('https://rapier.internal/operation', {method: 'POST',
       headers: {'Content-Type': 'application/json'}, ...jsonBodyInit(payload)}));
     if (request.signal.aborted) aborted();
@@ -1238,12 +1301,12 @@ async function taskRoute(method, taskId, input, authority, env) {
   return value.result;
 }
 
-async function createTask(name, args, request, authority, env, hostAgent, door) {
+async function createTask(name, args, request, authority, env, hostAgent, door, observation = null) {
   request.signal.throwIfAborted();
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   const descriptor = TOOL_BY_NAME.get(name);
   try { validateInput(descriptor.inputSchema, args, 'arguments', true); }
-  catch { return callTool(name, args, env, request, authority, hostAgent, door); }
+  catch { return callTool(name, args, env, request, authority, hostAgent, door, null, false, null, false, null, null, null, observation); }
   const operationId = args.operation_id || crypto.randomUUID();
   args = {...args, operation_id: operationId};
   const identity = sha256(canonicalJson({name, args}));
@@ -1259,6 +1322,8 @@ async function createTask(name, args, request, authority, env, hostAgent, door) 
     scopes: descriptor.annotations.readOnlyHint ? ['rapier:read'] : ['rapier:read', 'rapier:write'],
     deadline: task.deadline + 1000};
   request.signal.throwIfAborted();
+  observeToolSelection(observation, name, args);
+  observation?.dispatched();
   return taskRoute('create', taskId, input, authority, env);
 }
 
@@ -1270,8 +1335,8 @@ function requestScope(request, authority, door, modern) {
 }
 
 export const REQUEST_OWNER_AFTER_MS = 1000;
-async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id, visualObservation = null, toolAdmission = null) {
-  if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission);
+async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id, visualObservation = null, toolAdmission = null, observation = null) {
+  if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission, observation);
   const key = sha256(JSON.stringify(id)), occurrence = 'request_' + crypto.randomUUID().replaceAll('-', ''), startedAt = Date.now();
   const lifetime = createRequestLifetime(request.signal), held = new AbortController();
   let refused = null, cancelledByOwner = false, owner = null;
@@ -1290,7 +1355,7 @@ async function requestTool(name, args, env, request, authority, hostAgent, door,
   try {
     const result = await callTool(name, args, env, new Request(request.url, {method: 'POST',
       headers: {'CF-Connecting-IP': request.headers.get('CF-Connecting-IP') || 'unknown'}, signal: lifetime.signal}),
-      authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission);
+      authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission, observation);
     if (refused) throw refused;
     if (lifetime.signal.aborted) throw new DOMException('Request canceled', 'AbortError');
     return result;
@@ -1317,11 +1382,11 @@ function headerValue(value) {
 }
 const serverInfo = env => ({ name: 'rapier', title: 'Rapier', version: VERSION + (env.RAPIER_DEPLOYMENT?.id ? '+worker.' + env.RAPIER_DEPLOYMENT.id : ''), websiteUrl: 'https://rapier.website', icons: ICONS });
 
-export function handleMcp(request, env, ctx = {}) {
-  return handleMcpRequest(request, env, ctx);
+export function handleMcp(request, env, ctx = {}, observation = null) {
+  return handleMcpRequest(request, env, ctx, observation);
 }
 
-function handleMcpRequest(request, env, ctx) {
+function handleMcpRequest(request, env, ctx, observation) {
   const path = new URL(request.url).pathname;
   if (!DOORS.has(path)) { const metered = meter(env, routeClass(request)); if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(metered); }
   if (path === '/.well-known/assetlinks.json') return handlePublishedPages(request, env);
@@ -1331,7 +1396,7 @@ function handleMcpRequest(request, env, ctx) {
       if (!ticket || ticket.authority.grant && !await oauthGrantCurrent(ticket.authority.grant, env)) return rpcError(null, -32000, 'Editor authority is required.', 401);
       return handleRequest(request, env, {...ticket.authority, editorDocument: ticket.document});
     }
-    return handleOAuth(request, env, ctx, (incoming, authority) => handleRequest(incoming, env, authority));
+    return handleOAuth(request, env, ctx, (incoming, authority) => handleRequest(incoming, env, authority, observation));
   });
 }
 
@@ -1483,7 +1548,14 @@ async function exportResource(response, uri) {
   return {contents: [{uri, mimeType, blob: encodeBase64(bytes)}]};
 }
 
-async function handleRequest(request, env, authority) {
+async function handleRequest(request, env, authority, observation = null) {
+  const refuseRpc = (id, code, message, status = 200, details, errorClass) => {
+    observation?.outcome(code === REQUEST_CANCELLED ? 'cancelled' : status === 401 || status === 403 ? 'auth_refused' : 'protocol_error',
+      errorClass || (code === REQUEST_CANCELLED ? 'cancellation' : status === 401 || status === 403 ? 'permission'
+        : status === 413 ? 'limit' : [-32600, -32602, -32700, HEADER_MISMATCH, UNSUPPORTED_VERSION].includes(code) ? 'validation'
+        : code === -32603 ? 'unavailable' : 'other'));
+    return rpcError(id, code, message, status, details);
+  };
   const url = new URL(request.url);
   const privateLive = /^\/live\/([a-f0-9]{32})\/(create|socket|stop)$/.exec(url.pathname);
   const liveStop = /^\/live\/(ws_[A-Za-z0-9_-]{43})\/stop$/.exec(url.pathname);
@@ -1657,62 +1729,71 @@ async function handleRequest(request, env, authority) {
     if (!editorPage && ['GET', 'HEAD'].includes(request.method)) return pairedPage(request, env, authority);
     if (!editorPage) return new Response(null, {status: 405, headers: {Allow: 'GET, HEAD'}});
     if (request.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
-    if (request.headers.get('Origin') !== url.origin || !['same-origin', null].includes(request.headers.get('Sec-Fetch-Site'))) return rpcError(null, -32000, 'Origin is not allowed.', 403);
+    if (request.headers.get('Origin') !== url.origin || !['same-origin', null].includes(request.headers.get('Sec-Fetch-Site'))) return refuseRpc(null, -32000, 'Origin is not allowed.', 403);
   }
-  if (request.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
-  if (!/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type') || '')) return rpcError(null, -32600, 'Content-Type must be application/json.', 415);
+  if (request.method !== 'POST') { observation?.outcome('protocol_error', 'validation'); return new Response(null, { status: 405, headers: { Allow: 'POST' } }); }
+  if (!/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type') || '')) return refuseRpc(null, -32600, 'Content-Type must be application/json.', 415);
   const accept = (request.headers.get('Accept') || '').toLowerCase().split(',').filter(part => !/;\s*q=0(?:\.0*)?\s*(?:;|$)/.test(part)).map(part => part.split(';')[0].trim()).filter(Boolean);
-  if (accept.length && !accept.some(type => ['application/json', 'application/*', '*/*'].includes(type))) return rpcError(null, -32600, 'Accept must allow application/json.', 406);
+  if (accept.length && !accept.some(type => ['application/json', 'application/*', '*/*'].includes(type))) return refuseRpc(null, -32600, 'Accept must allow application/json.', 406);
   let message;
   try {
     message = await readBody(request);
   } catch (error) {
     const oversized = error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_TOO_LARGE';
-    if (error?.[PUBLIC_FAILURE] && error.code === 'JSON_TOO_DEEP') return rpcError(null, -32600, error.message, 400, error.details);
-    if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_TIMEOUT') return rpcError(null, -32600, error.message, 408, error.details);
-    return rpcError(null, oversized ? -32600 : -32700, oversized ? error.message : 'Invalid UTF-8 JSON request.', oversized ? 413 : 400, oversized ? error.details : undefined);
+    observation?.coverage(oversized || error?.[PUBLIC_FAILURE] && error.code === 'JSON_TOO_DEEP' ? 'body_limit'
+      : error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_TIMEOUT' ? 'timeout' : 'invalid_json');
+    if (error?.[PUBLIC_FAILURE] && error.code === 'JSON_TOO_DEEP') return refuseRpc(null, -32600, error.message, 400, error.details, 'limit');
+    if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_TIMEOUT') return refuseRpc(null, -32600, error.message, 408, error.details, 'limit');
+    return refuseRpc(null, oversized ? -32600 : -32700, oversized ? error.message : 'Invalid UTF-8 JSON request.', oversized ? 413 : 400, oversized ? error.details : undefined);
   }
+  observation?.parsed();
+  if (Array.isArray(message)) observation?.coverage('rejected_batch');
   if (plain(message)) {
     const path = oversizedRpcId(message.id) ? 'id' : message.method === 'notifications/cancelled' &&
       plain(message.params) && oversizedRpcId(message.params.requestId) ? 'params.requestId' : null;
-    if (path) return rpcError(null, -32600, 'String request IDs must be at most 1024 UTF-8 bytes.', 413,
-      {path, limitBytes: MAX_RPC_ID_BYTES});
+    if (path) {
+      observation?.coverage('body_limit');
+      return refuseRpc(null, -32600, 'String request IDs must be at most 1024 UTF-8 bytes.', 413, {path, limitBytes: MAX_RPC_ID_BYTES});
+    }
   }
   const id = plain(message) && (typeof message.id === 'string' || Number.isSafeInteger(message.id)) ? message.id : undefined;
-  if (!plain(message) || Object.keys(message).some(key => !['jsonrpc', 'id', 'method', 'params'].includes(key)) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' || (message.params !== undefined && !plain(message.params)) || (Object.hasOwn(message, 'id') && id === undefined)) return rpcError(id, -32600, 'Expected one JSON-RPC 2.0 request or notification.', 400);
+  if (!plain(message) || Object.keys(message).some(key => !['jsonrpc', 'id', 'method', 'params'].includes(key)) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' || (message.params !== undefined && !plain(message.params)) || (Object.hasOwn(message, 'id') && id === undefined)) return refuseRpc(id, -32600, 'Expected one JSON-RPC 2.0 request or notification.', 400);
+  observation?.parsed(message.method);
   const params = message.params || {};
+  if (message.method === 'tools/call') observation?.attempted(params.name);
   if (door === '/editor' && (message.method !== 'tools/call' || !authority?.editorDocument || params.arguments?.document !== authority.editorDocument))
-    return rpcError(id, -32601, 'This editor transport is bound to one document.', 403);
+    return refuseRpc(id, -32601, 'This editor transport is bound to one document.', 403);
   if (Object.hasOwn(message, 'id') && ['resources/read', 'skills/get'].includes(message.method) &&
-      (typeof params.uri !== 'string' || !params.uri.trim())) return rpcError(id, -32602, 'A nonempty resource URI is required.');
+      (typeof params.uri !== 'string' || !params.uri.trim())) return refuseRpc(id, -32602, 'A nonempty resource URI is required.');
   const header = headerField(request.headers.get('MCP-Protocol-Version'));
-  if (params._meta !== undefined && !plain(params._meta)) return rpcError(id ?? null, -32602, 'params._meta: expected an object.', id === undefined || header === MODERN_PROTOCOL_VERSION ? 400 : 200);
+  if (params._meta !== undefined && !plain(params._meta)) return refuseRpc(id ?? null, -32602, 'params._meta: expected an object.', id === undefined || header === MODERN_PROTOCOL_VERSION ? 400 : 200);
   const meta = params._meta || {};
   const modern = header === MODERN_PROTOCOL_VERSION || Object.hasOwn(meta, META_VERSION);
   let appsClient, hostAgent = null;
   if (modern) {
     const requested = meta[META_VERSION];
-    if (typeof requested !== 'string') return rpcError(id ?? null, -32602, `${META_VERSION} must be a string in every request's _meta.`, 400);
-    if (!plain(meta[META_CLIENT])) return rpcError(id ?? null, -32602, `${META_CLIENT} must be an object in every request's _meta.`, 400);
-    if (header !== requested) return rpcError(id ?? null, HEADER_MISMATCH, `Header mismatch: MCP-Protocol-Version header value '${header}' does not match body value '${requested}'.`, 400);
-    if (requested !== MODERN_PROTOCOL_VERSION) return rpcError(id ?? null, UNSUPPORTED_VERSION, 'Unsupported protocol version', 400, { supported: PROTOCOL_VERSIONS, requested });
+    if (typeof requested !== 'string') return refuseRpc(id ?? null, -32602, `${META_VERSION} must be a string in every request's _meta.`, 400);
+    if (!plain(meta[META_CLIENT])) return refuseRpc(id ?? null, -32602, `${META_CLIENT} must be an object in every request's _meta.`, 400);
+    if (header !== requested) return refuseRpc(id ?? null, HEADER_MISMATCH, `Header mismatch: MCP-Protocol-Version header value '${header}' does not match body value '${requested}'.`, 400);
+    if (requested !== MODERN_PROTOCOL_VERSION) return refuseRpc(id ?? null, UNSUPPORTED_VERSION, 'Unsupported protocol version', 400, { supported: PROTOCOL_VERSIONS, requested });
     const method = headerField(request.headers.get('Mcp-Method'));
-    if (method !== message.method) return rpcError(id ?? null, HEADER_MISMATCH, method === null ? 'Header mismatch: Mcp-Method header is missing.' : `Header mismatch: Mcp-Method header value '${method}' does not match body value '${message.method}'.`, 400);
+    if (method !== message.method) return refuseRpc(id ?? null, HEADER_MISMATCH, method === null ? 'Header mismatch: Mcp-Method header is missing.' : `Header mismatch: Mcp-Method header value '${method}' does not match body value '${message.method}'.`, 400);
     const named = TASK_METHODS.has(message.method) ? params.taskId : message.method === 'tools/call' ? params.name : message.method === 'resources/read' ? params.uri : message.method === 'prompts/get' ? params.name : undefined;
     if (named !== undefined) {
       const name = headerValue(request.headers.get('Mcp-Name'));
-      if (name !== named) return rpcError(id ?? null, HEADER_MISMATCH, name === null ? 'Header mismatch: Mcp-Name header is missing or malformed.' : `Header mismatch: Mcp-Name header value '${name}' does not match body value '${named}'.`, 400);
+      if (name !== named) return refuseRpc(id ?? null, HEADER_MISMATCH, name === null ? 'Header mismatch: Mcp-Name header is missing or malformed.' : `Header mismatch: Mcp-Name header value '${name}' does not match body value '${named}'.`, 400);
     }
     const client = meta['io.modelcontextprotocol/clientInfo'];
     if (client !== undefined && (!plain(client) || typeof client.name !== 'string' || typeof client.version !== 'string'))
-      return rpcError(id ?? null, -32602, 'io.modelcontextprotocol/clientInfo: expected name and version strings.', id === undefined ? 400 : 200);
+      return refuseRpc(id ?? null, -32602, 'io.modelcontextprotocol/clientInfo: expected name and version strings.', id === undefined ? 400 : 200);
     if (client) {
+      observation?.client(clientFamily(client.name));
       try { agentActorId('mcp', {name: client.name}); hostAgent = client.name; }
-      catch (_) { if (id === undefined) return rpcError(null, -32602, 'clientInfo.name must be a nonempty host name of at most 96 characters, without control characters.', 400); }
+      catch (_) { if (id === undefined) return refuseRpc(null, -32602, 'clientInfo.name must be a nonempty host name of at most 96 characters, without control characters.', 400); }
     }
     appsClient = declaresAppsUi({ capabilities: meta[META_CLIENT] });
   } else {
-    if (message.method !== 'initialize' && header !== null && !LEGACY_VERSIONS.includes(header)) return rpcError(id ?? null, -32600, `MCP-Protocol-Version must be one of ${LEGACY_VERSIONS.join(', ')}.`, 400);
+    if (message.method !== 'initialize' && header !== null && !LEGACY_VERSIONS.includes(header)) return refuseRpc(id ?? null, -32600, `MCP-Protocol-Version must be one of ${LEGACY_VERSIONS.join(', ')}.`, 400);
     const session = request.headers.get('Mcp-Session-Id');
     appsClient = session ? await clientSessionApps(editorSecret(env), session, clientSessionBinding(request, authority, door)) : false;
   }
@@ -1734,7 +1815,7 @@ async function handleRequest(request, env, authority) {
   const methodFields = Object.hasOwn(fields, message.method) ? fields[message.method] : null;
   if (methodFields) for (const key of Object.keys(params)) {
     if (modern && message.method === 'tools/call' && key === 'task') continue;
-    if (key !== '_meta' && !methodFields.includes(key)) return rpcError(id, -32602, 'params: unsupported field ' + key, 200, {path: 'params.' + key});
+    if (key !== '_meta' && !methodFields.includes(key)) return refuseRpc(id, -32602, 'params: unsupported field ' + key, 200, {path: 'params.' + key});
   }
   const dispatch = async request => {
   const authorityRequest = door === '/editor' && authority?.grant
@@ -1744,8 +1825,9 @@ async function handleRequest(request, env, authority) {
   const skillResult = value => ({...value, resultType: 'complete', ttlMs: 3600000, cacheScope: 'public'});
   const complete = value => modern ? {...value, resultType: value.resultType === 'task' ? 'task' : 'complete',
     _meta: {...(plain(value._meta) ? value._meta : {}), [META_SERVER]: serverInfo(env)}} : value;
-  if (['page', '/editor'].includes(door) && message.method !== 'tools/call') return rpcError(id, -32601, 'Method not found.');
+  if (['page', '/editor'].includes(door) && message.method !== 'tools/call') return refuseRpc(id, -32601, 'Method not found.');
   const challenged = refusal => {
+    observation?.outcome('auth_refused', 'permission');
     const challenge = refusal.headers.get('WWW-Authenticate');
     return json({jsonrpc: '2.0', id, result: complete({isError: true, content: [{type: 'text', text: 'Connect Rapier with the permission this tool needs.'}],
       _meta: {'mcp/www_authenticate': [challenge]}})}, refusal.status, {'WWW-Authenticate': challenge});
@@ -1757,44 +1839,46 @@ async function handleRequest(request, env, authority) {
       door, personOf(authority, params.arguments));
     switch (message.method) {
       case 'initialize':
-        if (modern) return rpcError(id, -32601, 'Method not found.', 404);
-        if (typeof params.protocolVersion !== 'string' || !plain(params.capabilities) || !plain(params.clientInfo) || typeof params.clientInfo.name !== 'string' || typeof params.clientInfo.version !== 'string') return rpcError(id, -32602, 'initialize requires protocolVersion, capabilities, and clientInfo.');
+        if (modern) return refuseRpc(id, -32601, 'Method not found.', 404);
+        if (typeof params.protocolVersion !== 'string' || !plain(params.capabilities) || !plain(params.clientInfo) || typeof params.clientInfo.name !== 'string' || typeof params.clientInfo.version !== 'string') return refuseRpc(id, -32602, 'initialize requires protocolVersion, capabilities, and clientInfo.');
+        observation?.client(clientFamily(params.clientInfo.name));
         result = { protocolVersion: LEGACY_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSION, capabilities: INITIALIZE_CAPABILITIES, serverInfo: serverInfo(env), instructions };
         headers['Mcp-Session-Id'] = await mintClientSession(editorSecret(env), declaresAppsUi(params), clientSessionBinding(request, authority, door));
         break;
       case 'server/discover':
-        if (!modern) return rpcError(id, -32601, 'Method not found.');
+        if (!modern) return refuseRpc(id, -32601, 'Method not found.');
         result = { supportedVersions: PROTOCOL_VERSIONS, capabilities: { prompts: {listChanged: false}, tools: {}, resources: {}, extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [UI_MIME] }, 'io.modelcontextprotocol/skills': {}, ...(taskHosting(env, authority) ? {[TASK_EXTENSION]: {}} : {}) } }, instructions, ttlMs: 3600000, cacheScope: 'public' };
         break;
       case 'subscriptions/listen': {
-        if (!modern) return rpcError(id, -32601, 'Method not found.');
-        if (params.notifications !== undefined && !plain(params.notifications)) return rpcError(id, -32602, 'params.notifications: expected an object.');
+        if (!modern) return refuseRpc(id, -32601, 'Method not found.');
+        if (params.notifications !== undefined && !plain(params.notifications)) return refuseRpc(id, -32602, 'params.notifications: expected an object.');
         const subscriptionId = {'io.modelcontextprotocol/subscriptionId': id};
         const event = message => `event: message\ndata: ${JSON.stringify({jsonrpc: '2.0', ...message})}\n\n`;
+        observation?.outcome('succeeded');
         return new Response(event({method: 'notifications/subscriptions/acknowledged', params: {_meta: subscriptionId, notifications: {}}}) +
           event({id, result: {resultType: 'complete', _meta: subscriptionId}}), {status: 200, headers: {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store'}});
       }
       case 'tasks/get':
       case 'tasks/update':
       case 'tasks/cancel': {
-        if (!modern || door === 'page' || !taskHosting(env, authority)) return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
-        if (!plain(meta[META_CLIENT]?.extensions?.[TASK_EXTENSION])) return rpcError(id, -32021,
+        if (!modern || door === 'page' || !taskHosting(env, authority)) return refuseRpc(id, -32601, 'Method not found.', modern ? 404 : 200);
+        if (!plain(meta[META_CLIENT]?.extensions?.[TASK_EXTENSION])) return refuseRpc(id, -32021,
           'Missing required client capability.', 400, {requiredCapabilities: {extensions: {[TASK_EXTENSION]: {}}}});
         if (typeof params.taskId !== 'string' || message.method === 'tasks/update' && !plain(params.inputResponses))
-          return rpcError(id, -32602, 'Task requests require taskId and updates require inputResponses.');
+          return refuseRpc(id, -32602, 'Task requests require taskId and updates require inputResponses.');
         result = await taskRoute(message.method.slice('tasks/'.length), params.taskId, params.inputResponses,
           {...authority, door}, env);
         break;
       }
       case 'ping':
-        if (modern) return rpcError(id, -32601, 'Method not found.', 404);
+        if (modern) return refuseRpc(id, -32601, 'Method not found.', 404);
         result = {}; break;
       case 'tools/list':
-        if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its full fixed tool catalog in one page.');
+        if (Object.hasOwn(params, 'cursor')) return refuseRpc(id, -32602, 'Rapier returns its full fixed tool catalog in one page.');
         result = door === '/muse' ? cacheable({ tools: MUSE_DESCRIPTORS }, 3600000, 'public')
           : cacheable({ tools: listedTools(env, appsClient, authority) }, env.HOST_TOOLS_LISTING === 'all' ? 3600000 : 0, env.HOST_TOOLS_LISTING === 'all' ? 'public' : 'private'); break;
       case 'tools/call':
-        if (typeof params.name !== 'string' || (params.arguments !== undefined && !plain(params.arguments))) return rpcError(id, -32602, 'tools/call requires name and an arguments object.');
+        if (typeof params.name !== 'string' || (params.arguments !== undefined && !plain(params.arguments))) return refuseRpc(id, -32602, 'tools/call requires name and an arguments object.');
         if (params.name === 'show' && plain(params.arguments) && params.arguments.target === undefined)
           params.arguments = {...params.arguments, target: showTarget(params.arguments)};
         if (!TOOL_BY_NAME.has(params.name) || !['page', '/editor'].includes(door) && !TOOLS.some(tool => tool.name === params.name)) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
@@ -1815,8 +1899,8 @@ async function handleRequest(request, env, authority) {
         }
         if (door === 'page' && params.name === PAIR_STATUS) { result = await pairStatus(request, env, authority, params.arguments, cookies); break; }
         result = hostedTask
-          ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door)
-          : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id, meta['rapier/visual'] ?? null, admission);
+          ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door, observation)
+          : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id, meta['rapier/visual'] ?? null, admission, observation);
         if (authority?.grant && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(authorityRequest, env));
         if (admission?.deferred && !admission.sent) {
           const refusal = await takeToolBudget(request, env, authority, params.name, params.arguments || {}, door, meta['rapier/editorKey']);
@@ -1830,17 +1914,17 @@ async function handleRequest(request, env, authority) {
         const cursor = position => bundle.cursorKey + ':' + position;
         const start = Object.hasOwn(params, 'cursor')
           ? bundle.skills.findIndex((_, position) => position > 0 && position % SKILLS_PAGE_SIZE === 0 && params.cursor === cursor(position)) : 0;
-        if (start < 0) return rpcError(id, -32602, 'Unknown or stale skill cursor.');
+        if (start < 0) return refuseRpc(id, -32602, 'Unknown or stale skill cursor.');
         const end = start + SKILLS_PAGE_SIZE;
         result = skillResult({skills: bundle.skills.slice(start, end), ...(end < bundle.skills.length ? {nextCursor: cursor(end)} : {})}); break;
       }
       case 'skills/get': {
         const skill = (await skillsBundle(request, env)).skills.find(entry => entry.uri === params.uri);
-        if (!skill) return rpcError(id, -32602, 'Unknown skill URI.');
+        if (!skill) return refuseRpc(id, -32602, 'Unknown skill URI.');
         result = skillResult({skill}); break;
       }
       case 'resources/list': {
-        if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'Rapier returns its resources in one page.');
+        if (Object.hasOwn(params, 'cursor')) return refuseRpc(id, -32602, 'Rapier returns its resources in one page.');
         const bundle = await skillsBundle(request, env);
         const skills = bundle.skills.flatMap(skill => skill.resources.map(entry => ({
           uri: entry.uri, name: entry.uri === skill.uri ? skill.frontmatter.name : entry.uri.slice('skill://'.length), mimeType: bundle.contents[entry.uri].mimeType,
@@ -1850,11 +1934,11 @@ async function handleRequest(request, env, authority) {
       case 'prompts/list': result = cacheable({prompts: PROMPTS}, 3600000, 'public'); break;
       case 'prompts/get': {
         const prompt = promptResult(params.name, params.arguments || {});
-        if (!prompt) return rpcError(id, -32602, 'Unknown prompt.');
+        if (!prompt) return refuseRpc(id, -32602, 'Unknown prompt.');
         result = prompt; break;
       }
       case 'resources/templates/list':
-        if (Object.hasOwn(params, 'cursor')) return rpcError(id, -32602, 'The empty resource template catalog has no continuation.');
+        if (Object.hasOwn(params, 'cursor')) return refuseRpc(id, -32602, 'The empty resource template catalog has no continuation.');
         result = cacheable({resourceTemplates: []}, 3600000, 'public'); break;
       case 'resources/read': {
         if (params.uri.startsWith('skill://')) {
@@ -1872,26 +1956,34 @@ async function handleRequest(request, env, authority) {
         }
         result = cacheable(await resource(request, env, params.uri), 0, 'private'); break;
       }
-      default: return rpcError(id, -32601, 'Method not found.', modern ? 404 : 200);
+      default: return refuseRpc(id, -32601, 'Method not found.', modern ? 404 : 200);
     }
   } catch (error) {
-    if (request.signal.aborted || error?.name === 'AbortError') return rpcError(id, REQUEST_CANCELLED, 'Request canceled.');
-    if ((TASK_METHODS.has(message.method) || message.method === 'tools/call') && Number.isSafeInteger(error?.code)) return rpcError(id, error.code, error.message, 200, error.data);
+    if (request.signal.aborted || error?.name === 'AbortError') {
+      const response = refuseRpc(id, REQUEST_CANCELLED, 'Request canceled.');
+      if (error?.code === 'CANCELLATION_UNACKNOWLEDGED') observation?.outcome('unknown', 'unavailable');
+      return response;
+    }
+    if ((TASK_METHODS.has(message.method) || message.method === 'tools/call') && Number.isSafeInteger(error?.code)) return refuseRpc(id, error.code, error.message, 200, error.data);
     if (error?.[PUBLIC_FAILURE] && error.code === 'TOOL_INVOCATION_ADMISSION') {
       const admission = error.details;
+      observation?.outcome(admission.status === 429 ? 'budget_refused' : admission.status === 401 || admission.status === 403 ? 'auth_refused' : 'unknown',
+        admission.status === 429 ? 'limit' : admission.status === 401 || admission.status === 403 ? 'permission' : 'unavailable');
       return json({error: {code: admission.code, message: admission.message,
         ...(admission.retryAfter ? {retryAfter: admission.retryAfter} : {})}}, admission.status,
         admission.retryAfter ? {'Retry-After': String(admission.retryAfter)} : {});
     }
-    if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_ID_IN_USE') return rpcError(id, -32600, error.message);
-    if (error?.[PUBLIC_FAILURE] && error.code === 'UNKNOWN_TOOL') return rpcError(id, -32602, error.message);
-    if (error?.[PUBLIC_FAILURE] && error.code === 'RESOURCE_NOT_FOUND') return rpcError(id, modern || /^skill:/i.test(params.uri) ? -32602 : -32002, error.message, 200,
+    if (error?.[PUBLIC_FAILURE] && error.code === 'REQUEST_ID_IN_USE') return refuseRpc(id, -32600, error.message);
+    if (error?.[PUBLIC_FAILURE] && error.code === 'UNKNOWN_TOOL') return refuseRpc(id, -32602, error.message);
+    if (error?.[PUBLIC_FAILURE] && error.code === 'RESOURCE_NOT_FOUND') return refuseRpc(id, modern || /^skill:/i.test(params.uri) ? -32602 : -32002, error.message, 200,
       typeof params.uri === 'string' ? {uri: params.uri} : undefined);
-    if (error?.[PUBLIC_FAILURE] && ['UI_NOT_BUILT', 'INVALID_UI_CONFIGURATION', 'UI_RESOURCE_TOO_LARGE', 'SKILLS_NOT_BUILT'].includes(error.code)) return rpcError(id, -32603, error.message, 200, error.details);
-    if (message.method === 'prompts/get' && error instanceof TypeError) return rpcError(id, -32602, error.message);
+    if (error?.[PUBLIC_FAILURE] && ['UI_NOT_BUILT', 'INVALID_UI_CONFIGURATION', 'UI_RESOURCE_TOO_LARGE', 'SKILLS_NOT_BUILT'].includes(error.code)) return refuseRpc(id, -32603, error.message, 200, error.details);
+    if (message.method === 'prompts/get' && error instanceof TypeError) return refuseRpc(id, -32602, error.message);
     if (message.method === 'tools/call') result = toolError(failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry an editor commit only with the same commitId.'));
-    else return rpcError(id, -32603, 'The server could not complete this request.');
+    else return refuseRpc(id, -32603, 'The server could not complete this request.');
   }
+  if (message.method === 'tools/call') observeToolOutcome(observation, result);
+  else observation?.outcome(TASK_METHODS.has(message.method) ? 'unknown' : 'succeeded');
   if (message.method === 'tools/call' && result.resultType !== 'task') result = publicToolResult(params.name, result, door, {workspaceNotes: env.ACCESS_PROFILE === true, appsClient});
   if (door === '/muse' && message.method === 'tools/call' && result.resultType !== 'task' && params.name === 'export' && params.arguments?.format === 'markdown' && parseReply(result.content[0].text).outcome === 'ok') {
     const link = result.content.find(item => item.type === 'resource_link');
@@ -1900,7 +1992,7 @@ async function handleRequest(request, env, authority) {
     if (text !== null) result.content[0].text += '\n' + (text.length <= MUSE_EXPORT_TEXT_CHARS ? text
       : `The Markdown is ${text.length} characters, more than one result carries; read it in pages with read.`);
   }
-  if (request.signal.aborted) return rpcError(id, REQUEST_CANCELLED, 'Request canceled.');
+  if (request.signal.aborted) return refuseRpc(id, REQUEST_CANCELLED, 'Request canceled.');
   result = complete(result);
   const reply = json({ jsonrpc: '2.0', id, result }, 200, headers);
   for (const cookie of cookies) reply.headers.append('Set-Cookie', cookie);
@@ -1908,8 +2000,10 @@ async function handleRequest(request, env, authority) {
   };
   if (message.method !== 'tools/call' || door === 'page') return dispatch(request);
   const lifetime = createRequestLifetime(request.signal);
+  const releaseObservation = observation?.hold();
   const pending = dispatch(new Request(request.url, {method: 'POST', headers: request.headers, signal: lifetime.signal}))
-    .finally(() => lifetime.release());
+    .catch(error => { observation?.outcome('unknown', 'unavailable'); throw error; })
+    .finally(() => { lifetime.release(); releaseObservation?.(); });
   return responsiveJson(pending, {signal: request.signal, onDisconnect: () => {
     lifetime.cancel();
     return pending.then(() => undefined);
@@ -4483,3 +4577,4 @@ export class RapierDocument {
     });
   }
 }
+

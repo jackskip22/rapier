@@ -44,6 +44,11 @@ export function objectStore(env) {
       seen.delete(key);
       await ask(storeShard(key), {op: 'put', key, value: String(value), metadata: options.metadata, expiration: expirationOf(options)});
     },
+    async claim(key, value, options = {}) {
+      seen.delete(key);
+      const answer = await ask(storeShard(key), {op: 'claim', key, value: String(value), metadata: options.metadata, expiration: expirationOf(options)});
+      return answer.state === 'stored';
+    },
     async delete(key) {
       seen.delete(key);
       await ask(storeShard(key), {op: 'delete', key});
@@ -80,10 +85,14 @@ export async function oauthStoreRequest(ctx, {op, key, value, metadata, expirati
     }
     return {keys, gone};
   }
-  if (op !== 'put' && op !== 'delete') throw new TypeError('Unknown OAuth store operation');
+  if (op !== 'put' && op !== 'delete' && op !== 'claim') throw new TypeError('Unknown OAuth store operation');
+  if (op === 'claim') {
+    const held = kv.get('o:' + key);
+    if (held && !held.gone && live(held)) return {state: 'present'};
+  }
   const expired = [];
   for (const [name, row] of kv.list({prefix: 'o:'})) if (name !== 'o:' + key && !live(row)) expired.push(name);
-  const row = op === 'put' ? {value, ...(metadata !== undefined ? {metadata} : {}), ...(expiration ? {expiration} : {})}
+  const row = op !== 'delete' ? {value, ...(metadata !== undefined ? {metadata} : {}), ...(expiration ? {expiration} : {})}
     : {gone: true, expiration: Math.floor(now / 1000) + TOMBSTONE_SECONDS};
   let lasting = !row.expiration, until = (row.expiration || 0) * 1000;
   for (const [name, other] of kv.list({prefix: 'o:'})) if (name !== 'o:' + key && !expired.includes(name)) {
@@ -99,5 +108,5 @@ export async function oauthStoreRequest(ctx, {op, key, value, metadata, expirati
   });
   if (extend) await ctx.storage.setAlarm(until + DAY_MS);
   else if (lasting && resetAt !== undefined) await ctx.storage.deleteAlarm();
-  return {state: op === 'put' ? 'stored' : 'gone'};
+  return {state: op !== 'delete' ? 'stored' : 'gone'};
 }

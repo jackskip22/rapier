@@ -3,18 +3,16 @@ import {restoreJPEG} from '../jpeg-reconstruction.mjs';
 import {jpegReconstruction} from '../container.mjs';
 import {brotliDictionary} from '../brotli-dictionary.mjs';
 import {copyBytes, encodedByteLength} from './bytes.mjs';
-import {bytes, check, fail, declared, object, dimensions, admitSignal} from './primitives.mjs';
+import {bytes, check, fail, declared, object, dimensions, admitSignal, jpegPixels} from './primitives.mjs';
+const NO_SERVE = 'No JPEG reconstruction data: serve it as image/jxl, or make it with recompress().';
 import {isPlainRecord} from './records.mjs';
 import {header} from './inspect.mjs';
+import './preparation-jpeg.mjs';
 
 const MAX_INPUT_BYTES = 256 * 1024 * 1024;
 const DEFAULT_CACHE_CONTROL = 'private, no-cache';
 const SERVE_KEYS = new Set(['cacheControl', 'etag', 'maxPixels', 'signal']);
-function pixelBound(value) {
-  if (value === undefined) return 40000000;
-  if (!Number.isSafeInteger(value) || value < 1 || value > 40000000) throw fail('JXL_OPTIONS', 'maxPixels is a positive whole number, at most 40,000,000.');
-  return value;
-}
+const pixelBound = jpegPixels;
 
 async function owned(input, signal) {
   if (typeof Blob !== 'undefined' && input instanceof Blob) {
@@ -56,16 +54,30 @@ function refuseAccessors(record) {
     throw fail('JXL_OPTIONS', 'Options cannot contain accessors.');
 }
 
+function headerParts(text, separator) {
+  const parts = [];
+  let start = 0, quoted = false, escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (quoted && char === '\\') { escaped = true; continue; }
+    if (char === '"') { quoted = !quoted; continue; }
+    if (!quoted && char === separator) { parts.push(text.slice(start, i)); start = i + 1; }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
 function acceptsJxl(acceptHeader) {
   if (typeof acceptHeader !== 'string') return false;
   const q = {};
-  for (const part of acceptHeader.split(',')) {
-    const [type, ...params] = part.split(';').map(text => text.trim());
+  for (const part of headerParts(acceptHeader, ',')) {
+    const [type, ...params] = headerParts(part, ';').map(text => text.trim());
     const range = type.toLowerCase();
     if (!['image/jxl', 'image/jpeg', 'image/*', '*/*'].includes(range)) continue;
+    if (range === 'image/jxl' && params.some(param => param && param.split('=', 1)[0].trim().toLowerCase() !== 'q')) continue;
     let weight = 1;
     for (const param of params) {
-      const [key, value = ''] = param.split('=').map(text => text.trim());
+      const at = param.indexOf('='), key = (at < 0 ? param : param.slice(0, at)).trim(), value = at < 0 ? '' : param.slice(at + 1).trim();
       if (key.toLowerCase() !== 'q') continue;
       weight = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/.test(value) ? Number(value) : NaN;
     }
@@ -114,10 +126,17 @@ function parseCall(request, second, third) {
   const rawMethod = typeof request.method === 'string' ? request.method.toUpperCase() : 'GET';
   if (rawMethod !== 'GET' && rawMethod !== 'HEAD') throw fail('JXL_OPTIONS', 'serve answers GET and HEAD.');
   const cacheControl = options.cacheControl ?? DEFAULT_CACHE_CONTROL;
-  if (typeof cacheControl !== 'string' || !cacheControl.trim() || /[\r\n]/.test(cacheControl))
+  if (typeof cacheControl !== 'string' || !cacheControl.trim() || /[^\t\x20-\x7e\x80-\xff]/.test(cacheControl))
     throw fail('JXL_OPTIONS', 'cacheControl must be a non-empty header string.');
-  if (options.etag !== undefined && (typeof options.etag !== 'string' || !options.etag.trim() || /[\r\n]/.test(options.etag)))
-    throw fail('JXL_OPTIONS', 'etag must be a non-empty string.');
+  if (options.etag !== undefined) {
+    if (typeof options.etag !== 'string' || !options.etag.trim() || /[\r\n]/.test(options.etag))
+      throw fail('JXL_OPTIONS', 'etag must be a non-empty string.');
+    const supplied = options.etag.trim(), raw = supplied.startsWith('W/') ? supplied.slice(2).trim() : supplied;
+    const quoted = raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"');
+    const opaque = quoted ? raw.slice(1, -1) : raw;
+    if ((!quoted && !opaque) || !/^[\x21\x23-\x7e\x80-\xff]*$/.test(opaque))
+      throw fail('JXL_OPTIONS', 'etag must be a valid HTTP entity tag.');
+  }
   admitSignal(options.signal);
   const maxPixels = pixelBound(options.maxPixels);
   return {maxPixels, accept: readHeaderField(request, 'accept') ?? '', ifNoneMatch: readHeaderField(request, 'if-none-match') ?? '', method: rawMethod,
@@ -154,7 +173,7 @@ export function serve(input, request, second, third) {
     const etag = formatRepresentationEtag(baseTag, suffix);
 
     if (!wantsJxl && (jxlBytes[0] === 255 && jxlBytes[1] === 10 || !jpegReconstruction(jxlBytes))) {
-      throw fail('JXL_RECONSTRUCTION', 'The file contains no JPEG reconstruction data.');
+      throw fail('JXL_RECONSTRUCTION', NO_SERVE);
     }
 
     if (matchesIfNoneMatch(ifNoneMatch, etag)) {
@@ -177,7 +196,7 @@ export function serve(input, request, second, third) {
       bodyBytes = jxlBytes;
     } else {
       const restored = restoreJPEG(jxlBytes, brotliDictionary, {maxPixels});
-      if (!restored) throw fail('JXL_RECONSTRUCTION', 'The file contains no JPEG reconstruction data.');
+      if (!restored) throw fail('JXL_RECONSTRUCTION', NO_SERVE);
       bodyBytes = restored;
     }
     check(signal);

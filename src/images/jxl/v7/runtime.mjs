@@ -27,9 +27,9 @@ export async function run(operation, input, options = {}, hooks = {}) {
   finally { if (typeof ImageBitmap === 'function' && input instanceof ImageBitmap || typeof VideoFrame === 'function' && input instanceof VideoFrame) input.close(); }
 }
 
-async function helpersDrive(steps, hooks, gpu, pixels) {
+async function helpersDrive(steps, hooks, gpu, pixels, splitOnly = false) {
   const {drain} = await import('./common.mjs');
-  const helpers = hooks.alone !== false && await helperPool(), workers = helpers ? helpers.reservedHelpers(hooks.helpers, pixels) : 0;
+  const helpers = hooks.alone !== false && await helperPool(), workers = !splitOnly && helpers ? helpers.reservedHelpers(hooks.helpers, pixels) : 0;
   if (workers < 2) return drain(steps, hooks.owner && hooks.helpers ? {...hooks, split: async request => { helpersUsed = true; return (await helperPool()).splitOnIdle(hooks.owner, hooks.helpers, request, hooks.signal, await helperFile()); }} : hooks, gpu);
   helpersUsed = true;
   const {parallelJob} = await import('../parallel.mjs');
@@ -54,7 +54,7 @@ const PREPARE = {
 };
 export async function prepare(operation, {webgpu} = {}) {
   const ready = Object.hasOwn(PREPARE, operation) ? PREPARE[operation] : null;
-  if (!ready) throw fail('JXL_OPTIONS', 'prepare names its operation: encode, capture, recompress, restore, decode or format.');
+  if (!ready) throw fail('JXL_OPTIONS', 'prepare takes encode, capture, recompress, restore, decode or format.');
   if (operation === 'encode' && webgpu === 'required') await requireWebGPU('required');
   await ready();
 }

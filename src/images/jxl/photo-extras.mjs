@@ -31,16 +31,16 @@ export function admitPhotoExtras(data, layout, options) {
   const channels = admitExtraChannels(options.extraChannels, layout.width, layout.height, layout.factor);
   if (!channels.length) return null;
   if (!(data instanceof Uint8Array || data instanceof Uint8ClampedArray))
-    throw fault('JXL_INPUT', 'Photographic color with extra channels uses eight-bit RGBA; other exact color precisions use encodeChannels.');
+    throw fault('JXL_INPUT', 'Photo color with extra channels needs 8-bit RGBA; otherwise use encodeChannels.');
   let alpha = false;
   for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) { alpha = true; break; }
   if (alpha) {
-    if (channels.length === 256) throw fault('JXL_INPUT', 'The RGBA alpha and authored planes together have at most 256 extra channels.');
+    if (channels.length === 256) throw fault('JXL_INPUT', 'At most 256 extra channels.');
     const plane = Uint8Array.from({length: data.length / 4}, (_, i) => data[i * 4 + 3]);
     channels.unshift(...admitExtraChannels([{...Object.fromEntries([['type', 'alpha']]), data: plane, upsampling: layout.factor}], layout.width, layout.height, layout.factor));
   }
   if (options.lfFrames !== undefined && options.lfFrames !== false && channels.some(channel => channel.factor !== 1))
-    throw fault('JXL_INPUT', 'Frames using a low-frequency frame cannot signal extra-channel spatial upsampling.');
+    throw fault('JXL_INPUT', 'LF frames cannot signal extra-channel upsampling.');
   const requiredLevel = channels.length > 4 || channels.some(channel => channel.kind === 4 || channel.bitDepth > 12 || channel.exponentBits) ? 10 : 5;
   if (options.level !== undefined && options.level !== 5 && options.level !== 10) throw fault('JXL_INPUT', 'JPEG XL level is 5 or 10.');
   if (options.level === 5 && requiredLevel === 10) throw fault('JXL_INPUT', 'These extra channels require JPEG XL level 10.');
@@ -64,9 +64,27 @@ function paddedPhotoExtras(channels, width, height, factor) {
   });
 }
 
-export function photoExtraStreams(channels) {
+export function photoExtraChannelData(channel) {
+  const {data, width, height, shift, factor, hshift, vshift} = channel;
+  return {data, width, height, shift, factor, ...(hshift !== undefined ? {hshift} : {}), ...(vshift !== undefined ? {vshift} : {})};
+}
+
+export function firstGroupedPhotoExtra(channels) {
   let firstGrouped = 0;
   while (firstGrouped < channels.length && channels[firstGrouped].width <= 256 && channels[firstGrouped].height <= 256) firstGrouped++;
+  return firstGrouped;
+}
+export function photoExtraGlobalPieces(channels, firstGrouped) {
+  const planes = channels.slice(0, firstGrouped);
+  if (!planes.length) planes.push({data: new Int32Array(0), width: 0, height: 0, shift: 0});
+  return planes.map(channel => ({channel, left: 0, top: 0, width: channel.width, height: channel.height}));
+}
+export function photoExtraGroupPieces(channels, firstGrouped, x, y, extent, minimum, maximum) {
+  return channels.slice(firstGrouped).filter(channel => channel.shift >= minimum && channel.shift <= maximum)
+    .map(channel => channelPiece(channel, x, y, extent)).filter(item => item.width && item.height);
+}
+export function photoExtraStreams(channels) {
+  const firstGrouped = firstGroupedPhotoExtra(channels);
   const write = (writer, pieces) => {
     if (!pieces.length) return;
     writeModularHeader(writer, {useGlobalTree: false});
@@ -76,13 +94,10 @@ export function photoExtraStreams(channels) {
   return {
     count: channels.length, factors: channels.map(channel => channel.factor), channels,
     global(writer) {
-      const planes = channels.slice(0, firstGrouped);
-      if (!planes.length) planes.push({data: new Int32Array(0), width: 0, height: 0, shift: 0});
-      write(writer, planes.map(channel => ({channel, left: 0, top: 0, width: channel.width, height: channel.height})));
+      write(writer, photoExtraGlobalPieces(channels, firstGrouped));
     },
     group(writer, x, y, extent, minimum, maximum) {
-      write(writer, channels.slice(firstGrouped).filter(channel => channel.shift >= minimum && channel.shift <= maximum)
-        .map(channel => channelPiece(channel, x, y, extent)).filter(item => item.width && item.height));
+      write(writer, photoExtraGroupPieces(channels, firstGrouped, x, y, extent, minimum, maximum));
     },
     downsample(nextWidth, nextHeight) {
       const next = channels.map(channel => {

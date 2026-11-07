@@ -52,6 +52,23 @@ read-only connection can't create or edit a workspace. The host keeps credential
 - The person can revoke a connection at `https://mcp.rapier.website/oauth/disconnect`. The revocation is stored in
   distributed storage and can take time to apply everywhere.
 
+### Claude Team and Enterprise
+
+An Owner can connect every member at once, with no approval page:
+
+1. Add a custom connector with the URL `https://mcp.rapier.website/mcp`.
+2. In its **Authentication**, choose **Set up** on **Managed authorization**, then **Claude-issued**.
+
+There is nothing to enter in Rapier: your organization's issuer registers itself at the first sign-in. Rapier knows
+each member by your organization and their Claude email address. Access lasts an hour and renews without asking; a
+member removed from the organization loses access within that hour.
+
+- A member whose address changes starts with no documents. Documents made under the old address stay with it.
+- An address you give to another member gives them the documents made under it.
+- Documents from a member's own approved connection stay with that connection.
+- Sign-ins have a budget per organization. Many members behind one shared address, such as an office network, can
+  meet a coarser per-address flood guard first.
+
 ### Pair a browser
 
 The browser that approved the connection can open `editor_url`. Another browser shows a four-letter code.

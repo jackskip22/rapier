@@ -1,42 +1,42 @@
 {
-  "version": "1.2.55",
+  "version": "1.2.56",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 424026,
-      "sha256": "f5e375eaf2278a88e9063bfe7e39758c876acbcd425fc28879f22deb3f66c74d",
-      "gzip": 408307,
+      "bytes": 423949,
+      "sha256": "2ff0526bad30e6d771aba73ddc1664b19de808accf01662f9a0e92ebb4a93a35",
+      "gzip": 408109,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-11-03T23:20:33.255Z",
+      "builtAt": "2026-11-07T04:17:46.843Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
       "canonical": true,
       "parts": {
         "core": {
-          "raw": 1084889,
-          "gzip": 346281,
-          "base124": 338823
+          "raw": 1085027,
+          "gzip": 346273,
+          "base124": 339135
         },
         "licenses": {
           "raw": 88151,
-          "gzip": 24862,
-          "base124": 24398
+          "gzip": 24794,
+          "base124": 24380
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 2176096,
-      "sha256": "8fdf827a5788cfd66879727c0c50765095e5df67387c53e6844c7ae7c86aeb3c",
+      "bytes": 2284576,
+      "sha256": "a927cbaca88ec159695f7a4dc9092bcbc89d207f796e8e0edaebf01a65e9c7c9",
       "budget": {
         "warn": 1800000,
-        "refuse": 2235000
+        "refuse": 2290000
       },
       "spans": [
         {
@@ -72,20 +72,20 @@
         {
           "element": "rapier-jxl-worker",
           "name": "jpeg.worker.mjs",
-          "bytes": 416052,
-          "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
+          "bytes": 448052,
+          "sha256": "b655f222948f1a8414ccc87ebf863154727143b3abbecbafe907d4c7733c4681"
         },
         {
           "element": "rapier-jxl-worker",
           "name": "still.worker.mjs",
-          "bytes": 841471,
-          "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
+          "bytes": 1144395,
+          "sha256": "3f4042a2d9b2b4b00ad1f1e8bd1cab440d2635743563d47ff6a35b898f625acf"
         },
         {
           "element": "rapier-jxl-worker",
           "name": "codec.mjs",
-          "bytes": 53394,
-          "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
+          "bytes": 70521,
+          "sha256": "08d658765d00d1590792bde1aa89a6ee4d0201e5dbd7b69242499a999961fdb6"
         },
         {
           "element": "rapier-platform-runtime",
@@ -121,19 +121,19 @@
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
           "bytes": 28077,
-          "sha256": "4d7749362d51bed1591a48321c1a41134f2f000d54f49b12179d4844e39ee107"
+          "sha256": "69b965455139f9eae442fdc8e702a81ee60d55e3a0ce67557ded44dac0147521"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 856,
-          "sha256": "4c58968a1fac2e53049eb8b6c5563c9b9a8ba33d08f8faae9b3f6f0607c46510"
+          "sha256": "454e36fb448d221b6cefebfd38f60415d87bc82f4065665bd6f80d32e101f7c9"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
           "bytes": 9824,
-          "sha256": "5c0bdecfa7f3ac4a29aecbacdc93f1a9676183bc23b655b6a5126b3da3e64645"
+          "sha256": "71d58cf4086bb1c3def903d3d28baceda06e4bb6810531f9d25ddf8e23a7a8be"
         },
         {
           "element": "rapier-styles-runtime",
@@ -168,14 +168,14 @@
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2530157,
-          "sha256": "87394b2b3c85c0154054fbd786f6d70d02e34bf3f5868886c65b4653c691a232"
+          "bytes": 2531997,
+          "sha256": "6a2b6d47a3ea41c3a4dd1252b463c2284a3be9a38106c421149bf21e3823b0d4"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2441851,
-          "sha256": "06e5408e4eb3a5ce9a307cd4cbec9e53509721f31ee822e3e059a701c88ad396"
+          "bytes": 2442028,
+          "sha256": "93f64c03456a93d69dce5d5d16eac5ad2ff8369a9b2f294bce33642c0d7a6faf"
         }
       ],
       "parts": [
@@ -196,9 +196,9 @@
         },
         {
           "id": "presets",
-          "file": "rapier-presets-431503cf362751f4.txt",
-          "bytes": 252359,
-          "sri": "wcgoCSMYYv3WpxURldml7SERjFasQLAA5YFhG/KWDgIVGzQVWez7SDTpsMiWTR2/",
+          "file": "rapier-presets-daed1531fe635483.txt",
+          "bytes": 252306,
+          "sri": "jZgaSF0sgUnSiCCjv0DMZfCd/tBPK2+YzSk06IHlTyIj2sxWXwPYfpkZ1gpxEO5v",
           "scripts": [
             "presets/browser.js",
             "editor/composer.js"
@@ -218,9 +218,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-8f3d744c713ba3e3.txt",
-          "bytes": 611455,
-          "sri": "R8zViqYUtsMjLTm+YpqEpseovuXqqNxK4nXp65e2Fw9bOC4s50ezuIlb4F/iHwFZ",
+          "file": "rapier-drawing-3aeb936bfc6d395e.txt",
+          "bytes": 756726,
+          "sri": "PJqPwjwgDK9lc2VF+XIRUe0cyLDL0NFTP02egyQRkerpvEQPT0lZTkB+HERPyyJJ",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -252,11 +252,20 @@
             "draw/water-contact.mjs",
             "draw/water-fill.mjs",
             "images/jxl/v7/still.mjs",
+            "images/jxl/v7/result-operation.mjs",
+            "images/jxl/v7/result.mjs",
+            "images/jxl/v7/result-shape.mjs",
+            "images/jxl/v7/result-record.mjs",
+            "images/jxl/v7/ownership.mjs",
+            "images/jxl/v7/records.mjs",
+            "images/jxl/v7/fidelity.mjs",
+            "images/jxl/v7/drive.mjs",
+            "images/jxl/v7/result-reference.mjs",
+            "images/jxl/capture-protection.mjs",
             "images/jxl/effort-job.mjs",
             "images/jxl/bits.mjs",
             "images/jxl/frame.mjs",
             "images/jxl/admit.mjs",
-            "images/jxl/limits.mjs",
             "images/jxl/icc-write.mjs",
             "images/jxl/prefix.mjs",
             "images/jxl/screen-lz77.mjs",
@@ -265,134 +274,226 @@
             "images/jxl/screen-codes.mjs",
             "images/jxl/icc-profile.mjs",
             "images/jxl/icc-transform.mjs",
+            "images/jxl/color-transform.mjs",
             "images/jxl/modular-channel.mjs",
             "images/jxl/lossless.mjs",
             "images/jxl/lossless-coding.mjs",
             "images/jxl/admit-samples.mjs",
+            "images/jxl/sample-domain.mjs",
+            "images/jxl/color-info.mjs",
             "images/jxl/lossy.mjs",
+            "images/jxl/lossy-sections.mjs",
             "images/jxl/squeeze.mjs",
+            "images/jxl/capture-kernels.mjs",
+            "images/jxl/kernel-runtime.mjs",
+            "images/jxl/kernels-bytes.mjs",
+            "images/jxl/wasm-text.mjs",
+            "images/jxl/wasm-modules.mjs",
+            "images/jxl/build-version.mjs",
+            "images/jxl/wasm-interfaces.mjs",
+            "images/jxl/capture-wasm-error.mjs",
+            "images/jxl/weighted-policy.mjs",
             "images/jxl/photo-job.mjs",
             "images/jxl/effort-level.mjs",
             "images/jxl/photo-dct.mjs",
             "images/jxl/quality-calibration.mjs",
-            "images/jxl/photo-xyb.mjs",
             "images/jxl/exact-math.mjs",
+            "images/jxl/photo-xyb.mjs",
+            "images/jxl/photo-preference.mjs",
             "images/jxl/photo-v6.mjs",
             "images/jxl/memory-plan.mjs",
+            "images/jxl/butteraugli-memory.mjs",
+            "images/jxl/ssimulacra2-memory.mjs",
+            "images/jxl/ssimulacra2-input.mjs",
             "images/jxl/photo-bands.mjs",
             "images/jxl/offload.mjs",
             "images/jxl/screen.mjs",
+            "images/jxl/screen-samples.mjs",
             "images/jxl/photo-split.mjs",
+            "images/jxl/step-journal.mjs",
+            "images/jxl/photo-levels.mjs",
             "images/jxl/photo-v6-settings.mjs",
             "images/jxl/vardct.mjs",
-            "images/jxl/entropy.mjs",
+            "images/jxl/photo-shown.mjs",
+            "images/jxl/vardct-planes.mjs",
+            "images/jxl/vardct-header.mjs",
             "images/jxl/jpeg-tables.mjs",
-            "images/jxl/lf-coding.mjs",
-            "images/jxl/sampled.mjs",
-            "images/jxl/weighted.mjs",
-            "images/jxl/weighted-policy.mjs",
-            "images/jxl/ans.mjs",
-            "images/jxl/context-map.mjs",
-            "images/jxl/rct-search.mjs",
-            "images/jxl/coefficient-effort.mjs",
-            "images/jxl/split-hooks.mjs",
-            "images/jxl/coefficient-ans.mjs",
-            "images/jxl/screen-search.mjs",
-            "images/jxl/screen-patches.mjs",
-            "images/jxl/screen-photo-regions.mjs",
-            "images/jxl/exact-ladder.mjs",
-            "images/jxl/local.mjs",
-            "images/jxl/palette-search.mjs",
-            "images/jxl/screen-local.mjs",
-            "images/jxl/photo-v6-blocks.mjs",
-            "images/jxl/varblocks.mjs",
-            "images/jxl/aq.mjs",
-            "images/jxl/vardct-strategies.mjs",
-            "images/jxl/afv-basis.mjs",
+            "images/jxl/dct8-contexts.mjs",
             "images/jxl/quantization-params.mjs",
+            "images/jxl/entropy.mjs",
+            "images/jxl/entropy-log.mjs",
             "images/jxl/quantization-defaults.mjs",
             "images/jxl/coefficient-orders.mjs",
-            "images/jxl/block-split.mjs",
+            "images/jxl/vardct-strategies.mjs",
+            "images/jxl/vardct-tables.mjs",
+            "images/jxl/coefficient-layout.mjs",
+            "images/jxl/afv-basis.mjs",
+            "images/jxl/vardct-bases.mjs",
+            "images/jxl/vardct-ranks.mjs",
+            "images/jxl/vardct-progressive.mjs",
+            "images/jxl/vardct-contexts.mjs",
+            "images/jxl/capture-patches.mjs",
+            "images/jxl/screen-crop.mjs",
+            "images/jxl/capture-headers.mjs",
+            "images/jxl/lf-coding.mjs",
+            "images/jxl/lf-plans.mjs",
+            "images/jxl/capture-trees.mjs",
+            "images/jxl/rct-search.mjs",
+            "images/jxl/capture-codec.mjs",
+            "images/jxl/capture-ans.mjs",
+            "images/jxl/ans-core.mjs",
+            "images/jxl/lf-options.mjs",
+            "images/jxl/coefficient-effort.mjs",
+            "images/jxl/ans.mjs",
+            "images/jxl/context-map.mjs",
+            "images/jxl/coefficient-ans.mjs",
+            "images/jxl/split-hooks.mjs",
+            "images/jxl/weighted.mjs",
+            "images/jxl/screen-photo-regions.mjs",
+            "images/jxl/sampled.mjs",
+            "images/jxl/exact-ladder.mjs",
             "images/jxl/photo-split-ladder.mjs",
+            "images/jxl/local.mjs",
+            "images/jxl/photo-v6-blocks.mjs",
+            "images/jxl/varblocks.mjs",
+            "images/jxl/varblock-core.mjs",
+            "images/jxl/photo-mask.mjs",
+            "images/jxl/varblock-write.mjs",
+            "images/jxl/photo-distance-cells.mjs",
+            "images/jxl/aq.mjs",
+            "images/jxl/aq-cursor-kernels.mjs",
+            "images/jxl/block-split.mjs",
             "images/jxl/kernels.mjs",
-            "images/jxl/wasm-modules.mjs",
-            "images/jxl/build-version.mjs",
             "images/jxl/arena.mjs",
             "images/jxl/memory-device.mjs",
             "images/jxl/photo-v6-search.mjs",
             "images/jxl/exact-region.mjs",
             "images/jxl/reconstruct.mjs",
-            "images/jxl/butteraugli.mjs",
-            "images/jxl/ssimulacra2.mjs",
-            "images/jxl/s2-cells.mjs",
-            "images/jxl/int-spec.mjs",
-            "images/jxl/photo-advanced.mjs",
-            "images/jxl/vardct-progressive.mjs",
-            "images/jxl/noise.mjs",
-            "images/jxl/lf-frames.mjs",
+            "images/jxl/photo-rebuild.mjs",
+            "images/jxl/rebuild-kernels.mjs",
+            "images/jxl/rebuild-kernels-bytes.mjs",
+            "images/jxl/kernel-engine.mjs",
+            "images/jxl/vardct-render.mjs",
+            "images/jxl/vardct-inverse.mjs",
+            "images/jxl/opsin.mjs",
             "images/jxl/framing.mjs",
             "images/jxl/container.mjs",
+            "images/jxl/jpeg-coefficients.mjs",
+            "images/jxl/format-fields.mjs",
+            "images/jxl/reconstruct-dct8.mjs",
+            "images/jxl/reconstruct-planes.mjs",
+            "images/jxl/rgb8-output.mjs",
+            "images/jxl/rgb8-thresholds.mjs",
+            "images/jxl/butteraugli.mjs",
+            "images/jxl/butteraugli-arithmetic.mjs",
+            "images/jxl/photo-reconstruct-bands.mjs",
+            "images/jxl/s2-cells.mjs",
+            "images/jxl/ssimulacra2.mjs",
+            "images/jxl/ssimulacra2-weights.mjs",
+            "images/jxl/ssimulacra2-constants.mjs",
+            "images/jxl/ssimulacra2-reference.mjs",
+            "images/jxl/ssimulacra2-arithmetic.mjs",
+            "images/jxl/ssimulacra2-fused-bytes.mjs",
+            "images/jxl/ssimulacra2-gaussian.mjs",
+            "images/jxl/int-spec.mjs",
+            "images/jxl/photo-measure.mjs",
+            "images/jxl/photo-native-scores.mjs",
+            "images/jxl/photo-output.mjs",
+            "images/jxl/photo-search.mjs",
+            "images/jxl/varblock-measured.mjs",
+            "images/jxl/photo-quality-search.mjs",
+            "images/jxl/photo-v6-provider.mjs",
+            "images/jxl/photo-image-write.mjs",
+            "images/jxl/photo-whole-policy.mjs",
+            "images/jxl/photo-quality-table.mjs",
+            "images/jxl/photo-browser-margin.mjs",
+            "images/jxl/photo-advanced.mjs",
+            "images/jxl/noise.mjs",
+            "images/jxl/lf-frames.mjs",
             "images/jxl/photo-crop.mjs",
             "images/jxl/photo-layout.mjs",
-            "images/jxl/format-fields.mjs",
             "images/jxl/photo-extras.mjs",
             "images/jxl/planar-input.mjs",
             "images/jxl/planar-planes.mjs",
             "images/jxl/weighted-custom.mjs",
             "images/jxl/channels.mjs",
             "images/jxl/icc.mjs",
-            "images/jxl/color-info.mjs",
             "images/jxl/channel-lossless.mjs",
             "images/jxl/planar-squeeze.mjs",
             "images/jxl/modular-progressive.mjs",
             "images/jxl/planar-transforms.mjs",
             "images/jxl/implicit-palette.mjs",
+            "images/jxl/v7/feature-photo.mjs",
+            "images/jxl/photo-picture-measure.mjs",
+            "images/jxl/photo-samples.mjs",
+            "images/jxl/color-encoding.mjs",
+            "images/jxl/v7/measured-search.mjs",
+            "images/jxl/photo-output-policy.mjs",
+            "images/jxl/v7/common.mjs",
+            "images/jxl/screen-photo-mixed.mjs",
+            "images/jxl/screen-photo-borders.mjs",
+            "images/jxl/layers-core.mjs",
+            "images/jxl/v7/encode-options.mjs",
+            "images/jxl/v7/describe.mjs",
+            "images/jxl/v7/first-region-option.mjs",
+            "images/jxl/gpu-queue.mjs",
+            "images/jxl/turn.mjs",
+            "images/jxl/v7/score-target.mjs",
             "images/jxl/score.mjs",
             "images/jxl/async-job.mjs",
-            "images/jxl/jpeg-ans-effort.mjs",
-            "images/jxl/jpeg-effort.mjs",
-            "images/jxl/coefficient-coding.mjs",
-            "images/jxl/jpeg-job.mjs",
-            "images/jxl/jfif.mjs",
-            "images/jxl/jpeg-reconstruction.mjs",
-            "images/jxl/jpeg-coefficients.mjs",
-            "images/jxl/brotli.mjs",
+            "images/jxl/v7/acceleration.mjs",
+            "images/jxl/gpu-core.mjs",
+            "images/jxl/gpu-device.mjs",
+            "images/jxl/gpu-arithmetic.mjs",
+            "images/jxl/gpu-blocks16.mjs",
+            "images/jxl/gpu-blocks.mjs",
+            "images/jxl/gpu-capture-blocks.mjs",
+            "images/jxl/v7/kernels-ready.mjs",
+            "images/jxl/v7/webgpu.mjs",
+            "images/jxl/gpu-gate.mjs",
             "images/jxl/source.mjs",
-            "images/jxl/capture-codec.mjs",
+            "images/jxl/v7/preparation-jpeg.mjs",
+            "images/jxl/sample-transforms.mjs",
             "images/jxl/v7/instant.mjs",
-            "images/jxl/index.mjs",
-            "images/jxl/v7/common.mjs",
-            "images/jxl/screen-floor.mjs",
-            "images/jxl/v7/encode-options.mjs",
-            "images/jxl/v7/fidelity.mjs",
-            "images/jxl/v7/describe.mjs",
-            "images/jxl/gpu-queue.mjs",
+            "images/jxl/core-steps.mjs",
             "images/jxl/parallel-drive.mjs",
             "images/jxl/job-drive.mjs",
+            "images/jxl/screen-floor.mjs",
             "images/jxl/parallel-serve.mjs",
-            "images/jxl/v7/drive.mjs",
             "images/jxl/v7/first-region.mjs",
             "images/jxl/toc-permutation.mjs",
             "images/jxl/section-order.mjs",
-            "images/jxl/v7/first-region-option.mjs",
             "images/jxl/v7/input.mjs",
+            "images/jxl/v7/input-native.mjs",
             "images/jxl/v7/surface.mjs",
             "images/jxl/v7/webgl-read.mjs",
             "images/jxl/v7/video.mjs",
-            "images/jxl/v7/records.mjs",
-            "images/jxl/v7/ownership.mjs",
+            "images/jxl/v7/phone-container.mjs",
             "images/jxl/v7/bands.mjs",
-            "images/jxl/layers-core.mjs",
             "images/jxl/v7/band-size.mjs",
             "images/jxl/v7/band-recode.mjs",
+            "images/jxl/v7/low-photo.mjs",
+            "images/jxl/photo-low.mjs",
+            "images/jxl/photo-low-settings.mjs",
+            "images/jxl/v7/ordinary-still-policy.mjs",
+            "images/jxl/photo-intent.mjs",
+            "images/jxl/v7/low-webp-quality.mjs",
+            "images/jxl/v7/webp-quality.mjs",
+            "images/jxl/v7/native-still-prediction.mjs",
+            "images/jxl/v7/still-photo-target.mjs",
+            "images/jxl/photo-whole-search.mjs",
+            "images/jxl/photo-plane-levels.mjs",
+            "images/jxl/photo-plane-search.mjs",
+            "images/jxl/photo-plane-measured.mjs",
+            "images/jxl/photo-measured-steps.mjs",
+            "images/jxl/photo-whole-rebuild.mjs",
+            "images/jxl/photo-reference.mjs",
             "images/jxl/photo-hdr.mjs",
+            "images/jxl/sample-values.mjs",
             "images/jxl/v7/rows.mjs",
             "images/jxl/v7/texture.mjs",
-            "images/jxl/v7/acceleration.mjs",
-            "images/jxl/v7/kernels-ready.mjs",
-            "images/jxl/capture-wasm-error.mjs",
-            "images/jxl/v7/webgpu.mjs",
-            "images/jxl/gpu-gate.mjs",
+            "images/jxl/v7/verb-steps.mjs",
+            "images/jxl/v7/jpeg-size.mjs",
             "draw/paint-gpu.mjs",
             "draw/paint-gpu-flat.mjs",
             "draw/paint-gpu-wet.mjs",
@@ -486,9 +587,9 @@
         },
         {
           "id": "jxlcomplete",
-          "file": "rapier-jxlcomplete-fa323b6d2db2ca30.txt",
-          "bytes": 408838,
-          "sri": "bU/5QLBN8fmda10uNImGxmEWX2dZ+8BxLLllAuTnLaHk/VultBYyAZFb45aq+1Ox",
+          "file": "rapier-jxlcomplete-da4ac035e8121a05.txt",
+          "bytes": 524723,
+          "sri": "i2MgoRYdh3QxAFR7gzEnFjmU0XpKwY2T6By7fHJOgBw1qVOHFUM1YFjN1IggyEJl",
           "scripts": [
             "jxl/complete.js"
           ],
@@ -554,9 +655,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-648fda8eaa3c095e.txt",
-          "bytes": 394746,
-          "sri": "itxx0lmZsElbJYZlN8hBxHJo9JzspWLU/SXPrhGICfhcXMV6+tcP4Cnacn1diTZi",
+          "file": "rapier-notes-d6e21517c8103dd4.txt",
+          "bytes": 394865,
+          "sri": "2Yx20ZglJjI8mn6GiE3a+mfZz/kgYvgrCna5Fvb2a8IoYMB1a7YV8pkYXtkOWf3B",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -1088,16 +1189,10 @@
           "paintGpuShaderSource"
         ],
         "images/jxl/v7/still.mjs": [
-          "capture",
           "supported",
           "configureWasm",
-          "prepare"
-        ],
-        "images/jxl/v7/capture.mjs": [
-          "configureWasm",
-          "supported",
           "prepare",
-          "capture"
+          "resultJSON"
         ],
         "images/jxl/v7/capture-support.mjs": [
           "supported",
@@ -1105,23 +1200,8 @@
           "captureSupported",
           "requireCapture"
         ],
-        "images/jxl/v7/capture-core.mjs": [
-          "prepareCapture",
-          "captureWith"
-        ],
-        "images/jxl/v7/run-capture.mjs": [
-          "prepareCapture",
-          "admitCapture",
-          "runCapture"
-        ],
-        "images/jxl/v7/capture-options.mjs": [
-          "admitCapture"
-        ],
-        "images/jxl/v7/webgpu.mjs": [
-          "webgpuUsable",
-          "webgpuSetting"
-        ],
         "images/jxl/v7/rows.mjs": [
+          "untilAborted",
           "isRowBridge",
           "rowBridge",
           "bridgedRows"
@@ -1131,25 +1211,66 @@
           "hdrSteps",
           "hdrLossySteps"
         ],
+        "images/jxl/photo-plane-search.mjs": [
+          "plainLayout",
+          "planeRequest",
+          "planeLevelsSteps",
+          "planeLayoutSteps"
+        ],
+        "images/jxl/photo-plane-levels.mjs": [
+          "plainLayoutBlock"
+        ],
+        "images/jxl/v7/ordinary-still-policy.mjs": [
+          "ordinaryStillDecision"
+        ],
+        "images/jxl/v7/native-still-prediction.mjs": [
+          "NATIVE_STILL_CALIBRATION"
+        ],
+        "images/jxl/v7/low-webp-quality.mjs": [
+          "LOW_WEBP_CALIBRATION",
+          "lowPhotoReading",
+          "lowCaptureReading",
+          "lowWebpQuality",
+          "settleLowWebp"
+        ],
+        "images/jxl/v7/webp-quality.mjs": [
+          "settleWebp",
+          "webpCoding"
+        ],
+        "images/jxl/v7/low-photo.mjs": [
+          "encodeLowSplit",
+          "makeLowUpload",
+          "finishLowUpload",
+          "closeLowUpload"
+        ],
+        "images/jxl/photo-low.mjs": [
+          "lowWholePhotoSteps",
+          "encodeLowSplit",
+          "makeLowUpload",
+          "finishLowUpload",
+          "closeLowUpload",
+          "lowPhotoUsesFilter",
+          "lowPhotoBudgets",
+          "lowPhotoFilteredQuality",
+          "chooseLowPhoto",
+          "lowPhotoSizeFailure",
+          "LOW_PHOTO_SMALL_BUDGET"
+        ],
         "images/jxl/v7/band-size.mjs": [
           "BAND_PIXELS",
           "COMPACT_WHOLE",
           "WHOLE_BYTES",
           "wholeBudget"
         ],
-        "images/jxl/layers-core.mjs": [
-          "LIMITS",
-          "LAYER_BLEND_MODES"
+        "images/jxl/v7/input.mjs": [
+          "jpegDimensions",
+          "jpegBlobDimensions",
+          "admitJpeg"
         ],
-        "images/jxl/v7/ownership.mjs": [
-          "DEFAULT_PIXELS",
-          "SNAPSHOTS",
-          "withCost",
-          "MAX_NODES",
-          "record",
-          "dimensions",
-          "measure",
-          "snapshot"
+        "images/jxl/v7/input-native.mjs": [
+          "jpegDimensions",
+          "jpegBlobDimensions",
+          "admitJpeg"
         ],
         "images/jxl/v7/surface.mjs": [
           "foreignSpace"
@@ -1179,101 +1300,40 @@
         "images/jxl/job-drive.mjs": [
           "serialJob"
         ],
-        "images/jxl/v7/describe.mjs": [
-          "decodedFields",
-          "decodedDescription"
-        ],
-        "images/jxl/v7/fidelity.mjs": [
-          "exactFidelity",
-          "measuredFidelity",
-          "captureFidelity"
-        ],
-        "images/jxl/index.mjs": [
+        "images/jxl/core-steps.mjs": [
           "LIMITS",
           "encode",
-          "encodeAsync"
+          "coreSteps"
         ],
-        "images/jxl/gpu-drive.mjs": [
-          "gpuWanted",
-          "driveGpu",
-          "gpuJob"
-        ],
-        "images/jxl/gpu-gate.mjs": [
-          "GPU_FROM"
-        ],
-        "images/jxl/capture-codec.mjs": [
-          "compileCaptureKernels",
-          "CAPTURE_PREDICTOR_PROBE",
-          "CAPTURE_BASE",
-          "scanColoursScript",
-          "admitCapture",
-          "captureBandShape",
-          "captureBand",
-          "encodeCaptureBytes"
-        ],
-        "images/jxl/screen-crop.mjs": [
-          "pixelKeys",
-          "screenCrop",
-          "writeScreenBackground",
-          "screenRegions",
-          "commonSample",
-          "screenColumns"
-        ],
-        "images/jxl/capture-kernels.mjs": [
-          "WEIGHTED_BANDS",
-          "WEIGHTED_CONTEXT",
-          "LOG_MANTISSA",
-          "compileCaptureKernels",
-          "prepareCaptureKernels",
-          "captureWeighted",
-          "captureHold",
-          "captureRelease",
-          "capturePrices",
-          "captureCopies",
-          "captureWeightedPieces",
-          "SCAN_WORDS",
-          "captureLowestInk",
-          "captureCropEdges",
-          "captureRowsUnlike",
-          "captureColumnsUnlike",
-          "captureScan",
-          "treeArena",
-          "captureLiterals",
-          "capturePieceCounts",
-          "requireCaptureKernels",
-          "captureResiduals"
-        ],
-        "images/jxl/capture-kernels-bytes.mjs": [
-          "CAPTURE"
+        "images/jxl/sample-transforms.mjs": [
+          "resizeSamples"
         ],
         "images/jxl/source.mjs": [
           "readSource"
         ],
-        "images/jxl/jpeg-ans-effort.mjs": [
-          "PREFIX_LADDER_PIXELS",
-          "jpegAnsFirstSteps",
-          "jpegAnsEffortSteps"
+        "images/jxl/v7/preparation-jpeg.mjs": [
+          "jpegDisplayDimensions",
+          "jpegReconstruction"
         ],
-        "images/jxl/jpeg-job.mjs": [
-          "jpegAnswer",
-          "jpegSteps"
+        "images/jxl/gpu-gate.mjs": [
+          "GPU_FROM"
         ],
-        "images/jxl/jpeg-reconstruction.mjs": [
-          "RECONSTRUCTION_PAYLOAD_BYTES",
-          "RECONSTRUCTION_SCAN_EVENTS",
-          "unpredictICC",
-          "restoreJPEG"
+        "images/jxl/v7/webgpu.mjs": [
+          "webgpuUsable",
+          "webgpuSetting"
         ],
-        "images/jxl/jpeg-coefficients.mjs": [
-          "JxlBits",
-          "readEncodedICC",
-          "skipICC",
-          "readMaTree",
-          "modular",
-          "readJPEGCoefficients"
+        "images/jxl/gpu-capture-blocks.mjs": [
+          "captureBlockPlanes"
         ],
-        "images/jxl/jfif.mjs": [
-          "profileSpace"
+        "images/jxl/gpu-blocks.mjs": [
+          "bTr",
+          "gpuBlocksStats"
+        ],
+        "images/jxl/gpu-blocks16.mjs": [
+          "b16Tr",
+          "b16Tables",
+          "b16Blocks",
+          "gpuBlocks16Stats"
         ],
         "images/jxl/score.mjs": [
           "LIMITS",
@@ -1286,6 +1346,26 @@
         "images/jxl/async-job.mjs": [
           "finishEncoding"
         ],
+        "images/jxl/v7/describe.mjs": [
+          "decodedFields",
+          "decodedDescription"
+        ],
+        "images/jxl/screen-photo-mixed.mjs": [
+          "compileCaptureKernels"
+        ],
+        "images/jxl/layers-core.mjs": [
+          "LIMITS",
+          "LAYER_BLEND_MODES"
+        ],
+        "images/jxl/photo-output-policy.mjs": [
+          "photoOutputConstraintMessage"
+        ],
+        "images/jxl/photo-samples.mjs": [
+          "photoLimits"
+        ],
+        "images/jxl/color-encoding.mjs": [
+          "signature"
+        ],
         "images/jxl/photo-advanced.mjs": [
           "TRANSFORMS",
           "photonNoise",
@@ -1295,6 +1375,10 @@
         ],
         "images/jxl/photo-extras.mjs": [
           "snapshotPhotoExtras",
+          "photoExtraChannelData",
+          "firstGroupedPhotoExtra",
+          "photoExtraGlobalPieces",
+          "photoExtraGroupPieces",
           "photoExtraStreams"
         ],
         "images/jxl/channels.mjs": [
@@ -1307,9 +1391,11 @@
           "encodeProfile",
           "encodeProfileSteps"
         ],
-        "images/jxl/format-fields.mjs": [
-          "EXTRA_CHANNEL_TYPES",
-          "writeDepth"
+        "images/jxl/planar-planes.mjs": [
+          "copyPlanarRow",
+          "PLANAR_PREDICTORS",
+          "planarSampleHeight",
+          "planarPredictorCost"
         ],
         "images/jxl/noise.mjs": [
           "photonNoise"
@@ -1319,8 +1405,9 @@
           "GABORISH",
           "AQ",
           "VARBLOCK_IDS",
+          "meets",
+          "qualitySteps",
           "nativeSsimulacra2",
-          "S2_MARGIN",
           "NATIVE_DOUBT",
           "BA3_DOUBT",
           "BA_DOUBT",
@@ -1329,17 +1416,62 @@
           "gpuDoubt",
           "runSync",
           "runAsync",
+          "stillPhotoProvider",
+          "S2_MARGIN",
           "decisionSteps",
-          "candidateImage",
           "candidateImageSteps",
+          "candidateImage",
           "writeImage",
-          "meets",
           "gpuStats",
           "forcedBands",
           "s2GuidedBlocksSteps",
           "s2GuidedBlocks",
           "s2EffortSearchSteps",
           "certain"
+        ],
+        "images/jxl/photo-browser-margin.mjs": [
+          "BROWSER_MARGIN",
+          "browserMargin"
+        ],
+        "images/jxl/photo-quality-table.mjs": [
+          "QUALITY_TARGETS",
+          "QUALITY_CALIBRATION",
+          "qualityTarget"
+        ],
+        "images/jxl/photo-image-write.mjs": [
+          "writeImageSteps"
+        ],
+        "images/jxl/photo-search.mjs": [
+          "meets",
+          "qualitySteps",
+          "candidateApplies",
+          "candidateOrder",
+          "smallerCandidate",
+          "candidatePool",
+          "decisionSteps",
+          "candidateImageSteps"
+        ],
+        "images/jxl/photo-quality-search.mjs": [
+          "qualityMargin",
+          "qualityMarginDoubt",
+          "qualitySearchStep",
+          "qualityUndecided"
+        ],
+        "images/jxl/varblock-measured.mjs": [
+          "RATE_DOUBT",
+          "MAP_TOTAL_DOUBT",
+          "RATE_TOTAL_DOUBT",
+          "sameDct8ImageValue",
+          "sameDct8ImageValues",
+          "sameDct8QuantTable",
+          "sameDct8Block",
+          "sameDct8Image"
+        ],
+        "images/jxl/photo-native-scores.mjs": [
+          "photoNativeScores"
+        ],
+        "images/jxl/photo-output.mjs": [
+          "gammaRGBA"
         ],
         "images/jxl/s2-cells.mjs": [
           "S2C_LIN",
@@ -1397,9 +1529,27 @@
           "roundDivB",
           "INT_WGSL"
         ],
+        "images/jxl/ssimulacra2.mjs": [
+          "recursiveGaussian",
+          "srgbToLinear",
+          "downsample"
+        ],
+        "images/jxl/ssimulacra2-gaussian.mjs": [
+          "recursiveGaussian",
+          "GAUSS"
+        ],
+        "images/jxl/ssimulacra2-arithmetic.mjs": [
+          "ssimulacra2WorkBytes",
+          "FUSED_PROBE",
+          "compileFusedMetric",
+          "fusedMetric"
+        ],
         "images/jxl/exact-region.mjs": [
-          "CROP_MARGIN",
           "subBase",
+          "BAND_ROWS",
+          "bandedMap",
+          "bandedScores",
+          "CROP_MARGIN",
           "cropFor",
           "regionMeasure",
           "regionJob",
@@ -1412,12 +1562,15 @@
           "exactAnswerer",
           "mergeRegions",
           "poolSize",
-          "BAND_ROWS",
-          "bandedMap",
-          "bandedScores",
           "CROP_COST",
           "WHOLE_COST",
           "cropsCost"
+        ],
+        "images/jxl/photo-reconstruct-bands.mjs": [
+          "subBase",
+          "BAND_ROWS",
+          "bandedMap",
+          "bandedScores"
         ],
         "images/jxl/worker-reservation.mjs": [
           "claimWorkerReservation",
@@ -1428,30 +1581,88 @@
         "images/jxl/worker-assets.mjs": [
           "spawnJxlHelper"
         ],
-        "images/jxl/ssimulacra2.mjs": [
-          "srgbToLinear",
-          "recursiveGaussian",
-          "s2Blur",
-          "positiveXYB",
-          "positiveXYBPlane",
-          "downsample"
-        ],
         "images/jxl/butteraugli.mjs": [
-          "MALTA_LF",
-          "MALTA_HF",
-          "blurKernel",
-          "blur",
-          "opsinDynamics",
-          "separateFrequencies",
-          "subsample2x",
+          "prepareButteraugli",
+          "butteraugliAllocation",
+          "butteraugliWorkBytes",
+          "butteraugliRowsLayout",
           "pnorm"
         ],
+        "images/jxl/butteraugli-arithmetic.mjs": [
+          "prepareButteraugli"
+        ],
         "images/jxl/reconstruct.mjs": [
-          "half",
           "rcLlfFromDC",
-          "inverseBasis",
           "coefficientPlanes",
-          "epfInverseSigma"
+          "inverseBlockRows",
+          "inverseBlockColumns",
+          "reconstructionDCSteps",
+          "reconstructionBlockScale",
+          "dequantizeStrategyAC",
+          "addStrategyChroma",
+          "reconstructionBlockDC",
+          "reconstructionBlockMeans",
+          "writeReconstructionLLF",
+          "epfInverseSigma",
+          "reconstructRGB",
+          "ycbcrPixels",
+          "half",
+          "inverseBasis"
+        ],
+        "images/jxl/reconstruct-planes.mjs": [
+          "half",
+          "inverseBasis",
+          "rcLlfFromDC",
+          "coefficientPlanes",
+          "inverseBlockRows",
+          "inverseBlockColumns",
+          "reconstructionDCSteps",
+          "reconstructionBlockScale",
+          "dequantizeStrategyAC",
+          "addStrategyChroma",
+          "reconstructionBlockDC",
+          "reconstructionBlockMeans",
+          "writeReconstructionLLF",
+          "epfInverseSigma",
+          "reconstructRGB",
+          "ycbcrPixels"
+        ],
+        "images/jxl/rgb8-output.mjs": [
+          "toRGBAExact"
+        ],
+        "images/jxl/reconstruct-dct8.mjs": [
+          "fillInverseBasis",
+          "rgbPixels",
+          "reconstructDCT8RGB"
+        ],
+        "images/jxl/opsin.mjs": [
+          "LIMITS",
+          "prepareOpsinTransform",
+          "withOpsin"
+        ],
+        "images/jxl/format-fields.mjs": [
+          "EXTRA_CHANNEL_TYPES",
+          "writeDepth"
+        ],
+        "images/jxl/jpeg-coefficients.mjs": [
+          "requireJPEG",
+          "readEncodedICC",
+          "skipICC",
+          "readMaTree",
+          "modular",
+          "readJPEGCoefficients"
+        ],
+        "images/jxl/vardct-render.mjs": [
+          "renderBlock8"
+        ],
+        "images/jxl/vardct-inverse.mjs": [
+          "scaledBasis",
+          "restoreRows",
+          "restorationSizes",
+          "restorationRegions"
+        ],
+        "images/jxl/rebuild-kernels.mjs": [
+          "REBUILD_EXPORTS"
         ],
         "images/jxl/photo-v6-blocks.mjs": [
           "fullBlocksOnDevice",
@@ -1460,25 +1671,19 @@
           "grainRegime"
         ],
         "images/jxl/memory-device.mjs": [
-          "BAND_PIXELS",
           "COMPACT_WHOLE"
         ],
         "images/jxl/block-split.mjs": [
           "serveBlockSplit"
         ],
         "images/jxl/kernels.mjs": [
-          "configureKernels",
-          "ensureKernels",
           "kernelMode",
           "kernelRequest",
           "disableEntropyKernels",
-          "prepareKernels"
-        ],
-        "images/jxl/kernels-bytes.mjs": [
-          "SIMD",
-          "SIMD_JPEG",
-          "SIMD_UPLOAD",
-          "SIMD_PROBE"
+          "sampleTable",
+          "sampleFilter",
+          "sampleSum",
+          "sampleFinish"
         ],
         "images/jxl/jpeg-kernels.mjs": [
           "jpegKernels",
@@ -1488,47 +1693,77 @@
         "images/jxl/jpeg-kernels-bytes.mjs": [
           "JPEG_KERNELS"
         ],
-        "images/jxl/wasm-text.mjs": [
-          "KEY",
-          "storedWasmByte",
-          "wasmBytes"
+        "images/jxl/aq.mjs": [
+          "blockDistances",
+          "smoothField",
+          "MEAN_DOUBT",
+          "fieldRanges",
+          "certifyPath",
+          "maskDoubtOver",
+          "aqActiveCount",
+          "aqZeroDistances",
+          "aqCheckActiveDistances",
+          "aqFieldRaw",
+          "aqBlockRegions"
         ],
-        "images/jxl/wasm-modules.mjs": [
-          "wasmBundle",
-          "configureWasm",
-          "configureModules",
-          "suppliedWasm",
-          "hasWasmModule",
-          "compileWasm",
-          "wasmModule"
-        ],
-        "images/jxl/photo-split-ladder.mjs": [
-          "encodeSplitLadder"
+        "images/jxl/aq-cursor-kernels.mjs": [
+          "pathTerm"
         ],
         "images/jxl/varblocks.mjs": [
           "nzBucket",
           "token",
           "VB_DOUBT",
           "TransformCache",
+          "auditLevels",
+          "lazyStrategyImage",
+          "sumRateError",
+          "sumStrategyValues",
+          "strategyCertifiedRateError",
+          "addStrategyMapCells",
+          "strategyMeasuredRateTotalDoubt",
+          "strategyMeasuredPrice",
+          "createStrategySelector",
+          "strategyFamilyCount",
+          "revertStrategyFamily",
           "strategyCosts",
           "learnedOrders",
           "encodeStrategyImage",
           "optimalLearnedOrders",
           "encodeXYBStrategies",
-          "RATE_DOUBT",
-          "MAP_TOTAL_DOUBT",
-          "RATE_TOTAL_DOUBT",
-          "sameDct8Image"
+          "cellSums"
         ],
-        "images/jxl/vardct-strategies.mjs": [
-          "inverseScaledDCT",
-          "requantizeStrategySteps"
+        "images/jxl/varblock-write.mjs": [
+          "learnedOrders",
+          "encodeStrategyImage",
+          "optimalLearnedOrders"
         ],
-        "images/jxl/aq.mjs": [
-          "smoothField",
-          "MEAN_DOUBT",
-          "fieldRanges",
-          "certifyPath"
+        "images/jxl/varblock-core.mjs": [
+          "nzBucket",
+          "strategyRatePrediction",
+          "addStrategyRateBlock",
+          "addStrategyRateTotals",
+          "finishStrategyRateTotals",
+          "fillStrategyRateBits",
+          "VB_DOUBT",
+          "pixelWeights",
+          "fillStrategyHigh",
+          "strategyTableEnvironment",
+          "addStrategyBandFit",
+          "finishStrategyBandFit",
+          "fillStrategyTableTargets",
+          "strategyBandTarget",
+          "strategyTableParameters",
+          "channelNorm",
+          "TransformCache",
+          "VB_CONFIG",
+          "VB_NZ"
+        ],
+        "images/jxl/photo-mask.mjs": [
+          "maskEnergyRange",
+          "maskDoubtSumsRange",
+          "normalizeMaskDoubts",
+          "maskWeightsRange",
+          "normalizeMaskWeights"
         ],
         "images/jxl/effort-job.mjs": [
           "losslessScreenCandidate",
@@ -1536,50 +1771,42 @@
           "minimumSearchDataBits",
           "searchSteps"
         ],
-        "images/jxl/screen-patches.mjs": [
-          "glyphDictionary",
-          "writePatchFrameHeader",
-          "writePatchDictionary",
-          "encodePatches"
+        "images/jxl/sampled.mjs": [
+          "sampleClusterPlan",
+          "sampledGroup",
+          "sampledPlanes"
         ],
-        "images/jxl/coefficient-ans.mjs": [
-          "BUDGETS",
-          "rungs",
-          "ansPlan"
+        "images/jxl/screen-photo-regions.mjs": [
+          "textTiles",
+          "photoCells",
+          "screenPhotoTiles"
         ],
         "images/jxl/photo-job.mjs": [
           "photoJob",
-          "photoJobSteps",
-          "photoProducer"
+          "photoJobSteps"
         ],
         "images/jxl/photo-v6.mjs": [
-          "UPLOAD_PICTURE"
+          "UPLOAD_PICTURE",
+          "UPLOAD_FLAT_PICTURE",
+          "photoV6Image"
+        ],
+        "images/jxl/coefficient-ans.mjs": [
+          "coefficientAnsPolicy",
+          "coefficientAnsKey",
+          "coefficientAnsNeedsFloor",
+          "coefficientSizeFailure",
+          "strategyAnsRuns"
         ],
         "images/jxl/photo-split.mjs": [
           "SPLIT_MIN_PIXELS",
-          "dcStep",
           "heldPieces",
-          "addCounts",
-          "splitImage",
           "splitShape",
           "photoSplitBands",
           "splitHasAlpha",
           "splitSteps",
           "splitEnd",
-          "splitRelease",
+          "splitCandidates",
           "encodeSplit"
-        ],
-        "images/jxl/coefficient-effort.mjs": [
-          "worthFastOrder"
-        ],
-        "images/jxl/lf-coding.mjs": [
-          "RUNGS",
-          "plainOrFixedLfCoder",
-          "plainBound"
-        ],
-        "images/jxl/sampled.mjs": [
-          "sampleClusterPlan",
-          "sampledGroup"
         ],
         "images/jxl/ans.mjs": [
           "LOG_LENGTHS",
@@ -1590,14 +1817,151 @@
         "images/jxl/context-map.mjs": [
           "codedMap"
         ],
-        "images/jxl/weighted-policy.mjs": [
-          "weightedTables"
+        "images/jxl/coefficient-effort.mjs": [
+          "worthFastOrder"
+        ],
+        "images/jxl/lf-coding.mjs": [
+          "RUNGS",
+          "learnedLfStream",
+          "retainLearnedLfStream",
+          "plainOrFixedLfCoder",
+          "plainBound",
+          "lfCoderForPlan"
+        ],
+        "images/jxl/capture-ans.mjs": [
+          "captureAnsTokens",
+          "writeCaptureAns"
+        ],
+        "images/jxl/ans-core.mjs": [
+          "LOG_CODES"
+        ],
+        "images/jxl/capture-codec.mjs": [
+          "DEFAULT_EFFORT",
+          "LEVELS",
+          "CAPTURE_TOOLS_LEAN",
+          "CAPTURE_PREDICTOR_PROBE",
+          "CAPTURE_PATCHES",
+          "CAPTURE_TIMING",
+          "CAPTURE_HELPERS",
+          "CAPTURE_GPU",
+          "CAPTURE_TRACE",
+          "CAPTURE_LEVEL",
+          "captureSkewEligible",
+          "captureSkewBits",
+          "captureSkewCopyCost",
+          "captureNearestStart",
+          "captureNearestRange",
+          "captureGroupThreshold",
+          "captureGroupCache",
+          "capturePredictorModes",
+          "captureGroupAlternatives",
+          "captureGroupBytes",
+          "captureResumeContext",
+          "captureChannelModel",
+          "capturePaletteModel",
+          "captureUseWeighted",
+          "captureWeightedModel",
+          "captureGradientModel",
+          "capturePruneCopies",
+          "LITERAL_CONFIGS",
+          "DISTANCE_CONFIGS",
+          "valueCounts",
+          "countTokens",
+          "sortedCode",
+          "distancePrice",
+          "distanceCode",
+          "spatialLookup",
+          "intervals",
+          "capturePaletteMeta",
+          "captureRowsBits",
+          "capturePaletteChoice",
+          "admitCapture",
+          "captureBandShape",
+          "captureBand",
+          "encodeAtlasSteps",
+          "captureBandSteps",
+          "captureCandidateLevels",
+          "captureCombinedLevel",
+          "markCaptureExact",
+          "captureExact",
+          "captureCopySpatial"
+        ],
+        "images/jxl/capture-trees.mjs": [
+          "nlogQ12",
+          "transformRanking",
+          "learnTree",
+          "codePlane",
+          "treeModel",
+          "weightedTree"
+        ],
+        "images/jxl/lf-plans.mjs": [
+          "lfPlanPlainMetadata"
         ],
         "images/jxl/vardct.mjs": [
           "writeModularStream",
           "encodeVarDCT"
         ],
+        "images/jxl/capture-patches.mjs": [
+          "PATCH_SLOT",
+          "PEEL_ADD",
+          "PEEL_MUL"
+        ],
+        "images/jxl/screen-crop.mjs": [
+          "commonSample"
+        ],
+        "images/jxl/vardct-contexts.mjs": [
+          "contextsFromThresholds"
+        ],
+        "images/jxl/vardct-strategies.mjs": [
+          "naturalOrderLower",
+          "naturalOrderUpper",
+          "fillScaledDCTBasis",
+          "transposeScaledDCTBasis",
+          "inverseScaledDCT",
+          "scaledDCTRows",
+          "scaledDCTColumns",
+          "requantizeStrategySteps"
+        ],
+        "images/jxl/vardct-bases.mjs": [
+          "fillScaledDCTBasis",
+          "transposeScaledDCTBasis"
+        ],
+        "images/jxl/coefficient-layout.mjs": [
+          "naturalOrderLower",
+          "naturalOrderUpper"
+        ],
+        "images/jxl/vardct-tables.mjs": [
+          "VARDCT_TABLE_FAMILIES"
+        ],
+        "images/jxl/quantization-params.mjs": [
+          "fillQuantParamDCT",
+          "quantParamMatrix",
+          "quantParamStepValues",
+          "quantParamDescriptor"
+        ],
+        "images/jxl/vardct-header.mjs": [
+          "varDCTGeometry",
+          "varDCTAnalysisInputs"
+        ],
+        "images/jxl/vardct-planes.mjs": [
+          "varDCTField",
+          "copyVarDCTDCSegment",
+          "varDCTLFInputs",
+          "varDCTLFBlockIndices",
+          "copyVarDCTLFBlocks"
+        ],
+        "images/jxl/photo-shown.mjs": [
+          "withShown",
+          "EXACT",
+          "exactCapture"
+        ],
+        "images/jxl/photo-levels.mjs": [
+          "splitBlockCounts"
+        ],
         "images/jxl/screen.mjs": [
+          "lookupPalette",
+          "screenPlan",
+          "screenFrameSteps",
           "encodeScreen"
         ],
         "images/jxl/photo-bands.mjs": [
@@ -1616,21 +1980,90 @@
           "poolWorkers",
           "s2SearchBytes"
         ],
+        "images/jxl/ssimulacra2-memory.mjs": [
+          "ssimulacra2WorkBytes"
+        ],
+        "images/jxl/butteraugli-memory.mjs": [
+          "butteraugliWorkBytes"
+        ],
+        "images/jxl/photo-preference.mjs": [
+          "photoPreferenceDifference"
+        ],
         "images/jxl/photo-dct.mjs": [
-          "dctBlocks"
+          "dct8Butterfly",
+          "photoQualityStep",
+          "areaFieldValue",
+          "applyAreaField",
+          "finishAreaFields",
+          "rgbCoefficientSteps"
         ],
         "images/jxl/lossy.mjs": [
+          "lossySections",
           "distanceFromQuality",
           "quantiserFor",
           "encodeLossy"
         ],
+        "images/jxl/lossy-sections.mjs": [
+          "distanceFromQuality",
+          "quantiserFor"
+        ],
         "images/jxl/squeeze.mjs": [
           "smoothTendency"
+        ],
+        "images/jxl/capture-kernels.mjs": [
+          "prepareCaptureKernels",
+          "SCAN_WORDS",
+          "captureMaskRuns",
+          "captureFillHoles",
+          "photoKernels",
+          "photoEngine",
+          "tokenArenaEnd"
+        ],
+        "images/jxl/wasm-modules.mjs": [
+          "wasmBundle",
+          "configureWasm",
+          "configureModules"
+        ],
+        "images/jxl/wasm-text.mjs": [
+          "KEY",
+          "storedWasmByte"
         ],
         "images/jxl/lossless.mjs": [
           "paletteKey",
           "planGroup",
           "encodeLossless"
+        ],
+        "images/jxl/v7/result-operation.mjs": [
+          "RESULT_REFERENCE",
+          "RAW_OPERATION",
+          "completionOptions",
+          "resultOperationWith"
+        ],
+        "images/jxl/v7/result.mjs": [
+          "resultJSON",
+          "missedResult"
+        ],
+        "images/jxl/v7/result-record.mjs": [
+          "unmeasuredResult",
+          "resultJSON"
+        ],
+        "images/jxl/v7/fidelity.mjs": [
+          "exactFidelity",
+          "measuredFidelity",
+          "captureFidelity",
+          "capturePhotoFidelity"
+        ],
+        "images/jxl/v7/ownership.mjs": [
+          "DEFAULT_PIXELS",
+          "SNAPSHOTS",
+          "HANDED",
+          "MAX_NODES",
+          "record",
+          "dimensions",
+          "snapshot"
+        ],
+        "images/jxl/v7/result-shape.mjs": [
+          "isImageResultShape"
         ],
         "draw/water-gpu.mjs": [
           "WATER_REFERENCE_TEXEL",
@@ -1894,11 +2327,15 @@
           "headerOf"
         ],
         "images/jxl/icc-transform.mjs": [
-          "profileTransform",
+          "linearFromTransform",
+          "linearFromTransformPlanes",
           "linearSrgbProfile"
         ],
         "images/jxl/screen-lz77.mjs": [
-          "screenResiduals"
+          "screenResiduals",
+          "screenLZ77",
+          "screenModel",
+          "writeScreenModel"
         ],
         "images/jxl/screen-codes.mjs": [
           "SCREEN_SPECIAL_DISTANCES"
@@ -1908,6 +2345,8 @@
         ],
         "images/jxl/frame.mjs": [
           "DC_GROUP_DIM",
+          "writeTOCSizes",
+          "tocMaxBytes",
           "addCounts"
         ],
         "images/jxl/framing.mjs": [
@@ -1924,12 +2363,21 @@
           "readMetadataAsync"
         ],
         "images/jxl/brotli.mjs": [
+          "compressBrotli",
           "decompressBrotli"
         ],
+        "images/jxl/entropy.mjs": [
+          "clusterTokenCounts"
+        ],
+        "images/jxl/step-journal.mjs": [
+          "SAVED",
+          "Unread",
+          "lazySource",
+          "encodeValue",
+          "decodeValue"
+        ],
         "images/jxl/prefix.mjs": [
-          "codeLengths",
-          "compactCode",
-          "prefixCodeBits"
+          "codeLengths"
         ],
         "images/jxl/v7/edit-changes.mjs": [
           "METADATA",
@@ -1938,8 +2386,7 @@
           "admitEdit"
         ],
         "images/jxl/v7/bytes.mjs": [
-          "encodedByteLength",
-          "copyBytes"
+          "encodedByteLength"
         ],
         "images/jxl/container-stream.mjs": [
           "containerChunks",
@@ -1953,6 +2400,7 @@
           "RECONSTRUCTION",
           "JUMBF",
           "LEVEL",
+          "withJPEGReconstruction",
           "jpegReconstruction"
         ],
         "images/jxl/v7/header-fields.mjs": [
@@ -1998,6 +2446,16 @@
           "float16Bits",
           "canonicalCodes",
           "entropyLog2"
+        ],
+        "images/jxl/v7/primitives.mjs": [
+          "isCaller",
+          "NO_JPEG",
+          "jpegPixels",
+          "bytes",
+          "webgpuSetting"
+        ],
+        "images/jxl/limits.mjs": [
+          "JPEG_LIMITS"
         ],
         "agent/will.mjs": [
           "terminatorWidth"
@@ -2080,62 +2538,53 @@
         "images/jxl/decode-entropy.mjs",
         "images/jxl/container-stream.mjs",
         "images/jxl/v7/edit-changes.mjs",
+        "images/jxl/brotli.mjs",
         "images/jxl/metadata.mjs",
         "images/jxl/container-advanced.mjs",
         "images/jxl/v7/container.mjs",
         "images/jxl/v7/inspect-edit.mjs",
-        "images/jxl/wasm-text.mjs",
         "images/jxl/jpeg-kernels-bytes.mjs",
         "images/jxl/jpeg-kernels.mjs",
-        "images/jxl/kernels-bytes.mjs",
         "images/jxl/worker-assets.mjs",
         "images/jxl/worker-reservation.mjs",
         "images/jxl/int-ops.mjs",
         "images/jxl/gpu-setup.mjs",
-        "images/jxl/capture-kernels-bytes.mjs",
-        "images/jxl/capture-kernels.mjs",
-        "images/jxl/screen-crop.mjs",
-        "images/jxl/gpu-drive.mjs",
         "images/jxl/ac-group.mjs",
-        "images/jxl/v7/capture-options.mjs",
-        "images/jxl/v7/run-capture.mjs",
-        "images/jxl/v7/capture-core.mjs",
         "images/jxl/v7/capture-support.mjs",
-        "images/jxl/v7/capture.mjs",
         "draw/flowchart-raise.mjs",
         "draw/flowchart-mermaid.mjs"
       ],
       "jxl": {
-        "version": "8.1.0",
-        "source": "0bb3d78496eb68fbe69bf940af6f5de42cf5b06a133cd1dd0ca49054a0b257e3",
+        "version": "8.3.0",
+        "source": "de854b99abddf3c1f895931bd11da7bd51cdaf86827dc566535c76df0f09cdc7",
         "page": {
           "jpeg.worker.mjs": {
-            "bytes": 416052,
-            "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
+            "bytes": 448052,
+            "sha256": "b655f222948f1a8414ccc87ebf863154727143b3abbecbafe907d4c7733c4681"
           },
           "still.worker.mjs": {
-            "bytes": 841471,
-            "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
+            "bytes": 1144395,
+            "sha256": "3f4042a2d9b2b4b00ad1f1e8bd1cab440d2635743563d47ff6a35b898f625acf"
           },
           "codec.mjs": {
-            "bytes": 53394,
-            "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
+            "bytes": 70521,
+            "sha256": "08d658765d00d1590792bde1aa89a6ee4d0201e5dbd7b69242499a999961fdb6"
           }
         },
         "parts": {
           "jxlcomplete": {
             "decode.worker.mjs": {
-              "bytes": 352423,
-              "sha256": "bec005ad7839bd5088a3bf64dab4e90bd4399fa820c2f9b2d03d6e0df8e83125"
+              "bytes": 355150,
+              "sha256": "a90988047c21353b5370f4269a22a3883e39021117f095cc13f7e8ee31627f4c"
             },
             "animation.worker.mjs": {
-              "bytes": 854561,
-              "sha256": "5abfb9c2c0b872a7cac4439fde7826f1b0ec4282ef1a1b060617bb51ae4abb97"
+              "bytes": 1286035,
+              "sha256": "44be04efc37dc9e12eb9ad5374e6a17a142cc4171603a1b116e5a2dda989d959"
             }
           }
         }
       },
-      "builtAt": "2026-11-03T23:25:11.656Z",
+      "builtAt": "2026-11-07T04:19:11.101Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
@@ -2165,8 +2614,12 @@
       "sha256": "94b5941c8bf905ea8c96e18994ac5444288bac13615f8e18ed7f110383c2c3b5"
     },
     "dist/mcp/worker.mjs": {
-      "bytes": 331418,
-      "sha256": "b8b21e925cf29c399413ce61c6342268300b954a2d58deca312dab3be6c5dcea"
+      "bytes": 338259,
+      "sha256": "11e12525137c1ee5652e0e8d15fbed8a6dad966c00d3624c5bc63186eb42ce3b"
+    },
+    "dist/mcp/use-observation.mjs": {
+      "bytes": 6364,
+      "sha256": "623badbab01abc5cb7b108c3bbeae32268d70db2b5ddf60dadd332928194402b"
     },
     "dist/mcp/incremental-json.mjs": {
       "bytes": 21730,
@@ -2381,12 +2834,16 @@
       "sha256": "d4a1f3b38cae1633130aefb58d1a13f59551ae00fceac99557a94960720783f0"
     },
     "dist/images/jxl/v7/primitives.mjs": {
-      "bytes": 3435,
-      "sha256": "117dc574bfc2f4abe250718953de62d5a2d4bcdb715450cb511dbd2cca9a881d"
+      "bytes": 6527,
+      "sha256": "7784910a594d731a6c2168b9493dc9d1f1e88d1a999a4792d71026cbc91b52b9"
+    },
+    "dist/images/jxl/limits.mjs": {
+      "bytes": 289,
+      "sha256": "0a66622ecf183f6012368b22d374a6331def53d05a517b5ab61ec2b468f9585b"
     },
     "dist/images/jxl/v7/inspect.mjs": {
-      "bytes": 6436,
-      "sha256": "989c130cb8f21c5dbe97613cbb3759f1fab8168a5ee6fca037faf575fc78eced"
+      "bytes": 6385,
+      "sha256": "97d38e2d49c7872727f929d0209bb9aa93c5fe8cef7ebea272f58c1ad73e1fa3"
     },
     "dist/images/jxl/decode-bits.mjs": {
       "bytes": 3869,
@@ -2413,24 +2870,20 @@
       "sha256": "d36b9f0b5c2a42fb49c4e6fefe03270a3a12f714bde0e613590131ccc82d5a12"
     },
     "dist/images/jxl/container-stream.mjs": {
-      "bytes": 7084,
-      "sha256": "de5aef66a5f24cafc84d92bd2bc2669d6408757f72815169cf3ba0f72d1ad880"
+      "bytes": 7077,
+      "sha256": "08efc158e55296e221f73ca661687479feaff536c0a76c6906e95ae107a11e1c"
     },
     "dist/images/jxl/admit.mjs": {
-      "bytes": 3042,
-      "sha256": "e1c42d87d9f614741c9aa54c90af99af84b8f4fc3ca4806baee35ac11a84b22d"
-    },
-    "dist/images/jxl/limits.mjs": {
-      "bytes": 263,
-      "sha256": "16276e9107602d1c78d7fea546452884e5570a71e8159f8c0a2ece3b62c6262b"
+      "bytes": 3150,
+      "sha256": "b87fe0218d63f7a50311d17055b26f4a664eb36d3eb05a1914f00d90202ea2cd"
     },
     "dist/images/jxl/container.mjs": {
-      "bytes": 10227,
-      "sha256": "80c0dcef1ee9b09b509964d2163db569ed9f2d43dad012917e93011a09d34621"
+      "bytes": 10141,
+      "sha256": "28ca49236f4e87afea9b0df9ade52e372a5c9e14ced4e9e6ce1bf29ab253ef38"
     },
     "dist/images/jxl/v7/bytes.mjs": {
-      "bytes": 1405,
-      "sha256": "496d2c6667991a4b48206f6ae2a01f1aee78093537fa2143ddd1a7691282a531"
+      "bytes": 1437,
+      "sha256": "43cee2875d4770949d4e8c7d264e9b7045f113d551baf381e1b02689c6c41ba2"
     },
     "dist/images/jxl/v7/inspect-edit.mjs": {
       "bytes": 2941,
@@ -2445,68 +2898,80 @@
       "sha256": "2f53beb7805a89d05ea5fd925df65b71f83e1dfca7d5ffdac7ed00380ac7f787"
     },
     "dist/images/jxl/metadata.mjs": {
-      "bytes": 12406,
-      "sha256": "114fc1b62b67f6715d370577719ef735f204168bcdcaf58283ffe21c10ed843a"
+      "bytes": 12316,
+      "sha256": "75b135257ec772daff520f3f789af68168c2184a6f804e6290e61a79fadf2889"
     },
     "dist/images/jxl/brotli.mjs": {
-      "bytes": 30911,
-      "sha256": "9edb575e1ce524507f67eede852ff9450792da14a130671fa0aaa5740463ab44"
+      "bytes": 28873,
+      "sha256": "20bef40792d535febf4c93dde16b1f7b5e4723a1b2999d27c53dffc257d728b5"
     },
     "dist/images/jxl/bits.mjs": {
       "bytes": 4880,
       "sha256": "c63fd98d25da44a5eb9e98ee3549d79c7a90c788ba91da68461afa5c5d07bcd7"
     },
     "dist/images/jxl/prefix.mjs": {
-      "bytes": 16732,
-      "sha256": "08df2bd6dcd8f401d94a0fd9e06f3187ba732dda4d76ae9d5420fe493d72bd45"
+      "bytes": 16208,
+      "sha256": "bfffc2acfc0071b7135d4c78b136be787295b406390c091dcc0bf3854afc7843"
     },
     "dist/images/jxl/entropy.mjs": {
-      "bytes": 20533,
-      "sha256": "fd6c46088b4f70959ed693cfbd87f0768613fa335eed4578b2e7f263cfa30cff"
+      "bytes": 24666,
+      "sha256": "2f1c809c73a9c656cf44df34d43e2770a26de4d8a2d6abbbf501babde2f24e37"
+    },
+    "dist/images/jxl/step-journal.mjs": {
+      "bytes": 8223,
+      "sha256": "96feec9e26fc9023f6100fd6dc58af27ffe65fe8e6f8fae3f2552e97c5728316"
+    },
+    "dist/images/jxl/entropy-log.mjs": {
+      "bytes": 545,
+      "sha256": "faada42f4ce77846904da5498276a97d7d66e947692e3a7dff4a89aa18ae3170"
     },
     "dist/images/jxl/container-advanced.mjs": {
-      "bytes": 23151,
-      "sha256": "872b910a394670d7666da0a0d6ae5ecb839deb1cf35ae733af5cf836b0df5266"
+      "bytes": 22910,
+      "sha256": "a9e91ef4436362066a51ea72f21fe9250ba4bca58ba959090780d9e334ecfb6f"
     },
     "dist/images/jxl/framing.mjs": {
-      "bytes": 24202,
-      "sha256": "74bce50859474cbc9cd751058b1e9024c2b1535249198a416e703e7ecf4ab347"
+      "bytes": 24192,
+      "sha256": "a2041e48551b4e8abd7a9d373d8dde47689f78b759b1ef374dcd1b1fe074f7bb"
     },
     "dist/images/jxl/color-info.mjs": {
-      "bytes": 6796,
-      "sha256": "f23bc2f3887cd13a224e1be93fb784f5702213b8c9e460e7b4c50898e5f0f6c2"
+      "bytes": 6630,
+      "sha256": "5c683ca3eb5decb8d756121fa2367a6e00b252a96cb692232b08656a870170ba"
     },
     "dist/images/jxl/icc-profile.mjs": {
-      "bytes": 2383,
-      "sha256": "32446e03d908a1294a57e116bd0b5cab600d4359aa35563155e35bf082064e51"
+      "bytes": 2235,
+      "sha256": "63f14f5eb0b7ab0b5c5ccc48397f634391ab1269161ab100163ce574d13d9b46"
     },
     "dist/images/jxl/icc-write.mjs": {
-      "bytes": 8246,
-      "sha256": "ec1d9daedc877cdc0f704c41dda904365696dc4a034702b5a3e0e1c145d318c6"
+      "bytes": 8503,
+      "sha256": "369076ed343ed392f84478ad59a9ef8fdddb9dd9ef10351ee1ee495671f3adc4"
     },
     "dist/images/jxl/frame.mjs": {
-      "bytes": 6908,
-      "sha256": "cc9d7411a714648f904c4acab38dfa17a845dc039215875760ae232786b95194"
+      "bytes": 7631,
+      "sha256": "0ab693b485303f8a9e3eed71b6379550a1a3e1e904cd0b6a2f35a242e21e27df"
     },
     "dist/images/jxl/screen-lz77.mjs": {
-      "bytes": 13358,
-      "sha256": "e5f2bba7985f2ac4eb14fbebbc75d8928243e23e8da2a26bb9f87b6d37cf90b9"
+      "bytes": 13374,
+      "sha256": "37a194afab315d44c0e10c584dc4a03244730b6a112076771fc0cfd7b3c38d5a"
     },
     "dist/images/jxl/modular.mjs": {
       "bytes": 4385,
       "sha256": "1a80d5e9183b4dfa3500652dce40b99997ddf54ee0c1ca1cea033a5a388bbd9b"
     },
     "dist/images/jxl/kernel-hooks.mjs": {
-      "bytes": 504,
-      "sha256": "af5de7bcdbde66fe31c5d0b0837152b4a673ceeb2e6dbef2c3648a161e828e71"
+      "bytes": 552,
+      "sha256": "f7e2dc693173490b6c96d98c5a6b92ab73b6867062a95d2a897e47f93ae7ee2d"
     },
     "dist/images/jxl/screen-codes.mjs": {
-      "bytes": 1522,
-      "sha256": "e9e11565c2ac42119932d89c15d1ade2cdebae209789f583b54fab1790361123"
+      "bytes": 873,
+      "sha256": "88820c714a04dfcec11dc68019d67a35bda630b88b9cc9463b343c8db8ad4876"
     },
     "dist/images/jxl/icc-transform.mjs": {
-      "bytes": 11347,
-      "sha256": "256437c232c65fde381648d3b9d8ea99d8e989d877c85de426e2d0159ee7c306"
+      "bytes": 9249,
+      "sha256": "a81b1f984950ed76b2a9442013ee0724390af5b67201aceb8e25019e848100f0"
+    },
+    "dist/images/jxl/color-transform.mjs": {
+      "bytes": 2956,
+      "sha256": "7ae1b00b27f64355ec9f5a673593f5eda267c38c4a710c1c3a7ad5ae4592ce52"
     },
     "dist/images/limits.mjs": {
       "bytes": 1061,
@@ -2690,7 +3155,7 @@
     },
     "dist/version.mjs": {
       "bytes": 369,
-      "sha256": "9fb5e631883fc114e542be970fbfa983b6c788fcc35147006ffa2096788d311b"
+      "sha256": "e5336324db4f1413b29728df56ce2510a43a2b906a62afa2f97c5fe6acbae51c"
     },
     "dist/agent/visual.mjs": {
       "bytes": 10397,
@@ -2785,8 +3250,8 @@
       "sha256": "a76bd4b12fd15ea529052e226280166a57167329dd702d91d424c01b38bf6152"
     },
     "dist/draw/agent-paint.mjs": {
-      "bytes": 67521,
-      "sha256": "501b904f66313c261814cfe3bd6a9611884d00d54e7aad9696306986ccc0313b"
+      "bytes": 67529,
+      "sha256": "07641f8ab65ccb1bbedaf8f5cee2f856aaddc14af3309e10bad39b5ad86ae2bf"
     },
     "dist/draw/paint.mjs": {
       "bytes": 230354,
@@ -2857,272 +3322,524 @@
       "sha256": "bb772b761c5b3b3d434442f658c5e3673ee4cf42e9e89349ccb96cc5c3a05b55"
     },
     "dist/images/jxl/v7/still.mjs": {
-      "bytes": 8859,
-      "sha256": "18869771b91cc6873c83113c2edc27a97d9b40142c9c978b6b39ee01f3d996c0"
+      "bytes": 10832,
+      "sha256": "c79718cc22f65cc9c74cafb6b38afc53466d56745462a337cd9e986df62090cc"
+    },
+    "dist/images/jxl/v7/result-operation.mjs": {
+      "bytes": 3580,
+      "sha256": "44e29a906ff7c2d06460f04ee0f0c52fbb81933095d89e58b90959d554992797"
+    },
+    "dist/images/jxl/v7/result.mjs": {
+      "bytes": 3850,
+      "sha256": "cee8441c3f6d41bcca329c47e82b41a3031031a023e0cb1ab31e8e7877d35ac7"
+    },
+    "dist/images/jxl/v7/result-shape.mjs": {
+      "bytes": 4318,
+      "sha256": "920f6aab7a5d624b53e45ab1a5249f3c5e741c63cf059c402cbdad0793cccd08"
+    },
+    "dist/images/jxl/v7/result-record.mjs": {
+      "bytes": 5378,
+      "sha256": "cbd84b3dfd7936ed49a67f8608cc5fb3ca247a6ac95cca8a1e6ccc9b85c4493f"
+    },
+    "dist/images/jxl/v7/ownership.mjs": {
+      "bytes": 7715,
+      "sha256": "daff3350c6a39d825cac31c93be38ce51152c1cc84e10e468913060c36c63419"
+    },
+    "dist/images/jxl/v7/records.mjs": {
+      "bytes": 604,
+      "sha256": "0c3c1dd606b3ef2fc098ac3eb0391a247afd65ecb0872d9ab199c9a9e96c799e"
+    },
+    "dist/images/jxl/v7/fidelity.mjs": {
+      "bytes": 3559,
+      "sha256": "f6ca574a43d677621276928f0a70cc0b995047b73be6e8d165ff07aa50637b9f"
+    },
+    "dist/images/jxl/v7/drive.mjs": {
+      "bytes": 53,
+      "sha256": "6246c9e5615ebdfb74ff648046450e56114d337ff1cbf2505cda3d80119e461e"
+    },
+    "dist/images/jxl/v7/result-reference.mjs": {
+      "bytes": 544,
+      "sha256": "9fc2329e4e105f34c6f600a80a8029c49816d17a824d4960e0ebb31051e2e34f"
+    },
+    "dist/images/jxl/capture-protection.mjs": {
+      "bytes": 105,
+      "sha256": "575ba37998c3d584bea3ca2e371629b21d0c3c1e35f81448c380728b10a3f7c8"
     },
     "dist/images/jxl/effort-job.mjs": {
-      "bytes": 22185,
-      "sha256": "8104f3260b5456fe0e0cfd305771a868f33b5c5b47c14fd8c8f45e22e5d088e5"
+      "bytes": 22465,
+      "sha256": "105badc84e786e1f3fe5ae10f780fc0406cf1c37f8dd8ddd99639d76cab04247"
     },
     "dist/images/jxl/modular-channel.mjs": {
-      "bytes": 4114,
-      "sha256": "7b0479c124a768c86659c289c1ec7c69ce6cf7cde1c06f061141bbcb455cbcd9"
+      "bytes": 6642,
+      "sha256": "3a603afdafe326a62eb3c19539839cea7c5946437309a05883c6ed2c5eff753e"
     },
     "dist/images/jxl/lossless.mjs": {
-      "bytes": 18120,
-      "sha256": "2707a3bdb0a7bd6ec780bfa3b60f4862d28521328d7b459c3fade0bfd681c2e4"
+      "bytes": 18175,
+      "sha256": "eb974fac7595960185c907e7f4973ab62890466e3bbabe4736e84ff88e22e726"
     },
     "dist/images/jxl/lossless-coding.mjs": {
       "bytes": 2094,
       "sha256": "341e29e29bdb593b95da3e4c56fed38e2cab7c68a2751d439ac9f24ad144cb06"
     },
     "dist/images/jxl/admit-samples.mjs": {
-      "bytes": 3894,
-      "sha256": "9c8a5903aec34bb7af1255f252971fa9ec1212beb7d271aad1828a39b7c1901b"
+      "bytes": 736,
+      "sha256": "f8b56cf4ab192061327e7f140342cbe0b7de5f9871edd7b334080f0f491dd16b"
+    },
+    "dist/images/jxl/sample-domain.mjs": {
+      "bytes": 4597,
+      "sha256": "f0d2b94caf2a7a56c1ecb04a36fd479901a9f9cb2a5f382752313fc395f14cc7"
     },
     "dist/images/jxl/lossy.mjs": {
-      "bytes": 7863,
-      "sha256": "0a0d9f5c68cdf35f42ad4fc755b2f9a266d50d495cc07acee88948875338ef4c"
+      "bytes": 1345,
+      "sha256": "02fd9929ed3b214c03749586583b0475c066f2d1ff488d97f81f07e290fe9e1d"
+    },
+    "dist/images/jxl/lossy-sections.mjs": {
+      "bytes": 6951,
+      "sha256": "beff6559a8c88823ed074f63de546aec0af9e248c8981bc51f97d755405da53f"
     },
     "dist/images/jxl/squeeze.mjs": {
-      "bytes": 2890,
-      "sha256": "db6f246bf0834e6379fdfcf94901bd18cd8d7f204885a4169d98204f2c592ac9"
+      "bytes": 3086,
+      "sha256": "2cbe33ce096d2d33b8b43879317f85cbc1c79f73a558ee9aabd23f9c489c35a3"
+    },
+    "dist/images/jxl/capture-kernels.mjs": {
+      "bytes": 55394,
+      "sha256": "ebe2758ce95fee90be1f78f880ce77551f010133425cd264917c9a3ff55c28c3"
+    },
+    "dist/images/jxl/kernel-runtime.mjs": {
+      "bytes": 618,
+      "sha256": "d0fc20cea27c0022d13588a3fbc3e5c62e52b7762e933e62df0b5a9ca13d1fba"
+    },
+    "dist/images/jxl/kernels-bytes.mjs": {
+      "bytes": 215267,
+      "sha256": "79ce26834b0c26db0420f9539411af15caa9602b03d26dc439517526c492b7bd"
+    },
+    "dist/images/jxl/wasm-text.mjs": {
+      "bytes": 453,
+      "sha256": "e0173eadee7bbab5a60f94cfa07b9fba615abb132f33cb7ae04db068a21d145a"
+    },
+    "dist/images/jxl/wasm-modules.mjs": {
+      "bytes": 3909,
+      "sha256": "064b1da3c1f1cd7c7c5af33e28637be419a98c1daf94cb84caca44402857e4ae"
+    },
+    "dist/images/jxl/build-version.mjs": {
+      "bytes": 141,
+      "sha256": "1228426fb5387d72301b88d4dedab332b2ac64d4354ef3e709b297572f1874ad"
+    },
+    "dist/images/jxl/wasm-interfaces.mjs": {
+      "bytes": 168,
+      "sha256": "a2b44805888b1d0dc97252b4454a4770639e758e76f93df8ea042c3c7e4d39b1"
+    },
+    "dist/images/jxl/capture-wasm-error.mjs": {
+      "bytes": 248,
+      "sha256": "df239ab8ac9bbc68f3ed6f3d6d9ff6d5157aee3a8528c0757abdc2c7dd87ba06"
+    },
+    "dist/images/jxl/weighted-policy.mjs": {
+      "bytes": 908,
+      "sha256": "e11910d92331a317ed3659ae5e3440f0b191c87fc508af82a2a7f8c7ead2a3c4"
     },
     "dist/images/jxl/photo-job.mjs": {
-      "bytes": 4946,
-      "sha256": "c77bc711fe5b7705b6816dc39a48a1969bf5c0f1385ea9e0b6cd1023b8ba8f66"
+      "bytes": 5180,
+      "sha256": "a011b6225e4a12a03ae77b2c464972c09d1e00fe549e0ee0cdac25a36c25ff9d"
     },
     "dist/images/jxl/effort-level.mjs": {
-      "bytes": 530,
-      "sha256": "7e049733756a2405fcb976b01554f0b347fcf5ccc6c3ac2c911896c649153c9d"
+      "bytes": 660,
+      "sha256": "08306c2763f54fa611ba8d9b858667ca1a6efaeedc1ad0be5a9253f90ca21853"
     },
     "dist/images/jxl/photo-dct.mjs": {
-      "bytes": 7629,
-      "sha256": "558f87fb4962afc580eb1d42ce5d80b96dccd4be3a64043978f8956e3f781ed7"
+      "bytes": 19522,
+      "sha256": "8222bfed1b83195c8cd5b82cbbc90bbda983731368f716762b2f5d636fe79e09"
     },
     "dist/images/jxl/quality-calibration.mjs": {
-      "bytes": 893,
-      "sha256": "cd42a247efbad84baa5099c4992112241ee2ad678643f7dd338a7bc6716ebf6b"
-    },
-    "dist/images/jxl/photo-xyb.mjs": {
-      "bytes": 33093,
-      "sha256": "6ad61b877a3c7ddaf405db0ee2a6466d8813afbb2540bd4028d4b0910539f201"
+      "bytes": 1056,
+      "sha256": "f83ba1be06a18fcbc3ea714569081920ad337f6c4f322643787e7b2eafae71a8"
     },
     "dist/images/jxl/exact-math.mjs": {
       "bytes": 2898,
       "sha256": "c1a5954fcd284b11acec558778e7d64e731993e6bf32c3e27502a392dd0e4ffe"
     },
+    "dist/images/jxl/photo-xyb.mjs": {
+      "bytes": 33944,
+      "sha256": "872c5f539978027b17dd750d588204b9d405c5e4fe61ca965333da0179d78f9e"
+    },
+    "dist/images/jxl/photo-preference.mjs": {
+      "bytes": 1029,
+      "sha256": "b5846b179b7e7ad2d29887a6011993415c85011f76a38fda34c23460299a8911"
+    },
     "dist/images/jxl/photo-v6.mjs": {
-      "bytes": 17567,
-      "sha256": "6819c75ec74535757f64406f47a248ee9fc367f92d3b71afa98d68f77bcb4c8b"
+      "bytes": 19828,
+      "sha256": "76b1da601c1ccea3f829066f602ecd8b17e25d81c10d86dab12930e0b92c7b6e"
     },
     "dist/images/jxl/memory-plan.mjs": {
-      "bytes": 12214,
-      "sha256": "91b32cf7c858042f42d59edb5068a9b1c2f5bf59929d4e5ab8862cc0ef6fb98f"
+      "bytes": 12495,
+      "sha256": "cf781946fbb8786fdb1f2dddb891ea3897c182d6b8418131ff392878946d77d8"
+    },
+    "dist/images/jxl/butteraugli-memory.mjs": {
+      "bytes": 4340,
+      "sha256": "a15722392bf23d99205ca3f337b8c09401fafa5d54652cded07f4bc85fb396c3"
+    },
+    "dist/images/jxl/ssimulacra2-memory.mjs": {
+      "bytes": 4763,
+      "sha256": "6210db0b7949708eebc81d65e5a5f8a307e522ecf9c2a382245d27905283db4b"
+    },
+    "dist/images/jxl/ssimulacra2-input.mjs": {
+      "bytes": 3072,
+      "sha256": "95a87bd58b70edd7935cc568640fdddf99c4effed6e051e47ee506e39772ba61"
     },
     "dist/images/jxl/photo-bands.mjs": {
-      "bytes": 5083,
-      "sha256": "13473388588dac0705196c9a97375b3f70d9323542b312e8d10a4803a86a5483"
+      "bytes": 5181,
+      "sha256": "c04cdf998bdaaf71cf0601fc18d13d812b9cc1aa81fa90df71b440a273d93f61"
     },
     "dist/images/jxl/offload.mjs": {
       "bytes": 615,
       "sha256": "21b84b9d29aa16611502e2c09fae9838b7d40082878c42bbce3a224e0d692b77"
     },
     "dist/images/jxl/screen.mjs": {
-      "bytes": 15331,
-      "sha256": "c26f95f35919d8debac516cd78a373660ad278eb277566c75555a7c610a4857f"
+      "bytes": 13126,
+      "sha256": "a7a10a2ca0bbb18670b351b647dfe2d168dc0041ed3f923ebf435b137686f506"
+    },
+    "dist/images/jxl/screen-samples.mjs": {
+      "bytes": 970,
+      "sha256": "bb4bced39140de5f8bebea7a5a6dfc3da0c3b952a0deaf8231fd95e9985f86b1"
     },
     "dist/images/jxl/photo-split.mjs": {
-      "bytes": 27087,
-      "sha256": "5e836a3ebea7321e3516390db53057bbcff81e2b337820b7124a79065472cf3b"
+      "bytes": 33393,
+      "sha256": "77c962c38f866cc02ea119bc625e18599c3abd1ff67944102e1af91637143a25"
+    },
+    "dist/images/jxl/photo-levels.mjs": {
+      "bytes": 2105,
+      "sha256": "a6d4b1fb578957e7abde7dab6342d7e2a4a8715cbb7b9630b90f45f295edf23a"
     },
     "dist/images/jxl/photo-v6-settings.mjs": {
-      "bytes": 1667,
-      "sha256": "ea7d86a3276ab668e39887234d2dbf68193b03531f445a8952b1c6bb8b443dc2"
+      "bytes": 2737,
+      "sha256": "0e803f0ef580382f67de5ea5c640d48bbb15ce89795a673ed1447102b44476e0"
     },
     "dist/images/jxl/vardct.mjs": {
-      "bytes": 56896,
-      "sha256": "952686a7b1543c5ec49fdf2c8ab6061f98fc348a634a8e004d8b9e3042196e75"
+      "bytes": 48185,
+      "sha256": "215f9864d04637829489b4d268f39149445b6f12406dec8efba81b8c9526debb"
+    },
+    "dist/images/jxl/photo-shown.mjs": {
+      "bytes": 688,
+      "sha256": "b3eca024909d43642ebbf9bc7ec700d219c601e7d0dc2fb5fed70375f2952c4c"
+    },
+    "dist/images/jxl/vardct-planes.mjs": {
+      "bytes": 6830,
+      "sha256": "90dcafff7c67dbdefd1601762c0f912b20ef7cb37651983912211a7bda3143ff"
+    },
+    "dist/images/jxl/vardct-header.mjs": {
+      "bytes": 7724,
+      "sha256": "9279fd40fb964a8fdd7f736e19e645badf707a5503bbd2e3f354d8d4ca2070bb"
     },
     "dist/images/jxl/jpeg-tables.mjs": {
       "bytes": 424,
       "sha256": "15229956db62aa59ee88be7ef9c122f509a354aa1b170979d037848be7d2d57b"
     },
+    "dist/images/jxl/dct8-contexts.mjs": {
+      "bytes": 833,
+      "sha256": "a19f16db4711cba24e210ce631f5343e4cd6ba26cab28732cfe2a313bc95b98c"
+    },
+    "dist/images/jxl/quantization-params.mjs": {
+      "bytes": 11189,
+      "sha256": "b803bbaebe1840fc1d9194ecf1b80bb46791a1efe9ba92b9c9a5cef6079bd4bb"
+    },
+    "dist/images/jxl/quantization-defaults.mjs": {
+      "bytes": 3884,
+      "sha256": "bf9aff5ab5e53469cf37003c63479085dde8cbf0ac8f843cf2f22a5586717f10"
+    },
+    "dist/images/jxl/coefficient-orders.mjs": {
+      "bytes": 5641,
+      "sha256": "5f617eb90e485c1edafd393a2d99d7142f980d833c7b6c5cedab12be3a54ecb0"
+    },
+    "dist/images/jxl/vardct-strategies.mjs": {
+      "bytes": 24150,
+      "sha256": "9d8d99412a880a8558fc74d35cd511da3d943623db32f2b38848354ded165257"
+    },
+    "dist/images/jxl/vardct-tables.mjs": {
+      "bytes": 202,
+      "sha256": "6b72278dac7558e6ab9bb976e4cb0a3b2f65cfb1e729b56c68dccc714b47651b"
+    },
+    "dist/images/jxl/coefficient-layout.mjs": {
+      "bytes": 1599,
+      "sha256": "b555184b086ba4cbd17366149f60c964a947fe36945c3181b691de7969088185"
+    },
+    "dist/images/jxl/afv-basis.mjs": {
+      "bytes": 5338,
+      "sha256": "353f7bcb653f4f599c8c4b9db31d572155807948281899a9a6619374f3c9c671"
+    },
+    "dist/images/jxl/vardct-bases.mjs": {
+      "bytes": 3420,
+      "sha256": "499fe05a6a838acd2b840a57fd84670051731cb9448a9d8c04d58ced952d8483"
+    },
+    "dist/images/jxl/vardct-ranks.mjs": {
+      "bytes": 2251,
+      "sha256": "b6ed6e9bd37f4a81c2f82b0fae052537b10bcd785ca45c29aab5893c4e7390c0"
+    },
+    "dist/images/jxl/vardct-progressive.mjs": {
+      "bytes": 3543,
+      "sha256": "74eb45dc8b58c73529c9c3973e7ec30b9595859d8aee5b81f157f1380971e66e"
+    },
+    "dist/images/jxl/vardct-contexts.mjs": {
+      "bytes": 3296,
+      "sha256": "f9895d9199cd99324ceaad9ba54251e8c0eca3e09789aa3556617b334d606578"
+    },
+    "dist/images/jxl/capture-patches.mjs": {
+      "bytes": 14962,
+      "sha256": "3673c498752f7418d47ee2f18d5be9907a36fd2501ef9dcaf55388c94405ba82"
+    },
+    "dist/images/jxl/screen-crop.mjs": {
+      "bytes": 10626,
+      "sha256": "215d0e087806b30e954ee4daa5eb6b72f9c5eba34836495b7af9cc9fe6749035"
+    },
+    "dist/images/jxl/capture-headers.mjs": {
+      "bytes": 2768,
+      "sha256": "ed1141702ba136dea1e0b1142a3c8ad28ea4999b218e9391cb621ba351319c9b"
+    },
     "dist/images/jxl/lf-coding.mjs": {
-      "bytes": 6648,
-      "sha256": "166a9ad751ac96999ba27510d5d0551318450d80ad9cf09c3f70cdf9113dd682"
+      "bytes": 10030,
+      "sha256": "20da8bf39849be01b65ebaf43dedbbb811be6dea0753f782635fba300e4a3c14"
     },
-    "dist/images/jxl/sampled.mjs": {
-      "bytes": 56354,
-      "sha256": "89a9c1ab99f8ee637f6d4a41ebc98dbef6e21e68b220f10b24bd7384ad0eff1c"
+    "dist/images/jxl/lf-plans.mjs": {
+      "bytes": 444,
+      "sha256": "00ed60367bf9ceb2da790df028e503e9c782e2d244ac2396859c2c26e0d3794e"
     },
-    "dist/images/jxl/weighted.mjs": {
-      "bytes": 4989,
-      "sha256": "09b0b714b0b6fe7511eec459892db8d004debe6ad449cb5d0ae7959e3c0bf6d0"
-    },
-    "dist/images/jxl/weighted-policy.mjs": {
-      "bytes": 908,
-      "sha256": "e11910d92331a317ed3659ae5e3440f0b191c87fc508af82a2a7f8c7ead2a3c4"
-    },
-    "dist/images/jxl/ans.mjs": {
-      "bytes": 23011,
-      "sha256": "06611a5d7e8f4d5c2fb23cf4fc1bb7ada854f1cc647a9d231c38b2a403622518"
-    },
-    "dist/images/jxl/context-map.mjs": {
-      "bytes": 7182,
-      "sha256": "669ab087e02183c4c0dce9b747ec28fd844ab3267610ef061b03628327aeb2d4"
+    "dist/images/jxl/capture-trees.mjs": {
+      "bytes": 28859,
+      "sha256": "7aa725bc5bbadf879e2c986e5e009133dbff44feb8e90619456ec7f79cab1d7d"
     },
     "dist/images/jxl/rct-search.mjs": {
-      "bytes": 3659,
-      "sha256": "adc03f739e94485b5618393d7340f0c7f92ebef82338589924ffc126ccdb1afd"
+      "bytes": 3713,
+      "sha256": "ff470ff9e42ce2afd9b52e37ec63913abdcccda7d354866dcb1b1d74ee185da1"
+    },
+    "dist/images/jxl/capture-codec.mjs": {
+      "bytes": 111521,
+      "sha256": "e0ccc9c5521af9cec329d4bb37f6e61796f41016bba307e2481f958c6df68c9e"
+    },
+    "dist/images/jxl/capture-ans.mjs": {
+      "bytes": 6560,
+      "sha256": "e06e912126c60aa62be642ff316fa5787bbedbcb5940cc30a0e079f10c067d7c"
+    },
+    "dist/images/jxl/ans-core.mjs": {
+      "bytes": 14432,
+      "sha256": "1fd112b1e89a7119092c08e09e831d9b0bf0657e5ca1902a0e60d2a668e256c0"
+    },
+    "dist/images/jxl/lf-options.mjs": {
+      "bytes": 561,
+      "sha256": "ede8753c55ddeb59e5aa7020ef1ede5416ca44c438126f91004d406a3deebb96"
     },
     "dist/images/jxl/coefficient-effort.mjs": {
-      "bytes": 6378,
-      "sha256": "3570fc1ddf813413e95d4fd6bdb366c5dde457fad0dab4f2781ac44e0c820c30"
+      "bytes": 6680,
+      "sha256": "53446091769bb53e3b17488735a897cdb85dcef4f156447cc43e387a5ae2fed2"
+    },
+    "dist/images/jxl/ans.mjs": {
+      "bytes": 14100,
+      "sha256": "597dc0070996ed412ac199510d68b92b998ef90d930c4ba1f5d6566e69ef8f02"
+    },
+    "dist/images/jxl/context-map.mjs": {
+      "bytes": 7204,
+      "sha256": "9576a5713818fa78a80851d4e2178be9a6925faae2f44c4f58106a49a6f1d254"
+    },
+    "dist/images/jxl/coefficient-ans.mjs": {
+      "bytes": 10455,
+      "sha256": "b863548bb66c088bf1e4f90759ade5613ee91e650ffccda4189fc22beb1237b5"
     },
     "dist/images/jxl/split-hooks.mjs": {
       "bytes": 75,
       "sha256": "d2bd8841c66b01fa0e7633a82b1992896454d82aab79fbcf7eb186436554a9fa"
     },
-    "dist/images/jxl/coefficient-ans.mjs": {
-      "bytes": 9397,
-      "sha256": "146e0c241933da0fc865c0128f68b82622b7a3b268e14fc4d5fdae245bc29d8d"
-    },
-    "dist/images/jxl/screen-search.mjs": {
-      "bytes": 4630,
-      "sha256": "6385326043b39d06af9f1a0748ecff17cab5470d559d4ac98376cf4ea86f914f"
-    },
-    "dist/images/jxl/screen-patches.mjs": {
-      "bytes": 10520,
-      "sha256": "31c5f5985e699f64e6e174640c81baf8c0ce3c9ceaea1abfbdd725a6e5653723"
+    "dist/images/jxl/weighted.mjs": {
+      "bytes": 4989,
+      "sha256": "09b0b714b0b6fe7511eec459892db8d004debe6ad449cb5d0ae7959e3c0bf6d0"
     },
     "dist/images/jxl/screen-photo-regions.mjs": {
-      "bytes": 4005,
-      "sha256": "01db9b2f4f59c92cec258d2b136d75c5fb2e4a3c3d6e5d7b9f4e03c212479f6a"
+      "bytes": 8340,
+      "sha256": "7de6a268ab8bacc8afad95214e5c6f2339ef5967428ffaf64d7635ea37880a7a"
+    },
+    "dist/images/jxl/sampled.mjs": {
+      "bytes": 56532,
+      "sha256": "125356819f32c9f46bff15434046c97601b11b26b1efffa2e1aa178058bbbcaa"
     },
     "dist/images/jxl/exact-ladder.mjs": {
-      "bytes": 532,
-      "sha256": "e51429eb7b0edb5c92dc800e999cd13eb211b76a220bd3f7dbe40ebd6c89c10a"
+      "bytes": 486,
+      "sha256": "94e8e5d41c109b97950813aa9495f3bae685a3492915032c6b9b68895b397268"
+    },
+    "dist/images/jxl/photo-split-ladder.mjs": {
+      "bytes": 10334,
+      "sha256": "3011de2c61141a427fb895cb9feb64ede32f8c1cd016c8032f4d766d86582607"
     },
     "dist/images/jxl/local.mjs": {
       "bytes": 9845,
       "sha256": "50412520f8a0c2ec80c029207665ba537e37762d08115047bdc79d515ba27fb9"
     },
-    "dist/images/jxl/palette-search.mjs": {
-      "bytes": 5647,
-      "sha256": "2674b89d71c6a65f471f8b57db18b375fadc260686f4cf73681442111b0cf4f3"
-    },
-    "dist/images/jxl/screen-local.mjs": {
-      "bytes": 5683,
-      "sha256": "3c1906cff81990c509e7055b084c08a0ae7e0e50a2e955a10ccdd88da9043d5b"
-    },
-    "dist/images/jxl/photo-split-ladder.mjs": {
-      "bytes": 10055,
-      "sha256": "62f37c796c8a31ea4ee74e98d9ddc01c4f9d9301a8266a67f3b5bde28b0f80db"
-    },
     "dist/images/jxl/photo-v6-blocks.mjs": {
-      "bytes": 13671,
-      "sha256": "ff3e9c0a643fef55f82c5d54c1a86b1d6317c28b7799006ccdef8e3a321448f2"
+      "bytes": 17077,
+      "sha256": "c578a3982a8469d7d0deecf948b70d217f56db9e41618ceb1407b6dc75a37c41"
     },
     "dist/images/jxl/varblocks.mjs": {
-      "bytes": 63365,
-      "sha256": "c689292090e4aa3f10c228d3b959a2e83cb0be3fa6e0a7c5a63582e0f00c408a"
+      "bytes": 24223,
+      "sha256": "7b5f98afd5815b06a3eb8d2a399867c9547ac91b4fb171b7ab8f6fd2e5f25bec"
+    },
+    "dist/images/jxl/varblock-core.mjs": {
+      "bytes": 41214,
+      "sha256": "9fce5b1639a97591946b87bb49f0a773c1f18bc4f5e14b20d36b5b2a8acba653"
+    },
+    "dist/images/jxl/photo-mask.mjs": {
+      "bytes": 4469,
+      "sha256": "2d5bf45a2e58a1c26ac02697ff192d31fbd3dfc875c8222a8225e5f4960fa32f"
+    },
+    "dist/images/jxl/varblock-write.mjs": {
+      "bytes": 6619,
+      "sha256": "6c93d8a88fae56e581f9e334e984ae272d061fa902b630174a70a01b767e2f72"
+    },
+    "dist/images/jxl/photo-distance-cells.mjs": {
+      "bytes": 1108,
+      "sha256": "6295a4b998c62d92a461ba64f92f1d1ff11240d5b3b9f46cf61028786f78d8f2"
     },
     "dist/images/jxl/aq.mjs": {
-      "bytes": 10899,
-      "sha256": "26532550010bba376a3e15b092cd0ebda50173eb2c31946513883d74af254344"
+      "bytes": 9568,
+      "sha256": "cea97a88f0de96f79c9d1dc346ed6fd720a1d42e3f23cecac4a0035ba8603464"
     },
-    "dist/images/jxl/vardct-strategies.mjs": {
-      "bytes": 26520,
-      "sha256": "18a17cfbae190516e7981575df3f294ed186504f61d5c0c88c887778f6d971cf"
-    },
-    "dist/images/jxl/afv-basis.mjs": {
-      "bytes": 5353,
-      "sha256": "d8fdb4b1642326fe2f1c26d9a07b5a30aa2336666ddab70d6475a82e1a7de8c5"
-    },
-    "dist/images/jxl/quantization-params.mjs": {
-      "bytes": 10082,
-      "sha256": "b6d25e7ddfc13dc0401743e71d6fd441af5f0485b2cab86ccf3c101cb5fbdc50"
-    },
-    "dist/images/jxl/quantization-defaults.mjs": {
-      "bytes": 6667,
-      "sha256": "4345fab5211ef28690182a402d20ee452619bf9b6a64fbc517427e943e79d7bc"
-    },
-    "dist/images/jxl/coefficient-orders.mjs": {
-      "bytes": 5785,
-      "sha256": "dafe34903a1df95780b1ea46209f7b6b6a610f6c52d61525b26921ba4f446aa1"
+    "dist/images/jxl/aq-cursor-kernels.mjs": {
+      "bytes": 6086,
+      "sha256": "bf82dc072058ca9e0ce5d76b82999e1b20e7b054b4a17f8832d88c937b2484d6"
     },
     "dist/images/jxl/block-split.mjs": {
       "bytes": 16535,
       "sha256": "938a81cc91ef5f1b59e2996fe68d6149f0eb58b634fdb277ae3d4bbd33feb2a7"
     },
     "dist/images/jxl/kernels.mjs": {
-      "bytes": 77436,
-      "sha256": "67cb213fd1152574b3a11c4936086e4c6cc3fad7eb753e9c6518c5ecdc3faf73"
-    },
-    "dist/images/jxl/wasm-modules.mjs": {
-      "bytes": 5207,
-      "sha256": "de6d7b12ae94c3b7089ea1fc94582b3346bf03621407a046302fb491a41a1716"
-    },
-    "dist/images/jxl/build-version.mjs": {
-      "bytes": 141,
-      "sha256": "1228426fb5387d72301b88d4dedab332b2ac64d4354ef3e709b297572f1874ad"
-    },
-    "dist/images/jxl/wasm-text.mjs": {
-      "bytes": 239,
-      "sha256": "cc2e5a141970c5db392307397f50a9d83913cb289a4ade23f988cd346fc212d1"
+      "bytes": 98125,
+      "sha256": "26a42325fe1ee1a2676240e7cf4307c0c5dafcad7496e03c2e5e849115c066ca"
     },
     "dist/images/jxl/arena.mjs": {
       "bytes": 73,
       "sha256": "0674e9cd4f0bda416524af6a3e5e42d65c231efc8a0d9a5afc74912eeaa95e8b"
     },
     "dist/images/jxl/jpeg-kernels.mjs": {
-      "bytes": 20397,
-      "sha256": "69eba6915dce9098d7294eee034406781ecd139f6c612b16d2562d401f06d487"
+      "bytes": 21093,
+      "sha256": "382eae006e3672a7d72d638f7ec4306bad331ecc14161200d195c97438822ffe"
     },
     "dist/images/jxl/jpeg-kernels-bytes.mjs": {
-      "bytes": 13551,
-      "sha256": "9c3a9c2cd69566d9dd5bcef3bd9cdca00e772d981625c8767fc6fcec9e0eeffa"
-    },
-    "dist/images/jxl/kernels-bytes.mjs": {
-      "bytes": 90233,
-      "sha256": "320097224a83b63bee120223319bac8da1b8e27735c4a0ce221d3fb564c40e58"
+      "bytes": 12896,
+      "sha256": "8206f3f077affe4da055e7a58aa1bd60c9d4998cb5c55d6c94749de2a5dfe650"
     },
     "dist/images/jxl/memory-device.mjs": {
-      "bytes": 1141,
-      "sha256": "b13957f5bdbed7ac134e0316cea4de2ea38c42d43f30b7268298b1ca01c8ec2b"
+      "bytes": 1171,
+      "sha256": "83da1c8dac9fb162a0b36510ab7d2ce3ba5f71745bcd7ec8000ea1cefc3cfc79"
     },
     "dist/images/jxl/photo-v6-search.mjs": {
-      "bytes": 29212,
-      "sha256": "35cd8deb22b39e42dde5c303ab964232127e9deeca69ae7c0286730220f56afc"
+      "bytes": 17223,
+      "sha256": "01b8d084693c53684768965e980d7ca0de7e10b591a9e5efeb2ee2bf756fdc53"
     },
     "dist/images/jxl/exact-region.mjs": {
-      "bytes": 34646,
-      "sha256": "faace6e36bfbd93f7cd7f526818c7a024d5b3170cd0bf58ea819d4229a8e62b1"
+      "bytes": 28078,
+      "sha256": "2f369ec0662189f3d20a5ed1d3c2931ddec9cf242339e19ff9e28211e476625d"
     },
     "dist/images/jxl/reconstruct.mjs": {
-      "bytes": 26907,
-      "sha256": "7f0c91ddb4dfc40083f0ea16287a5d5150e3eb57748584525c9bef91353933eb"
+      "bytes": 736,
+      "sha256": "829e9a1df1acb5b25feb517a5ea8fad12f91bed5daf6229caadf55397efc4a72"
+    },
+    "dist/images/jxl/photo-rebuild.mjs": {
+      "bytes": 10441,
+      "sha256": "ec1558cb090f24f4f56302754fb74d47bac2dd53e59c0999d123ccd414079337"
+    },
+    "dist/images/jxl/rebuild-kernels.mjs": {
+      "bytes": 689,
+      "sha256": "31d7705f437de2dbdb08ec6fc01010aa8c7f15ecf8c367904c26005e7f6355d1"
+    },
+    "dist/images/jxl/rebuild-kernels-bytes.mjs": {
+      "bytes": 19135,
+      "sha256": "6df7045dbca3c86bbaaa8302c07d5f6dd785f6f66c78d49b955f50f5dc3581e6"
+    },
+    "dist/images/jxl/kernel-engine.mjs": {
+      "bytes": 3140,
+      "sha256": "f66c539dfdfa1c40bd9b5c6fb58f2c54aac0abfd8f6ede0b995305c4c8430b39"
+    },
+    "dist/images/jxl/vardct-render.mjs": {
+      "bytes": 7314,
+      "sha256": "45110b5c75b699e1bb874305161eb64186d9d58a74a341766cde3d20ca0e3c41"
+    },
+    "dist/images/jxl/vardct-inverse.mjs": {
+      "bytes": 5530,
+      "sha256": "99a0e577f7519572df2f794524a18da72bd2438ee463620a556d0217219abf2c"
+    },
+    "dist/images/jxl/opsin.mjs": {
+      "bytes": 7794,
+      "sha256": "3ebe8a3086aba17321d2ce9dd5fd52ec95a21ae618fb4ab0129321c090a118bb"
+    },
+    "dist/images/jxl/jpeg-coefficients.mjs": {
+      "bytes": 36636,
+      "sha256": "d03ee47d80d48f828c94904ca85a21d929eb7491343479b35ca84982158ec06b"
+    },
+    "dist/images/jxl/format-fields.mjs": {
+      "bytes": 4571,
+      "sha256": "4dc3cc6b6af835c6500fd4d3de567cc1f9699c512cafde490ee366066e38ba23"
+    },
+    "dist/images/jxl/reconstruct-dct8.mjs": {
+      "bytes": 4566,
+      "sha256": "158bbce3b56f67243680c3b6a2c09cc09a7e96bdf38492c32d07aa3d1ff7948a"
+    },
+    "dist/images/jxl/reconstruct-planes.mjs": {
+      "bytes": 14183,
+      "sha256": "7cdaca3a0fdd44f5c70f1270fe164f0cb267878bc4673bea5d37bd1f8c7107bb"
+    },
+    "dist/images/jxl/rgb8-output.mjs": {
+      "bytes": 1936,
+      "sha256": "210e9ddc342580a08fa46b8e04f32c3ae518833e6d3e63a769e844b5b07fd274"
+    },
+    "dist/images/jxl/rgb8-thresholds.mjs": {
+      "bytes": 3231,
+      "sha256": "1640bece3e75d483893e8508c39f63bc3eda7287edf7cfc1eba84eda373f2d02"
     },
     "dist/images/jxl/butteraugli.mjs": {
-      "bytes": 33946,
-      "sha256": "b9b90cb661c8d22f917976b9e9220b889b9f38efc98063ad04316f11e5dc216b"
+      "bytes": 2484,
+      "sha256": "c08dd1149b7ee6783eff6abe9e76841978b994d8fbb0ac75d2cd9b367559897d"
     },
-    "dist/images/jxl/ssimulacra2.mjs": {
-      "bytes": 26365,
-      "sha256": "368a1a83021c41c5cbf9794702f671ecbb0ca39731fbc751e8d0bee0da04727b"
+    "dist/images/jxl/butteraugli-arithmetic.mjs": {
+      "bytes": 6447,
+      "sha256": "401439c9b20e48a36dd575978504366dd49bb4b6acc2229b304f38d8b5c29242"
     },
     "dist/images/jxl/worker-assets.mjs": {
       "bytes": 157,
       "sha256": "aa61dba687715e2264b894378c3c6a3f6a7a639db74abc075ad6ef710579e95b"
     },
     "dist/images/jxl/worker-reservation.mjs": {
-      "bytes": 9201,
-      "sha256": "2427d1cc7a594441a49113d7fd052526a2fb048a525142025ce5ec400ce8b3b5"
+      "bytes": 9168,
+      "sha256": "4529fa25a5452189def805e3be59c6ad1307bc7ccd65d4451dfd0b77aaed84c7"
+    },
+    "dist/images/jxl/photo-reconstruct-bands.mjs": {
+      "bytes": 8745,
+      "sha256": "6c7e78c11b2db7e9b9014ba4c9d4cd0cbe4aa9604dafdafede14685b6eee8917"
     },
     "dist/images/jxl/s2-cells.mjs": {
-      "bytes": 8497,
-      "sha256": "7094ee65cc9bd3e2f0649bc179e4697fffe93be732bc4c4bd4983449b3330b2f"
+      "bytes": 10399,
+      "sha256": "1a6518dad0b428f637d6c387c679c8a858e233ad37c80720f184f7700626c672"
+    },
+    "dist/images/jxl/ssimulacra2.mjs": {
+      "bytes": 7416,
+      "sha256": "ca82f975dcd493b684ef1a82d300ccd79eead1d8cc8124ffcda98f8744d32439"
+    },
+    "dist/images/jxl/ssimulacra2-weights.mjs": {
+      "bytes": 1770,
+      "sha256": "ddf89a3e7557209e61cce3a5da48de2121e8d7a349cc3ec1c518fc8cdf2f35af"
+    },
+    "dist/images/jxl/ssimulacra2-constants.mjs": {
+      "bytes": 210,
+      "sha256": "4b662d9074015836bcbc1d704a7dab95e20c71190b700f66bc41930d2724b371"
+    },
+    "dist/images/jxl/ssimulacra2-reference.mjs": {
+      "bytes": 2592,
+      "sha256": "36952c156a808bdaeca160440318f9dfc8e0599e4061f732cb4b82145e060275"
+    },
+    "dist/images/jxl/ssimulacra2-arithmetic.mjs": {
+      "bytes": 11277,
+      "sha256": "850a45b01b6348911af52442aaabfd53630b1699081630614eec108b9692c16c"
+    },
+    "dist/images/jxl/ssimulacra2-fused-bytes.mjs": {
+      "bytes": 30968,
+      "sha256": "a01e850d9e6d95dfab9083eec18d990149d66590bfe1efd8039e93855b2cf5f0"
+    },
+    "dist/images/jxl/ssimulacra2-gaussian.mjs": {
+      "bytes": 2148,
+      "sha256": "fb6d0e09030a505846243c45d069ba0c9e0e0eb97d18f9f81ffb15819e74e7e2"
     },
     "dist/images/jxl/int-spec.mjs": {
       "bytes": 14892,
@@ -3132,81 +3849,181 @@
       "bytes": 4155,
       "sha256": "7e45164fac23c13a1f31782d8d52fe15841bd1ab1e9b938d8b73005961f5a1d6"
     },
-    "dist/images/jxl/photo-advanced.mjs": {
-      "bytes": 7445,
-      "sha256": "c9505274cd792a4d9745c3a6193592a296675405dfcf4bf8e40a2ec4fa4c9a8f"
+    "dist/images/jxl/photo-measure.mjs": {
+      "bytes": 6472,
+      "sha256": "959aee051184a24a5377e5c2b16b82f9943d192c00ff7fdd056415d2798e73a0"
     },
-    "dist/images/jxl/vardct-progressive.mjs": {
-      "bytes": 3565,
-      "sha256": "d4c7eaf8e7e8727f9b05aaf2cb67b020ab68351e5f418a8ced0c9e2220f5d272"
+    "dist/images/jxl/photo-native-scores.mjs": {
+      "bytes": 3004,
+      "sha256": "011ab89a9d41924a7d17ae30967609f095597eeeb6ed19ca505453acb72479f7"
+    },
+    "dist/images/jxl/photo-output.mjs": {
+      "bytes": 8185,
+      "sha256": "5cba85a2dfe3268f2ee58b1d5f2a425aadd0a7d8e0de312ea6a94e8b5d020da1"
+    },
+    "dist/images/jxl/photo-search.mjs": {
+      "bytes": 7042,
+      "sha256": "008db71a4811175442bc628af682335fd69236d3c210024e74b8b573b9a45248"
+    },
+    "dist/images/jxl/varblock-measured.mjs": {
+      "bytes": 7236,
+      "sha256": "6b0e7df37d85bce7ede15eba5c8b1dd2c555bf2d8d8c74a53804989e1074aef8"
+    },
+    "dist/images/jxl/photo-quality-search.mjs": {
+      "bytes": 6455,
+      "sha256": "e6a5fd7d4ed59511b91936ea4701f7091dd4cb4f29bbd8ca04c218506c230905"
+    },
+    "dist/images/jxl/photo-v6-provider.mjs": {
+      "bytes": 1714,
+      "sha256": "cdf058a0418fe0969c12b0157412c05ab3dd81484ca52ad5933747f0c7bed70e"
+    },
+    "dist/images/jxl/photo-image-write.mjs": {
+      "bytes": 644,
+      "sha256": "b10707a9ec9e6df501252e87a99c69f5fb5cd35866c648b7695c099701c8758b"
+    },
+    "dist/images/jxl/photo-whole-policy.mjs": {
+      "bytes": 794,
+      "sha256": "10f988106a0a285b6832f9ac0e10ab36128f28ffce2f9bd66b8ad2f110db7fde"
+    },
+    "dist/images/jxl/photo-quality-table.mjs": {
+      "bytes": 3575,
+      "sha256": "e1be1960a32b153d9aaa8fc2a9d366476f509d089e84e85e0b8a5cbd8e2a6bc7"
+    },
+    "dist/images/jxl/photo-browser-margin.mjs": {
+      "bytes": 356,
+      "sha256": "768ff35e16bbbe571f26b7c2827e6278771fb7cf5f930421cca68c23570e2f1c"
+    },
+    "dist/images/jxl/photo-advanced.mjs": {
+      "bytes": 7754,
+      "sha256": "654992a5e96e77dc13153578b9ba30c7c366d4c7912f428d239f2a4d8809652f"
     },
     "dist/images/jxl/noise.mjs": {
-      "bytes": 2260,
-      "sha256": "8a548afe7293e01a3a3d3e6c0495e1dee5a80d00c7c1d1504baf5d2cc1dd8f08"
+      "bytes": 2215,
+      "sha256": "f2cc16b0adf223bc98ecac5c863a5913e980e2bc1e0f68a21d19115dac327fce"
     },
     "dist/images/jxl/lf-frames.mjs": {
-      "bytes": 7764,
-      "sha256": "f7300164a70ff90aa065ab6d0950339d5493901a7df269b4bad4159df946c247"
+      "bytes": 7712,
+      "sha256": "afbce4bef570a3a99f5cbe70d3049c0dbd3897cf8420a56bd643f0637982e096"
     },
     "dist/images/jxl/photo-crop.mjs": {
       "bytes": 1884,
       "sha256": "546e5b76aed1fed7e4b7cf87a400be6f82647d75b77b2ade9de5117f87821959"
     },
     "dist/images/jxl/photo-layout.mjs": {
-      "bytes": 2097,
-      "sha256": "98cb1552856b47a293fcad891490ff16a57e5f760fd374ee081b88373635c3aa"
-    },
-    "dist/images/jxl/format-fields.mjs": {
-      "bytes": 4575,
-      "sha256": "c96ff0707aa09bc6c006d91d858a04586fdd6b57906d6ea01b4e1f209e07f692"
+      "bytes": 2042,
+      "sha256": "fb3e39693eefeec00db35cdea61242dcab9ac948efdf3f06ab48d2aa0c4a8516"
     },
     "dist/images/jxl/photo-extras.mjs": {
-      "bytes": 6822,
-      "sha256": "2c47c9d0eac8596fa441a8ce792a067bdc3892f313cc2a1b84ffd3651206076f"
+      "bytes": 7399,
+      "sha256": "920b508ff595e14ed2dfb5e1d81069e3a4a8acbdf5210442ecb07a4869fbb640"
     },
     "dist/images/jxl/planar-input.mjs": {
-      "bytes": 5176,
-      "sha256": "d46282ddbe7196a3a8526b5e978d0536502aa13ff29a1983b83e97d264ac4e08"
+      "bytes": 5100,
+      "sha256": "d901ea92a5ec52c76859bb91b8e472271f893db187aba4a0518a48b6b91e3941"
     },
     "dist/images/jxl/planar-planes.mjs": {
-      "bytes": 2989,
-      "sha256": "84aeef5874a0a00fdbf15186a80bdd593110ae266e5edab9216f0b2d5a4ee049"
+      "bytes": 3344,
+      "sha256": "491e2c6a247748d9c0cade9334eb793a5f6030176ce7b847f12548e18d026058"
     },
     "dist/images/jxl/weighted-custom.mjs": {
       "bytes": 6028,
       "sha256": "3bda40666b8d6e88ebce6ec8203fb3d9803d7143c44894a42688652b8df01da7"
     },
     "dist/images/jxl/channels.mjs": {
-      "bytes": 15807,
-      "sha256": "36e85b36512615ee78ce51b266c87a9b59599037e5f1486818bc1322f3344b7d"
+      "bytes": 15740,
+      "sha256": "c0543878b0be1d0185bdf91280eb908e13900a6745519634001efceca892e3ec"
     },
     "dist/images/jxl/icc.mjs": {
-      "bytes": 3441,
-      "sha256": "167414f7810f3928f542c899507b680e6febeeec566898f98e36b191febcb85d"
+      "bytes": 3370,
+      "sha256": "af7d457f912e0651fe8a01f406b2bb59aa7a2227f6c19775cbcf1653ab7c8ef6"
     },
     "dist/images/jxl/channel-lossless.mjs": {
       "bytes": 2683,
       "sha256": "a93488c5cf63850fbe6d0d1554e7fffd38c9371275943e03d0811b35f913d26b"
     },
     "dist/images/jxl/planar-squeeze.mjs": {
-      "bytes": 9556,
-      "sha256": "e5f6c5d7609d4c992af36db6fc8db41ce089322db8b4b1648a1d1bbbdf5014cb"
+      "bytes": 9351,
+      "sha256": "27120a209ac884182ccb2df9a349bde3ce7a9fcb5d85278ba29036af7d0cbe82"
     },
     "dist/images/jxl/modular-progressive.mjs": {
-      "bytes": 1089,
-      "sha256": "5261c486ec6bb0c32d205c445da2df2ace258674c88645ef63ca92c968b18d4c"
+      "bytes": 1056,
+      "sha256": "0c29b28e27cf62d1b73f2effe7e06473d63213e636d036601267ce7f7b2e070d"
     },
     "dist/images/jxl/planar-transforms.mjs": {
-      "bytes": 14412,
-      "sha256": "acf18152102067748e76c094268a2beec8285c3499242a925a1d3fd77ca5851a"
+      "bytes": 14332,
+      "sha256": "861fc5c3565205904dbbc1e2fd189861c13451e18570874bcfaba850e895baf9"
     },
     "dist/images/jxl/implicit-palette.mjs": {
       "bytes": 934,
       "sha256": "78b5bfea415bdc9312e62563f2efe54820ff6ab1f1a2d88a5274a439f3f8b30e"
     },
+    "dist/images/jxl/v7/feature-photo.mjs": {
+      "bytes": 1991,
+      "sha256": "22d0a36fba30911d955e3b04c8b276edbe54f1ee59af80022801c52d06f73ebb"
+    },
+    "dist/images/jxl/photo-picture-measure.mjs": {
+      "bytes": 1589,
+      "sha256": "1b360c0fe372a0f8ec7506ab98d365490d11aacea3005aebc92efb07863c5173"
+    },
+    "dist/images/jxl/photo-samples.mjs": {
+      "bytes": 3398,
+      "sha256": "15ecb3eb91c925e34431e26a19a87b4d6244c1c74cca5360c0eb4ba63b98230b"
+    },
+    "dist/images/jxl/color-encoding.mjs": {
+      "bytes": 723,
+      "sha256": "6bf2a58b2d5c7a2fe52ea57c76ef9b140cdbbc5a85e480f00fa70cbfde0ff316"
+    },
+    "dist/images/jxl/v7/measured-search.mjs": {
+      "bytes": 2451,
+      "sha256": "fcd2e2048b1f2306533b6568f32a106a83a47d7752d950d6f72e4d1d29d5825a"
+    },
+    "dist/images/jxl/photo-output-policy.mjs": {
+      "bytes": 1226,
+      "sha256": "357a8493c8d4c320520d08179611dd4279995296c32ee8ea27d58fd702616836"
+    },
+    "dist/images/jxl/v7/common.mjs": {
+      "bytes": 4517,
+      "sha256": "08cc1d88acd18f5b3f4eb0d0347aa514c7b6948efc1edded7c4cb53d44996117"
+    },
+    "dist/images/jxl/screen-photo-mixed.mjs": {
+      "bytes": 2864,
+      "sha256": "6c5c01c6d08171abe9118164f65257f43f79723798808db663bc256596c0d7a4"
+    },
+    "dist/images/jxl/screen-photo-borders.mjs": {
+      "bytes": 2091,
+      "sha256": "4ed5d84d986b1b1042da1d1a8296970a1cfb927f8e4d2d5256b22ad6264ba6e8"
+    },
+    "dist/images/jxl/layers-core.mjs": {
+      "bytes": 9946,
+      "sha256": "a1af4f7d6a8c81607fa6f60cb6982e2c7078c17aebd707be292aa887e907fdea"
+    },
+    "dist/images/jxl/v7/encode-options.mjs": {
+      "bytes": 3200,
+      "sha256": "4a512d79ecfbb2675e6b0b79ade9527be01734b69d2d0e7ecb82c4c6a73bddb1"
+    },
+    "dist/images/jxl/v7/describe.mjs": {
+      "bytes": 3266,
+      "sha256": "4270077f7216c11a3c726671d9cbc667d5ee6bf68196286f9e83171e26128ee0"
+    },
+    "dist/images/jxl/v7/first-region-option.mjs": {
+      "bytes": 1331,
+      "sha256": "848e34620146c183083cc01a744d05c6961d719678db1c503818c57dc21b350b"
+    },
+    "dist/images/jxl/gpu-queue.mjs": {
+      "bytes": 241,
+      "sha256": "5fbbbac84bcddf11b58700b16399c78a0f2d1511fb59660405960aeea86cb88d"
+    },
+    "dist/images/jxl/turn.mjs": {
+      "bytes": 1348,
+      "sha256": "247bdd6e61fa41176667cee975e09590eff6bf36589e31432ff290a0ae074786"
+    },
+    "dist/images/jxl/v7/score-target.mjs": {
+      "bytes": 803,
+      "sha256": "ca208af45b83789319c9568cae0075d0ca066317671e8d916c6e720a39da139e"
+    },
     "dist/images/jxl/score.mjs": {
-      "bytes": 13998,
-      "sha256": "1e6e7f2ccb159464044bacea66e703dded756a6d91db1a0cafac846905b545b2"
+      "bytes": 13452,
+      "sha256": "906858f9cf1ce28e9ac38a76eae68ea5062839a76e023fed6727e4f979a6834c"
     },
     "dist/images/jxl/async-job.mjs": {
       "bytes": 1784,
@@ -3221,12 +4038,12 @@
       "sha256": "f83af919315603d130a803ce6318939b073a70d00f6f1561288dc142941e90be"
     },
     "dist/images/jxl/gpu-reconstruct.mjs": {
-      "bytes": 30327,
-      "sha256": "aaac9c069a06df59e1585bfe618641729747f6a019324f26c6760fa330842ee4"
+      "bytes": 26185,
+      "sha256": "fefced0a2c9bd6a2ba804904a791d12320c93dfb045e931fd17733ceac015155"
     },
-    "dist/images/jxl/gpu-butteraugli.mjs": {
-      "bytes": 26511,
-      "sha256": "1b67d5b26b3aaf8bd556a833d595a2cdec9fec796a108a4b963de1636751e25c"
+    "dist/images/jxl/gpu-metric-pixels.mjs": {
+      "bytes": 5024,
+      "sha256": "8c8574f4000385fa8fc93aa72b19a7fc0e4356f55ce35814bf363440ffd720ca"
     },
     "dist/images/jxl/gpu-uniforms.mjs": {
       "bytes": 2642,
@@ -3236,253 +4053,233 @@
       "bytes": 1216,
       "sha256": "4eb5303e40f33faa7732c4788cacfe5991020d22cbfbb18a4f6db35ab633ac55"
     },
-    "dist/images/jxl/gpu-ssimulacra2-measure.mjs": {
-      "bytes": 13154,
-      "sha256": "1f51f9a681ea154f5707d7f073cb08130c96c08eb618e4e1eeb2d05144a51aa1"
-    },
-    "dist/images/jxl/gpu-ssimulacra2-native.mjs": {
-      "bytes": 19941,
-      "sha256": "bca6bd2c6c79ca63dee6f2468993b629f3564998a0cf8d9721ad09eb184fb944"
-    },
     "dist/images/jxl/gpu-varblocks.mjs": {
       "bytes": 21913,
       "sha256": "5005973a21d2d54adba2762de5dab4f5e01eef6df3724770564830b894466c68"
     },
-    "dist/images/jxl/jpeg-ans-effort.mjs": {
-      "bytes": 6498,
-      "sha256": "bc03e95af533a1f1c4a2b90eae1ab367e58b232533e77db8e9651aed206e48e2"
-    },
-    "dist/images/jxl/jpeg-effort.mjs": {
-      "bytes": 2499,
-      "sha256": "989fead90415b3a0bdf5ad1575ddcc38250629ff0bb37195a979b6305eba72ca"
-    },
-    "dist/images/jxl/coefficient-coding.mjs": {
-      "bytes": 3958,
-      "sha256": "c70f1a290105e88c449a1d40c05a8de8ea99bd415d5ad34b8e5dfcaa022c712c"
-    },
-    "dist/images/jxl/jpeg-job.mjs": {
-      "bytes": 1923,
-      "sha256": "4e2e7b491df166be5ef5aee78eb5dae95c325ba4d8bcb5b6421e4aea16b1586b"
-    },
-    "dist/images/jxl/jfif.mjs": {
-      "bytes": 24031,
-      "sha256": "3fb62eb750d274525339c47bfdd600b2d6dca5aed00a6508dc239f3bf8ae0f67"
-    },
-    "dist/images/jxl/jpeg-reconstruction.mjs": {
-      "bytes": 41413,
-      "sha256": "ec9ae6a1b6512c30be70ec421c93e121773262c5065b3ccbd0857cf6b15ee3a1"
-    },
-    "dist/images/jxl/jpeg-coefficients.mjs": {
-      "bytes": 35883,
-      "sha256": "e97b90d219cd7fa1370d43f0d486b5550107cab983a39f9c5b7888d52649cf3e"
-    },
-    "dist/images/jxl/source.mjs": {
-      "bytes": 21481,
-      "sha256": "b0ff12dce34e012bb4a5f9cd8eedc630d67688a14931ebf403011f686c711b8e"
-    },
-    "dist/images/jxl/capture-codec.mjs": {
-      "bytes": 55535,
-      "sha256": "b92d9451f241291ff940521491cbecf7b7dd78d47f786781bc9f388735652613"
-    },
-    "dist/images/jxl/screen-crop.mjs": {
-      "bytes": 9788,
-      "sha256": "bc4107b3f7ad8c7fccfbd225e184beda64250ed2838803b42bba06e86b262152"
-    },
-    "dist/images/jxl/capture-kernels.mjs": {
-      "bytes": 19339,
-      "sha256": "2fdadeae6233629e388e1699ecc76d54b0f4d03bae752da3ec4948b184c832b7"
-    },
-    "dist/images/jxl/capture-wasm-error.mjs": {
-      "bytes": 324,
-      "sha256": "df4a38d14f0ee969331c2329102f02b1a4adb98dd2b7256f4cf6590a36cc5b1c"
-    },
-    "dist/images/jxl/capture-kernels-bytes.mjs": {
-      "bytes": 8523,
-      "sha256": "9c7eb3d94b581d09009ac0715124efa6a65442f15f742c400626490065fcb9b4"
-    },
-    "dist/images/jxl/v7/instant.mjs": {
-      "bytes": 595,
-      "sha256": "d9b44b0ebccf5e9dc0ba9fb35c5df758050b730b391d350a8f8c21d30b1294d9"
-    },
-    "dist/images/jxl/index.mjs": {
-      "bytes": 2509,
-      "sha256": "5026523207909b11299e72ca67ca21194b0aa9e664a212572a0c7f394cd849d0"
-    },
-    "dist/images/jxl/gpu-drive.mjs": {
-      "bytes": 2062,
-      "sha256": "daf3d40b656c7e6dd33f6fe61043b843366ff7769d4d680c07a144c92192b555"
-    },
-    "dist/images/jxl/screen-floor.mjs": {
-      "bytes": 716,
-      "sha256": "0b6d36f28d5dcff5085e804a9449d0eb6da17758dc29803e170800ded54fe400"
-    },
-    "dist/images/jxl/screen-photo-mixed.mjs": {
-      "bytes": 4141,
-      "sha256": "686515342870a9abe45b95e55636bf5f67c165412bf80165e5b041df2340682a"
-    },
-    "dist/images/jxl/layers-core.mjs": {
-      "bytes": 10151,
-      "sha256": "6781607b5376e859e4e7cc605a8cc5fb14496997a02fcdf026bdd3b608970ed2"
-    },
-    "dist/images/jxl/gpu-gate.mjs": {
-      "bytes": 194,
-      "sha256": "c1a90af4be756ce1ac508a04e1d929bbe17e674a2e87357d8d004302369b1e7f"
-    },
-    "dist/images/jxl/gpu-queue.mjs": {
-      "bytes": 241,
-      "sha256": "5fbbbac84bcddf11b58700b16399c78a0f2d1511fb59660405960aeea86cb88d"
+    "dist/images/jxl/v7/acceleration.mjs": {
+      "bytes": 2210,
+      "sha256": "6233537ac2e6e635a1e1fa4b8b504a243a363154c4cb1e66f25772f608655b5e"
     },
     "dist/images/jxl/gpu-core.mjs": {
-      "bytes": 40475,
-      "sha256": "12632c1c0786bcb6ad99570c039c1c7d4d569123117a2c6f8a0baf927a0cacca"
+      "bytes": 33339,
+      "sha256": "2d1e297537dc466bffd0056686962bc6fec7588e99e250574bdf50fe3433331d"
+    },
+    "dist/images/jxl/gpu-device.mjs": {
+      "bytes": 754,
+      "sha256": "bb82ab4afeb8432e0de9900bc455d3d7a9e9472ca58249358bf921db0499418d"
+    },
+    "dist/images/jxl/gpu-arithmetic.mjs": {
+      "bytes": 7484,
+      "sha256": "d7aaa051f77f0d8b70a8ba123fc1fe6c9bfa9e0868808ccf32bb2818c5a7b9d3"
     },
     "dist/images/jxl/gpu-blocks16.mjs": {
-      "bytes": 34970,
-      "sha256": "7b747f175b46dcad0f7d56e3dc5652f8da7faee5c14d51d9aa6d885fda607035"
+      "bytes": 35116,
+      "sha256": "b68656d17ba089e4d88c53d3b7e50e5fbc4a742ddabf788bc81fce7bb7cd6113"
     },
     "dist/images/jxl/gpu-blocks.mjs": {
-      "bytes": 24430,
-      "sha256": "f113ad13120e8c9fc91b9803372b293d1879a4adfc3c46ccb4ed0278e910fc46"
+      "bytes": 24875,
+      "sha256": "ce88d0f44bbbab6b1e0350bc9094b1431e7ac0fd3d671f31b9265235dd90ecfe"
+    },
+    "dist/images/jxl/gpu-capture-blocks.mjs": {
+      "bytes": 3167,
+      "sha256": "935f4525c51f6ded9ed3b93fe105c867f230df65c61431331428ef8c406c71ec"
     },
     "dist/images/jxl/gpu-s2-cells.mjs": {
       "bytes": 13115,
       "sha256": "01cf5d82b1027ccd6388e39092eafa617cc5db591c48bcbb96820c3dccc08c94"
     },
-    "dist/images/jxl/v7/common.mjs": {
-      "bytes": 3970,
-      "sha256": "129e19176364d5d8335a0a2660015dd16e7507285a7d4411715bda0486bcd86c"
+    "dist/images/jxl/v7/kernels-ready.mjs": {
+      "bytes": 407,
+      "sha256": "27c62a93a83d00958464b280e74aa809454ccde0f206e148ae0b526ced1ad61d"
     },
-    "dist/images/jxl/v7/encode-options.mjs": {
-      "bytes": 3065,
-      "sha256": "1f9ee09abebe7d5bc3a18d7e7448611afb381fd79342a4c379dc9759e04b5f63"
+    "dist/images/jxl/v7/webgpu.mjs": {
+      "bytes": 973,
+      "sha256": "e7b14e52e30c99606d426554ca2df826f2fe2b1602fa9c389749c54d3acf08b4"
     },
-    "dist/images/jxl/v7/fidelity.mjs": {
-      "bytes": 1812,
-      "sha256": "7fe8f14f2650a2c992a06bf73eba163dc88136c1f7f7f95c5c3dac0536146e51"
+    "dist/images/jxl/gpu-gate.mjs": {
+      "bytes": 194,
+      "sha256": "c1a90af4be756ce1ac508a04e1d929bbe17e674a2e87357d8d004302369b1e7f"
     },
-    "dist/images/jxl/v7/describe.mjs": {
-      "bytes": 3426,
-      "sha256": "c8b54d4777418a82a550c7c851039c2e081c31eabde63ce6c4c0cbc7391f6585"
+    "dist/images/jxl/source.mjs": {
+      "bytes": 23093,
+      "sha256": "b20cd1e15ca792cb93e658749f3374cba4fce8b50082218df3883338fa125618"
+    },
+    "dist/images/jxl/v7/preparation-jpeg.mjs": {
+      "bytes": 3097,
+      "sha256": "e301d8dde5d755c9f36b9de1f418723b8b8242ad11019c9b8baf4adf98e6ddbd"
+    },
+    "dist/images/jxl/sample-transforms.mjs": {
+      "bytes": 6646,
+      "sha256": "e45c95867fd668c162f5ccedc18285604478e0fd371b2cbcf64d43c67bc962bb"
+    },
+    "dist/images/jxl/v7/instant.mjs": {
+      "bytes": 600,
+      "sha256": "3fe1abade0bad47d8957b6427e68063839a09d15af027cb68f6b32f36d5132d7"
+    },
+    "dist/images/jxl/core-steps.mjs": {
+      "bytes": 2233,
+      "sha256": "df229c41a70f075f34e60770fa1a17538ad74a8c63fb07e183ba6ca6af19cb17"
     },
     "dist/images/jxl/parallel-drive.mjs": {
-      "bytes": 9372,
-      "sha256": "ce2f9a1a1e463e9ceaf3e9491ca0602ada5e0718e289540dd9ba9765d57a89af"
+      "bytes": 9513,
+      "sha256": "79700bfa49231dd636929b296c6521c66e73b5dddcf9e7851042a1e7b5744499"
     },
     "dist/images/jxl/job-drive.mjs": {
       "bytes": 2134,
-      "sha256": "501992048425df78549965a1ee6147df48b5fc6ee307e9a61559a4c06bfcf41d"
+      "sha256": "5f89d04f1aed5cbece87702323c2c376473ff54f2436868ba90bd65222f68cf3"
+    },
+    "dist/images/jxl/screen-floor.mjs": {
+      "bytes": 1436,
+      "sha256": "596b96e382e29ff27a94af0360237029e37ff08b24a917cb6539d74d1c038f01"
     },
     "dist/images/jxl/parallel-serve.mjs": {
-      "bytes": 5570,
-      "sha256": "1991fa81845c090ac278ee1cade0dfe601b315365f947da157f1181bcc3eb007"
+      "bytes": 5830,
+      "sha256": "0ddfb8e2f938d76461f2260beeed59ca93d2fe9e8206bd7ecab8fc9dc3faaa72"
     },
     "dist/images/jxl/ac-group.mjs": {
       "bytes": 13505,
       "sha256": "38964e6dee8f4520147ec6d34d036f682bfc1427d653745490d8ce87c22eaa75"
     },
-    "dist/images/jxl/v7/drive.mjs": {
-      "bytes": 53,
-      "sha256": "6246c9e5615ebdfb74ff648046450e56114d337ff1cbf2505cda3d80119e461e"
-    },
     "dist/images/jxl/v7/first-region.mjs": {
-      "bytes": 2343,
-      "sha256": "2e4a4eab9a5ec25db03ad90832019b843372e1b306cb2b58761d67ecb04be310"
+      "bytes": 2321,
+      "sha256": "541e9ca208d19c8a6b845265653240af1ce09efcfe72be5a786073b7915a9320"
     },
     "dist/images/jxl/toc-permutation.mjs": {
       "bytes": 5464,
       "sha256": "97cf74ffec69138b61f0336deaac622749eae61fd777a84f81b84b2aeb585c3d"
     },
     "dist/images/jxl/section-order.mjs": {
-      "bytes": 4092,
-      "sha256": "e785fcffe86855d39913edd11988315b312ce17708947720c0607938142985e6"
-    },
-    "dist/images/jxl/v7/first-region-option.mjs": {
-      "bytes": 906,
-      "sha256": "cffe9f1be30964944dd62538817d133b42de8faedd76d55790772101e10d585a"
+      "bytes": 4322,
+      "sha256": "981ee8fb3d9f01e8780499e7fdee5ac0105a5af4fae5f81954fa07e3e87e39a1"
     },
     "dist/images/jxl/v7/input.mjs": {
-      "bytes": 3433,
-      "sha256": "a56469418c8eaa733f0798158f69e4aedef30ab638fa67f23c5c59a14ba58e58"
+      "bytes": 2092,
+      "sha256": "d99524902fe5d89b4eed65e176d13bb2e89967a6ad8b86e86e07503fc3efb6e7"
+    },
+    "dist/images/jxl/v7/input-native.mjs": {
+      "bytes": 5971,
+      "sha256": "798706857c3bad50ad1e07cf40a5ed9214d71a93f628e102795542a6a9c4ecd2"
     },
     "dist/images/jxl/v7/surface.mjs": {
-      "bytes": 6156,
-      "sha256": "0c7c99c81cc4f449791b905290edff05d8783f4860a742d30248abae861fa98e"
+      "bytes": 6389,
+      "sha256": "39178e9acebac977022506c7d68e1c4fd0305f6c15daeb3ad93b9916223d34ee"
     },
     "dist/images/jxl/v7/webgl-read.mjs": {
-      "bytes": 4349,
-      "sha256": "09c281d11ee3c13f2babefd9533e8f229c7640da7f1f260df87948e14c880689"
+      "bytes": 5149,
+      "sha256": "de0a57b7628d007b38d84ab15be99417f2a7b1143d9dfd39f6b85b0dc8d3e7a9"
     },
     "dist/images/jxl/v7/video.mjs": {
-      "bytes": 597,
-      "sha256": "cb626f08193362a5727dd987914d9fbf7da97499d5a15dae9e603208656f79cd"
+      "bytes": 579,
+      "sha256": "91280fd8ec4d9f440690f70ef9c4479dfbb831368d572540debfd79eb6055676"
     },
-    "dist/images/jxl/v7/records.mjs": {
-      "bytes": 587,
-      "sha256": "a5ffee52d858cd2fac6b6cbf5b747ac21f8f1a4dc9b21de528d21a5e0f09218a"
-    },
-    "dist/images/jxl/v7/ownership.mjs": {
-      "bytes": 6729,
-      "sha256": "9b2c6f3a7c5b7fb4743a3a45e4534ef46f6b6b513852f0a6129eb904c66627ad"
+    "dist/images/jxl/v7/phone-container.mjs": {
+      "bytes": 10314,
+      "sha256": "09fca3701786335f5186ad6116f450f66ca89b65edea0803bca0ee97470bcec0"
     },
     "dist/images/jxl/v7/bands.mjs": {
-      "bytes": 2364,
-      "sha256": "fed88572b947150dfcd695f472de9c2330f31bd6bcf91c7769eb8d92a92829bb"
+      "bytes": 2596,
+      "sha256": "b1818e42b7c4bf26b591f8e756a590f2b0950293c86bdb375ed0648575015f0f"
     },
     "dist/images/jxl/v7/band-size.mjs": {
       "bytes": 529,
       "sha256": "6054f1074f04a22f54a08bdbbe4f1e19c44cdc9d7eef0fdf983b6fe6c5fda6fa"
     },
     "dist/images/jxl/v7/band-recode.mjs": {
-      "bytes": 1993,
-      "sha256": "85f109ddca96bdf235df6e22d1f6cb6d1e9bd5d73373dbaf3b0e8f98ef4a01c5"
+      "bytes": 2143,
+      "sha256": "8675fc73bb37783ae4335f925c8cc0fcc2cd61ad6e071854b8fb4be587cb8fa0"
+    },
+    "dist/images/jxl/v7/low-photo.mjs": {
+      "bytes": 1482,
+      "sha256": "916e6c32c5120f2a1846c0effd389df0bbc7ea4a99e906ba80e7d7ef7c53b6fd"
+    },
+    "dist/images/jxl/photo-low.mjs": {
+      "bytes": 10117,
+      "sha256": "d1eb5796d7d00311c070bc0d86cada64ecb8271fd147e0113261b1ef158dcf99"
+    },
+    "dist/images/jxl/photo-low-settings.mjs": {
+      "bytes": 228,
+      "sha256": "9ec7734de3e72a35698304f02562e5fc2e4432c82fc8f0b344d2780260d567cc"
+    },
+    "dist/images/jxl/v7/ordinary-still-policy.mjs": {
+      "bytes": 2451,
+      "sha256": "577124560d263796f082144079dd58fd19ff6730236a1c37794f02c91c114bb3"
+    },
+    "dist/images/jxl/photo-intent.mjs": {
+      "bytes": 2426,
+      "sha256": "7ff39c75a070827a056a68b52cefc2924c622c217caf7a2689fedd1b74ab31d0"
+    },
+    "dist/images/jxl/v7/low-webp-quality.mjs": {
+      "bytes": 5652,
+      "sha256": "2955c4db14ee3baf950899a13c33deecaad91a5429ae69a7d21e6f6a96363f48"
+    },
+    "dist/images/jxl/v7/webp-quality.mjs": {
+      "bytes": 5963,
+      "sha256": "654551e35d16223fe94271490d5cafc3c170ab7408b1076e64bf3d99a128eb3d"
+    },
+    "dist/images/jxl/v7/native-still-prediction.mjs": {
+      "bytes": 2302,
+      "sha256": "9f54fd3cd1648480578feb1568e8170a90bb4bfff952681c21249a93e1db78de"
+    },
+    "dist/images/jxl/v7/still-photo-target.mjs": {
+      "bytes": 2471,
+      "sha256": "50d09c45c9082b3df97a63a1c26d1719d363b4a565476be3059f51dd7fc01a19"
+    },
+    "dist/images/jxl/photo-whole-search.mjs": {
+      "bytes": 13039,
+      "sha256": "6a09eef3eb384442d8efc121f0b7514b480e8bc3a72b91ec410101cd6c940e20"
+    },
+    "dist/images/jxl/photo-plane-levels.mjs": {
+      "bytes": 2027,
+      "sha256": "fa865623b2932349be4255d0f6a80f1f3d9a49bbee90460cbec5d7ea86387825"
+    },
+    "dist/images/jxl/photo-plane-search.mjs": {
+      "bytes": 1464,
+      "sha256": "594ed3ec196e72a14327dfb266e3e7bc5fcc13e5274ca406c3be9a34961f8e7e"
+    },
+    "dist/images/jxl/photo-plane-measured.mjs": {
+      "bytes": 1599,
+      "sha256": "9965ba9086ffb8c19975fed89a28413e3b705061e391c3ae1542391573f2dab1"
+    },
+    "dist/images/jxl/photo-measured-steps.mjs": {
+      "bytes": 1004,
+      "sha256": "5e6dac9684dbb08ee51e88fb2d48fb61060e1b26e01e1b9b0e8e9d66d6df02c3"
+    },
+    "dist/images/jxl/photo-whole-rebuild.mjs": {
+      "bytes": 3291,
+      "sha256": "d150e6a8044a1cc3ac15356ee48acdb8efd13288e757b895d388faa6a8c3636e"
+    },
+    "dist/images/jxl/photo-reference.mjs": {
+      "bytes": 321,
+      "sha256": "33cdf5b289d94d0d6e95e30030a76a2e7f2ab20f9229d7352029a7e1cef3ff6a"
     },
     "dist/images/jxl/photo-hdr.mjs": {
-      "bytes": 3532,
-      "sha256": "0a6aaed477c1460164fbbe66748e0a3e751143d36cc66f9e91e9c6a751e4b9f9"
+      "bytes": 3370,
+      "sha256": "d69f0f335908e81f99f9af7824dc9588ea5b20822170c88a2ccb69146e167e80"
+    },
+    "dist/images/jxl/sample-values.mjs": {
+      "bytes": 324,
+      "sha256": "c045568b971d5fb499804e8730a08a661bb8fd1c6a1406bee920568c4d8f2ddf"
     },
     "dist/images/jxl/v7/rows.mjs": {
-      "bytes": 3780,
-      "sha256": "a8474ee81772defefbff26103fe8028a4a9bb339955072aaf8e1032c170ba2d7"
+      "bytes": 4766,
+      "sha256": "a63d4fdb5c23df3bf6a5c7fef57e8da708807b3ff1730162aad4c58366d28363"
     },
     "dist/images/jxl/v7/texture.mjs": {
-      "bytes": 5708,
-      "sha256": "36718ba235485e4e6425e27d2037752a9abae4352e268dcf582c114ee02ef1c0"
+      "bytes": 6232,
+      "sha256": "5146fd14ee6aece92095ad91ec028dfd154aaf6f004035d58dc98327d5818ec3"
     },
-    "dist/images/jxl/v7/acceleration.mjs": {
-      "bytes": 2314,
-      "sha256": "8ee57ba77d3b55416c8dcc3932da1cbb75add86c8e9d1471f4254f22a824eb23"
+    "dist/images/jxl/v7/verb-steps.mjs": {
+      "bytes": 5051,
+      "sha256": "75485bddd9a8c15bbf5a179e9b0ca1e816e3f9dfb36456ba04700c98be5351ee"
     },
-    "dist/images/jxl/v7/kernels-ready.mjs": {
-      "bytes": 465,
-      "sha256": "abe330a3ee218fd1550bf1e7b470922094b7f9776f844a1b18548cd70a72b878"
-    },
-    "dist/images/jxl/v7/webgpu.mjs": {
-      "bytes": 1269,
-      "sha256": "87c4efd9df0b5a9f9b8267e1dff6c4eafe568358b88bd1e59cee7edd64caafb8"
-    },
-    "dist/images/jxl/v7/capture.mjs": {
-      "bytes": 461,
-      "sha256": "bd23478acf53f1a517fab9ee55d2c617e0ac8bcdaf26de5af7ffbcdcb8f03516"
-    },
-    "dist/images/jxl/v7/capture-core.mjs": {
-      "bytes": 2846,
-      "sha256": "021dd0d2f1d28737af52def792f8a7e158a22c2323a8eef9fa2cac689503f96f"
-    },
-    "dist/images/jxl/v7/run-capture.mjs": {
-      "bytes": 4689,
-      "sha256": "cbc0244d251a206befdc9a7a166eda38b08667fc990f03728edc15697f7662df"
-    },
-    "dist/images/jxl/v7/capture-options.mjs": {
-      "bytes": 988,
-      "sha256": "b6525cddc305493c1540b9e995a1ccb29d83c76e38775355f4b96167c9651576"
-    },
-    "dist/images/jxl/v7/capture-boot.mjs": {
-      "bytes": 1097,
-      "sha256": "8eaf0b566f6a144d3cd836c399fd871dc77309b517d88fe2344cceb0dd6ac750"
+    "dist/images/jxl/v7/jpeg-size.mjs": {
+      "bytes": 776,
+      "sha256": "4df6e496bd0777f975b4842181fc52ba3ef7763e3e40e7f9d9bfc8a3ec2f271b"
     },
     "dist/images/jxl/v7/capture-support.mjs": {
-      "bytes": 1148,
-      "sha256": "81918709cffc6839969c2fe139c23e216faa81651254fe5ee6b8bd2d1d5f77ed"
+      "bytes": 1133,
+      "sha256": "eba730cbfab6374b1fcf3f8a228f3ece3c438667543074e534cd8c94b550d31c"
     },
     "dist/draw/paint-gpu.mjs": {
       "bytes": 98729,
@@ -3609,20 +4406,24 @@
       "sha256": "45ec827210666d018b8a9c59b2340cb7a1686362086996e8d8ba32e1402bff78"
     },
     "dist/mcp/oauth.mjs": {
-      "bytes": 34122,
-      "sha256": "cefbd28a3e4392784a06a14d3d73dea6f8fa5a6653f29c94c4196d6f736d8d30"
+      "bytes": 37148,
+      "sha256": "3d66ad7b4f872070d47262664683ddab5a87bf01ae487806a0f90ebb1bb806e9"
     },
     "dist/mcp/limits.mjs": {
-      "bytes": 750,
-      "sha256": "954969a6604205a54dbd9ee98a74d88969f3116c9bb272e6c7cb7613d499cb8b"
+      "bytes": 784,
+      "sha256": "31b99f0e1e90cd9de651b44260aa3daab66d3e8785d1fef1b4c827db92fbddfe"
     },
     "dist/mcp/oauth-store.mjs": {
-      "bytes": 5024,
-      "sha256": "294709b7373a1629b1c2834adef45026d77d86f5fa73a2607149ea0cd5939f5f"
+      "bytes": 5451,
+      "sha256": "274010e896b42452387ff32b27e525cd8aa0824273c3ce2e7ef4f1695c14177e"
     },
     "dist/mcp/oauth-access.mjs": {
       "bytes": 2852,
       "sha256": "588bc68ac88ed893e6060c7d80a2503156460ecbd2b6716feed6e111063041a8"
+    },
+    "dist/mcp/oauth-trusted-issuer.mjs": {
+      "bytes": 7228,
+      "sha256": "f389ee53fd5c4bc3b3066cbd1e49b2c39210e378a70bed4cfe2b689eb900d342"
     },
     "dist/mcp/waited-read.mjs": {
       "bytes": 2519,
@@ -3845,12 +4646,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 2208844,
-      "sha256": "b8f8430f9e4e3d1fff5c86d1be609d0d6aca21c3d17678a360d73bcd3fe5ad9b"
+      "bytes": 2317352,
+      "sha256": "4849cf8d34f52d39c311b81f801afcf6a77803f87948cbf60eaff10e6f29ae97"
     },
     "dist/dist/chatgpt/rapier.html": {
-      "bytes": 6613729,
-      "sha256": "66dd1e87abc3cd368fdd5481ce4ad8816ea5235fb08f1788fbfaa67ed111581f"
+      "bytes": 6983431,
+      "sha256": "cc5603ec6011a793cd96233ecb8f5f12b480999fec1233ea0e8cee2578d22364"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -3864,13 +4665,13 @@
       "bytes": 902202,
       "sha256": "233811e8fdc705aa4380fbcb4f1fbf25268b841f3e82e9460d6ae684f374477b"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-presets-431503cf362751f4.txt": {
-      "bytes": 252359,
-      "sha256": "431503cf362751f42946fe7672549f8245c49128471e053d5ff306077dd475d1"
+    "dist/dist/chatgpt/editor-assets/rapier-presets-daed1531fe635483.txt": {
+      "bytes": 252306,
+      "sha256": "daed1531fe63548320721412d0229001bc97896c51de3f96a9172d1c80c1edb8"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-drawing-8f3d744c713ba3e3.txt": {
-      "bytes": 611455,
-      "sha256": "8f3d744c713ba3e3461c9ae14d4663bb4e1b71f2e6626a3b5ba0d4671da8b0ca"
+    "dist/dist/chatgpt/editor-assets/rapier-drawing-3aeb936bfc6d395e.txt": {
+      "bytes": 756726,
+      "sha256": "3aeb936bfc6d395e91400520af84d1e23ac23df2d16ec00cb39bee96ab02dd9d"
     },
     "dist/dist/chatgpt/editor-assets/rapier-jxl-142535a81d86a220.txt": {
       "bytes": 32377,
@@ -3888,9 +4689,9 @@
       "bytes": 7205,
       "sha256": "31e471e2bc1f912dd820feb86001f2c982dc3b72d5d2e47a694aec9a8a7508a8"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-jxlcomplete-fa323b6d2db2ca30.txt": {
-      "bytes": 408838,
-      "sha256": "fa323b6d2db2ca305c23824383a7ad50882fb9c498b80b4effc546a9bae7770e"
+    "dist/dist/chatgpt/editor-assets/rapier-jxlcomplete-da4ac035e8121a05.txt": {
+      "bytes": 524723,
+      "sha256": "da4ac035e8121a05b53622cd90c222620be7ca9c414e5ea7c42b173e7457e7fe"
     },
     "dist/dist/chatgpt/editor-assets/rapier-jxlscene-17619991bae0eb9b.txt": {
       "bytes": 5355,
@@ -3908,9 +4709,9 @@
       "bytes": 11162,
       "sha256": "ffa58a8eb865ae66d7a71f5f036bfe7927fb047ea5f782cb1e598fbfd64d86fd"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-notes-648fda8eaa3c095e.txt": {
-      "bytes": 394746,
-      "sha256": "648fda8eaa3c095e94558378c7d150d0660e5c5ec4c71032aa45eb5d048b008c"
+    "dist/dist/chatgpt/editor-assets/rapier-notes-d6e21517c8103dd4.txt": {
+      "bytes": 394865,
+      "sha256": "d6e21517c8103dd499a6d3f6f105c75533b50f96364f8a236f6a8ef268129711"
     },
     "dist/dist/chatgpt/editor-assets/rapier-plugin-math-971908eb6249a60c.txt": {
       "bytes": 453195,
@@ -3962,7 +4763,7 @@
     },
     "dist/dist/chatgpt/rapier-skills.json": {
       "bytes": 1589334,
-      "sha256": "f10ab65280ff69b730151999d37e49d2872e2ed1dcd437cef15e96727f8e5f1e"
+      "sha256": "6292d8eaf1ac5cf0fa5fa05425dad67f75ba90c23ee30ccaf8248f6faff745a1"
     }
   }
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import {strategyTableList} from '../vardct-tables.mjs';
 import {complete} from '../bits.mjs';
 import {readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -213,7 +214,7 @@ export function xybStrategies(base, width, height, options = {}) {
   const counts = {};
   for (const b of blocks) counts[TRANSFORMS[b.id].name] = (counts[TRANSFORMS[b.id].name] || 0) + 1;
   const {planes: _p, values: _v, ...rest} = base;
-  return {image: {...rest, components, wideCoefficients, strategyData: {groups, blocks, at, tables, stride}}, counts,
+  return {image: {...rest, components, wideCoefficients, strategyData: {groups, blocks, at, tables: strategyTableList(tables), stride}}, counts,
     layout: blocks.map(({id, bx, by}) => ({id, bx, by}))};
 }
 

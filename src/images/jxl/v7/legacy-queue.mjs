@@ -9,7 +9,7 @@ export function defaultCodec() { return shared ||= encoder(sharedClient(), {}, L
 export function createCodec(config = {}) {
   if (config && typeof config === 'object' && Object.hasOwn(config, 'worker')) {
     const {worker, ...rest} = config, error = message => { throw fail('JXL_OPTIONS', message); };
-    if (worker !== undefined && worker !== false) error('worker may be false; supply workerFactory for a custom worker.');
+    if (worker !== undefined && worker !== false) error('worker may be false; use workerFactory for a custom worker.');
     if (worker === false && rest.workerFactory) error('worker:false and workerFactory are mutually exclusive.');
     return encoder(createClient(rest, worker === false ? {...LEGACY, inPlace: true} : LEGACY), rest, LEGACY.operations);
   }

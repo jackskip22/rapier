@@ -1,0 +1,16 @@
+{
+  "seed": 20260930,
+  "jpegs": 2000000,
+  "pixels": 32768,
+  "workers": 1,
+  "reuse": null,
+  "against": null,
+  "ranges": [
+    {
+      "jpegStart": 0,
+      "jpegEnd": 2000000,
+      "pixelStart": 0,
+      "pixelEnd": 32768
+    }
+  ]
+}

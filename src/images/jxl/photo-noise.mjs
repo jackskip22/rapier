@@ -23,14 +23,14 @@ export function encodePhotoSteps(data, width, height, options = {}) {
 function* sourceGrainSteps(data, width, height, options, ordinary) {
   const analysis = prepareNoiseSteps(data, width, height, .5);
   let next, hurry = false;
-  while (!(next = analysis.next()).done) hurry = (yield next.value / 8) || hurry;
+  try { while (!(next = analysis.next()).done) hurry = (yield next.value / 8) || hurry; } finally { if (!next?.done) analysis.return?.(); }
   const prepared = next.value;
   const lut = prepared.lut && Float64Array.from(prepared.lut, value => Math.round(value * .1 * 1024) / 1024);
   const encoded = lut?.some(value => value) ? plainPhotoSteps(prepared.data, width, height, {...options, noise: lut}) : ordinary;
   encoded.hurry = hurry;
-  while (!(next = encoded.next()).done) {
+  try { while (!(next = encoded.next()).done) {
     hurry = (yield scaled(next.value, done => .125 + .875 * done)) || hurry;
     encoded.hurry = hurry;
-  }
+  } } finally { if (!next?.done) encoded.return?.(); }
   return next.value;
 }

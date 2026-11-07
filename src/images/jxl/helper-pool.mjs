@@ -1,4 +1,5 @@
 import {suppliedWasm} from './wasm-modules.mjs';
+import {startWorker} from './v7/worker-start.mjs';
 // SPDX-License-Identifier: MIT
 import {kernelRequest, ensureKernels} from './kernels.mjs';
 import {ARENA_BYTES} from './arena.mjs';
@@ -29,10 +30,21 @@ export function workerPool(spawn, count) {
     mark('end');
     let result;
     try { result = worker.terminate(); } catch (error) { result = Promise.reject(error); }
-    const retired = Promise.resolve(result).then(() => { retiring.delete(retired); pump(); }, error => { retiring.delete(retired); retireFailure ??= error; pump(); });
+    const retired = Promise.resolve(result).then(() => { retiring.delete(retired); pump(); }, error => {
+      retiring.delete(retired);
+      retireFailure ??= error instanceof Error ? error : new Error('Worker retirement failed.', {cause: error});
+      api.failure ??= retireFailure;
+      stop();
+    });
     retiring.add(retired);
   };
-  const finish = (job, value) => { pending.delete(job.id); job.resolve(value); };
+  const finish = (job, value) => {
+    if (job.ending) return;
+    job.ending = true;
+    const settle = error => { pending.delete(job.id); if (error) job.reject(error); else job.resolve(value); };
+    if (value === undefined && job.reject) Promise.resolve().then(() => api.retired()).then(() => settle(), settle);
+    else settle();
+  };
   const listen = (worker, receive, fail) => { worker.onmessage = event => receive(event.data); worker.onerror = event => { event?.preventDefault?.(); fail(); }; };
   const drop = member => {
     if (member.dead) return;
@@ -67,6 +79,7 @@ export function workerPool(spawn, count) {
         const job = member.busy;
         if (!job || reply.id !== job.id) return;
         if (reply.progress !== undefined) { job.onProgress?.(reply.progress); return; }
+        if (reply.error && !job.whole) { drop(member); pump(); return; }
         member.busy = null;
         if (job) finish(job, job.whole ? reply : reply.error ? undefined : reply.result);
         pump();
@@ -115,7 +128,7 @@ export function workerPool(spawn, count) {
         for (const input of job.inputs) if (!member.sent.has(input.n)) { member.worker.postMessage({pool: 'parallel', input: input.n, value: input.shared}); member.sent.add(input.n); }
         member.worker.postMessage({pool: 'parallel', id: job.id, task: job.task});
         mark('task', job.task.kind);
-      } catch { member.busy = null; finish(job, undefined); }
+      } catch { drop(member); }
     }
     if (!members.length && !retiring.size) for (const job of [...queue.splice(0), ...pending.values()]) finish(job, undefined);
   }
@@ -123,7 +136,7 @@ export function workerPool(spawn, count) {
     count, limit: count, failure: null, broken: false,
     get waiting() { return pending.size; },
     run(task, big) {
-      if (closed) return Promise.resolve(undefined);
+      if (closed) return api.retired().then(() => undefined);
       const ins = [], message = {...task};
       for (const field of big) {
         if (task[field] == null) continue;
@@ -132,8 +145,8 @@ export function workerPool(spawn, count) {
         ins.push(id); message[field] = id.n;
       }
       let job;
-      const promise = new Promise(resolve => {
-        job = {id: ++serial, task: message, inputs: ins, resolve};
+      const promise = new Promise((resolve, reject) => {
+        job = {id: ++serial, task: message, inputs: ins, resolve, reject};
         pending.set(job.id, job); queue.push(job); pump();
       });
       promise.job = job;
@@ -182,7 +195,7 @@ export function workerPool(spawn, count) {
       }
       pump();
     },
-    warm() { while (!closed && members.length < count && tryStart()); },
+    warm() { while (!closed && members.length + retiring.size < count && tryStart()); },
     loaded() { return Promise.all(members.map(member => member.ready)).then(states => states.every(Boolean)); },
     promote(promise) {
       for (const dep of promise.deps ?? []) this.promote(dep);
@@ -218,6 +231,7 @@ const residentHelpers = reservation => Math.min(reservation.count, Math.floor(re
 function ownerPool(owner, reservation, spawn) {
   if (closedOwners.has(owner)) throw Object.assign(new Error('The codec is closed.'), {code: 'JXL_CLOSED'});
   let pool = helperPools.get(owner);
+  if (pool?.failure) throw pool.failure;
   if (!pool || pool.closed) { helperPools.set(owner, pool = workerPool(spawn, residentHelpers(reservation))); dropped?.register(owner, pool); }
   return pool;
 }
@@ -289,7 +303,7 @@ export async function splitOnIdle(owner, reservation, request, signal, helper) {
     const arena = request.pixels > 0 && reservation?.memoryBytes >= 16 * request.pixels + leased.length * (helperBytes(request.pixels) + ARENA_BYTES);
     if (request.pixels > 0) mark('split-arena', arena, leased.length * ARENA_BYTES, reservation?.memoryBytes);
     return request.run ? await request.run(leased, {signal, arena})
-      : await (await import('./photo-split.mjs')).encodeSplit(request.data, request.width, request.height, request.quality, leased, {signal, gaborish: request.gaborish, screen: request.screen, opaque: request.opaque, arena});
+      : await (await import('./photo-split.mjs')).encodeSplit(request.data, request.width, request.height, request.quality, leased, {signal, gaborish: request.gaborish, screen: request.screen, uploadFlat: request.uploadFlat, opaque: request.opaque, arena});
   }
   catch (error) { if (signal?.aborted) throw error; return undefined; }
   finally { pool.unlease(leased); pool.jobs--; idle(pool); }
@@ -318,7 +332,7 @@ export const defaultWorkers = async () => {
 export async function spawnHelper(helper) {
   if (!helper) throw Object.assign(new Error('A helper spawn names its file.'), {code: 'JXL_INTERNAL'});
   const named = spawn => Object.assign(spawn, {module: helper.module, protocol: helper.protocol, wasm: helper.wasm});
-  if (typeof Worker === 'function') return named(() => helper.worker());
+  if (typeof Worker === 'function') return named(() => startWorker(helper));
   const threads = nodeBuiltin('node:worker_threads');
   if (!threads) throw Object.assign(new Error('This runtime starts no helper worker.'), {code: 'JXL_WORKER', lost: true});
   const {Worker: NodeWorker} = threads;

@@ -21,7 +21,7 @@ async function prepare(source, maxPixels) {
   }
   if (typeof Blob === 'function' && source instanceof Blob) return {source, transfer: []};
   if (source?.width !== undefined) shape(source, maxPixels);
-  if (typeof createImageBitmap !== 'function') throw error('JXL_INPUT', 'Pass RGBA pixels or a Blob; image decoding is unavailable.');
+  if (typeof createImageBitmap !== 'function') throw error('JXL_INPUT', 'Pass RGBA pixels or a Blob; this runtime cannot decode images.');
   const bitmap = await createImageBitmap(source);
   try { shape(bitmap, maxPixels); }
   catch (reason) { bitmap.close(); throw reason; }
@@ -115,6 +115,7 @@ export function createEncoder({worker, maxQueue = 2, maxPixels = LIMITS.pixels, 
       return new Promise((resolve, reject) => {
         if (closed) throw error('JXL_CLOSED', 'The encoder is closed.');
         if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('Encoding options must be an object.');
+        if ('progress' in options) throw error('JXL_OPTIONS', 'encode takes onProgress, not progress.');
         const {signal, onProgress, maxPixels: requestedMaxPixels = maxPixels, ...rest} = options;
         if (signal !== undefined && ['addEventListener', 'removeEventListener', 'throwIfAborted'].some(method => typeof signal?.[method] !== 'function')) throw new TypeError('signal must be an AbortSignal.');
         signal?.throwIfAborted();
@@ -147,7 +148,7 @@ function queue(thread) {
   if (state) return state;
   state = {tail: Promise.resolve(), error: null, reject: null, waiting: new Set()};
   const broke = event => {
-    state.error ||= fail('JXL_WORKER', event?.message || 'The JPEG XL worker failed or returned an unreadable message.');
+    state.error ||= fail('JXL_WORKER', event?.message || 'The worker failed or sent an unreadable message.');
     for (const reject of state.waiting) reject(state.error);
     state.reject?.(state.error);
   };
@@ -162,7 +163,7 @@ function queue(thread) {
 }
 
 export async function toJXL(source, {worker, signal, progress, ...options} = {}) {
-  if (!worker) throw fail('JXL_OPTIONS', 'Pass a worker as {worker}: a Worker running capture-worker.mjs (lossless capture), rapier-still-worker.js or rapier-worker.js, or its URL.');
+  if (!worker) throw fail('JXL_OPTIONS', 'Pass {worker}: a Worker running capture-worker.mjs, rapier-still-worker.js or rapier-worker.js, or its URL.');
   if (signal !== undefined && typeof signal?.throwIfAborted !== 'function') throw fail('JXL_OPTIONS', 'signal must be an AbortSignal.');
   if (progress !== undefined && typeof progress !== 'function') throw fail('JXL_OPTIONS', 'progress must be a function.');
   signal?.throwIfAborted();
@@ -220,7 +221,7 @@ export async function toJXL(source, {worker, signal, progress, ...options} = {})
             return;
           }
           if (canceled) { finish(canceled.reason); return; }
-          if (data.ok === true && (data.bytes instanceof Uint8Array || data.bytes instanceof ArrayBuffer))
+          if (data.ok === true && (data.bytes instanceof Uint8Array || data.bytes instanceof ArrayBuffer) && data.bytes.byteLength > 0)
             finish(null, new Blob([data.bytes], {type: 'image/jxl'}));
           else if (data.ok === false && typeof data.error?.message === 'string')
             finish(Object.assign(new Error(data.error.message), data.error));

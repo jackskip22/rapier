@@ -5,7 +5,7 @@ export async function readImage(source, keepJpeg) {
   if (source && typeof source === 'object' && ArrayBuffer.isView(source.data) && !(typeof ImageData === 'function' && source instanceof ImageData))
     return {data: source.data, width: source.width, height: source.height, ...(source.colorSpace === undefined ? {} : {colorSpace: source.colorSpace})};
   if (typeof ImageData === 'function' && source instanceof ImageData) {
-    if (!(source.data instanceof Uint8ClampedArray)) throw codecError('JXL_INPUT', 'Browser ImageData must use RGBA8; use the core entry for native-precision pixels.');
+    if (!(source.data instanceof Uint8ClampedArray)) throw codecError('JXL_INPUT', 'ImageData must be RGBA8; use the core entry for other precisions.');
     const colorSpace = source.colorSpace ?? 'srgb';
     if (colorSpace !== 'srgb' && colorSpace !== 'display-p3') throw codecError('JXL_INPUT', 'Unsupported browser ImageData color space.');
     return {data: new Uint8Array(source.data.buffer, source.data.byteOffset, source.data.byteLength), width: source.width, height: source.height, colorSpace};

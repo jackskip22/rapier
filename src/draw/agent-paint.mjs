@@ -720,7 +720,7 @@ export async function encodePaintRaster(pixels,options={}) {
 	const page=globalThis.RapierEmbeddedImages?.codec, owned={data:copyPixels(pixels.data),width:pixels.width,height:pixels.height};
 	const bytes=rasterPort ? await rasterPort(owned,options.signal)
 		: typeof page==='function' ? await page('encode',owned,{fidelity:'exact',effort:2},{signal:options.signal})
-		: await encodeJXL(owned,{fidelity:'exact',effort:2,signal:options.signal});
+		: (await encodeJXL(owned,{fidelity:'exact',effort:2,signal:options.signal})).bytes;
 	cancelled(options.signal);
 	let binary='';
 	for(let at=0;at<bytes.length;at+=16384)binary+=String.fromCharCode(...bytes.subarray(at,at+16384));

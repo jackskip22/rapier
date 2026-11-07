@@ -1,0 +1,18 @@
+{
+ "receipt": {
+  "version": "8.2.0",
+  "sha256": "a2bca091c3781fecf8819f05d3c934e3668687ce44a7428e19fe13a955619723",
+  "tarball": "a01a5a6ae86be49b8a5d26ba14e2a9672d16b3f12fb722b4af43eab755d236ca",
+  "sameBytes": "dbd0bf90ecd084d2ffc060cf5c78dd9e279ab03034fc91a0d804df1a79060926"
+ },
+ "figures": {
+  "CASES": "59",
+  "CASES_092": "47",
+  "UNDER_092": "24",
+  "SAME_BYTES_CASES": "47",
+  "SAME_BYTES_BETTER": "30",
+  "SAME_BYTES_S2_GAIN": "6",
+  "SAME_BYTES_CVVDP_GAIN": "0.04",
+  "TIME_RATIO": "1.41"
+ }
+}

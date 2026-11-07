@@ -46,7 +46,7 @@ async function formatPhotoPlan(input, options, signal, onProgress) {
   const qualities = input.qualities ?? (input.targetBytes === undefined ? [options.quality ?? 90] : []);
   if (!Array.isArray(qualities) || qualities.length > 32 || qualities.some(q => !Number.isFinite(q) || q < 1 || q >= 100) ||
       !qualities.length && input.targetBytes === undefined)
-    throw codecError('JXL_INPUT', 'A worker photo plan takes up to 32 qualities from one through less than 100, or a byte target.');
+    throw codecError('JXL_INPUT', 'A photo plan takes up to 32 qualities from 1 to below 100, or a byte target.');
   const stages = 1 + qualities.length + (input.targetBytes === undefined ? 0 : 1);
   const prepare = createPhotoPlanSteps(formatPixels(input.data), input.width, input.height, options);
   const prepared = {[Symbol.iterator]: () => prepare, get bytes() { return prepare.plan; }};
@@ -105,7 +105,7 @@ export async function format(input, {signal, onProgress} = {}) {
     case 'photoPlan': return formatPhotoPlan(input, options, signal, onProgress);
     case 'container': result = withContainer(formatBytes(input.bytes), {...options, signal}); break;
     case 'streamContainer': {
-      if (!Array.isArray(input.chunks)) throw codecError('JXL_INPUT', 'Worker streamContainer takes an array of raw codestream chunks.');
+      if (!Array.isArray(input.chunks)) throw codecError('JXL_INPUT', 'streamContainer takes an array of codestream chunks.');
       const chunks = input.chunks.map(byteView);
       result = await collectFormatChunks(streamContainer(chunks, {...options, signal}), signal); break;
     }

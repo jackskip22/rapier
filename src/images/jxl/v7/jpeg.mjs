@@ -1,5 +1,7 @@
+import {resultOperation, resultReference} from './result-operation.mjs';
 import {ansTranscodeSteps} from '../jpeg-ans-effort.mjs';
 import {restoreJPEG} from '../jpeg-reconstruction.mjs';
+import {longTail} from '../jpeg-tail.mjs';
 import {brotliDictionary} from '../brotli-dictionary.mjs';
 import {configureKernels, prepareKernels} from '../kernels.mjs';
 import {kernelHooks} from '../kernel-hooks.mjs';
@@ -7,15 +9,13 @@ import {wasmRequired} from '../capture-wasm-error.mjs';
 import {jpegDimensions} from './input.mjs';
 import {admitEffort} from '../effort-level.mjs';
 import {copyBytes, encodedByteLength} from './bytes.mjs';
-import {bytes, check, fail, declared, object, callers, dimensions} from './primitives.mjs';
-import {header} from './inspect.mjs';
+import {bytes, check, fail, declared, object, dimensions, jpegPixels, NO_JPEG, progressOf} from './primitives.mjs';
+import {pictureSize} from './jpeg-size.mjs';
+import {recompressSteps, restoreSteps, STEPS} from './jpeg-steps.mjs';
+import './preparation-jpeg.mjs';
 export {configureWasm} from '../wasm-modules.mjs';
 
-function pixelBound(value) {
-  if (value === undefined) return 40000000;
-  if (!Number.isSafeInteger(value) || value < 1 || value > 40000000) throw fail('JXL_OPTIONS', 'maxPixels is a positive whole number, at most 40,000,000.');
-  return value;
-}
+const pixelBound = jpegPixels;
 const settle = (run, options) => run.catch(error => { throw error === options?.signal?.reason ? error : declared(error); });
 async function kernels() {
   if (!await prepareKernels() || configureKernels('auto') === 'off' || !kernelHooks.channel) throw wasmRequired();
@@ -30,7 +30,7 @@ export async function supported(feature) {
 function hooks(options) {
   const {signal, onProgress} = options;
   if (onProgress !== undefined && typeof onProgress !== 'function') throw fail('JXL_OPTIONS', 'onProgress is a function.');
-  return {signal, progress: fraction => { if (onProgress) try { onProgress(fraction); } catch (error) { throw callers(error); } }};
+  return {signal, progress: progressOf(onProgress, signal) ?? (() => {})};
 }
 async function drain(steps, {signal, progress}) {
   let told = 0, turn = performance.now(), failed = false;
@@ -55,19 +55,21 @@ async function owned(input, signal) {
   return copyBytes(input);
 }
 
-export const recompress = (input, options) => settle(recompressHere(input, options), options);
+export const recompress = resultOperation((input, options) => settle(recompressHere(input, options), options), {fidelity: 'exact', kept: 'jpeg-bytes'});
+Object.defineProperty(recompress, STEPS, {value: recompressSteps(kernels)});
 function recompressHere(input, options) {
   try {
     const settings = {...object(options)};
     for (const key of Object.keys(settings)) if (!['effort', 'icc', 'maxPixels', 'signal', 'onProgress'].includes(key))
       throw fail('JXL_OPTIONS', `Unknown JPEG option: ${key}.`);
     const {signal, icc} = settings, run = hooks(settings), effort = admitEffort(settings, 7), maxPixels = pixelBound(settings.maxPixels);
-    if (icc !== undefined && icc !== 'preserve') throw fail('JXL_INPUT', 'JPEG ICC mode is preserve, or omitted for named-profile compatibility.');
-    const coding = {effort, ...(icc !== undefined && {icc})};
+    if (icc !== undefined && icc !== 'preserve') throw fail('JXL_INPUT', 'JPEG icc is preserve, or omitted.');
+    const coding = {effort, maxPixels, tails: longTail, ...(icc !== undefined && {icc})};
     check(signal);
     const pending = owned(input, signal);
     return (async () => {
       const jpeg = await pending;
+      resultReference(settings, jpeg);
       jpegDimensions(jpeg, maxPixels);
       await kernels();
       check(signal);
@@ -76,19 +78,21 @@ function recompressHere(input, options) {
   } catch (error) { return Promise.reject(error); }
 }
 
-export const restore = (input, options) => settle(restoreHere(input, options), options);
+export const restore = resultOperation((input, options) => settle(restoreHere(input, options), options), {format: 'jpeg', fidelity: 'exact', kept: 'jpeg-bytes'});
+Object.defineProperty(restore, STEPS, {value: restoreSteps});
+export {resultJSON} from './result.mjs';
 async function restoreHere(input, options) {
   const settings = {...object(options)};
   for (const key of Object.keys(settings)) if (!['maxPixels', 'signal', 'onProgress'].includes(key)) throw fail('JXL_OPTIONS', `Unknown restore option: ${key}.`);
   const {signal} = settings, run = hooks(settings), maxPixels = pixelBound(settings.maxPixels);
   check(signal);
   input = await owned(input, signal);
-  let size = null;
-  try { size = header(input); } catch {}
+  resultReference(settings, input);
+  const size = pictureSize(input);
   if (size) dimensions(size.width, size.height, maxPixels);
-  if (input[0] === 255 && input[1] === 10) throw fail('JXL_RECONSTRUCTION', 'The file contains no JPEG reconstruction data.');
+  if (input[0] === 255 && input[1] === 10) throw fail('JXL_RECONSTRUCTION', NO_JPEG);
   const result = restoreJPEG(input, brotliDictionary, {maxPixels});
-  if (!result) throw fail('JXL_RECONSTRUCTION', 'The file contains no JPEG reconstruction data.');
+  if (!result) throw fail('JXL_RECONSTRUCTION', NO_JPEG);
   check(signal); run.progress(1); check(signal);
   return result;
 }

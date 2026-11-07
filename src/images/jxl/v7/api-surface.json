@@ -1,23 +1,27 @@
 {
   "schema": 1,
-  "version": "8.0.1",
+  "version": "8.3.0",
   "packageExports": {
     ".": {
       "runtime": "./dist/index.mjs",
       "types": "./types/index.d.mts",
       "values": [
-        "capture",
         "configureWasm",
         "encode",
+        "fit",
         "prepare",
-        "supported"
+        "resultJSON",
+        "supported",
+        "variants"
       ],
       "declaredValues": [
-        "capture",
         "configureWasm",
         "encode",
+        "fit",
         "prepare",
-        "supported"
+        "resultJSON",
+        "supported",
+        "variants"
       ],
       "conditions": [
         "edge-light",
@@ -29,16 +33,20 @@
       "types": "./types/animation.d.mts",
       "values": [
         "capture",
+        "configureDecoder",
         "configureWasm",
         "encode",
         "prepare",
+        "resultJSON",
         "supported"
       ],
       "declaredValues": [
         "capture",
+        "configureDecoder",
         "configureWasm",
         "encode",
         "prepare",
+        "resultJSON",
         "supported"
       ],
       "conditions": [
@@ -53,12 +61,38 @@
         "capture",
         "configureWasm",
         "prepare",
+        "resultJSON",
         "supported"
       ],
       "declaredValues": [
         "capture",
         "configureWasm",
         "prepare",
+        "resultJSON",
+        "supported"
+      ],
+      "conditions": [
+        "edge-light",
+        "workerd"
+      ]
+    },
+    "./capture-complete": {
+      "runtime": "./dist/capture-complete.mjs",
+      "types": "./types/capture-complete.d.mts",
+      "values": [
+        "capture",
+        "configureDecoder",
+        "configureWasm",
+        "prepare",
+        "resultJSON",
+        "supported"
+      ],
+      "declaredValues": [
+        "capture",
+        "configureDecoder",
+        "configureWasm",
+        "prepare",
+        "resultJSON",
         "supported"
       ],
       "conditions": [
@@ -93,6 +127,7 @@
       ],
       "conditions": [
         "edge-light",
+        "node",
         "workerd"
       ]
     },
@@ -101,18 +136,22 @@
       "types": "./types/format.d.mts",
       "values": [
         "capture",
+        "configureDecoder",
         "configureWasm",
         "encode",
         "format",
         "prepare",
+        "resultJSON",
         "supported"
       ],
       "declaredValues": [
         "capture",
+        "configureDecoder",
         "configureWasm",
         "encode",
         "format",
         "prepare",
+        "resultJSON",
         "supported"
       ],
       "conditions": [
@@ -128,6 +167,7 @@
         "prepare",
         "recompress",
         "restore",
+        "resultJSON",
         "supported"
       ],
       "declaredValues": [
@@ -135,10 +175,12 @@
         "prepare",
         "recompress",
         "restore",
+        "resultJSON",
         "supported"
       ],
       "conditions": [
         "edge-light",
+        "node",
         "workerd"
       ]
     },
@@ -162,6 +204,18 @@
       "runtime": "./package.json",
       "values": []
     },
+    "./page-rects": {
+      "runtime": "./examples/page-rects.js",
+      "types": "./examples/page-rects.d.ts",
+      "values": [
+        "measure",
+        "pageRects"
+      ],
+      "declaredValues": [
+        "measure",
+        "pageRects"
+      ]
+    },
     "./polyfill": {
       "runtime": "./dist/polyfill.mjs",
       "types": "./types/polyfill.d.mts",
@@ -176,6 +230,20 @@
         "supportsJXL"
       ]
     },
+    "./resumable": {
+      "runtime": "./dist/resumable.mjs",
+      "types": "./types/resumable.d.mts",
+      "values": [
+        "advance",
+        "finish",
+        "start"
+      ],
+      "declaredValues": [
+        "advance",
+        "finish",
+        "start"
+      ]
+    },
     "./serve": {
       "runtime": "./dist/serve.mjs",
       "types": "./types/serve.d.mts",
@@ -184,6 +252,29 @@
       ],
       "declaredValues": [
         "serve"
+      ],
+      "conditions": [
+        "node"
+      ]
+    },
+    "./storage": {
+      "runtime": "./dist/storage.mjs",
+      "types": "./types/storage.d.mts",
+      "values": [
+        "readAll"
+      ],
+      "declaredValues": [
+        "readAll"
+      ]
+    },
+    "./svg-jxl": {
+      "runtime": "./examples/svg-jxl.js",
+      "types": "./examples/svg-jxl.d.ts",
+      "values": [
+        "svgJxl"
+      ],
+      "declaredValues": [
+        "svgJxl"
       ]
     },
     "./upload": {
@@ -193,18 +284,43 @@
         "capture",
         "configureWasm",
         "encode",
+        "fit",
         "prepare",
-        "supported"
+        "resultJSON",
+        "supported",
+        "variants"
       ],
       "declaredValues": [
         "capture",
         "configureWasm",
         "encode",
+        "fit",
         "prepare",
-        "supported"
+        "resultJSON",
+        "supported",
+        "variants"
       ],
       "conditions": [
         "edge-light",
+        "workerd"
+      ]
+    },
+    "./verify": {
+      "runtime": "./dist/verify.mjs",
+      "types": "./types/verify.d.mts",
+      "values": [
+        "configureDecoder",
+        "configureWasm",
+        "verify"
+      ],
+      "declaredValues": [
+        "configureDecoder",
+        "configureWasm",
+        "verify"
+      ],
+      "conditions": [
+        "edge-light",
+        "node",
         "workerd"
       ]
     },
@@ -225,12 +341,20 @@
   },
   "options": {
     "capture": [
+      "effort",
       "features",
       "fidelity",
       "maxPixels",
+      "onEncoded",
       "onProgress",
       "readAs",
-      "signal"
+      "signal",
+      "webgpu"
+    ],
+    "capture-complete.fidelity": [
+      "exact",
+      "maxError",
+      "quality"
     ],
     "codec.config": [
       "helpers",
@@ -411,7 +535,10 @@
     ]
   },
   "typeFiles": [
+    "examples/page-rects.d.ts",
+    "examples/svg-jxl.d.ts",
     "types/animation.d.mts",
+    "types/capture-complete.d.mts",
     "types/capture.d.mts",
     "types/codec.d.mts",
     "types/codec/animation-atlas.d.mts",
@@ -439,14 +566,34 @@
     "types/jpeg.d.mts",
     "types/metadata.d.mts",
     "types/polyfill.d.mts",
+    "types/preparation-upload.d.mts",
+    "types/result.d.mts",
+    "types/resumable.d.mts",
     "types/serve.d.mts",
+    "types/storage.d.mts",
     "types/types.d.mts",
     "types/upload.d.mts",
+    "types/verify.d.mts",
     "types/wasm.d.mts"
   ],
   "typeOptions": {
+    "examples/svg-jxl.d.ts#SvgJxlOptions": [
+      "cache",
+      "codec",
+      "effort",
+      "exact",
+      "onProgress",
+      "quality",
+      "signal",
+      "webgpu"
+    ],
+    "types/capture-complete.d.mts#CaptureCompleteOptions": [
+      "effort"
+    ],
     "types/codec.d.mts#QueueConfig": [
-      "module"
+      "helpers",
+      "module",
+      "webgpu"
     ],
     "types/codec/animation-atlas.d.mts#AnimationAtlasOptions": [
       "atlas",
@@ -744,21 +891,64 @@
       "workerFactory",
       "workers"
     ],
+    "types/preparation-upload.d.mts#UploadFitOptions": [
+      "effort",
+      "features"
+    ],
+    "types/preparation-upload.d.mts#UploadVariantsOptions": [
+      "outputs"
+    ],
+    "types/result.d.mts#ResultDescription": [
+      "fidelity",
+      "format",
+      "height",
+      "measurements",
+      "readAs",
+      "source",
+      "transform",
+      "width"
+    ],
+    "types/resumable.d.mts#AdvanceOptions": [
+      "budget",
+      "ms"
+    ],
+    "types/resumable.d.mts#FinishOptions": [
+      "input",
+      "signal"
+    ],
+    "types/resumable.d.mts#StartOptions": [
+      "input",
+      "options"
+    ],
     "types/serve.d.mts#ServeOptions": [
       "cacheControl",
       "etag",
       "maxPixels",
       "signal"
     ],
+    "types/storage.d.mts#ReadOptions": [
+      "maxBytes",
+      "signal"
+    ],
     "types/types.d.mts#AnimationOptions": [
       "effort",
       "features",
-      "fidelity"
+      "fidelity",
+      "webgpu"
     ],
     "types/types.d.mts#CaptureOptions": [
+      "effort",
       "features",
       "fidelity",
-      "readAs"
+      "onEncoded",
+      "readAs",
+      "webgpu"
+    ],
+    "types/types.d.mts#CapturePhotoOptions": [
+      "effort",
+      "exactRects",
+      "fidelity",
+      "photoRects"
     ],
     "types/types.d.mts#CodecConfig": [
       "count",
@@ -775,9 +965,13 @@
       "effort",
       "features",
       "fidelity",
-      "maxPixels",
       "readAs",
       "webgpu"
+    ],
+    "types/types.d.mts#FitOptions": [
+      "features",
+      "fidelity",
+      "maxBytes"
     ],
     "types/types.d.mts#InspectOptions": [
       "decompress",
@@ -803,12 +997,22 @@
       "sampleFormat",
       "transferFunction"
     ],
+    "types/types.d.mts#UploadCaptureOptions": [
+      "effort"
+    ],
     "types/types.d.mts#UploadOptions": [
       "effort",
+      "features",
       "fidelity",
       "maxPixels",
       "readAs",
       "webgpu"
+    ],
+    "types/types.d.mts#VariantsOptions": [
+      "outputs"
+    ],
+    "types/verify.d.mts#VerifyOptions": [
+      "protection"
     ]
   },
   "errorCodes": [

@@ -3503,7 +3503,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.55/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.56/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -4270,7 +4270,7 @@ function _rapierDrawSettingsInset() {
 	if (row && !state.settingsCollapsed) return Math.max(0, Math.round(row.getBoundingClientRect().height));
 	return state.viewInset || 0;
 }
-function _rapierDrawCameraFlag() { return globalThis.__rapierDrawCamera === true; }
+function _rapierDrawCameraFlag() { return globalThis.__rapierDrawCamera !== false; }
 function _rapierDrawStageRect() { const live = _rapierDrawState.cameraLive; return live ? live.rect : _rapierDrawState.svgRoot?.getBoundingClientRect(); }
 function _rapierDrawCameraSettle() {
 	const state = _rapierDrawState, live = state.cameraLive, svg = state.svgRoot;

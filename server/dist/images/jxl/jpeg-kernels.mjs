@@ -16,7 +16,9 @@ const DYNAMIC = 11882496;
 const DECODE_CAP = 64 * 1048576;
 let engine, limit = Infinity;
 
-export function jpegKernels() {
+let tokenFlush = null;
+export function jpegKernels(flushTokens) {
+  if (flushTokens) tokenFlush = flushTokens;
   if (engine !== undefined) return engine;
   engine = null;
   try {
@@ -62,8 +64,8 @@ export function jpegKernels() {
       seedBest(k, ownBits) { const best = exports.seedBest(k, ownBits); return [best, f64[SCRATCH >> 3]]; },
       seedAll(used, counts, tokenOf, seeds, threshold) {
         priceStamp = null;
-        const n = used.length, small = DYNAMIC, tok = small + n * 256, loff = tok + 256, owns = loff + ((n + 1) * 4 + 7 & ~7);
-        const assign = owns + n * 256, larges = [];
+        const n = used.length, small = DYNAMIC, tok = small + n * 256, loff = tok + 256, runs = loff + ((n + 1) * 4 + 7 & ~7);
+        const offs = runs + n * 512, assign = offs + ((n + 1) * 4 + 7 & ~7), larges = [];
         let pairs = 0;
         for (const ctx of used) if (counts.large[ctx]) for (const v of counts.large[ctx].keys()) pairs++;
         const lpairs = assign + n * 4, end = lpairs + pairs * 8;
@@ -77,7 +79,7 @@ export function jpegKernels() {
           if (counts.large[ctx]) for (const [v, count] of counts.large[ctx]) { u32[(lpairs >> 2) + 2 * at] = tokenOf(v); u32[(lpairs >> 2) + 2 * at + 1] = count; at++; }
         }
         u32[(loff >> 2) + n] = at;
-        const k = exports.seedAll(n, small, loff, lpairs, tok, seeds, threshold, owns, assign);
+        const k = exports.seedAll(n, small, loff, lpairs, tok, seeds, threshold, runs, offs, assign);
         const clusters = [];
         for (let t = 0; t < n; t++) {
           const i = u32[(assign >> 2) + t];
@@ -85,7 +87,8 @@ export function jpegKernels() {
           else clusters[i].contexts.push(used[t]);
         }
         for (let i = 0; i < k; i++) { clusters[i].freqs = u32.slice((ROWS >> 2) + i * 64, (ROWS >> 2) + i * 64 + 64); clusters[i].bits = f64[(BITS >> 3) + i]; }
-        return {clusters, owns: u32.subarray(owns >> 2, (owns >> 2) + n * 64)};
+        const offsets = u32.slice(offs >> 2, (offs >> 2) + n + 1);
+        return {clusters, offsets, runs: u32.slice(runs >> 2, (runs >> 2) + 2 * offsets[n])};
       },
       pairsInit: length => { u8.fill(1, ALIVE, ALIVE + length); exports.pairsInit(length); },
       pairsUpdate: (length, left) => exports.pairsUpdate(length, left),
@@ -119,9 +122,10 @@ export function jpegKernels() {
           if (grey && c !== 1) continue;
           const {coeffs, stride} = comps[c], width = widths[c], rows = Math.ceil(bh / (1 << vshifts[c]));
           const x = bx0 >> hshifts[c], y = by0 >> vshifts[c], base = (FCOEFFS >> 1) + c * 65536;
+          const first = comps[c].row0 > 0 ? comps[c].row0 * stride : 0;
           for (let r = 0; r < rows; r++) {
             const at = (y + r) * stride + x;
-            i16.set(coeffs.subarray(at * 64, (at + width) * 64), base + r * width * 64);
+            i16.set(coeffs.subarray((at - first) * 64, (at - first + width) * 64), base + r * width * 64);
             if (counted) u8.set(blockCounts[c].subarray(at, at + width), FCOUNTS + c * 1024 + r * width);
           }
         }
@@ -137,6 +141,7 @@ export function jpegKernels() {
         }
         return [n, u16.subarray(FCTXS >> 1, (FCTXS >> 1) + n), u16.subarray(FVALUES >> 1, (FVALUES >> 1) + n)];
       },
+      ...((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? {} : {
       sequentialScan(out, entries, nx, ny, restart, zeros, pad, zigzag) {
         const rowBlocks = entries.reduce((n, e) => n + e.v * e.stride, 0);
         if (entries.length > 4 || rowBlocks > BAND_BLOCKS || zeros.size > 65536 || (pad && pad.bits.length > 65536) || out.pending) return false;
@@ -212,6 +217,7 @@ export function jpegKernels() {
           if (end > CTAB) u8.fill(0, CTAB, Math.min(CTAB_END, end));
         }
       },
+      }),
       prefixFilled(model) {
         const {contextMap, histograms} = model;
         if (histograms.length > 255 || contextMap.length > 8192 || histograms.some(h => h.code.lengths.length > 256)) return null;
@@ -235,6 +241,7 @@ export function jpegKernels() {
         };
         return (w, n) => { load(); exports.tokensIn(0, n); append(w, exports.prefixWrite(n, w.acc, w.pending)); };
       },
+      ...((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? {} : {
       literalClusters(clusters) {
         const n = clusters.length;
         clusters.forEach((c, i) => u32.set(c.freqs, (LHIST >> 2) + i * 256));
@@ -247,6 +254,7 @@ export function jpegKernels() {
         for (let i = 0; i < n; i++) kept[rank[u32[(LOWNER >> 2) + i]]].contexts.push(...clusters[i].contexts);
         return kept;
       },
+      }),
       countFilled(into, n) {
         if (into.contexts > 8192) return false;
         const m = exports.countFilled(n), large = u32[SCRATCH >> 2], small = into.small, totals = into.totals;
@@ -330,7 +338,10 @@ export function jpegKernels() {
             for (let i = 0; i < n; i++) { u32[at + length] = tokens[i]; u8[IDS + length++] = contextMap[ctxs[i]]; }
           },
           writeFilled(_w, n) { load(); exports.tokensIn(length, n); length += n; },
-          flush(w) { load(); append(w, exports.ansFlush(length, w.acc, w.pending)); length = 0; },
+          flush(w) {
+            if (!tokenFlush) throw new Error('The ANS writer is not installed.');
+            tokenFlush(w, model, u32.subarray(VALUES >> 2, (VALUES >> 2) + length), u8.subarray(IDS, IDS + length), length); length = 0;
+          },
           reset() { length = 0; },
         };
       },

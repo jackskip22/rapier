@@ -5,7 +5,7 @@ import {encodeToScore} from './encode-to-score.mjs';
 import {gpuMeasure, browserDecoder} from './gpu-measure.mjs';
 import {GpuNativeSsimulacra2} from '../gpu-ssimulacra2-native.mjs';
 import {GpuButteraugli} from './gpu-butteraugli.mjs';
-import {ssimulacra2, linearFromRGBA} from './ssimulacra2.mjs';
+import {ssimulacra2} from './ssimulacra2.mjs';
 import {butteraugli, butteraugliReference} from './butteraugli.mjs';
 
 const median = values => [...values].sort((a, b) => a - b)[values.length >> 1];
@@ -38,10 +38,10 @@ export async function benchPhoto(blob, {targets = [{ssimulacra2: 80}, {butteraug
   report.encodeMs = performance.now() - t0; report.encodeBytes = bytes.length;
   const decoded = await decode(bytes);
   const time = async fn => { const runs = []; let value; for (let i = 0; i < repeats; i++) { const s = performance.now(); value = await fn(); runs.push(performance.now() - s); } return {value, ms: median(runs), first: runs[0]}; };
-  const ref = linearFromRGBA(rgba, n);
-  const cpuS2 = await time(() => ssimulacra2(ref, linearFromRGBA(decoded, n), width, height).score);
+  const ref = {rgba};
+  const cpuS2 = await time(() => ssimulacra2(ref, {rgba:decoded}, width, height).score);
   const baRef = butteraugliReference(ref, width, height);
-  const cpuBa = await time(() => butteraugli(baRef, linearFromRGBA(decoded, n)));
+  const cpuBa = await time(() => butteraugli(baRef, {rgba:decoded}));
   const setupStart = performance.now();
   const gs2 = await GpuNativeSsimulacra2.create(device, rgba, width, height), gba = await GpuButteraugli.create(device, width, height);
   if (!gs2) throw new Error('This device cannot hold the SSIMULACRA2 scorer.');
@@ -70,9 +70,9 @@ export async function benchPhoto(blob, {targets = [{ssimulacra2: 80}, {butteraug
     measure.destroy();
     if (cpuSearch) {
       const cpuMeasureFn = async b => {
-        const lin = linearFromRGBA(await decode(b), n), out = {};
-        if (target.ssimulacra2 !== undefined) out.ssimulacra2 = ssimulacra2(ref, lin, width, height).score;
-        if (target.butteraugli3 !== undefined || target.butteraugli !== undefined) { const r = butteraugli(baRef, lin); out.butteraugli = r.score; out.butteraugli3 = r.pnorm3; }
+        const decoded = {rgba:await decode(b)}, out = {};
+        if (target.ssimulacra2 !== undefined) out.ssimulacra2 = ssimulacra2(ref, decoded, width, height).score;
+        if (target.butteraugli3 !== undefined || target.butteraugli !== undefined) { const r = butteraugli(baRef, decoded); out.butteraugli = r.score; out.butteraugli3 = r.pnorm3; }
         return out;
       };
       const c = performance.now(), r = await encodeToScore(rgba, width, height, {target, measure: cpuMeasureFn, settings, effort});

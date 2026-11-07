@@ -68,7 +68,7 @@ export function createJPEGXLCodec({encoderFactory, imageReader, formatHandler}) 
       checkSignal(options.signal);
       if (read.jpeg) return codec.transcode({bytes: read.jpeg}, {effort: options.effort, progress: options.progress, signal: options.signal, hurrySignal: options.hurrySignal});
       if (read.colorSpace !== undefined && options.colorSpace !== undefined && options.colorSpace !== read.colorSpace)
-        throw codecError('JXL_OPTIONS', 'The declared colorSpace does not match the decoded browser pixels.');
+        throw codecError('JXL_OPTIONS', 'colorSpace does not match the decoded pixels.');
       const lossy = options.quality !== undefined && options.quality < 100;
       return {bytes: await codec.encode(read, {...options, lossless: !lossy, photo: lossy, ...(read.colorSpace === undefined || options.icc !== undefined ? {} : {colorSpace: read.colorSpace})})};
     },

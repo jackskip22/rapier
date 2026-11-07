@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.56 (2026-11-07)
+
+- Pictures use rapier-jxl 8.3.0.
+- Panning and zooming in Draw is smoother.
+
 ## 1.2.55 (2026-11-04)
 
 - The JPEG XL button in Settings opens the converter, on the web and in the apps.

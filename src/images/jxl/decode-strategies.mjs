@@ -1,99 +1,10 @@
 // SPDX-License-Identifier: MIT
 import {fault} from './fault.mjs';
-import {exactCos, EXACT_PI} from './exact-math.mjs';
+export {naturalOrder} from './coefficient-layout.mjs';
 import {QUANT_PARAM_LIBRARY} from './decode-quant-defaults.mjs';
 import {float16Bits, entropyLog2} from './decode-tables.mjs';
 
-const NAMES = ['dct8', 'identity', 'dct2', 'dct4', 'dct16', 'dct32', 'dct16x8', 'dct8x16',
-  'dct32x8', 'dct8x32', 'dct32x16', 'dct16x32', 'dct4x8', 'dct8x4', 'afv0', 'afv1', 'afv2', 'afv3',
-  'dct64', 'dct64x32', 'dct32x64', 'dct128', 'dct128x64', 'dct64x128', 'dct256', 'dct256x128', 'dct128x256'];
-const WIDTHS = [1, 1, 1, 1, 2, 4, 1, 2, 1, 4, 2, 4, 1, 1, 1, 1, 1, 1, 8, 4, 8, 16, 8, 16, 32, 16, 32];
-const HEIGHTS = [1, 1, 1, 1, 2, 4, 2, 1, 4, 1, 4, 2, 1, 1, 1, 1, 1, 1, 8, 8, 4, 16, 16, 8, 32, 32, 16];
-const TABLES = [0, 1, 2, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 10, 10, 11, 12, 12, 13, 14, 14, 15, 16, 16];
-export const TRANSFORMS = Object.freeze(NAMES.map((name, id) => Object.freeze({name, id, width: WIDTHS[id] * 8,
-  height: HEIGHTS[id] * 8, table: TABLES[id]})));
-const dctBases = new Map(), dctScans = new Map();
-function cosine(numerator, denominator) {
-  let n = numerator % (denominator * 2);
-  if (n > denominator) n -= denominator * 2;
-  if (n < -denominator) n += denominator * 2;
-  let sign = 1;
-  if (n > denominator / 2) { n = denominator - n; sign = -1; }
-  if (n < -denominator / 2) { n = -denominator - n; sign = -1; }
-  const x = n * 3.141592653589793 / denominator, square = x * x;
-  let term = 1, sum = 1;
-  for (let i = 1; i < 15; i++) sum += term *= -square / ((2 * i - 1) * (2 * i));
-  return sign * sum;
-}
-export function basis(size) {
-  let b = dctBases.get(size);
-  if (!b) {
-    b = new Float64Array(size * size);
-    for (let k = 0; k < size; k++) for (let x = 0; x < size; x++) b[k * size + x] =
-      k ? 1.4142135623730951 * cosine((2 * x + 1) * k, 2 * size) / size : 1 / size;
-    dctBases.set(size, b);
-  }
-  return b;
-}
-const dctBasesT = new Map();
-export function basisT(size) {
-  let t = dctBasesT.get(size);
-  if (!t) {
-    const b = basis(size);
-    t = new Float64Array(size * size);
-    for (let k = 0; k < size; k++) for (let x = 0; x < size; x++) t[x * size + k] = b[k * size + x];
-    dctBasesT.set(size, t);
-  }
-  return t;
-}
-export function inverseScaledDCT(coeffs, width, height) {
-  const bx = basis(width), by = basis(height), tmp = new Float64Array(width * height), out = new Float64Array(tmp.length);
-  for (let v = 0; v < height; v++) for (let x = 0; x < width; x++) {
-    let sum = 0;
-    for (let u = 0; u < width; u++) sum += coeffs[height >= width ? u * height + v : v * width + u] * bx[u * width + x] * width;
-    tmp[v * width + x] = sum;
-  }
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    let sum = 0;
-    for (let v = 0; v < height; v++) sum += tmp[v * width + x] * by[v * height + y] * height;
-    out[y * width + x] = sum;
-  }
-  return out;
-}
-export function naturalOrder(widthBlocks, heightBlocks) {
-  const cx = Math.max(widthBlocks, heightBlocks), cy = Math.min(widthBlocks, heightBlocks), key = cx * 64 + cy;
-  if (dctScans.has(key)) return dctScans.get(key);
-  const width = cx * 8, ratio = cx / cy, order = new Uint32Array(cx * cy * 64);
-  let next = cx * cy;
-  for (let i = 0; i < width; i++) for (let j = 0; j <= i; j++) {
-    let x = j, y = i - j;
-    if (i & 1) [x, y] = [y, x];
-    if (y % ratio) continue;
-    y /= ratio;
-    order[x < cx && y < cy ? y * cx + x : next++] = y * width + x;
-  }
-  for (let ip = width - 1; ip > 0; ip--) for (let j = 0; j < ip; j++) {
-    let x = width - ip + j, y = width - 1 - j;
-    if ((ip - 1) & 1) [x, y] = [y, x];
-    if (y % ratio) continue;
-    order[next++] = y / ratio * width + x;
-  }
-  dctScans.set(key, order);
-  return order;
-}
-
-const RC_COS = (n, d) => exactCos(EXACT_PI * n / d);
-const RC_LLF_DIVISORS = new Map();
-export function llfDivisors(w, h) {
-  let d = RC_LLF_DIVISORS.get(w * 64 + h);
-  if (!d) {
-    const scale = (k, size) => RC_COS(k, 2 * size) * RC_COS(k, size) * RC_COS(2 * k, size);
-    d = new Float64Array(w * h);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) d[y * w + x] = scale(x, w * 8) * scale(y, h * 8);
-    RC_LLF_DIVISORS.set(w * 64 + h, d);
-  }
-  return d;
-}
+export {TRANSFORMS, basis, basisT, inverseScaledDCT, llfDivisors} from './vardct-bases.mjs';
 const QUANT_PARAM_MODES = ['library', 'identity', 'dct2', 'dct4', 'dct4x8', 'afv', 'dct'];
 const QUANT_PARAM_AFV_FREQS = [0, 0, .8517778890324296, 5.37778436506804, 0, 0, 4.734747904497923,
   5.449245381693219, 1.6598270267479331, 4, 7.275749096817861, 10.423227632456525,
@@ -107,27 +18,27 @@ function quantParamHalfValue(bits) {
 }
 function quantParamNumber(value, divisor, positive, library) {
   if (typeof value !== 'number' || !Number.isFinite(value) || positive && value <= 0)
-    throw fault('JXL_INPUT', 'Quantization parameters are finite; weights and multipliers are positive.');
+    throw fault('JXL_INPUT', 'Quantization parameters are finite; weights and multipliers positive.');
   if (library) return value;
   if (Math.abs(value / divisor) >= 65520) throw fault('JXL_INPUT', 'Quantization parameter exceeds its binary16 field.');
   const decoded = quantParamHalfValue(float16Bits(value / divisor)) * divisor;
-  if (positive && decoded <= 0) throw fault('JXL_INPUT', 'Quantization parameter rounds to zero in its binary16 field.');
+  if (positive && decoded <= 0) throw fault('JXL_INPUT', 'A quantization parameter rounds to zero in binary16.');
   return decoded;
 }
 function quantParamVector(value, count, convert) {
   if ((!Array.isArray(value) && !ArrayBuffer.isView(value)) || value.length !== count)
-    throw fault('JXL_INPUT', 'Quantization parameter vectors have their mode-defined length.');
+    throw fault('JXL_INPUT', 'A quantization parameter vector has the wrong length.');
   return Array.from(value, convert);
 }
 function quantParamTriplet(value, count, convert) {
   if (!Array.isArray(value) || value.length !== 3)
-    throw fault('JXL_INPUT', 'Quantization parameters give three channel vectors in Y/Cb/Cr order.');
+    throw fault('JXL_INPUT', 'Quantization parameters are three vectors, Y/Cb/Cr.');
   return value.map(vector => quantParamVector(vector, count, convert));
 }
 function quantParamBands(value, library) {
   const count = value?.[0]?.length;
   if (!Number.isInteger(count) || count < 1 || count > 16)
-    throw fault('JXL_INPUT', 'DCT distance bands have one through sixteen values per channel.');
+    throw fault('JXL_INPUT', 'DCT distance bands: 1 to 16 values per channel.');
   return quantParamTriplet(value, count, (v, i) => quantParamNumber(v, i ? 1 : 64, !i, library));
 }
 function quantParamAdmit(input, width, height, family) {
@@ -136,7 +47,7 @@ function quantParamAdmit(input, width, height, family) {
   const mode = QUANT_PARAM_MODES.indexOf(input.mode), library = mode === 0;
   if (mode < 0) throw fault('JXL_INPUT', 'Quantization mode is library, identity, dct2, dct4, dct4x8, afv or dct.');
   if (mode > 0 && mode < 6 && width * height !== 64)
-    throw fault('JXL_INPUT', 'Special compact quantization modes require an 8 by 8 table family.');
+    throw fault('JXL_INPUT', 'Compact quantization modes need an 8x8 table family.');
   const source = library ? QUANT_PARAM_LIBRARY[family] : input;
   if (!source) throw fault('JXL_INPUT', 'Unknown quantization-table family.');
   const kind = QUANT_PARAM_MODES.indexOf(source.mode), table = {mode, kind, library};
@@ -157,7 +68,7 @@ function quantParamAdmit(input, width, height, family) {
 }
 function quantParamWeight(value) {
   if (!Number.isFinite(value) || value < 1e-8 || value >= 1e8)
-    throw fault('JXL_INPUT', 'Expanded quantization weights are at least 1e-8 and below 1e8.');
+    throw fault('JXL_INPUT', 'Quantization weights are from 1e-8 to below 1e8.');
   return value;
 }
 function quantParamExpandBands(parameters) {

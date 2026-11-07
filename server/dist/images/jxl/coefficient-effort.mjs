@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import {stage} from './step-journal.mjs';
 import {varDCTSteps, SCAN} from './vardct.mjs';
 import {complete, part, scaled} from './bits.mjs';
 import {offloading} from './offload.mjs';
@@ -17,6 +18,7 @@ export function worthFastOrder(lumaCounts, lumaOrder, blocks) {
 }
 
 export function* coefficientOrderSteps(components, bucket = 8, adaptiveFast = false) {
+  if (!adaptiveFast && components.every(c => c.natural)) { yield 1; return ordersFromCounts(components.map(c => Uint32Array.from({length: 64}, (_, k) => k ? c.natural[SCAN[k]] : 0)), bucket); }
   const histograms = components.map(() => new Uint32Array(64)), total = components.reduce((n, c) => n + c.coeffs.length, 0);
   let done = 0;
   const natural = new Uint32Array(64);
@@ -49,11 +51,13 @@ export function ordersFromCounts(histograms, bucket = 8, adaptiveFast = false, b
 }
 
 export function* candidateSteps(image, plan, shared) {
-  if (!plan.pooled && offloading()) {
-    const bytes = yield {offload: 'run', task: {kind: 'vardct', image, plan}, at: done => done};
-    if (bytes) return bytes;
-  }
-  return yield* varDCTSteps(image, plan, shared);
+  return yield* stage('candidate', function* () {
+    if (!plan.pooled && offloading()) {
+      const bytes = yield {offload: 'run', task: {kind: 'vardct', image, plan}, at: done => done};
+      if (bytes) return bytes;
+    }
+    return yield* varDCTSteps(image, plan, shared);
+  });
 }
 export const prefetch = (image, plans) => ({offload: 'prefetch', tasks: plans.map(plan => ({kind: 'vardct', image, plan})), at: done => done});
 const CLUSTERED = Object.freeze({maxClusters: 32, newClusterCost: 160});

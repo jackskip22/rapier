@@ -87,9 +87,9 @@ export function withOpsin(bytes, options = {}) {
   if (!Number.isSafeInteger(maxBoxes) || maxBoxes < 1) throw opsinError('maxBoxes is a positive safe integer.');
   const raw = bytes[0] === 255 && bytes[1] === 10, source = raw ? null : inspectContainer(bytes, {maxBoxes});
   const codestream = raw ? bytes : source.codestream, image = readImageHeader(codestream, {iccBits: opsinICCSpan});
-  if (!image.xyb) throw opsinError('Custom inverse opsin applies only to an XYB-encoded image.');
+  if (!image.xyb) throw opsinError('Custom inverse opsin needs an XYB image.');
   if (!options.reset && !['inverseMatrix', 'opsinBiases', 'quantizationBiases', 'upsamplingWeights'].some(name => options[name] !== undefined)) return bytes.slice();
-  if (source?.auxiliary.some(box => box.boxType === 'jbrd')) throw opsinError('Custom opsin does not apply to a JPEG reconstruction stream.');
+  if (source?.auxiliary.some(box => box.boxType === 'jbrd')) throw opsinError('Custom opsin does not apply to JPEG reconstruction.');
   const index = source?.auxiliary.some(box => box.boxType === 'jxli') ? readFrameIndex(bytes, {maxBoxes}) : null;
   if (index?.frames.some(frame => frame.byteOffset < image.end)) throw opsinError('A frame index must point after the image header.');
   const fields = opsinData(options, readOpsinFields(codestream, image)), head = new BitWriter(256);

@@ -51,10 +51,10 @@ export function deliveryLayout(bytes, options = {}) {
 }
 
 function admitOrder(order, count) {
-  if (!Array.isArray(order) || order.length !== count) throw invalid('sectionOrder lists every logical section once in physical delivery order.');
+  if (!Array.isArray(order) || order.length !== count) throw invalid('sectionOrder lists every section once, in delivery order.');
   const seen = new Uint8Array(count);
   for (const value of order) {
-    if (!Number.isInteger(value) || value < 0 || value >= count || seen[value]) throw invalid('sectionOrder is a permutation of the logical section indexes.');
+    if (!Number.isInteger(value) || value < 0 || value >= count || seen[value]) throw invalid('sectionOrder is a permutation of the section indexes.');
     seen[value] = 1;
   }
   return order.slice();
@@ -75,7 +75,7 @@ function assemble(original, state, orders) {
   const {container, parsed, max} = state, frames = [...(parsed.preview ? [parsed.preview] : []), ...parsed.frames];
   const changed = frames.some(frame => orders.has(frame));
   if (!changed) return original.slice();
-  if (container.auxiliary.some(entry => entry.boxType === 'jbrd')) throw invalid('TOC rewriting of JPEG reconstruction files is not supported; retain their original section order.');
+  if (container.auxiliary.some(entry => entry.boxType === 'jbrd')) throw invalid('JPEG reconstruction files keep their section order.');
   const starts = new Map(), parts = [parsed.codestream.subarray(0, parsed.image.end)]; let at = parsed.image.end;
   for (const frame of frames) {
     starts.set(frame.start, at);
@@ -87,7 +87,7 @@ function assemble(original, state, orders) {
   const canonical = reframeContainer(original, {maxBytes: max}), index = readFrameIndex(canonical, {maxBytes: max});
   if (index) for (const frame of index.frames) {
     const moved = starts.get(Number(frame.byteOffset));
-    if (moved === undefined) throw invalid('A frame index must name parsed frame starts before changing TOC header lengths.');
+    if (moved === undefined) throw invalid('A frame index must name parsed frame starts first.');
     frame.byteOffset = moved;
   }
   const output = [SIGNATURE.slice()];

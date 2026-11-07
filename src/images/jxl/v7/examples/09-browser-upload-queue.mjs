@@ -1,7 +1,7 @@
 import {createCodec} from './node_modules/rapier-jxl/dist/codec.mjs';
 
 const queue = createCodec({module: 'rapier-jxl/upload', maxPixels: 16_000_000, maxPendingBytes: 64 * 1024 * 1024, maxPendingJobs: 8});
-const cancelAll = new AbortController();
+let cancelAll = new AbortController();
 const list = document.querySelector('#list');
 
 function row(name) {
@@ -16,17 +16,19 @@ const codeOf = error => error?.name === 'AbortError' ? 'AbortError' : error?.cod
 function upload(file, {signal = cancelAll.signal, effort = 3, quality = 82} = {}) {
   const view = row(file.name), progress = [];
   const onProgress = fraction => { progress.push(fraction); view.progress.value = fraction; };
-  return queue.encode(file, {effort, fidelity: {quality}, signal, onProgress}).then(bytes => {
-    view.done(`${bytes.length} bytes`);
-    return {name: file.name, ok: true, bytes: bytes.length, progress, jxl: new Blob([bytes], {type: 'image/jxl'})};
-  }, error => {
+  return queue.encode(file, {effort, fidelity: {quality}, signal, onProgress}).then(result => {
+    if (!result.fits) throw Object.assign(new Error(result.reason.message), {code: result.reason.code});
+    view.done(`${result.bytes.length} bytes`);
+    return {name: file.name, ok: true, bytes: result.bytes.length, progress,
+      original: file, result, jxl: new Blob([result.bytes], {type: 'image/jxl'})};
+  }).catch(error => {
     view.done(`${codeOf(error)}: ${error.message}`);
-    return {name: file.name, ok: false, code: codeOf(error), progress};
+    return {name: file.name, ok: false, code: codeOf(error), progress, original: file};
   });
 }
 
 document.querySelector('#files').addEventListener('change', event => { for (const file of event.target.files) upload(file); });
-document.querySelector('#cancel').addEventListener('click', () => cancelAll.abort());
+document.querySelector('#cancel').addEventListener('click', () => { cancelAll.abort(); cancelAll = new AbortController(); });
 
 async function photo(name, width, height, seed) {
   const canvas = new OffscreenCanvas(width, height), g = canvas.getContext('2d');

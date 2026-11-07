@@ -5,10 +5,12 @@ import {DOOR_LIMITS} from './limits.mjs';
 import {objectStore} from './oauth-store.mjs';
 import {isSignedAccessToken, mintAccessToken, verifyAccessToken, SIGNED_ACCESS_SECONDS} from './oauth-access.mjs';
 import {JsonDepthGuard} from '../kit/json-depth.mjs';
+import {claudeIssued, ASSERTION_SKEW_SECONDS} from './oauth-trusted-issuer.mjs';
 
 export const OAUTH_SCOPES = Object.freeze(['rapier:read', 'rapier:write', 'offline_access']);
 export const OAUTH_ACCESS_SECONDS = 15 * 60;
 export const OAUTH_OWNER_SECONDS = 90 * 24 * 60 * 60;
+const JWT_BEARER = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 const OWNER_COOKIE = '__Host-rapier-owner';
 const OWNER_PATTERN = /^owner_[A-Za-z0-9_-]{43}$/;
 const CONNECTION_PATTERN = /^connection_[A-Za-z0-9_-]{43}$/;
@@ -38,18 +40,25 @@ async function authorizationServer(env) {
   const OAuthAuthorizationServer = env.OAUTH_AUTHORIZATION_SERVER, OAuthError = env.OAUTH_ERROR;
   if (typeof OAuthAuthorizationServer !== 'function' || typeof OAuthError !== 'function') throw new Error('OAuth provider is unavailable.');
   const issuer = oauthOrigin(env);
-  if (!servers.has(issuer)) servers.set(issuer, new OAuthAuthorizationServer({issuer, resources: [issuer + '/mcp', issuer + '/muse'], defaultResource: issuer + '/muse',
+  if (!servers.has(issuer)) servers.set(issuer, provider(OAuthAuthorizationServer, issuer));
+  return servers.get(issuer);
+}
+function provider(OAuthAuthorizationServer, issuer) {
+  const claude = claudeIssued({discoveriesPerHour: DOOR_LIMITS.issuerDiscoveriesPerHour, meter: metered});
+  const server = new OAuthAuthorizationServer({issuer, resources: [issuer + '/mcp', issuer + '/muse'], defaultResource: issuer + '/muse',
       authorizeEndpoint: '/authorize', tokenEndpoint: '/oauth/token',
       clientRegistrationEndpoint: '/oauth/register', scopesSupported: [...OAUTH_SCOPES],
       accessTokenTTL: OAUTH_ACCESS_SECONDS, refreshTokenTTL: OAUTH_OWNER_SECONDS,
       refreshTokenIdleTTL: OAUTH_OWNER_SECONDS, clientRegistrationTTL: OAUTH_OWNER_SECONDS,
       clientIdMetadataDocumentEnabled: true,
+      enterpriseManagedAuthorization: {trustedIssuers: claude.trustedIssuers, mapClaims: claude.mapClaims, allowPublicClients: true,
+        jwksProvider: claude.jwksProvider, jtiStore: claude.jtiStore, clockSkewSeconds: ASSERTION_SKEW_SECONDS, maxAssertionLifetimeSeconds: 60},
       tokenExchangeCallback({scope}) {
         return scope.includes('offline_access') ? undefined : {refreshTokenTTL: 0};
       },
       onError() {},
-    }));
-  return servers.get(issuer);
+    });
+  return server;
 }
 
 export function consistentGrants(env) {
@@ -190,6 +199,26 @@ async function addressKey(request, domain) {
 async function registrationAllowed(request, env) {
   return await metered(env, 'registration-address:' + await addressKey(request, 'rapier-registration-address-v1'), DOOR_LIMITS.registrationsPerHour) &&
     await metered(env, 'registrations');
+}
+
+const ADDRESS_SHARES = 10;
+let addressShare = 0;
+async function assertionAdmission(request, assertion, env) {
+  const limited = typeof env.MODEL_CALLS?.limit === 'function';
+  if (!limited) return env.ALLOW_UNMETERED_CREATE === 'true' ? null : json(503, {error: 'authentication_unavailable'});
+  let issuer = '';
+  try {
+    const claims = typeof assertion === 'string' && assertion.length <= 16 * 1024 ? JSON.parse(new TextDecoder().decode(fromBase64url(assertion.split('.')[1] || ''))) : null;
+    if (typeof claims?.iss === 'string' && claims.iss.length <= 512) issuer = claims.iss;
+  } catch {}
+  const issuerKey = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode('rapier-assertion-issuer-v1\0' + issuer))));
+  addressShare = (addressShare + 1) % ADDRESS_SHARES;
+  try {
+    for (const key of ['assertion-issuer:' + issuerKey, 'assertion-address:' + await addressKey(request, 'rapier-assertion-address-v1') + ':' + addressShare])
+      if ((await env.MODEL_CALLS.limit({key})).success !== true)
+        return json(429, {error: 'temporarily_unavailable', error_description: 'Too many sign-ins this minute. Try again later.'}, {'Retry-After': '60'});
+  } catch { return json(503, {error: 'authentication_unavailable'}); }
+  return null;
 }
 
 async function boundedRequest(request, limit = 64 * 1024) {
@@ -355,21 +384,29 @@ async function disconnect(request, env, api) {
     '<p>Shared computer? Revoke your connections, then forget this browser.</p><form method="post" action="/oauth/disconnect"><button type="submit" name="forget" value="browser" class="negative">Forget this browser</button></form>');
 }
 
-async function signedTokenResponse(response, server, env) {
+async function signedTokenResponse(response, server, env, assertion) {
   let body;
   try { body = await response.clone().json(); } catch { return new Response(response.body, {status: response.status, headers: headers(response.headers)}); }
   const origin = oauthOrigin(env);
   let verified = null;
-  if (typeof body?.refresh_token !== 'string') return json(response.status, body, response.headers);
+  if (assertion) {
+    if (typeof body?.access_token !== 'string' || body.refresh_token !== undefined) return json(503, {error: 'authentication_unavailable'});
+  } else if (typeof body?.refresh_token !== 'string') return json(response.status, body, response.headers);
   if (typeof body?.access_token === 'string')
     for (const resource of [origin + '/mcp', origin + '/muse']) if (!verified) verified = await server.validateToken(resource, body.access_token, env);
   const token = verified && await server.getOAuthApi(env).unwrapToken(body.access_token);
   const grant = verified && {ownerId: verified.userId, connectionId: verified.props?.connectionId, grantId: token?.grantId,
     clientId: verified.clientId, audience: verified.audience, scopes: [...(verified.scope || [])]};
-  if (!grant || !validGrantReference(grant) || token?.userId !== verified.userId) return json(response.status, body, response.headers);
+  if (!grant || !validGrantReference(grant) || token?.userId !== verified.userId)
+    return assertion ? json(503, {error: 'authentication_unavailable'}) : json(response.status, body, response.headers);
   const record = await consistentGrants(env).OAUTH_KV.get('grant:' + grant.ownerId + ':' + grant.grantId, 'json');
   const now = Math.floor(Date.now() / 1000), until = Number.isSafeInteger(record?.expiresAt) ? record.expiresAt - now : SIGNED_ACCESS_SECONDS;
   const seconds = Math.min(SIGNED_ACCESS_SECONDS, until);
+  if (assertion) {
+    if (!Number.isSafeInteger(record?.expiresAt) || seconds <= 0) return json(503, {error: 'authentication_unavailable'});
+    return json(response.status, {access_token: await mintAccessToken(env.EDITOR_KEY_SECRET, grant, {seconds}), token_type: 'Bearer',
+      expires_in: seconds, scope: grant.scopes.join(' ')}, response.headers);
+  }
   if (seconds <= Number(body.expires_in || 0)) return json(response.status, body, response.headers);
   return json(response.status, {...body, access_token: await mintAccessToken(env.EDITOR_KEY_SECRET, grant, {seconds}), expires_in: seconds}, response.headers);
 }
@@ -438,9 +475,16 @@ export async function handleOAuth(request, env, ctx, next) {
           return new Response(null, {status: 200, headers: headers()});
         }
       }
+      const assertion = url.pathname === '/oauth/token' && request.method === 'POST' &&
+        new URLSearchParams(await limited.clone().text()).get('grant_type') === JWT_BEARER;
+      if (assertion) {
+        const refusal = await assertionAdmission(request, new URLSearchParams(await limited.clone().text()).get('assertion'), env);
+        if (refusal) return refusal;
+      }
       const response = await server.fetch(limited, env, ctx);
       if (url.pathname === '/oauth/token' && request.method === 'POST' && response.ok && editorSecretUsable(env.EDITOR_KEY_SECRET))
-        return signedTokenResponse(response, server, env);
+        return signedTokenResponse(response, server, env, assertion);
+      if (assertion && response.ok) return json(503, {error: 'authentication_unavailable'});
       if (url.pathname === '/.well-known/oauth-authorization-server' && request.method !== 'HEAD' && response.ok) {
         const metadata = await response.json();
         metadata.token_endpoint_auth_methods_supported = ['none'];

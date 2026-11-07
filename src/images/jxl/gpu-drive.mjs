@@ -27,14 +27,14 @@ export function gpuJob(steps, device) {
   const it = (async function* () {
     let step, last, reply;
     const gpu = device ? gpuQueue(request => gpuAnswer(request, device)) : () => null;
-    while (!(step = guard(() => steps.next(reply))).done) {
+    try { while (!(step = guard(() => steps.next(reply))).done) {
       if (step.value?.gpu) reply = step.value.later ? gpu(step.value.gpu) : await gpu(step.value.gpu);
       else if (step.value?.await !== undefined) reply = await step.value.await;
       else if (step.value?.capture) reply = await captureAnswer(step.value.capture);
       else if (step.value?.screenPhoto) reply = await screenPhotoAnswer(step.value.screenPhoto);
       else if (step.value?.split) reply = undefined;
       else { yield last = step.value; reply = it.hurry; }
-    }
+    } } finally { if (!step?.done) steps.return?.(); }
     if (last < 1) yield 1;
     return it.bytes = answer(step.value);
   })();

@@ -36,7 +36,7 @@ export interface EncoderOptions {
   /** Milliseconds to wait for the worker's version handshake. Default 15000. */
   startupTimeout?: number | undefined;
 }
-export interface EncodeOptions extends Omit<ImageOptions, 'worker'> {
+export interface EncodeOptions extends Omit<ImageOptions, 'worker' | 'progress'> {
   signal?: AbortSignal | undefined;
   /** Progress from 0 to 1, never decreasing. */
   onProgress?: ((fraction: number) => void) | undefined;

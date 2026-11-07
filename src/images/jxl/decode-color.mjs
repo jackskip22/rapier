@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
+import {xybKernelConstants} from './vardct-render.mjs';
 import {requireDecode} from './decode-bits.mjs';
+import {signature, nativeEncoding} from './color-encoding.mjs';
+export {nativeEncoding};
 import {exactCbrt} from './exact-math.mjs';
 import {part} from './decode-parts.mjs';
 import {decodeKernels} from './decode-kernels.mjs';
@@ -8,17 +11,6 @@ import {OP,convertPixels,throughKernels,curveTable} from './decode-color-program
 
 const SRGB={space:'rgb',wantICC:false,whitePoint:'d65',primaries:'srgb',transferFunction:'srgb',renderingIntent:1};
 const LINEAR_SRGB={...SRGB,transferFunction:'linear'};
-const signature=bytes=>bytes?.length>=20?String.fromCharCode(bytes[16],bytes[17],bytes[18],bytes[19]):null;
-export function nativeEncoding(h,icc=h.icc) {
-  const encoding={...h.colorEncoding};
-  if(encoding.wantICC&&icc){
-    encoding.iccSpace=signature(icc);encoding.transferFunction='icc';
-    if(icc.length>=68)encoding.renderingIntent=new DataView(icc.buffer,icc.byteOffset,icc.byteLength).getUint32(64);
-    delete encoding.transferId;delete encoding.gamma;delete encoding.whitePoint;delete encoding.whitePointId;delete encoding.primaries;delete encoding.primariesId;
-    if(encoding.iccSpace==='CMYK'){encoding.space='cmyk';encoding.invertedCMYK=true;}
-  }
-  return encoding;
-}
 export function targetEncoding(option) {
   if(option&&typeof option==='object') {
     requireDecode(!Array.isArray(option)&&['rgb','gray','xyb'].includes(option.space),'Invalid structured JPEG XL output color space.');
@@ -44,8 +36,8 @@ function finish(frame,planes,encoding,icc=undefined,extraChannels=frame.extraCha
   return {...frame,planes,widths:planes.map(()=>frame.width),heights:planes.map(()=>frame.height),extraChannels,colorEncoding:encoding,icc,ctDone:true};
 }
 function xybConstants(h,transform) {
-  const f=Math.fround,{inverseMatrix,opsinBiases}=h.opsinInverseMatrix,bias=opsinBiases.map(f),raw=transform===IDENTITY3?inverseMatrix.map(f):multiply3(transform,inverseMatrix.map(f)).map(f),root=bias.map(v=>f(exactCbrt(v))),scale=f(255/h.toneMapping.intensityTarget),m=raw.map(v=>f(v*scale));
-  return {bias,root,m};
+  const f=Math.fround,{inverseMatrix,opsinBiases}=h.opsinInverseMatrix;
+  return xybKernelConstants(transform===IDENTITY3?inverseMatrix.map(f):multiply3(transform,inverseMatrix.map(f)).map(f),opsinBiases,h.toneMapping.intensityTarget);
 }
 function xybInverse(h,transform=IDENTITY3) {
   const {bias,root,m}=xybConstants(h,transform);
@@ -69,13 +61,13 @@ function xybToEnum(frame,h,encoding,inPlace=false,rgba8=null) {
       for(const p of planes)kernels.srgb(p.subarray(0,n));
       return finish(frame,planes,encoding);
     }
-    const planes=[0,1,2].map(()=>new Float32Array(n));
+    const planes=inPlace?frame.planes.slice(0,3):[0,1,2].map(()=>new Float32Array(n));
     throughKernels(n,frame.planes.slice(0,3),planes,(count,[x,y,b])=>{kernels.xyb(count,x,y,b,constants);kernels.srgb(x);kernels.srgb(y);kernels.srgb(b);});
     return finish(frame,planes,encoding);
   }
   const curve=transferCurve(encoding,false,h.toneMapping.intensityTarget),gamma=encoding.transferFunction==='gamma'||encoding.transferFunction==='dci';
   const exponent=encoding.transferFunction==='hlg'?hlgScale(h.toneMapping.intensityTarget,true):0,luminance=native.slice(3,6);
-  const planes=Array.from({length:gray?1:3},()=>new Float32Array(n));
+  const planes=inPlace?frame.planes.slice(0,gray?1:3):Array.from({length:gray?1:3},()=>new Float32Array(n));
   const to=[xybInverse(h,transform),...(exponent?[{op:OP.hlgOotf,data:Float64Array.of(...luminance,exponent)}]:[]),...planes.map((_,c)=>curveOp(c,curve,gamma))];
   convertPixels(n,{inputs:frame.planes.slice(0,3),outputs:planes,to});
   return finish(frame,planes,encoding);
@@ -157,8 +149,7 @@ export function transformColor(frame,h,f,{colorSpace='original',icc,inPlace=fals
   if(frame.ctDone||frame.colorEncoding)return convertOutputColor(frame,h,{colorSpace,icc});
   const original=nativeEncoding(h),n=frame.width*frame.height;
   requireDecode(frame.planes.every(p=>p.length===n),'JPEG XL color planes have different extents.');
-  const kernels=decodeKernels(),here=inPlace&&frame.planes.every(p=>p.buffer===kernels.buffer);
-  const pixels=(count,ops)=>{const planes=here?frame.planes.slice(0,count):Array.from({length:count},()=>new Float32Array(n));convertPixels(n,{inputs:frame.planes.slice(0,3),outputs:planes,to:ops});return planes;};
+  const pixels=(count,ops)=>{const planes=inPlace?frame.planes.slice(0,count):Array.from({length:count},()=>new Float32Array(n));convertPixels(n,{inputs:frame.planes.slice(0,3),outputs:planes,to:ops});return planes;};
   let decoded;
   if(f.ycbcr) {
     requireDecode(frame.planes.length===3,'JPEG XL YCbCr needs three planes.');

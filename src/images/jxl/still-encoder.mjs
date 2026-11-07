@@ -130,7 +130,7 @@ export function stillEncoder({spawn, memory, parallel = true} = {}, drive) {
           try { words = (await import('./brotli-dictionary.mjs')).brotliDictionary(); }
           catch {
             checkSignal(signal);
-            throw Object.assign(fault('JXL_RECONSTRUCTION', 'This file\'s JPEG data needs the Brotli dictionary (brotli-dictionary.mjs beside the worker), which could not be loaded.'), {dictionary: true});
+            throw Object.assign(fault('JXL_RECONSTRUCTION', 'JPEG data needs brotli-dictionary.mjs beside the worker; it could not load.'), {dictionary: true});
           }
         }
         checkSignal(signal);

@@ -3,9 +3,17 @@ import {fail} from './primitives.mjs';
 
 const PACK = [0x0d05, 0x0d02, 0x0d03, 0x0d04];
 
+function isWebGL2(gl) {
+  return typeof WebGL2RenderingContext === 'function' && gl instanceof WebGL2RenderingContext;
+}
+
 function context(canvas) {
-  let gl; try { gl = canvas.getContext('webgl2'); } catch {}
-  return gl && !gl.isContextLost() && gl.drawingBufferWidth === canvas.width && gl.drawingBufferHeight === canvas.height ? gl : null;
+  for (const id of ['webgl2', 'webgl', 'experimental-webgl']) {
+    let gl; try { gl = canvas.getContext(id); } catch {}
+    if (gl && !gl.isContextLost() && gl.drawingBufferWidth === canvas.width && gl.drawingBufferHeight === canvas.height)
+      return gl;
+  }
+  return null;
 }
 function packed(gl, buffer, read) {
   const saved = [gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING), gl.getParameter(gl.READ_FRAMEBUFFER_BINDING), PACK.map(p => gl.getParameter(p))];
@@ -17,6 +25,18 @@ function packed(gl, buffer, read) {
   } finally {
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, saved[0]); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, saved[1]);
     PACK.forEach((p, i) => gl.pixelStorei(p, saved[2][i]));
+  }
+}
+function packedWebGL1(gl, read) {
+  const savedFb = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+  const align = gl.getParameter(gl.PACK_ALIGNMENT);
+  try {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
+    return read();
+  } finally {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, savedFb);
+    gl.pixelStorei(gl.PACK_ALIGNMENT, align);
   }
 }
 function straighten(data, {alpha, premultipliedAlpha}) {
@@ -31,13 +51,14 @@ function place(data, rows, y0, count, width, height, attrs) {
   for (let r = 0; r < count; r++) data.set(rows.subarray(r * line, (r + 1) * line), (height - 1 - y0 - r) * line);
   straighten(data.subarray((height - y0 - count) * line, (height - y0) * line), attrs);
 }
-const space = gl => gl.drawingBufferColorSpace ?? 'srgb', lost = () => fail('JXL_INPUT', 'The canvas lost its WebGL context, so its pixels are gone; draw it again.');
+const space = gl => gl.drawingBufferColorSpace ?? 'srgb', lost = () => fail('JXL_INPUT', 'The canvas lost its WebGL context; draw it again.');
 
 export function readWebGLNow(canvas) {
   const gl = context(canvas);
   if (!gl) return null;
   const {width, height} = canvas, rows = new Uint8Array(width * height * 4), data = new Uint8Array(rows.length);
-  packed(gl, null, () => gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rows));
+  if (isWebGL2(gl)) packed(gl, null, () => gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rows));
+  else packedWebGL1(gl, () => gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rows));
   if (gl.isContextLost()) throw lost();
   place(data, rows, 0, height, width, height, gl.getContextAttributes());
   return {data, width, height, colorSpace: space(gl)};
@@ -46,6 +67,11 @@ export function readWebGLNow(canvas) {
 export function readWebGL(canvas) {
   const gl = context(canvas);
   if (!gl) return null;
+  if (!isWebGL2(gl)) {
+    const now = readWebGLNow(canvas);
+    if (!now) throw lost();
+    return Promise.resolve(now);
+  }
   const {width, height} = canvas, line = width * 4, slice = Math.max(1, Math.floor(2097152 / line));
   const colorSpace = space(gl), attrs = gl.getContextAttributes();
   const data = new Uint8Array(width * height * 4), part = new Uint8Array(Math.min(height, slice) * line);

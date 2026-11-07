@@ -8,7 +8,7 @@ export function admitStill(options, image) {
   if (options === undefined) options = {};
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw codecError('JXL_OPTIONS', 'JPEG XL options are invalid.');
   if (options.preset !== undefined && (typeof options.preset !== 'string' || !Object.hasOwn(PRESETS, options.preset)))
-    throw codecError('JXL_OPTIONS', 'JPEG XL preset must be web, photo, archive, screen or lossless.');
+    throw codecError('JXL_OPTIONS', 'preset is web, photo, archive, screen or lossless.');
   const preset = PRESETS[options.preset] || [90, BALANCED_EFFORT, true];
   const quality = options.lossless === true ? 100 : options.quality ?? preset[0], effort = options.effort ?? preset[1];
   if (typeof quality !== 'number' || !Number.isFinite(quality) || quality < 1 || quality > 100 || !Number.isInteger(effort) || effort < 1 || effort > 9)

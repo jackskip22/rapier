@@ -360,84 +360,6 @@
       (global.set $acc (i64.shr_u (global.get $acc) (i64.const 32)))
       (global.set $count (i32.sub (global.get $count) (i32.const 32))))))
 
-  ;; One group's n tokens, last to first then first to last, as ansGroupWriter's flush writes them after `pending` bits
-  ;; (`acc`). Returns the whole bytes written at OUT; the bits left over go to SCRATCH (value, then count).
-  (func (export "ansFlush") (param $n i32) (param $acc i32) (param $pending i32) (result i32)
-    (local $i i32) (local $id i32) (local $value i32) (local $table i32) (local $at i32) (local $entry i32) (local $bits i32)
-    (local $raw i32) (local $freq i32) (local $start i32) (local $state i32) (local $q i32) (local $token i32) (local $flag i32) (local $recip i32)
-    (local $wacc i64) (local $wcount i32) (local $wat i32)
-    (local.set $state (i32.const 1245184))
-    (local.set $i (local.get $n))
-    (block $reversed (loop $back
-      (br_if $reversed (i32.eqz (local.get $i)))
-      (local.set $i (i32.sub (local.get $i) (i32.const 1)))
-      (local.set $id (i32.load8_u (i32.add (global.get $IDS) (local.get $i))))
-      (local.set $value (i32.load (i32.add (global.get $VALUES) (i32.shl (local.get $i) (i32.const 2)))))
-      (local.set $table (i32.add (global.get $HISTOGRAMS) (i32.mul (local.get $id) (i32.const 12576))))
-      (if (i32.lt_u (local.get $value) (i32.const 64))
-        (then
-          (local.set $at (i32.add (i32.add (local.get $table) (i32.const 9232)) (i32.shl (local.get $value) (i32.const 2))))
-          (local.set $entry (i32.load (local.get $at)))
-          (local.set $bits (i32.shr_u (local.get $entry) (i32.const 6)))
-          (local.set $raw (i32.and (local.get $entry) (i32.const 63)))
-          (local.set $freq (i32.load (i32.add (local.get $at) (i32.const 256))))
-          (local.set $start (i32.load (i32.add (local.get $at) (i32.const 512))))
-          (local.set $recip (i32.add (i32.add (local.get $table) (i32.const 10016)) (i32.shl (local.get $value) (i32.const 3)))))
-        (else
-          (local.set $token (call $hybrid (local.get $value) (local.get $table)))
-          (local.set $bits (global.get $hbits)) (local.set $raw (global.get $hraw))
-          (local.set $freq (i32.load16_u (i32.add (local.get $table) (i32.shl (local.get $token) (i32.const 1)))))
-          (local.set $start (i32.load16_u (i32.add (i32.add (local.get $table) (i32.const 512)) (i32.shl (local.get $token) (i32.const 1)))))
-          (local.set $recip (i32.add (i32.add (local.get $table) (i32.const 10528)) (i32.shl (local.get $token) (i32.const 3))))))
-      (i32.store (i32.add (global.get $VALUES) (i32.shl (local.get $i) (i32.const 2))) (local.get $raw))
-      (local.set $flag (i32.const 0))
-      (if (i32.ge_u (i32.shr_u (local.get $state) (i32.const 20)) (local.get $freq)) (then
-        (i32.store16 (i32.add (global.get $EMITTED) (i32.shl (local.get $i) (i32.const 1))) (local.get $state))
-        (local.set $flag (i32.const 64))
-        (local.set $state (i32.shr_u (local.get $state) (i32.const 16)))))
-      (i32.store8 (i32.add (global.get $IDS) (local.get $i)) (i32.or (local.get $bits) (local.get $flag)))
-      ;; state / freq by the frequency's reciprocal (recips): exact for a state below 2^32 and a frequency up to 4096.
-      (local.set $q (i32.wrap_i64 (i64.shr_u (i64.mul (i64.extend_i32_u (local.get $state)) (i64.load (local.get $recip))) (i64.const 44))))
-      (local.set $state (i32.add (i32.shl (local.get $q) (i32.const 12))
-        (i32.load16_u (i32.add (i32.add (local.get $table) (i32.const 1040))
-          (i32.shl (i32.sub (i32.add (local.get $start) (local.get $state)) (i32.mul (local.get $q) (local.get $freq))) (i32.const 1))))))
-      (br $back)))
-    ;; $put with the accumulator in locals: the state, then each token's word and raw bits.
-    (local.set $wacc (i64.or (i64.extend_i32_u (local.get $acc)) (i64.shl (i64.extend_i32_u (local.get $state)) (i64.extend_i32_u (local.get $pending)))))
-    (local.set $wcount (i32.add (local.get $pending) (i32.const 32)))
-    (local.set $wat (global.get $OUT))
-    (if (i32.ge_u (local.get $wcount) (i32.const 32)) (then
-      (i32.store (local.get $wat) (i32.wrap_i64 (local.get $wacc)))
-      (local.set $wat (i32.add (local.get $wat) (i32.const 4)))
-      (local.set $wacc (i64.shr_u (local.get $wacc) (i64.const 32)))
-      (local.set $wcount (i32.sub (local.get $wcount) (i32.const 32)))))
-    (block $written (loop $forward
-      (br_if $written (i32.eq (local.get $i) (local.get $n)))
-      (local.set $entry (i32.load8_u (i32.add (global.get $IDS) (local.get $i))))
-      (local.set $bits (i32.and (local.get $entry) (i32.const 63)))
-      (if (i32.and (local.get $entry) (i32.const 64)) (then
-        (local.set $wacc (i64.or (local.get $wacc) (i64.shl
-          (i64.extend_i32_u (i32.load16_u (i32.add (global.get $EMITTED) (i32.shl (local.get $i) (i32.const 1))))) (i64.extend_i32_u (local.get $wcount)))))
-        (local.set $wcount (i32.add (local.get $wcount) (i32.const 16)))
-        (if (i32.ge_u (local.get $wcount) (i32.const 32)) (then
-          (i32.store (local.get $wat) (i32.wrap_i64 (local.get $wacc)))
-          (local.set $wat (i32.add (local.get $wat) (i32.const 4)))
-          (local.set $wacc (i64.shr_u (local.get $wacc) (i64.const 32)))
-          (local.set $wcount (i32.sub (local.get $wcount) (i32.const 32)))))))
-      (if (local.get $bits) (then
-        (local.set $wacc (i64.or (local.get $wacc) (i64.shl
-          (i64.extend_i32_u (i32.load (i32.add (global.get $VALUES) (i32.shl (local.get $i) (i32.const 2))))) (i64.extend_i32_u (local.get $wcount)))))
-        (local.set $wcount (i32.add (local.get $wcount) (local.get $bits)))))
-      (if (i32.ge_u (local.get $wcount) (i32.const 32)) (then
-        (i32.store (local.get $wat) (i32.wrap_i64 (local.get $wacc)))
-        (local.set $wat (i32.add (local.get $wat) (i32.const 4)))
-        (local.set $wacc (i64.shr_u (local.get $wacc) (i64.const 32)))
-        (local.set $wcount (i32.sub (local.get $wcount) (i32.const 32)))))
-      (local.set $i (i32.add (local.get $i) (i32.const 1)))
-      (br $forward)))
-    (global.set $acc (local.get $wacc)) (global.set $count (local.get $wcount)) (global.set $at (local.get $wat))
-    (call $tail))
-
   ;; prefix.mjs hybridToken with the configuration at table + 10000: returns the token, its raw bits and count in
   ;; $hraw and $hbits.
   (global $hbits (mut i32) (i32.const 0))
@@ -982,7 +904,7 @@
 
   ;; One group's n tokens as prefixGroupWriter writes them after `pending` bits (`acc`): per histogram each value below
   ;; 64's code and raw bits in one write (length -1: the general path) at 0 and 256, each token's code length (512) and
-  ;; code (768), and the configuration (10000). Returns the whole bytes written at OUT, as ansFlush.
+  ;; code (768), and the configuration (10000). Returns the whole bytes written at OUT.
   (func (export "prefixWrite") (param $n i32) (param $acc i32) (param $pending i32) (result i32)
     (local $i i32) (local $value i32) (local $table i32) (local $length i32) (local $token i32)
     (global.set $acc (i64.extend_i32_u (local.get $acc))) (global.set $count (local.get $pending)) (global.set $at (global.get $OUT))
@@ -1149,7 +1071,7 @@
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $entries))))
 
-  ;; ansFlush's reciprocals for n histograms: ceil(2^44 / frequency), 0 for an absent token.
+  ;; mbits's reciprocals for n histograms: ceil(2^44 / frequency), 0 for an absent token.
   (func (export "recips") (param $n i32)
     (local $h i32) (local $table i32) (local $i i32) (local $f i64)
     (block $done (loop $histograms
@@ -1252,16 +1174,17 @@
   ;; row() keeps them. Each own histogram goes to $owns + 256 t and its cluster's index to $assign + 4 t. The count of
   ;; clusters is the result.
   (func (export "seedAll") (param $n i32) (param $small i32) (param $loff i32) (param $lpairs i32) (param $tok i32)
-    (param $seeds i32) (param $threshold f64) (param $owns i32) (param $assign i32) (result i32)
-    (local $t i32) (local $k i32) (local $s i32) (local $c i32) (local $tk i32) (local $i i32) (local $end i32) (local $row i32)
+    (param $seeds i32) (param $threshold f64) (param $runs i32) (param $offs i32) (param $assign i32) (result i32)
+    (local $r i32) (local $t i32) (local $k i32) (local $s i32) (local $c i32) (local $tk i32) (local $i i32) (local $end i32) (local $row i32)
     (local $best i32) (local $total f64) (local $bits f64) (local $ownBits f64) (local $f f64) (local $at i32)
     (block $contexts (loop $context
       (br_if $contexts (i32.eq (local.get $t) (local.get $n)))
+      (i32.store (i32.add (local.get $offs) (i32.shl (local.get $t) (i32.const 2))) (local.get $r))
       (local.set $s (i32.const 0))
       (block $zeroed (loop $zero
         (br_if $zeroed (i32.eq (local.get $s) (i32.const 256)))
-        (i32.store (i32.add (global.get $OWN) (local.get $s)) (i32.const 0))
-        (local.set $s (i32.add (local.get $s) (i32.const 4)))
+        (v128.store (i32.add (global.get $OWN) (local.get $s)) (v128.const i64x2 0 0))
+        (local.set $s (i32.add (local.get $s) (i32.const 16)))
         (br $zero)))
       (local.set $s (i32.const 0))
       (block $smalls (loop $small
@@ -1284,17 +1207,21 @@
           (i32.store (local.get $at) (i32.add (i32.load (local.get $at)) (i32.load offset=4 (i32.add (local.get $lpairs) (i32.shl (local.get $i) (i32.const 3))))))))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $large)))
-      ;; Its copy for the caller, and entropyBits: the total and each population in symbol order.
+      ;; Its (symbol, count) runs for the caller, and entropyBits: the total and each population in symbol order. A zero
+      ;; count adds exactly 0 to both sums (the table's entry for 0 is 0), so only the others are summed.
       (local.set $s (i32.const 0)) (local.set $total (f64.const 0)) (local.set $bits (f64.const 0))
-      (block $summed (loop $sum
-        (br_if $summed (i32.eq (local.get $s) (i32.const 256)))
+      (block $entropied (loop $entropy
+        (br_if $entropied (i32.eq (local.get $s) (i32.const 256)))
         (local.set $c (i32.load (i32.add (global.get $OWN) (local.get $s))))
-        (i32.store (i32.add (i32.add (local.get $owns) (i32.shl (local.get $t) (i32.const 8))) (local.get $s)) (local.get $c))
-        (local.set $f (f64.convert_i32_u (local.get $c)))
-        (local.set $total (f64.add (local.get $total) (local.get $f)))
-        (local.set $bits (f64.sub (local.get $bits) (if (result f64) (f64.lt (local.get $f) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $f)) (i32.const 3)))) (else (call $pop (local.get $f))))))
+        (if (local.get $c) (then
+          (i32.store (i32.add (local.get $runs) (i32.shl (local.get $r) (i32.const 3))) (i32.shr_u (local.get $s) (i32.const 2)))
+          (i32.store offset=4 (i32.add (local.get $runs) (i32.shl (local.get $r) (i32.const 3))) (local.get $c))
+          (local.set $r (i32.add (local.get $r) (i32.const 1)))
+          (local.set $f (f64.convert_i32_u (local.get $c)))
+          (local.set $total (f64.add (local.get $total) (local.get $f)))
+          (local.set $bits (f64.sub (local.get $bits) (if (result f64) (f64.lt (local.get $f) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $f)) (i32.const 3)))) (else (call $pop (local.get $f))))))))
         (local.set $s (i32.add (local.get $s) (i32.const 4)))
-        (br $sum)))
+        (br $entropy)))
       (local.set $ownBits (f64.add (local.get $bits) (call $pop (local.get $total))))
       (local.set $best (call $seedBest (local.get $k) (local.get $ownBits)))
       (if (i32.or (i32.lt_s (local.get $best) (i32.const 0))
@@ -1305,8 +1232,8 @@
           (local.set $s (i32.const 0))
           (block $copied (loop $copy
             (br_if $copied (i32.eq (local.get $s) (i32.const 256)))
-            (i32.store (i32.add (local.get $row) (local.get $s)) (i32.load (i32.add (global.get $OWN) (local.get $s))))
-            (local.set $s (i32.add (local.get $s) (i32.const 4)))
+            (v128.store (i32.add (local.get $row) (local.get $s)) (v128.load (i32.add (global.get $OWN) (local.get $s))))
+            (local.set $s (i32.add (local.get $s) (i32.const 16)))
             (br $copy)))
           (f64.store (i32.add (global.get $BITS) (i32.shl (local.get $k) (i32.const 3))) (local.get $ownBits))
           (drop (call $terms (local.get $k)))
@@ -1318,14 +1245,14 @@
           (local.set $s (i32.const 0))
           (block $merged (loop $merge
             (br_if $merged (i32.eq (local.get $s) (i32.const 256)))
-            (local.set $c (i32.add (i32.load (i32.add (local.get $row) (local.get $s))) (i32.load (i32.add (global.get $OWN) (local.get $s)))))
-            (i32.store (i32.add (local.get $row) (local.get $s)) (local.get $c))
-            (local.set $s (i32.add (local.get $s) (i32.const 4)))
+            (v128.store (i32.add (local.get $row) (local.get $s)) (i32x4.add (v128.load (i32.add (local.get $row) (local.get $s))) (v128.load (i32.add (global.get $OWN) (local.get $s)))))
+            (local.set $s (i32.add (local.get $s) (i32.const 16)))
             (br $merge)))
           (f64.store (i32.add (global.get $BITS) (i32.shl (local.get $best) (i32.const 3))) (call $terms (local.get $best)))
           (i32.store (i32.add (local.get $assign) (i32.shl (local.get $t) (i32.const 2))) (local.get $best))))
       (local.set $t (i32.add (local.get $t) (i32.const 1)))
       (br $context)))
+    (i32.store (i32.add (local.get $offs) (i32.shl (local.get $n) (i32.const 2))) (local.get $r))
     (local.get $k))
 
   ;; clusterTokenCounts' configuration choice for one histogram on the ANS path (JS1): for each candidate (split, msb,

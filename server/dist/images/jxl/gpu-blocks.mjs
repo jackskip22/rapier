@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {B16_BOUNDS, B16Session, b16Sum} from './gpu-blocks16.mjs';
-import {maskDoubtOver} from './aq.mjs';
+import {maskDoubtOver} from './photo-mask.mjs';
 
 export const bTr = (w, h) => ((3 * (w + h) + 20) * B16_BOUNDS.u2 + (w + h + 2) * B16_BOUNDS.u64) * 2 / (w * h);
 const bkF = v => { const s = Math.fround(v).toString(); return /[.eE]/.test(s) ? s : s + '.0'; };
@@ -211,7 +211,7 @@ function bkCached(set, key, make) {
 function bkPipeline(device, ds, w, h) {
   let set = bkPipelines.get(device);
   if (!set) bkPipelines.set(device, set = {});
-  return bkCached(set, w + 'x' + h, () => device.createComputePipelineAsync({layout: 'auto', compute: {module: device.createShaderModule({code: bkCostsShader(ds, w, h)}), entryPoint: 'main'}}));
+  return bkCached(set, w + 'x' + h, () => device.createComputePipelineAsync({label: 'rapier-jxl:block-costs:' + w + 'x' + h, layout: 'auto', compute: {module: device.createShaderModule({code: bkCostsShader(ds, w, h)}), entryPoint: 'main'}}));
 }
 export function gpuBlocksPipelines(device, ds, shapes = [[8, 8], [16, 16], [8, 16], [16, 8], [32, 32], [16, 32], [32, 16]]) { return Promise.all(shapes.map(([w, h]) => bkPipeline(device, ds, w, h))); }
 
@@ -233,11 +233,17 @@ export async function gpuBlocksCosts(device, request, ds, core) {
         out: session.buffer(originsX * originRows * BK_OUT * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC)};
     }));
     for (let r0 = 0; r0 < regionRows; r0 += bandRegions) {
-      const regions = Math.min(bandRegions, regionRows - r0), encoder = device.createCommandEncoder(), band = session.band(encoder, r0 * 2, regions * 2), scratch = [];
+      const regions = Math.min(bandRegions, regionRows - r0), encoder = device.createCommandEncoder(), band = session.band(encoder, r0 * 2, regions * 2);
+      let maxCoBytes = 0;
+      for (const s of shapes) {
+        const oy0 = r0 * 4 / s.bh, oyN = Math.min(s.originRows - oy0, regions * 4 / s.bh), count = s.originsX * oyN;
+        if (count > 0) maxCoBytes = Math.max(maxCoBytes, count * 2 * s.w * s.h * 8);
+      }
+      const co = maxCoBytes > 0 ? session.buffer(maxCoBytes, GPUBufferUsage.STORAGE) : null;
       for (const s of shapes) {
         const oy0 = r0 * 4 / s.bh, oyN = Math.min(s.originRows - oy0, regions * 4 / s.bh), count = s.originsX * oyN;
         if (count <= 0) continue;
-        const groupsX = Math.min(count, 65535), co = session.buffer(count * 2 * s.w * s.h * 8, GPUBufferUsage.STORAGE);
+        const groupsX = Math.min(count, 65535);
         const [u, d] = session.uniform([session.W, stride, rows, input.cfl.width, count, s.originsX, r0 * 4, band.top, input.dead ? 1 : 0, session.oTile, groupsX, 0]);
         new Float32Array(d)[11] = session.planeBound; new Uint32Array(d)[13] = oy0 * s.originsX; device.queue.writeBuffer(u, 0, d);
         const pass = encoder.beginComputePass();
@@ -245,11 +251,9 @@ export async function gpuBlocksCosts(device, request, ds, core) {
         pass.setBindGroup(0, device.createBindGroup({layout: s.pipeline.getBindGroupLayout(0), entries: [u, ...band.planes, s.K, s.T, session.blk, co, s.out].map((b, k) => ({binding: k, resource: {buffer: b}}))}));
         pass.dispatchWorkgroups(groupsX, Math.ceil(count / groupsX));
         pass.end();
-        scratch.push(co);
       }
       device.queue.submit([encoder.finish()]);
-      await device.queue.onSubmittedWorkDone();
-      for (const b of scratch) b.destroy();
+      co?.destroy();
       band.release();
     }
     const costs = Object.assign(new Map(), {certified: true});
@@ -388,7 +392,7 @@ fn main(@builtin(workgroup_id) g: vec3u, @builtin(local_invocation_index) lid: u
 function bkLevelsPipeline(device, ds, w, h) {
   let set = bkPipelines.get(device);
   if (!set) bkPipelines.set(device, set = {});
-  return bkCached(set, 'levels' + w + 'x' + h, () => device.createComputePipelineAsync({layout: 'auto', compute: {module: device.createShaderModule({code: bkLevelsShader(ds, w, h)}), entryPoint: 'main'}}));
+  return bkCached(set, 'levels' + w + 'x' + h, () => device.createComputePipelineAsync({label: 'rapier-jxl:block-levels:' + w + 'x' + h, layout: 'auto', compute: {module: device.createShaderModule({code: bkLevelsShader(ds, w, h)}), entryPoint: 'main'}}));
 }
 
 export function gpuBlocksLevelsPipelines(device, ds, shapes = [[8, 8], [16, 16], [8, 16], [16, 8], [32, 32], [16, 32], [32, 16]]) { return Promise.all(shapes.map(([w, h]) => bkLevelsPipeline(device, ds, w, h))); }
@@ -412,7 +416,9 @@ export async function gpuBlocksLevels(device, request, ds, core) {
     let doubtful = 0;
     for (let k = 0; k < bands.length; k++) {
       if (!bands[k]) continue;
-      const r0 = k * bandRegions, regions = Math.min(bandRegions, regionRows - r0);
+      let rMin = regionRows, rMax = 0;
+      for (const list of bands[k].values()) for (const b of list) { const r = b.by >> 2; if (r < rMin) rMin = r; if (r + 1 > rMax) rMax = r + 1; }
+      const r0 = rMin, regions = Math.max(1, rMax - rMin);
       const encoder = device.createCommandEncoder(), band = session.band(encoder, r0 * 2, regions * 2), outs = [], scratch = [];
       for (const [id, list] of bands[k]) {
         const {t, K, T, pipeline} = shapes.get(id), size = t.w * t.h, area = t.bw * t.bh, slot = 3 * size + 3 * area + 1;
@@ -449,3 +455,4 @@ export async function gpuBlocksLevels(device, request, ds, core) {
     while (scopes-- > 0) await device.popErrorScope().catch(() => null);
   }
 }
+

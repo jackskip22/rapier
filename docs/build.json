@@ -76,25 +76,25 @@
     "current": false
   },
   "firstScreen": {
-    "key": "1krz0my:7906808",
+    "key": "1hd1euy:7909849",
     "current": false
   },
   "phoneBench": {
     "path": "rapier-bench.html",
-    "bytes": 6938862,
-    "sha256": "c05cb158f5769e1f823fe225dc8c8c6ac9db109b04b8d02ef880f94abb3fc70e",
-    "editorPageSha256": "8fdf827a5788cfd66879727c0c50765095e5df67387c53e6844c7ae7c86aeb3c",
+    "bytes": 7047349,
+    "sha256": "e9f8a59860ffd55984530c197e0ad42667ee5331ead36a586c320e32935bd6d1",
+    "editorPageSha256": "a927cbaca88ec159695f7a4dc9092bcbc89d207f796e8e0edaebf01a65e9c7c9",
     "spans": [
       {
         "element": "rapier-phone-bench-runtime",
         "name": "rapier-phone-bench.js",
         "bytes": 5686884,
-        "sha256": "ef11ea4b6c818246de6bbcef581d3d602d0f2a8889e335f5d117ab3d0126341c"
+        "sha256": "4fcb82d947cd842bdd7589aaad455efb7e2433e2531b0c0cf2adbb8c00341886"
       }
     ]
   },
-  "release": "1.2.55",
-  "builtAt": "2026-11-03T23:25:11.656Z",
+  "release": "1.2.56",
+  "builtAt": "2026-11-07T04:19:11.101Z",
   "node": "v22.23.4",
   "mode": "release",
   "packing": "zopfli",
@@ -110,31 +110,31 @@
   "validation": "JavaScript syntax and source assembly only; no runtime or host verification",
   "profile": "full",
   "jxl": {
-    "version": "8.1.0",
-    "source": "0bb3d78496eb68fbe69bf940af6f5de42cf5b06a133cd1dd0ca49054a0b257e3",
+    "version": "8.3.0",
+    "source": "de854b99abddf3c1f895931bd11da7bd51cdaf86827dc566535c76df0f09cdc7",
     "page": {
       "jpeg.worker.mjs": {
-        "bytes": 416052,
-        "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
+        "bytes": 448052,
+        "sha256": "b655f222948f1a8414ccc87ebf863154727143b3abbecbafe907d4c7733c4681"
       },
       "still.worker.mjs": {
-        "bytes": 841471,
-        "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
+        "bytes": 1144395,
+        "sha256": "3f4042a2d9b2b4b00ad1f1e8bd1cab440d2635743563d47ff6a35b898f625acf"
       },
       "codec.mjs": {
-        "bytes": 53394,
-        "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
+        "bytes": 70521,
+        "sha256": "08d658765d00d1590792bde1aa89a6ee4d0201e5dbd7b69242499a999961fdb6"
       }
     },
     "parts": {
       "jxlcomplete": {
         "decode.worker.mjs": {
-          "bytes": 352423,
-          "sha256": "bec005ad7839bd5088a3bf64dab4e90bd4399fa820c2f9b2d03d6e0df8e83125"
+          "bytes": 355150,
+          "sha256": "a90988047c21353b5370f4269a22a3883e39021117f095cc13f7e8ee31627f4c"
         },
         "animation.worker.mjs": {
-          "bytes": 854561,
-          "sha256": "5abfb9c2c0b872a7cac4439fde7826f1b0ec4282ef1a1b060617bb51ae4abb97"
+          "bytes": 1286035,
+          "sha256": "44be04efc37dc9e12eb9ad5374e6a17a142cc4171603a1b116e5a2dda989d959"
         }
       }
     }
@@ -142,38 +142,38 @@
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 424026,
-      "sha256": "f5e375eaf2278a88e9063bfe7e39758c876acbcd425fc28879f22deb3f66c74d",
-      "gzip": 408307,
+      "bytes": 423949,
+      "sha256": "2ff0526bad30e6d771aba73ddc1664b19de808accf01662f9a0e92ebb4a93a35",
+      "gzip": 408109,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-11-03T23:20:33.255Z",
+      "builtAt": "2026-11-07T04:17:46.843Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
       "canonical": true,
       "parts": {
         "core": {
-          "raw": 1084889,
-          "gzip": 346281,
-          "base124": 338823
+          "raw": 1085027,
+          "gzip": 346273,
+          "base124": 339135
         },
         "licenses": {
           "raw": 88151,
-          "gzip": 24862,
-          "base124": 24398
+          "gzip": 24794,
+          "base124": 24380
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 2176096,
-      "sha256": "8fdf827a5788cfd66879727c0c50765095e5df67387c53e6844c7ae7c86aeb3c",
+      "bytes": 2284576,
+      "sha256": "a927cbaca88ec159695f7a4dc9092bcbc89d207f796e8e0edaebf01a65e9c7c9",
       "budget": {
         "warn": 1800000,
-        "refuse": 2235000
+        "refuse": 2290000
       },
       "spans": [
         {
@@ -209,20 +209,20 @@
         {
           "element": "rapier-jxl-worker",
           "name": "jpeg.worker.mjs",
-          "bytes": 416052,
-          "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
+          "bytes": 448052,
+          "sha256": "b655f222948f1a8414ccc87ebf863154727143b3abbecbafe907d4c7733c4681"
         },
         {
           "element": "rapier-jxl-worker",
           "name": "still.worker.mjs",
-          "bytes": 841471,
-          "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
+          "bytes": 1144395,
+          "sha256": "3f4042a2d9b2b4b00ad1f1e8bd1cab440d2635743563d47ff6a35b898f625acf"
         },
         {
           "element": "rapier-jxl-worker",
           "name": "codec.mjs",
-          "bytes": 53394,
-          "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
+          "bytes": 70521,
+          "sha256": "08d658765d00d1590792bde1aa89a6ee4d0201e5dbd7b69242499a999961fdb6"
         },
         {
           "element": "rapier-platform-runtime",
@@ -258,19 +258,19 @@
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
           "bytes": 28077,
-          "sha256": "4d7749362d51bed1591a48321c1a41134f2f000d54f49b12179d4844e39ee107"
+          "sha256": "69b965455139f9eae442fdc8e702a81ee60d55e3a0ce67557ded44dac0147521"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 856,
-          "sha256": "4c58968a1fac2e53049eb8b6c5563c9b9a8ba33d08f8faae9b3f6f0607c46510"
+          "sha256": "454e36fb448d221b6cefebfd38f60415d87bc82f4065665bd6f80d32e101f7c9"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
           "bytes": 9824,
-          "sha256": "5c0bdecfa7f3ac4a29aecbacdc93f1a9676183bc23b655b6a5126b3da3e64645"
+          "sha256": "71d58cf4086bb1c3def903d3d28baceda06e4bb6810531f9d25ddf8e23a7a8be"
         },
         {
           "element": "rapier-styles-runtime",
@@ -305,14 +305,14 @@
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
-          "bytes": 2530157,
-          "sha256": "87394b2b3c85c0154054fbd786f6d70d02e34bf3f5868886c65b4653c691a232"
+          "bytes": 2531997,
+          "sha256": "6a2b6d47a3ea41c3a4dd1252b463c2284a3be9a38106c421149bf21e3823b0d4"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2441851,
-          "sha256": "06e5408e4eb3a5ce9a307cd4cbec9e53509721f31ee822e3e059a701c88ad396"
+          "bytes": 2442028,
+          "sha256": "93f64c03456a93d69dce5d5d16eac5ad2ff8369a9b2f294bce33642c0d7a6faf"
         }
       ],
       "parts": [
@@ -333,9 +333,9 @@
         },
         {
           "id": "presets",
-          "file": "rapier-presets-431503cf362751f4.txt",
-          "bytes": 252359,
-          "sri": "wcgoCSMYYv3WpxURldml7SERjFasQLAA5YFhG/KWDgIVGzQVWez7SDTpsMiWTR2/",
+          "file": "rapier-presets-daed1531fe635483.txt",
+          "bytes": 252306,
+          "sri": "jZgaSF0sgUnSiCCjv0DMZfCd/tBPK2+YzSk06IHlTyIj2sxWXwPYfpkZ1gpxEO5v",
           "scripts": [
             "presets/browser.js",
             "editor/composer.js"
@@ -355,9 +355,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-8f3d744c713ba3e3.txt",
-          "bytes": 611455,
-          "sri": "R8zViqYUtsMjLTm+YpqEpseovuXqqNxK4nXp65e2Fw9bOC4s50ezuIlb4F/iHwFZ",
+          "file": "rapier-drawing-3aeb936bfc6d395e.txt",
+          "bytes": 756726,
+          "sri": "PJqPwjwgDK9lc2VF+XIRUe0cyLDL0NFTP02egyQRkerpvEQPT0lZTkB+HERPyyJJ",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -389,11 +389,20 @@
             "draw/water-contact.mjs",
             "draw/water-fill.mjs",
             "images/jxl/v7/still.mjs",
+            "images/jxl/v7/result-operation.mjs",
+            "images/jxl/v7/result.mjs",
+            "images/jxl/v7/result-shape.mjs",
+            "images/jxl/v7/result-record.mjs",
+            "images/jxl/v7/ownership.mjs",
+            "images/jxl/v7/records.mjs",
+            "images/jxl/v7/fidelity.mjs",
+            "images/jxl/v7/drive.mjs",
+            "images/jxl/v7/result-reference.mjs",
+            "images/jxl/capture-protection.mjs",
             "images/jxl/effort-job.mjs",
             "images/jxl/bits.mjs",
             "images/jxl/frame.mjs",
             "images/jxl/admit.mjs",
-            "images/jxl/limits.mjs",
             "images/jxl/icc-write.mjs",
             "images/jxl/prefix.mjs",
             "images/jxl/screen-lz77.mjs",
@@ -402,134 +411,226 @@
             "images/jxl/screen-codes.mjs",
             "images/jxl/icc-profile.mjs",
             "images/jxl/icc-transform.mjs",
+            "images/jxl/color-transform.mjs",
             "images/jxl/modular-channel.mjs",
             "images/jxl/lossless.mjs",
             "images/jxl/lossless-coding.mjs",
             "images/jxl/admit-samples.mjs",
+            "images/jxl/sample-domain.mjs",
+            "images/jxl/color-info.mjs",
             "images/jxl/lossy.mjs",
+            "images/jxl/lossy-sections.mjs",
             "images/jxl/squeeze.mjs",
+            "images/jxl/capture-kernels.mjs",
+            "images/jxl/kernel-runtime.mjs",
+            "images/jxl/kernels-bytes.mjs",
+            "images/jxl/wasm-text.mjs",
+            "images/jxl/wasm-modules.mjs",
+            "images/jxl/build-version.mjs",
+            "images/jxl/wasm-interfaces.mjs",
+            "images/jxl/capture-wasm-error.mjs",
+            "images/jxl/weighted-policy.mjs",
             "images/jxl/photo-job.mjs",
             "images/jxl/effort-level.mjs",
             "images/jxl/photo-dct.mjs",
             "images/jxl/quality-calibration.mjs",
-            "images/jxl/photo-xyb.mjs",
             "images/jxl/exact-math.mjs",
+            "images/jxl/photo-xyb.mjs",
+            "images/jxl/photo-preference.mjs",
             "images/jxl/photo-v6.mjs",
             "images/jxl/memory-plan.mjs",
+            "images/jxl/butteraugli-memory.mjs",
+            "images/jxl/ssimulacra2-memory.mjs",
+            "images/jxl/ssimulacra2-input.mjs",
             "images/jxl/photo-bands.mjs",
             "images/jxl/offload.mjs",
             "images/jxl/screen.mjs",
+            "images/jxl/screen-samples.mjs",
             "images/jxl/photo-split.mjs",
+            "images/jxl/step-journal.mjs",
+            "images/jxl/photo-levels.mjs",
             "images/jxl/photo-v6-settings.mjs",
             "images/jxl/vardct.mjs",
-            "images/jxl/entropy.mjs",
+            "images/jxl/photo-shown.mjs",
+            "images/jxl/vardct-planes.mjs",
+            "images/jxl/vardct-header.mjs",
             "images/jxl/jpeg-tables.mjs",
-            "images/jxl/lf-coding.mjs",
-            "images/jxl/sampled.mjs",
-            "images/jxl/weighted.mjs",
-            "images/jxl/weighted-policy.mjs",
-            "images/jxl/ans.mjs",
-            "images/jxl/context-map.mjs",
-            "images/jxl/rct-search.mjs",
-            "images/jxl/coefficient-effort.mjs",
-            "images/jxl/split-hooks.mjs",
-            "images/jxl/coefficient-ans.mjs",
-            "images/jxl/screen-search.mjs",
-            "images/jxl/screen-patches.mjs",
-            "images/jxl/screen-photo-regions.mjs",
-            "images/jxl/exact-ladder.mjs",
-            "images/jxl/local.mjs",
-            "images/jxl/palette-search.mjs",
-            "images/jxl/screen-local.mjs",
-            "images/jxl/photo-v6-blocks.mjs",
-            "images/jxl/varblocks.mjs",
-            "images/jxl/aq.mjs",
-            "images/jxl/vardct-strategies.mjs",
-            "images/jxl/afv-basis.mjs",
+            "images/jxl/dct8-contexts.mjs",
             "images/jxl/quantization-params.mjs",
+            "images/jxl/entropy.mjs",
+            "images/jxl/entropy-log.mjs",
             "images/jxl/quantization-defaults.mjs",
             "images/jxl/coefficient-orders.mjs",
-            "images/jxl/block-split.mjs",
+            "images/jxl/vardct-strategies.mjs",
+            "images/jxl/vardct-tables.mjs",
+            "images/jxl/coefficient-layout.mjs",
+            "images/jxl/afv-basis.mjs",
+            "images/jxl/vardct-bases.mjs",
+            "images/jxl/vardct-ranks.mjs",
+            "images/jxl/vardct-progressive.mjs",
+            "images/jxl/vardct-contexts.mjs",
+            "images/jxl/capture-patches.mjs",
+            "images/jxl/screen-crop.mjs",
+            "images/jxl/capture-headers.mjs",
+            "images/jxl/lf-coding.mjs",
+            "images/jxl/lf-plans.mjs",
+            "images/jxl/capture-trees.mjs",
+            "images/jxl/rct-search.mjs",
+            "images/jxl/capture-codec.mjs",
+            "images/jxl/capture-ans.mjs",
+            "images/jxl/ans-core.mjs",
+            "images/jxl/lf-options.mjs",
+            "images/jxl/coefficient-effort.mjs",
+            "images/jxl/ans.mjs",
+            "images/jxl/context-map.mjs",
+            "images/jxl/coefficient-ans.mjs",
+            "images/jxl/split-hooks.mjs",
+            "images/jxl/weighted.mjs",
+            "images/jxl/screen-photo-regions.mjs",
+            "images/jxl/sampled.mjs",
+            "images/jxl/exact-ladder.mjs",
             "images/jxl/photo-split-ladder.mjs",
+            "images/jxl/local.mjs",
+            "images/jxl/photo-v6-blocks.mjs",
+            "images/jxl/varblocks.mjs",
+            "images/jxl/varblock-core.mjs",
+            "images/jxl/photo-mask.mjs",
+            "images/jxl/varblock-write.mjs",
+            "images/jxl/photo-distance-cells.mjs",
+            "images/jxl/aq.mjs",
+            "images/jxl/aq-cursor-kernels.mjs",
+            "images/jxl/block-split.mjs",
             "images/jxl/kernels.mjs",
-            "images/jxl/wasm-modules.mjs",
-            "images/jxl/build-version.mjs",
             "images/jxl/arena.mjs",
             "images/jxl/memory-device.mjs",
             "images/jxl/photo-v6-search.mjs",
             "images/jxl/exact-region.mjs",
             "images/jxl/reconstruct.mjs",
-            "images/jxl/butteraugli.mjs",
-            "images/jxl/ssimulacra2.mjs",
-            "images/jxl/s2-cells.mjs",
-            "images/jxl/int-spec.mjs",
-            "images/jxl/photo-advanced.mjs",
-            "images/jxl/vardct-progressive.mjs",
-            "images/jxl/noise.mjs",
-            "images/jxl/lf-frames.mjs",
+            "images/jxl/photo-rebuild.mjs",
+            "images/jxl/rebuild-kernels.mjs",
+            "images/jxl/rebuild-kernels-bytes.mjs",
+            "images/jxl/kernel-engine.mjs",
+            "images/jxl/vardct-render.mjs",
+            "images/jxl/vardct-inverse.mjs",
+            "images/jxl/opsin.mjs",
             "images/jxl/framing.mjs",
             "images/jxl/container.mjs",
+            "images/jxl/jpeg-coefficients.mjs",
+            "images/jxl/format-fields.mjs",
+            "images/jxl/reconstruct-dct8.mjs",
+            "images/jxl/reconstruct-planes.mjs",
+            "images/jxl/rgb8-output.mjs",
+            "images/jxl/rgb8-thresholds.mjs",
+            "images/jxl/butteraugli.mjs",
+            "images/jxl/butteraugli-arithmetic.mjs",
+            "images/jxl/photo-reconstruct-bands.mjs",
+            "images/jxl/s2-cells.mjs",
+            "images/jxl/ssimulacra2.mjs",
+            "images/jxl/ssimulacra2-weights.mjs",
+            "images/jxl/ssimulacra2-constants.mjs",
+            "images/jxl/ssimulacra2-reference.mjs",
+            "images/jxl/ssimulacra2-arithmetic.mjs",
+            "images/jxl/ssimulacra2-fused-bytes.mjs",
+            "images/jxl/ssimulacra2-gaussian.mjs",
+            "images/jxl/int-spec.mjs",
+            "images/jxl/photo-measure.mjs",
+            "images/jxl/photo-native-scores.mjs",
+            "images/jxl/photo-output.mjs",
+            "images/jxl/photo-search.mjs",
+            "images/jxl/varblock-measured.mjs",
+            "images/jxl/photo-quality-search.mjs",
+            "images/jxl/photo-v6-provider.mjs",
+            "images/jxl/photo-image-write.mjs",
+            "images/jxl/photo-whole-policy.mjs",
+            "images/jxl/photo-quality-table.mjs",
+            "images/jxl/photo-browser-margin.mjs",
+            "images/jxl/photo-advanced.mjs",
+            "images/jxl/noise.mjs",
+            "images/jxl/lf-frames.mjs",
             "images/jxl/photo-crop.mjs",
             "images/jxl/photo-layout.mjs",
-            "images/jxl/format-fields.mjs",
             "images/jxl/photo-extras.mjs",
             "images/jxl/planar-input.mjs",
             "images/jxl/planar-planes.mjs",
             "images/jxl/weighted-custom.mjs",
             "images/jxl/channels.mjs",
             "images/jxl/icc.mjs",
-            "images/jxl/color-info.mjs",
             "images/jxl/channel-lossless.mjs",
             "images/jxl/planar-squeeze.mjs",
             "images/jxl/modular-progressive.mjs",
             "images/jxl/planar-transforms.mjs",
             "images/jxl/implicit-palette.mjs",
+            "images/jxl/v7/feature-photo.mjs",
+            "images/jxl/photo-picture-measure.mjs",
+            "images/jxl/photo-samples.mjs",
+            "images/jxl/color-encoding.mjs",
+            "images/jxl/v7/measured-search.mjs",
+            "images/jxl/photo-output-policy.mjs",
+            "images/jxl/v7/common.mjs",
+            "images/jxl/screen-photo-mixed.mjs",
+            "images/jxl/screen-photo-borders.mjs",
+            "images/jxl/layers-core.mjs",
+            "images/jxl/v7/encode-options.mjs",
+            "images/jxl/v7/describe.mjs",
+            "images/jxl/v7/first-region-option.mjs",
+            "images/jxl/gpu-queue.mjs",
+            "images/jxl/turn.mjs",
+            "images/jxl/v7/score-target.mjs",
             "images/jxl/score.mjs",
             "images/jxl/async-job.mjs",
-            "images/jxl/jpeg-ans-effort.mjs",
-            "images/jxl/jpeg-effort.mjs",
-            "images/jxl/coefficient-coding.mjs",
-            "images/jxl/jpeg-job.mjs",
-            "images/jxl/jfif.mjs",
-            "images/jxl/jpeg-reconstruction.mjs",
-            "images/jxl/jpeg-coefficients.mjs",
-            "images/jxl/brotli.mjs",
+            "images/jxl/v7/acceleration.mjs",
+            "images/jxl/gpu-core.mjs",
+            "images/jxl/gpu-device.mjs",
+            "images/jxl/gpu-arithmetic.mjs",
+            "images/jxl/gpu-blocks16.mjs",
+            "images/jxl/gpu-blocks.mjs",
+            "images/jxl/gpu-capture-blocks.mjs",
+            "images/jxl/v7/kernels-ready.mjs",
+            "images/jxl/v7/webgpu.mjs",
+            "images/jxl/gpu-gate.mjs",
             "images/jxl/source.mjs",
-            "images/jxl/capture-codec.mjs",
+            "images/jxl/v7/preparation-jpeg.mjs",
+            "images/jxl/sample-transforms.mjs",
             "images/jxl/v7/instant.mjs",
-            "images/jxl/index.mjs",
-            "images/jxl/v7/common.mjs",
-            "images/jxl/screen-floor.mjs",
-            "images/jxl/v7/encode-options.mjs",
-            "images/jxl/v7/fidelity.mjs",
-            "images/jxl/v7/describe.mjs",
-            "images/jxl/gpu-queue.mjs",
+            "images/jxl/core-steps.mjs",
             "images/jxl/parallel-drive.mjs",
             "images/jxl/job-drive.mjs",
+            "images/jxl/screen-floor.mjs",
             "images/jxl/parallel-serve.mjs",
-            "images/jxl/v7/drive.mjs",
             "images/jxl/v7/first-region.mjs",
             "images/jxl/toc-permutation.mjs",
             "images/jxl/section-order.mjs",
-            "images/jxl/v7/first-region-option.mjs",
             "images/jxl/v7/input.mjs",
+            "images/jxl/v7/input-native.mjs",
             "images/jxl/v7/surface.mjs",
             "images/jxl/v7/webgl-read.mjs",
             "images/jxl/v7/video.mjs",
-            "images/jxl/v7/records.mjs",
-            "images/jxl/v7/ownership.mjs",
+            "images/jxl/v7/phone-container.mjs",
             "images/jxl/v7/bands.mjs",
-            "images/jxl/layers-core.mjs",
             "images/jxl/v7/band-size.mjs",
             "images/jxl/v7/band-recode.mjs",
+            "images/jxl/v7/low-photo.mjs",
+            "images/jxl/photo-low.mjs",
+            "images/jxl/photo-low-settings.mjs",
+            "images/jxl/v7/ordinary-still-policy.mjs",
+            "images/jxl/photo-intent.mjs",
+            "images/jxl/v7/low-webp-quality.mjs",
+            "images/jxl/v7/webp-quality.mjs",
+            "images/jxl/v7/native-still-prediction.mjs",
+            "images/jxl/v7/still-photo-target.mjs",
+            "images/jxl/photo-whole-search.mjs",
+            "images/jxl/photo-plane-levels.mjs",
+            "images/jxl/photo-plane-search.mjs",
+            "images/jxl/photo-plane-measured.mjs",
+            "images/jxl/photo-measured-steps.mjs",
+            "images/jxl/photo-whole-rebuild.mjs",
+            "images/jxl/photo-reference.mjs",
             "images/jxl/photo-hdr.mjs",
+            "images/jxl/sample-values.mjs",
             "images/jxl/v7/rows.mjs",
             "images/jxl/v7/texture.mjs",
-            "images/jxl/v7/acceleration.mjs",
-            "images/jxl/v7/kernels-ready.mjs",
-            "images/jxl/capture-wasm-error.mjs",
-            "images/jxl/v7/webgpu.mjs",
-            "images/jxl/gpu-gate.mjs",
+            "images/jxl/v7/verb-steps.mjs",
+            "images/jxl/v7/jpeg-size.mjs",
             "draw/paint-gpu.mjs",
             "draw/paint-gpu-flat.mjs",
             "draw/paint-gpu-wet.mjs",
@@ -623,9 +724,9 @@
         },
         {
           "id": "jxlcomplete",
-          "file": "rapier-jxlcomplete-fa323b6d2db2ca30.txt",
-          "bytes": 408838,
-          "sri": "bU/5QLBN8fmda10uNImGxmEWX2dZ+8BxLLllAuTnLaHk/VultBYyAZFb45aq+1Ox",
+          "file": "rapier-jxlcomplete-da4ac035e8121a05.txt",
+          "bytes": 524723,
+          "sri": "i2MgoRYdh3QxAFR7gzEnFjmU0XpKwY2T6By7fHJOgBw1qVOHFUM1YFjN1IggyEJl",
           "scripts": [
             "jxl/complete.js"
           ],
@@ -691,9 +792,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-648fda8eaa3c095e.txt",
-          "bytes": 394746,
-          "sri": "itxx0lmZsElbJYZlN8hBxHJo9JzspWLU/SXPrhGICfhcXMV6+tcP4Cnacn1diTZi",
+          "file": "rapier-notes-d6e21517c8103dd4.txt",
+          "bytes": 394865,
+          "sri": "2Yx20ZglJjI8mn6GiE3a+mfZz/kgYvgrCna5Fvb2a8IoYMB1a7YV8pkYXtkOWf3B",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -1225,16 +1326,10 @@
           "paintGpuShaderSource"
         ],
         "images/jxl/v7/still.mjs": [
-          "capture",
           "supported",
           "configureWasm",
-          "prepare"
-        ],
-        "images/jxl/v7/capture.mjs": [
-          "configureWasm",
-          "supported",
           "prepare",
-          "capture"
+          "resultJSON"
         ],
         "images/jxl/v7/capture-support.mjs": [
           "supported",
@@ -1242,23 +1337,8 @@
           "captureSupported",
           "requireCapture"
         ],
-        "images/jxl/v7/capture-core.mjs": [
-          "prepareCapture",
-          "captureWith"
-        ],
-        "images/jxl/v7/run-capture.mjs": [
-          "prepareCapture",
-          "admitCapture",
-          "runCapture"
-        ],
-        "images/jxl/v7/capture-options.mjs": [
-          "admitCapture"
-        ],
-        "images/jxl/v7/webgpu.mjs": [
-          "webgpuUsable",
-          "webgpuSetting"
-        ],
         "images/jxl/v7/rows.mjs": [
+          "untilAborted",
           "isRowBridge",
           "rowBridge",
           "bridgedRows"
@@ -1268,25 +1348,66 @@
           "hdrSteps",
           "hdrLossySteps"
         ],
+        "images/jxl/photo-plane-search.mjs": [
+          "plainLayout",
+          "planeRequest",
+          "planeLevelsSteps",
+          "planeLayoutSteps"
+        ],
+        "images/jxl/photo-plane-levels.mjs": [
+          "plainLayoutBlock"
+        ],
+        "images/jxl/v7/ordinary-still-policy.mjs": [
+          "ordinaryStillDecision"
+        ],
+        "images/jxl/v7/native-still-prediction.mjs": [
+          "NATIVE_STILL_CALIBRATION"
+        ],
+        "images/jxl/v7/low-webp-quality.mjs": [
+          "LOW_WEBP_CALIBRATION",
+          "lowPhotoReading",
+          "lowCaptureReading",
+          "lowWebpQuality",
+          "settleLowWebp"
+        ],
+        "images/jxl/v7/webp-quality.mjs": [
+          "settleWebp",
+          "webpCoding"
+        ],
+        "images/jxl/v7/low-photo.mjs": [
+          "encodeLowSplit",
+          "makeLowUpload",
+          "finishLowUpload",
+          "closeLowUpload"
+        ],
+        "images/jxl/photo-low.mjs": [
+          "lowWholePhotoSteps",
+          "encodeLowSplit",
+          "makeLowUpload",
+          "finishLowUpload",
+          "closeLowUpload",
+          "lowPhotoUsesFilter",
+          "lowPhotoBudgets",
+          "lowPhotoFilteredQuality",
+          "chooseLowPhoto",
+          "lowPhotoSizeFailure",
+          "LOW_PHOTO_SMALL_BUDGET"
+        ],
         "images/jxl/v7/band-size.mjs": [
           "BAND_PIXELS",
           "COMPACT_WHOLE",
           "WHOLE_BYTES",
           "wholeBudget"
         ],
-        "images/jxl/layers-core.mjs": [
-          "LIMITS",
-          "LAYER_BLEND_MODES"
+        "images/jxl/v7/input.mjs": [
+          "jpegDimensions",
+          "jpegBlobDimensions",
+          "admitJpeg"
         ],
-        "images/jxl/v7/ownership.mjs": [
-          "DEFAULT_PIXELS",
-          "SNAPSHOTS",
-          "withCost",
-          "MAX_NODES",
-          "record",
-          "dimensions",
-          "measure",
-          "snapshot"
+        "images/jxl/v7/input-native.mjs": [
+          "jpegDimensions",
+          "jpegBlobDimensions",
+          "admitJpeg"
         ],
         "images/jxl/v7/surface.mjs": [
           "foreignSpace"
@@ -1316,101 +1437,40 @@
         "images/jxl/job-drive.mjs": [
           "serialJob"
         ],
-        "images/jxl/v7/describe.mjs": [
-          "decodedFields",
-          "decodedDescription"
-        ],
-        "images/jxl/v7/fidelity.mjs": [
-          "exactFidelity",
-          "measuredFidelity",
-          "captureFidelity"
-        ],
-        "images/jxl/index.mjs": [
+        "images/jxl/core-steps.mjs": [
           "LIMITS",
           "encode",
-          "encodeAsync"
+          "coreSteps"
         ],
-        "images/jxl/gpu-drive.mjs": [
-          "gpuWanted",
-          "driveGpu",
-          "gpuJob"
-        ],
-        "images/jxl/gpu-gate.mjs": [
-          "GPU_FROM"
-        ],
-        "images/jxl/capture-codec.mjs": [
-          "compileCaptureKernels",
-          "CAPTURE_PREDICTOR_PROBE",
-          "CAPTURE_BASE",
-          "scanColoursScript",
-          "admitCapture",
-          "captureBandShape",
-          "captureBand",
-          "encodeCaptureBytes"
-        ],
-        "images/jxl/screen-crop.mjs": [
-          "pixelKeys",
-          "screenCrop",
-          "writeScreenBackground",
-          "screenRegions",
-          "commonSample",
-          "screenColumns"
-        ],
-        "images/jxl/capture-kernels.mjs": [
-          "WEIGHTED_BANDS",
-          "WEIGHTED_CONTEXT",
-          "LOG_MANTISSA",
-          "compileCaptureKernels",
-          "prepareCaptureKernels",
-          "captureWeighted",
-          "captureHold",
-          "captureRelease",
-          "capturePrices",
-          "captureCopies",
-          "captureWeightedPieces",
-          "SCAN_WORDS",
-          "captureLowestInk",
-          "captureCropEdges",
-          "captureRowsUnlike",
-          "captureColumnsUnlike",
-          "captureScan",
-          "treeArena",
-          "captureLiterals",
-          "capturePieceCounts",
-          "requireCaptureKernels",
-          "captureResiduals"
-        ],
-        "images/jxl/capture-kernels-bytes.mjs": [
-          "CAPTURE"
+        "images/jxl/sample-transforms.mjs": [
+          "resizeSamples"
         ],
         "images/jxl/source.mjs": [
           "readSource"
         ],
-        "images/jxl/jpeg-ans-effort.mjs": [
-          "PREFIX_LADDER_PIXELS",
-          "jpegAnsFirstSteps",
-          "jpegAnsEffortSteps"
+        "images/jxl/v7/preparation-jpeg.mjs": [
+          "jpegDisplayDimensions",
+          "jpegReconstruction"
         ],
-        "images/jxl/jpeg-job.mjs": [
-          "jpegAnswer",
-          "jpegSteps"
+        "images/jxl/gpu-gate.mjs": [
+          "GPU_FROM"
         ],
-        "images/jxl/jpeg-reconstruction.mjs": [
-          "RECONSTRUCTION_PAYLOAD_BYTES",
-          "RECONSTRUCTION_SCAN_EVENTS",
-          "unpredictICC",
-          "restoreJPEG"
+        "images/jxl/v7/webgpu.mjs": [
+          "webgpuUsable",
+          "webgpuSetting"
         ],
-        "images/jxl/jpeg-coefficients.mjs": [
-          "JxlBits",
-          "readEncodedICC",
-          "skipICC",
-          "readMaTree",
-          "modular",
-          "readJPEGCoefficients"
+        "images/jxl/gpu-capture-blocks.mjs": [
+          "captureBlockPlanes"
         ],
-        "images/jxl/jfif.mjs": [
-          "profileSpace"
+        "images/jxl/gpu-blocks.mjs": [
+          "bTr",
+          "gpuBlocksStats"
+        ],
+        "images/jxl/gpu-blocks16.mjs": [
+          "b16Tr",
+          "b16Tables",
+          "b16Blocks",
+          "gpuBlocks16Stats"
         ],
         "images/jxl/score.mjs": [
           "LIMITS",
@@ -1423,6 +1483,26 @@
         "images/jxl/async-job.mjs": [
           "finishEncoding"
         ],
+        "images/jxl/v7/describe.mjs": [
+          "decodedFields",
+          "decodedDescription"
+        ],
+        "images/jxl/screen-photo-mixed.mjs": [
+          "compileCaptureKernels"
+        ],
+        "images/jxl/layers-core.mjs": [
+          "LIMITS",
+          "LAYER_BLEND_MODES"
+        ],
+        "images/jxl/photo-output-policy.mjs": [
+          "photoOutputConstraintMessage"
+        ],
+        "images/jxl/photo-samples.mjs": [
+          "photoLimits"
+        ],
+        "images/jxl/color-encoding.mjs": [
+          "signature"
+        ],
         "images/jxl/photo-advanced.mjs": [
           "TRANSFORMS",
           "photonNoise",
@@ -1432,6 +1512,10 @@
         ],
         "images/jxl/photo-extras.mjs": [
           "snapshotPhotoExtras",
+          "photoExtraChannelData",
+          "firstGroupedPhotoExtra",
+          "photoExtraGlobalPieces",
+          "photoExtraGroupPieces",
           "photoExtraStreams"
         ],
         "images/jxl/channels.mjs": [
@@ -1444,9 +1528,11 @@
           "encodeProfile",
           "encodeProfileSteps"
         ],
-        "images/jxl/format-fields.mjs": [
-          "EXTRA_CHANNEL_TYPES",
-          "writeDepth"
+        "images/jxl/planar-planes.mjs": [
+          "copyPlanarRow",
+          "PLANAR_PREDICTORS",
+          "planarSampleHeight",
+          "planarPredictorCost"
         ],
         "images/jxl/noise.mjs": [
           "photonNoise"
@@ -1456,8 +1542,9 @@
           "GABORISH",
           "AQ",
           "VARBLOCK_IDS",
+          "meets",
+          "qualitySteps",
           "nativeSsimulacra2",
-          "S2_MARGIN",
           "NATIVE_DOUBT",
           "BA3_DOUBT",
           "BA_DOUBT",
@@ -1466,17 +1553,62 @@
           "gpuDoubt",
           "runSync",
           "runAsync",
+          "stillPhotoProvider",
+          "S2_MARGIN",
           "decisionSteps",
-          "candidateImage",
           "candidateImageSteps",
+          "candidateImage",
           "writeImage",
-          "meets",
           "gpuStats",
           "forcedBands",
           "s2GuidedBlocksSteps",
           "s2GuidedBlocks",
           "s2EffortSearchSteps",
           "certain"
+        ],
+        "images/jxl/photo-browser-margin.mjs": [
+          "BROWSER_MARGIN",
+          "browserMargin"
+        ],
+        "images/jxl/photo-quality-table.mjs": [
+          "QUALITY_TARGETS",
+          "QUALITY_CALIBRATION",
+          "qualityTarget"
+        ],
+        "images/jxl/photo-image-write.mjs": [
+          "writeImageSteps"
+        ],
+        "images/jxl/photo-search.mjs": [
+          "meets",
+          "qualitySteps",
+          "candidateApplies",
+          "candidateOrder",
+          "smallerCandidate",
+          "candidatePool",
+          "decisionSteps",
+          "candidateImageSteps"
+        ],
+        "images/jxl/photo-quality-search.mjs": [
+          "qualityMargin",
+          "qualityMarginDoubt",
+          "qualitySearchStep",
+          "qualityUndecided"
+        ],
+        "images/jxl/varblock-measured.mjs": [
+          "RATE_DOUBT",
+          "MAP_TOTAL_DOUBT",
+          "RATE_TOTAL_DOUBT",
+          "sameDct8ImageValue",
+          "sameDct8ImageValues",
+          "sameDct8QuantTable",
+          "sameDct8Block",
+          "sameDct8Image"
+        ],
+        "images/jxl/photo-native-scores.mjs": [
+          "photoNativeScores"
+        ],
+        "images/jxl/photo-output.mjs": [
+          "gammaRGBA"
         ],
         "images/jxl/s2-cells.mjs": [
           "S2C_LIN",
@@ -1534,9 +1666,27 @@
           "roundDivB",
           "INT_WGSL"
         ],
+        "images/jxl/ssimulacra2.mjs": [
+          "recursiveGaussian",
+          "srgbToLinear",
+          "downsample"
+        ],
+        "images/jxl/ssimulacra2-gaussian.mjs": [
+          "recursiveGaussian",
+          "GAUSS"
+        ],
+        "images/jxl/ssimulacra2-arithmetic.mjs": [
+          "ssimulacra2WorkBytes",
+          "FUSED_PROBE",
+          "compileFusedMetric",
+          "fusedMetric"
+        ],
         "images/jxl/exact-region.mjs": [
-          "CROP_MARGIN",
           "subBase",
+          "BAND_ROWS",
+          "bandedMap",
+          "bandedScores",
+          "CROP_MARGIN",
           "cropFor",
           "regionMeasure",
           "regionJob",
@@ -1549,12 +1699,15 @@
           "exactAnswerer",
           "mergeRegions",
           "poolSize",
-          "BAND_ROWS",
-          "bandedMap",
-          "bandedScores",
           "CROP_COST",
           "WHOLE_COST",
           "cropsCost"
+        ],
+        "images/jxl/photo-reconstruct-bands.mjs": [
+          "subBase",
+          "BAND_ROWS",
+          "bandedMap",
+          "bandedScores"
         ],
         "images/jxl/worker-reservation.mjs": [
           "claimWorkerReservation",
@@ -1565,30 +1718,88 @@
         "images/jxl/worker-assets.mjs": [
           "spawnJxlHelper"
         ],
-        "images/jxl/ssimulacra2.mjs": [
-          "srgbToLinear",
-          "recursiveGaussian",
-          "s2Blur",
-          "positiveXYB",
-          "positiveXYBPlane",
-          "downsample"
-        ],
         "images/jxl/butteraugli.mjs": [
-          "MALTA_LF",
-          "MALTA_HF",
-          "blurKernel",
-          "blur",
-          "opsinDynamics",
-          "separateFrequencies",
-          "subsample2x",
+          "prepareButteraugli",
+          "butteraugliAllocation",
+          "butteraugliWorkBytes",
+          "butteraugliRowsLayout",
           "pnorm"
         ],
+        "images/jxl/butteraugli-arithmetic.mjs": [
+          "prepareButteraugli"
+        ],
         "images/jxl/reconstruct.mjs": [
-          "half",
           "rcLlfFromDC",
-          "inverseBasis",
           "coefficientPlanes",
-          "epfInverseSigma"
+          "inverseBlockRows",
+          "inverseBlockColumns",
+          "reconstructionDCSteps",
+          "reconstructionBlockScale",
+          "dequantizeStrategyAC",
+          "addStrategyChroma",
+          "reconstructionBlockDC",
+          "reconstructionBlockMeans",
+          "writeReconstructionLLF",
+          "epfInverseSigma",
+          "reconstructRGB",
+          "ycbcrPixels",
+          "half",
+          "inverseBasis"
+        ],
+        "images/jxl/reconstruct-planes.mjs": [
+          "half",
+          "inverseBasis",
+          "rcLlfFromDC",
+          "coefficientPlanes",
+          "inverseBlockRows",
+          "inverseBlockColumns",
+          "reconstructionDCSteps",
+          "reconstructionBlockScale",
+          "dequantizeStrategyAC",
+          "addStrategyChroma",
+          "reconstructionBlockDC",
+          "reconstructionBlockMeans",
+          "writeReconstructionLLF",
+          "epfInverseSigma",
+          "reconstructRGB",
+          "ycbcrPixels"
+        ],
+        "images/jxl/rgb8-output.mjs": [
+          "toRGBAExact"
+        ],
+        "images/jxl/reconstruct-dct8.mjs": [
+          "fillInverseBasis",
+          "rgbPixels",
+          "reconstructDCT8RGB"
+        ],
+        "images/jxl/opsin.mjs": [
+          "LIMITS",
+          "prepareOpsinTransform",
+          "withOpsin"
+        ],
+        "images/jxl/format-fields.mjs": [
+          "EXTRA_CHANNEL_TYPES",
+          "writeDepth"
+        ],
+        "images/jxl/jpeg-coefficients.mjs": [
+          "requireJPEG",
+          "readEncodedICC",
+          "skipICC",
+          "readMaTree",
+          "modular",
+          "readJPEGCoefficients"
+        ],
+        "images/jxl/vardct-render.mjs": [
+          "renderBlock8"
+        ],
+        "images/jxl/vardct-inverse.mjs": [
+          "scaledBasis",
+          "restoreRows",
+          "restorationSizes",
+          "restorationRegions"
+        ],
+        "images/jxl/rebuild-kernels.mjs": [
+          "REBUILD_EXPORTS"
         ],
         "images/jxl/photo-v6-blocks.mjs": [
           "fullBlocksOnDevice",
@@ -1597,25 +1808,19 @@
           "grainRegime"
         ],
         "images/jxl/memory-device.mjs": [
-          "BAND_PIXELS",
           "COMPACT_WHOLE"
         ],
         "images/jxl/block-split.mjs": [
           "serveBlockSplit"
         ],
         "images/jxl/kernels.mjs": [
-          "configureKernels",
-          "ensureKernels",
           "kernelMode",
           "kernelRequest",
           "disableEntropyKernels",
-          "prepareKernels"
-        ],
-        "images/jxl/kernels-bytes.mjs": [
-          "SIMD",
-          "SIMD_JPEG",
-          "SIMD_UPLOAD",
-          "SIMD_PROBE"
+          "sampleTable",
+          "sampleFilter",
+          "sampleSum",
+          "sampleFinish"
         ],
         "images/jxl/jpeg-kernels.mjs": [
           "jpegKernels",
@@ -1625,47 +1830,77 @@
         "images/jxl/jpeg-kernels-bytes.mjs": [
           "JPEG_KERNELS"
         ],
-        "images/jxl/wasm-text.mjs": [
-          "KEY",
-          "storedWasmByte",
-          "wasmBytes"
+        "images/jxl/aq.mjs": [
+          "blockDistances",
+          "smoothField",
+          "MEAN_DOUBT",
+          "fieldRanges",
+          "certifyPath",
+          "maskDoubtOver",
+          "aqActiveCount",
+          "aqZeroDistances",
+          "aqCheckActiveDistances",
+          "aqFieldRaw",
+          "aqBlockRegions"
         ],
-        "images/jxl/wasm-modules.mjs": [
-          "wasmBundle",
-          "configureWasm",
-          "configureModules",
-          "suppliedWasm",
-          "hasWasmModule",
-          "compileWasm",
-          "wasmModule"
-        ],
-        "images/jxl/photo-split-ladder.mjs": [
-          "encodeSplitLadder"
+        "images/jxl/aq-cursor-kernels.mjs": [
+          "pathTerm"
         ],
         "images/jxl/varblocks.mjs": [
           "nzBucket",
           "token",
           "VB_DOUBT",
           "TransformCache",
+          "auditLevels",
+          "lazyStrategyImage",
+          "sumRateError",
+          "sumStrategyValues",
+          "strategyCertifiedRateError",
+          "addStrategyMapCells",
+          "strategyMeasuredRateTotalDoubt",
+          "strategyMeasuredPrice",
+          "createStrategySelector",
+          "strategyFamilyCount",
+          "revertStrategyFamily",
           "strategyCosts",
           "learnedOrders",
           "encodeStrategyImage",
           "optimalLearnedOrders",
           "encodeXYBStrategies",
-          "RATE_DOUBT",
-          "MAP_TOTAL_DOUBT",
-          "RATE_TOTAL_DOUBT",
-          "sameDct8Image"
+          "cellSums"
         ],
-        "images/jxl/vardct-strategies.mjs": [
-          "inverseScaledDCT",
-          "requantizeStrategySteps"
+        "images/jxl/varblock-write.mjs": [
+          "learnedOrders",
+          "encodeStrategyImage",
+          "optimalLearnedOrders"
         ],
-        "images/jxl/aq.mjs": [
-          "smoothField",
-          "MEAN_DOUBT",
-          "fieldRanges",
-          "certifyPath"
+        "images/jxl/varblock-core.mjs": [
+          "nzBucket",
+          "strategyRatePrediction",
+          "addStrategyRateBlock",
+          "addStrategyRateTotals",
+          "finishStrategyRateTotals",
+          "fillStrategyRateBits",
+          "VB_DOUBT",
+          "pixelWeights",
+          "fillStrategyHigh",
+          "strategyTableEnvironment",
+          "addStrategyBandFit",
+          "finishStrategyBandFit",
+          "fillStrategyTableTargets",
+          "strategyBandTarget",
+          "strategyTableParameters",
+          "channelNorm",
+          "TransformCache",
+          "VB_CONFIG",
+          "VB_NZ"
+        ],
+        "images/jxl/photo-mask.mjs": [
+          "maskEnergyRange",
+          "maskDoubtSumsRange",
+          "normalizeMaskDoubts",
+          "maskWeightsRange",
+          "normalizeMaskWeights"
         ],
         "images/jxl/effort-job.mjs": [
           "losslessScreenCandidate",
@@ -1673,50 +1908,42 @@
           "minimumSearchDataBits",
           "searchSteps"
         ],
-        "images/jxl/screen-patches.mjs": [
-          "glyphDictionary",
-          "writePatchFrameHeader",
-          "writePatchDictionary",
-          "encodePatches"
+        "images/jxl/sampled.mjs": [
+          "sampleClusterPlan",
+          "sampledGroup",
+          "sampledPlanes"
         ],
-        "images/jxl/coefficient-ans.mjs": [
-          "BUDGETS",
-          "rungs",
-          "ansPlan"
+        "images/jxl/screen-photo-regions.mjs": [
+          "textTiles",
+          "photoCells",
+          "screenPhotoTiles"
         ],
         "images/jxl/photo-job.mjs": [
           "photoJob",
-          "photoJobSteps",
-          "photoProducer"
+          "photoJobSteps"
         ],
         "images/jxl/photo-v6.mjs": [
-          "UPLOAD_PICTURE"
+          "UPLOAD_PICTURE",
+          "UPLOAD_FLAT_PICTURE",
+          "photoV6Image"
+        ],
+        "images/jxl/coefficient-ans.mjs": [
+          "coefficientAnsPolicy",
+          "coefficientAnsKey",
+          "coefficientAnsNeedsFloor",
+          "coefficientSizeFailure",
+          "strategyAnsRuns"
         ],
         "images/jxl/photo-split.mjs": [
           "SPLIT_MIN_PIXELS",
-          "dcStep",
           "heldPieces",
-          "addCounts",
-          "splitImage",
           "splitShape",
           "photoSplitBands",
           "splitHasAlpha",
           "splitSteps",
           "splitEnd",
-          "splitRelease",
+          "splitCandidates",
           "encodeSplit"
-        ],
-        "images/jxl/coefficient-effort.mjs": [
-          "worthFastOrder"
-        ],
-        "images/jxl/lf-coding.mjs": [
-          "RUNGS",
-          "plainOrFixedLfCoder",
-          "plainBound"
-        ],
-        "images/jxl/sampled.mjs": [
-          "sampleClusterPlan",
-          "sampledGroup"
         ],
         "images/jxl/ans.mjs": [
           "LOG_LENGTHS",
@@ -1727,14 +1954,151 @@
         "images/jxl/context-map.mjs": [
           "codedMap"
         ],
-        "images/jxl/weighted-policy.mjs": [
-          "weightedTables"
+        "images/jxl/coefficient-effort.mjs": [
+          "worthFastOrder"
+        ],
+        "images/jxl/lf-coding.mjs": [
+          "RUNGS",
+          "learnedLfStream",
+          "retainLearnedLfStream",
+          "plainOrFixedLfCoder",
+          "plainBound",
+          "lfCoderForPlan"
+        ],
+        "images/jxl/capture-ans.mjs": [
+          "captureAnsTokens",
+          "writeCaptureAns"
+        ],
+        "images/jxl/ans-core.mjs": [
+          "LOG_CODES"
+        ],
+        "images/jxl/capture-codec.mjs": [
+          "DEFAULT_EFFORT",
+          "LEVELS",
+          "CAPTURE_TOOLS_LEAN",
+          "CAPTURE_PREDICTOR_PROBE",
+          "CAPTURE_PATCHES",
+          "CAPTURE_TIMING",
+          "CAPTURE_HELPERS",
+          "CAPTURE_GPU",
+          "CAPTURE_TRACE",
+          "CAPTURE_LEVEL",
+          "captureSkewEligible",
+          "captureSkewBits",
+          "captureSkewCopyCost",
+          "captureNearestStart",
+          "captureNearestRange",
+          "captureGroupThreshold",
+          "captureGroupCache",
+          "capturePredictorModes",
+          "captureGroupAlternatives",
+          "captureGroupBytes",
+          "captureResumeContext",
+          "captureChannelModel",
+          "capturePaletteModel",
+          "captureUseWeighted",
+          "captureWeightedModel",
+          "captureGradientModel",
+          "capturePruneCopies",
+          "LITERAL_CONFIGS",
+          "DISTANCE_CONFIGS",
+          "valueCounts",
+          "countTokens",
+          "sortedCode",
+          "distancePrice",
+          "distanceCode",
+          "spatialLookup",
+          "intervals",
+          "capturePaletteMeta",
+          "captureRowsBits",
+          "capturePaletteChoice",
+          "admitCapture",
+          "captureBandShape",
+          "captureBand",
+          "encodeAtlasSteps",
+          "captureBandSteps",
+          "captureCandidateLevels",
+          "captureCombinedLevel",
+          "markCaptureExact",
+          "captureExact",
+          "captureCopySpatial"
+        ],
+        "images/jxl/capture-trees.mjs": [
+          "nlogQ12",
+          "transformRanking",
+          "learnTree",
+          "codePlane",
+          "treeModel",
+          "weightedTree"
+        ],
+        "images/jxl/lf-plans.mjs": [
+          "lfPlanPlainMetadata"
         ],
         "images/jxl/vardct.mjs": [
           "writeModularStream",
           "encodeVarDCT"
         ],
+        "images/jxl/capture-patches.mjs": [
+          "PATCH_SLOT",
+          "PEEL_ADD",
+          "PEEL_MUL"
+        ],
+        "images/jxl/screen-crop.mjs": [
+          "commonSample"
+        ],
+        "images/jxl/vardct-contexts.mjs": [
+          "contextsFromThresholds"
+        ],
+        "images/jxl/vardct-strategies.mjs": [
+          "naturalOrderLower",
+          "naturalOrderUpper",
+          "fillScaledDCTBasis",
+          "transposeScaledDCTBasis",
+          "inverseScaledDCT",
+          "scaledDCTRows",
+          "scaledDCTColumns",
+          "requantizeStrategySteps"
+        ],
+        "images/jxl/vardct-bases.mjs": [
+          "fillScaledDCTBasis",
+          "transposeScaledDCTBasis"
+        ],
+        "images/jxl/coefficient-layout.mjs": [
+          "naturalOrderLower",
+          "naturalOrderUpper"
+        ],
+        "images/jxl/vardct-tables.mjs": [
+          "VARDCT_TABLE_FAMILIES"
+        ],
+        "images/jxl/quantization-params.mjs": [
+          "fillQuantParamDCT",
+          "quantParamMatrix",
+          "quantParamStepValues",
+          "quantParamDescriptor"
+        ],
+        "images/jxl/vardct-header.mjs": [
+          "varDCTGeometry",
+          "varDCTAnalysisInputs"
+        ],
+        "images/jxl/vardct-planes.mjs": [
+          "varDCTField",
+          "copyVarDCTDCSegment",
+          "varDCTLFInputs",
+          "varDCTLFBlockIndices",
+          "copyVarDCTLFBlocks"
+        ],
+        "images/jxl/photo-shown.mjs": [
+          "withShown",
+          "EXACT",
+          "exactCapture"
+        ],
+        "images/jxl/photo-levels.mjs": [
+          "splitBlockCounts"
+        ],
         "images/jxl/screen.mjs": [
+          "lookupPalette",
+          "screenPlan",
+          "screenFrameSteps",
           "encodeScreen"
         ],
         "images/jxl/photo-bands.mjs": [
@@ -1753,21 +2117,90 @@
           "poolWorkers",
           "s2SearchBytes"
         ],
+        "images/jxl/ssimulacra2-memory.mjs": [
+          "ssimulacra2WorkBytes"
+        ],
+        "images/jxl/butteraugli-memory.mjs": [
+          "butteraugliWorkBytes"
+        ],
+        "images/jxl/photo-preference.mjs": [
+          "photoPreferenceDifference"
+        ],
         "images/jxl/photo-dct.mjs": [
-          "dctBlocks"
+          "dct8Butterfly",
+          "photoQualityStep",
+          "areaFieldValue",
+          "applyAreaField",
+          "finishAreaFields",
+          "rgbCoefficientSteps"
         ],
         "images/jxl/lossy.mjs": [
+          "lossySections",
           "distanceFromQuality",
           "quantiserFor",
           "encodeLossy"
         ],
+        "images/jxl/lossy-sections.mjs": [
+          "distanceFromQuality",
+          "quantiserFor"
+        ],
         "images/jxl/squeeze.mjs": [
           "smoothTendency"
+        ],
+        "images/jxl/capture-kernels.mjs": [
+          "prepareCaptureKernels",
+          "SCAN_WORDS",
+          "captureMaskRuns",
+          "captureFillHoles",
+          "photoKernels",
+          "photoEngine",
+          "tokenArenaEnd"
+        ],
+        "images/jxl/wasm-modules.mjs": [
+          "wasmBundle",
+          "configureWasm",
+          "configureModules"
+        ],
+        "images/jxl/wasm-text.mjs": [
+          "KEY",
+          "storedWasmByte"
         ],
         "images/jxl/lossless.mjs": [
           "paletteKey",
           "planGroup",
           "encodeLossless"
+        ],
+        "images/jxl/v7/result-operation.mjs": [
+          "RESULT_REFERENCE",
+          "RAW_OPERATION",
+          "completionOptions",
+          "resultOperationWith"
+        ],
+        "images/jxl/v7/result.mjs": [
+          "resultJSON",
+          "missedResult"
+        ],
+        "images/jxl/v7/result-record.mjs": [
+          "unmeasuredResult",
+          "resultJSON"
+        ],
+        "images/jxl/v7/fidelity.mjs": [
+          "exactFidelity",
+          "measuredFidelity",
+          "captureFidelity",
+          "capturePhotoFidelity"
+        ],
+        "images/jxl/v7/ownership.mjs": [
+          "DEFAULT_PIXELS",
+          "SNAPSHOTS",
+          "HANDED",
+          "MAX_NODES",
+          "record",
+          "dimensions",
+          "snapshot"
+        ],
+        "images/jxl/v7/result-shape.mjs": [
+          "isImageResultShape"
         ],
         "draw/water-gpu.mjs": [
           "WATER_REFERENCE_TEXEL",
@@ -2031,11 +2464,15 @@
           "headerOf"
         ],
         "images/jxl/icc-transform.mjs": [
-          "profileTransform",
+          "linearFromTransform",
+          "linearFromTransformPlanes",
           "linearSrgbProfile"
         ],
         "images/jxl/screen-lz77.mjs": [
-          "screenResiduals"
+          "screenResiduals",
+          "screenLZ77",
+          "screenModel",
+          "writeScreenModel"
         ],
         "images/jxl/screen-codes.mjs": [
           "SCREEN_SPECIAL_DISTANCES"
@@ -2045,6 +2482,8 @@
         ],
         "images/jxl/frame.mjs": [
           "DC_GROUP_DIM",
+          "writeTOCSizes",
+          "tocMaxBytes",
           "addCounts"
         ],
         "images/jxl/framing.mjs": [
@@ -2061,12 +2500,21 @@
           "readMetadataAsync"
         ],
         "images/jxl/brotli.mjs": [
+          "compressBrotli",
           "decompressBrotli"
         ],
+        "images/jxl/entropy.mjs": [
+          "clusterTokenCounts"
+        ],
+        "images/jxl/step-journal.mjs": [
+          "SAVED",
+          "Unread",
+          "lazySource",
+          "encodeValue",
+          "decodeValue"
+        ],
         "images/jxl/prefix.mjs": [
-          "codeLengths",
-          "compactCode",
-          "prefixCodeBits"
+          "codeLengths"
         ],
         "images/jxl/v7/edit-changes.mjs": [
           "METADATA",
@@ -2075,8 +2523,7 @@
           "admitEdit"
         ],
         "images/jxl/v7/bytes.mjs": [
-          "encodedByteLength",
-          "copyBytes"
+          "encodedByteLength"
         ],
         "images/jxl/container-stream.mjs": [
           "containerChunks",
@@ -2090,6 +2537,7 @@
           "RECONSTRUCTION",
           "JUMBF",
           "LEVEL",
+          "withJPEGReconstruction",
           "jpegReconstruction"
         ],
         "images/jxl/v7/header-fields.mjs": [
@@ -2135,6 +2583,16 @@
           "float16Bits",
           "canonicalCodes",
           "entropyLog2"
+        ],
+        "images/jxl/v7/primitives.mjs": [
+          "isCaller",
+          "NO_JPEG",
+          "jpegPixels",
+          "bytes",
+          "webgpuSetting"
+        ],
+        "images/jxl/limits.mjs": [
+          "JPEG_LIMITS"
         ],
         "agent/will.mjs": [
           "terminatorWidth"
@@ -2217,62 +2675,53 @@
         "images/jxl/decode-entropy.mjs",
         "images/jxl/container-stream.mjs",
         "images/jxl/v7/edit-changes.mjs",
+        "images/jxl/brotli.mjs",
         "images/jxl/metadata.mjs",
         "images/jxl/container-advanced.mjs",
         "images/jxl/v7/container.mjs",
         "images/jxl/v7/inspect-edit.mjs",
-        "images/jxl/wasm-text.mjs",
         "images/jxl/jpeg-kernels-bytes.mjs",
         "images/jxl/jpeg-kernels.mjs",
-        "images/jxl/kernels-bytes.mjs",
         "images/jxl/worker-assets.mjs",
         "images/jxl/worker-reservation.mjs",
         "images/jxl/int-ops.mjs",
         "images/jxl/gpu-setup.mjs",
-        "images/jxl/capture-kernels-bytes.mjs",
-        "images/jxl/capture-kernels.mjs",
-        "images/jxl/screen-crop.mjs",
-        "images/jxl/gpu-drive.mjs",
         "images/jxl/ac-group.mjs",
-        "images/jxl/v7/capture-options.mjs",
-        "images/jxl/v7/run-capture.mjs",
-        "images/jxl/v7/capture-core.mjs",
         "images/jxl/v7/capture-support.mjs",
-        "images/jxl/v7/capture.mjs",
         "draw/flowchart-raise.mjs",
         "draw/flowchart-mermaid.mjs"
       ],
       "jxl": {
-        "version": "8.1.0",
-        "source": "0bb3d78496eb68fbe69bf940af6f5de42cf5b06a133cd1dd0ca49054a0b257e3",
+        "version": "8.3.0",
+        "source": "de854b99abddf3c1f895931bd11da7bd51cdaf86827dc566535c76df0f09cdc7",
         "page": {
           "jpeg.worker.mjs": {
-            "bytes": 416052,
-            "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
+            "bytes": 448052,
+            "sha256": "b655f222948f1a8414ccc87ebf863154727143b3abbecbafe907d4c7733c4681"
           },
           "still.worker.mjs": {
-            "bytes": 841471,
-            "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
+            "bytes": 1144395,
+            "sha256": "3f4042a2d9b2b4b00ad1f1e8bd1cab440d2635743563d47ff6a35b898f625acf"
           },
           "codec.mjs": {
-            "bytes": 53394,
-            "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
+            "bytes": 70521,
+            "sha256": "08d658765d00d1590792bde1aa89a6ee4d0201e5dbd7b69242499a999961fdb6"
           }
         },
         "parts": {
           "jxlcomplete": {
             "decode.worker.mjs": {
-              "bytes": 352423,
-              "sha256": "bec005ad7839bd5088a3bf64dab4e90bd4399fa820c2f9b2d03d6e0df8e83125"
+              "bytes": 355150,
+              "sha256": "a90988047c21353b5370f4269a22a3883e39021117f095cc13f7e8ee31627f4c"
             },
             "animation.worker.mjs": {
-              "bytes": 854561,
-              "sha256": "5abfb9c2c0b872a7cac4439fde7826f1b0ec4282ef1a1b060617bb51ae4abb97"
+              "bytes": 1286035,
+              "sha256": "44be04efc37dc9e12eb9ad5374e6a17a142cc4171603a1b116e5a2dda989d959"
             }
           }
         }
       },
-      "builtAt": "2026-11-03T23:25:11.656Z",
+      "builtAt": "2026-11-07T04:19:11.101Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
@@ -2290,14 +2739,14 @@
   },
   "editor": {
     "path": "rapier.html",
-    "bytes": 2176096,
-    "ceiling": 2235000,
-    "sha256": "8fdf827a5788cfd66879727c0c50765095e5df67387c53e6844c7ae7c86aeb3c"
+    "bytes": 2284576,
+    "ceiling": 2290000,
+    "sha256": "a927cbaca88ec159695f7a4dc9092bcbc89d207f796e8e0edaebf01a65e9c7c9"
   },
   "apps": {
     "path": "dist/chatgpt/rapier-app.html",
-    "bytes": 2208844,
-    "sha256": "b8f8430f9e4e3d1fff5c86d1be609d0d6aca21c3d17678a360d73bcd3fe5ad9b",
+    "bytes": 2317352,
+    "sha256": "4849cf8d34f52d39c311b81f801afcf6a77803f87948cbf60eaff10e6f29ae97",
     "spans": [
       {
         "element": "lib-markdownit",
@@ -2332,20 +2781,20 @@
       {
         "element": "rapier-jxl-worker",
         "name": "jpeg.worker.mjs",
-        "bytes": 416052,
-        "sha256": "e3070a73c68c2ad5e28f54bbd0f16a233167904058a8c8a33434a6b51371c43a"
+        "bytes": 448052,
+        "sha256": "b655f222948f1a8414ccc87ebf863154727143b3abbecbafe907d4c7733c4681"
       },
       {
         "element": "rapier-jxl-worker",
         "name": "still.worker.mjs",
-        "bytes": 841471,
-        "sha256": "24e14911b0c3a398d9969e26b4fd0d668b680c69b4c605fa436a6b9c518f9a82"
+        "bytes": 1144395,
+        "sha256": "3f4042a2d9b2b4b00ad1f1e8bd1cab440d2635743563d47ff6a35b898f625acf"
       },
       {
         "element": "rapier-jxl-worker",
         "name": "codec.mjs",
-        "bytes": 53394,
-        "sha256": "34fe019eb7dc036665ff48f4375dee3edd3731e13aae65ba17fc2b0ead9787e0"
+        "bytes": 70521,
+        "sha256": "08d658765d00d1590792bde1aa89a6ee4d0201e5dbd7b69242499a999961fdb6"
       },
       {
         "element": "rapier-platform-runtime",
@@ -2381,19 +2830,19 @@
         "element": "rapier-platform-runtime",
         "name": "rapier-plugin-loader.js",
         "bytes": 28077,
-        "sha256": "4d7749362d51bed1591a48321c1a41134f2f000d54f49b12179d4844e39ee107"
+        "sha256": "69b965455139f9eae442fdc8e702a81ee60d55e3a0ce67557ded44dac0147521"
       },
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-font-subset-plugin.js",
         "bytes": 856,
-        "sha256": "4c58968a1fac2e53049eb8b6c5563c9b9a8ba33d08f8faae9b3f6f0607c46510"
+        "sha256": "454e36fb448d221b6cefebfd38f60415d87bc82f4065665bd6f80d32e101f7c9"
       },
       {
         "element": "rapier-platform-runtime",
         "name": "rapier-parts.js",
         "bytes": 9824,
-        "sha256": "5c0bdecfa7f3ac4a29aecbacdc93f1a9676183bc23b655b6a5126b3da3e64645"
+        "sha256": "71d58cf4086bb1c3def903d3d28baceda06e4bb6810531f9d25ddf8e23a7a8be"
       },
       {
         "element": "rapier-apps-runtime",
@@ -2434,14 +2883,14 @@
       {
         "element": "rapier-editor-runtime",
         "name": "rapier-shared.js",
-        "bytes": 2530157,
-        "sha256": "87394b2b3c85c0154054fbd786f6d70d02e34bf3f5868886c65b4653c691a232"
+        "bytes": 2531997,
+        "sha256": "6a2b6d47a3ea41c3a4dd1252b463c2284a3be9a38106c421149bf21e3823b0d4"
       },
       {
         "element": "rapier-editor-runtime",
         "name": "rapier-editor.js",
-        "bytes": 2441851,
-        "sha256": "06e5408e4eb3a5ce9a307cd4cbec9e53509721f31ee822e3e059a701c88ad396"
+        "bytes": 2442028,
+        "sha256": "93f64c03456a93d69dce5d5d16eac5ad2ff8369a9b2f294bce33642c0d7a6faf"
       }
     ],
     "plugins": [
@@ -2629,17 +3078,17 @@
       },
       {
         "id": "presets",
-        "path": "editor-assets/rapier-presets-431503cf362751f4.txt",
-        "bytes": 252359,
-        "sha256": "431503cf362751f42946fe7672549f8245c49128471e053d5ff306077dd475d1",
-        "sri": "wcgoCSMYYv3WpxURldml7SERjFasQLAA5YFhG/KWDgIVGzQVWez7SDTpsMiWTR2/"
+        "path": "editor-assets/rapier-presets-daed1531fe635483.txt",
+        "bytes": 252306,
+        "sha256": "daed1531fe63548320721412d0229001bc97896c51de3f96a9172d1c80c1edb8",
+        "sri": "jZgaSF0sgUnSiCCjv0DMZfCd/tBPK2+YzSk06IHlTyIj2sxWXwPYfpkZ1gpxEO5v"
       },
       {
         "id": "drawing",
-        "path": "editor-assets/rapier-drawing-8f3d744c713ba3e3.txt",
-        "bytes": 611455,
-        "sha256": "8f3d744c713ba3e3461c9ae14d4663bb4e1b71f2e6626a3b5ba0d4671da8b0ca",
-        "sri": "R8zViqYUtsMjLTm+YpqEpseovuXqqNxK4nXp65e2Fw9bOC4s50ezuIlb4F/iHwFZ"
+        "path": "editor-assets/rapier-drawing-3aeb936bfc6d395e.txt",
+        "bytes": 756726,
+        "sha256": "3aeb936bfc6d395e91400520af84d1e23ac23df2d16ec00cb39bee96ab02dd9d",
+        "sri": "PJqPwjwgDK9lc2VF+XIRUe0cyLDL0NFTP02egyQRkerpvEQPT0lZTkB+HERPyyJJ"
       },
       {
         "id": "jxl",
@@ -2671,10 +3120,10 @@
       },
       {
         "id": "jxlcomplete",
-        "path": "editor-assets/rapier-jxlcomplete-fa323b6d2db2ca30.txt",
-        "bytes": 408838,
-        "sha256": "fa323b6d2db2ca305c23824383a7ad50882fb9c498b80b4effc546a9bae7770e",
-        "sri": "bU/5QLBN8fmda10uNImGxmEWX2dZ+8BxLLllAuTnLaHk/VultBYyAZFb45aq+1Ox"
+        "path": "editor-assets/rapier-jxlcomplete-da4ac035e8121a05.txt",
+        "bytes": 524723,
+        "sha256": "da4ac035e8121a05b53622cd90c222620be7ca9c414e5ea7c42b173e7457e7fe",
+        "sri": "i2MgoRYdh3QxAFR7gzEnFjmU0XpKwY2T6By7fHJOgBw1qVOHFUM1YFjN1IggyEJl"
       },
       {
         "id": "jxlscene",
@@ -2706,10 +3155,10 @@
       },
       {
         "id": "notes",
-        "path": "editor-assets/rapier-notes-648fda8eaa3c095e.txt",
-        "bytes": 394746,
-        "sha256": "648fda8eaa3c095e94558378c7d150d0660e5c5ec4c71032aa45eb5d048b008c",
-        "sri": "itxx0lmZsElbJYZlN8hBxHJo9JzspWLU/SXPrhGICfhcXMV6+tcP4Cnacn1diTZi"
+        "path": "editor-assets/rapier-notes-d6e21517c8103dd4.txt",
+        "bytes": 394865,
+        "sha256": "d6e21517c8103dd499a6d3f6f105c75533b50f96364f8a236f6a8ef268129711",
+        "sri": "2Yx20ZglJjI8mn6GiE3a+mfZz/kgYvgrCna5Fvb2a8IoYMB1a7YV8pkYXtkOWf3B"
       },
       {
         "id": "math",
@@ -2750,8 +3199,8 @@
   },
   "offline": {
     "path": "dist/chatgpt/rapier.html",
-    "bytes": 6613729,
-    "sha256": "66dd1e87abc3cd368fdd5481ce4ad8816ea5235fb08f1788fbfaa67ed111581f",
+    "bytes": 6983431,
+    "sha256": "cc5603ec6011a793cd96233ecb8f5f12b480999fec1233ea0e8cee2578d22364",
     "plugins": [
       {
         "id": "math",
@@ -2904,7 +3353,7 @@
     ]
   },
   "shell": {
-    "sha256": "a5a77089fbbcb81e93c682df4163f0380ef0df25a3683d56935e11ab5a5b874a"
+    "sha256": "0c55cc7daedb325e933d9c743ebe341a9ac09393e204310b789e48aab0387d72"
   },
   "htmlSinks": {
     "named": 153,

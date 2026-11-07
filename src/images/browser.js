@@ -101,7 +101,9 @@ const _rapierEmbeddedImages = (() => {
       try {
         const value = await held.codec[operation](input, {...options, signal: controller.signal, onProgress});
         assertCurrent(stamp, identity);
-        return value;
+        if (operation === 'decode') return value;
+        if (!(value?.bytes instanceof Uint8Array)) throw Object.assign(new Error(value?.reason?.message || 'No JPEG XL output'), {code: value?.reason?.code || 'JXL_TARGET'});
+        return value.bytes;
       } catch (error) {
         if (error?.code === 'JXL_CLOSED') throw cancelled();
         throw error;

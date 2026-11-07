@@ -1,11 +1,11 @@
 {
-  "release": "1.2.55",
-  "snapshotId": "1.2.55+skills.14ddb787b0d35bc2fe76dae18ec30d0a8a7ccefa814217774c9b2a7a180b1b69",
+  "release": "1.2.56",
+  "snapshotId": "1.2.56+skills.97566140283ea722b64d93e3b3600d66d68817b38ea3b7591fa737817c246dba",
   "endpoint": "https://mcp.rapier.website/door/mcp",
-  "packageVersion": "1.2.55",
-  "skillsSha256": "51fe6c4263b25a6769834dbd0bba1a5bb4e8368b906952f8b816bfe662c4f04f",
-  "filesSha256": "cb2b0f2aee01039fcba6f4f69e95913e0005602178a10dc28a7ef2467a8eaf53",
-  "serverSourceSha256": "1e28e308e1708d21f6340ca5f7b40e1faa752c3a97ee406ca9bdf44ee7b05f72",
+  "packageVersion": "1.2.56",
+  "skillsSha256": "c58192933d37b0a0f75d73bb22dfccda908635bb019d6e1af389755e32750951",
+  "filesSha256": "50d7c68ca63d95b27b356788891dce355fcab52c0fd40dddcf332a675ceafa9c",
+  "serverSourceSha256": "b385cdf5c9ea98287d5b50d4219f6c542b0111fc8156bec5d498f68c87ac5217",
   "packages": {
     "rapier-html": "1.2.52",
     "rapier-embed": "1.2.52",
@@ -14,7 +14,7 @@
   "skills": [
     {
       "path": "skills/embed-rapier/SKILL.md",
-      "sha256": "3f94f339e48a7b05bf0a1eca572aef77087d72cd77bf0a64c889585516c5d999"
+      "sha256": "a7fe46ca097fee4d855fd0f25f23e6c11d58d3984c9e605e8173d352efb3ecd9"
     },
     {
       "path": "skills/rapier-agent-door/SKILL.md",
@@ -40,7 +40,7 @@
     },
     {
       "path": "skills/embed-rapier/embed.mjs",
-      "sha256": "0b8ea93021b388439b01519fea14cf54a84aba50f0e801f9eeebb2df94d68063"
+      "sha256": "4911e9a7751e76910140063bf16af3726022a001e9d71f51e7c8dec7a6ea4f50"
     },
     {
       "path": "skills/embed-rapier/LICENSE",
@@ -48,11 +48,11 @@
     },
     {
       "path": "skills/embed-rapier/rapier-plugins.json",
-      "sha256": "0cfca5897399f517a7b70b35c4ee4554512d7b8025d95d941c276159456ed920"
+      "sha256": "ed06b0d5577f7e6098db5ab085fb1c59ac5bd7fd539b0aec0ac792401693edcd"
     },
     {
       "path": "skills/embed-rapier/README.md",
-      "sha256": "9f8397b051b1b2a2098fafc3d43af1a5b962a3e6e141df58fead57546393e229"
+      "sha256": "b70ab5643c608a576e3caf7029fba4869871155ea82846800db8ad72e97a4f13"
     },
     {
       "path": "skills/embed-rapier/references/embed-contract.md",
@@ -60,11 +60,11 @@
     },
     {
       "path": "skills/embed-rapier/SKILL.md",
-      "sha256": "3f94f339e48a7b05bf0a1eca572aef77087d72cd77bf0a64c889585516c5d999"
+      "sha256": "a7fe46ca097fee4d855fd0f25f23e6c11d58d3984c9e605e8173d352efb3ecd9"
     },
     {
       "path": "skills/embed-rapier/SNAPSHOT.json",
-      "sha256": "0b518570ed670c0a28fbc52c6068985bdb90bfa76c5b6b9d6f0c65b287872aaa"
+      "sha256": "450bcc592d0ca12244c6427db54e357cee056a7490c237654fbabbcb58ad9510"
     },
     {
       "path": "skills/rapier-agent-door/agents/openai.yaml",
@@ -72,11 +72,11 @@
     },
     {
       "path": "skills/rapier-agent-door/references/AGENT-TOOLS-editor.json",
-      "sha256": "32461ecc6bfd54498b308fd1292dbf04d6889ae8d3d8f7a16da78e599093885d"
+      "sha256": "7049b78d278c8954f445613769169d8cac623e5a1b4cdfc1d9932c4524eae1ea"
     },
     {
       "path": "skills/rapier-agent-door/references/AGENT-TOOLS.json",
-      "sha256": "e1987bd937485a5f663cd6fdbff39cd871ebc65aea74693394fe015db5da8966"
+      "sha256": "1030226087d585da5c7291943da992f2a4971aa172eb92403c2f43dca61cee5c"
     },
     {
       "path": "skills/rapier-agent-door/references/collaboration.md",
@@ -92,7 +92,7 @@
     },
     {
       "path": "skills/rapier-agent-door/SNAPSHOT.json",
-      "sha256": "acefa5196930db211872bb4978ea7f7079bde758f71501e0a589fc035e6cf1b4"
+      "sha256": "492ddcbbfeb6af0bdad62245b219a6046bff06a9483ba2f3de6669e07ca40907"
     },
     {
       "path": "skills/rapier-html/agents/openai.yaml",
@@ -348,7 +348,7 @@
     },
     {
       "path": "skills/rapier-html/SNAPSHOT.json",
-      "sha256": "23c9ec68ed0259c48448fcb4312f603d327204bacf00b9f074ce3c3c5beeb948"
+      "sha256": "bb81f9ba6a4d11bfbd911a16f9ad503d90145cbc53ed31c65b5c9052ecf36980"
     },
     {
       "path": "skills/rapier-html/wrap.mjs",
@@ -408,7 +408,7 @@
     },
     {
       "path": "skills/rapier-markdown/SNAPSHOT.json",
-      "sha256": "07e351283d988f34693e7e9fb79ce9fdc5570122e3c61d34972259b5c5297800"
+      "sha256": "794d44e61acbc255aa8d776960a24a2b5340d90f92a928e12394d3d8c0a242c2"
     }
   ]
 }

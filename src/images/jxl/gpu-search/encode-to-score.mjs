@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {encodeWithField} from './search.mjs';
 import {SETTINGS} from './settings.mjs';
-import {ssimulacra2, linearFromRGBA} from './ssimulacra2.mjs';
+import {ssimulacra2} from './ssimulacra2.mjs';
 import {butteraugli, butteraugliReference} from './butteraugli.mjs';
 
 export function meets(scores, target) {
@@ -19,12 +19,12 @@ function margin(scores, target) {
 }
 
 export function cpuMeasure(rgba, width, height, decode, target) {
-  const n = width * height, ref = linearFromRGBA(rgba, n);
+  const ref = {rgba};
   const ba = target.butteraugli3 !== undefined || target.butteraugli !== undefined ? butteraugliReference(ref, width, height) : null;
   return async bytes => {
-    const lin = linearFromRGBA(await decode(bytes), n), out = {};
-    if (target.ssimulacra2 !== undefined) out.ssimulacra2 = ssimulacra2(ref, lin, width, height).score;
-    if (ba) { const r = butteraugli(ba, lin); out.butteraugli = r.score; out.butteraugli3 = r.pnorm3; }
+    const decoded = {rgba:await decode(bytes)}, out = {};
+    if (target.ssimulacra2 !== undefined) out.ssimulacra2 = ssimulacra2(ref, decoded, width, height).score;
+    if (ba) { const r = butteraugli(ba, decoded); out.butteraugli = r.score; out.butteraugli3 = r.pnorm3; }
     return out;
   };
 }

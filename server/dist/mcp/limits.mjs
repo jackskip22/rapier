@@ -12,6 +12,7 @@ export const DOOR_LIMITS = Object.freeze({
   liveCreatesPerHour: 5000,
   anonymousCreatesPerHour: 1000,
   registrationsPerHour: 20,
+  issuerDiscoveriesPerHour: 1000,
   consentsPerAddressPerHour: 60,
   pairingStartsPerMinute: 5,
   pairingAttemptsPerMinute: 5,
