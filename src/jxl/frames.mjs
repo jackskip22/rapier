@@ -38,6 +38,7 @@ async function rgbaOf(image, width, height) {
 	return data;
 }
 
+const OVER_LEFT = 'Over the pixels left for this call. Send it in another call.';
 export async function readAnimation(bytes, type, {signal, say = () => {}, progress = () => {}, convert = false, budget = FRAME_PIXELS} = {}) {
 	if (typeof ImageDecoder !== 'function' || !await ImageDecoder.isTypeSupported(type)) throw shown('This browser cannot read animations.');
 	const decoder = new ImageDecoder({data: bytes, type, premultiplyAlpha: 'none', colorSpaceConversion: convert ? 'default' : 'none', preferAnimation: true});
@@ -55,6 +56,7 @@ export async function readAnimation(bytes, type, {signal, say = () => {}, progre
 				if (!at) {
 					width = image.displayWidth; height = image.displayHeight;
 					if (width * height > PIXELS) throw shown('Over ' + PIXELS / 1e6 + ' megapixels.');
+					if (width * height > budget) throw shown(OVER_LEFT);
 					kept = Math.max(1, Math.min(count, FRAMES, Math.floor(budget / (width * height))));
 				}
 				const data = await rgbaOf(image, width, height);
@@ -105,6 +107,7 @@ export async function readVideo(file, {signal, say = () => {}, progress = () => 
 		}
 		const from = Math.max(0, Math.min(Number(start) || 0, Math.max(0, video.duration - 1e-3))), to = Math.min(video.duration, end > from ? end : video.duration);
 		const length = to - from, plan = videoPlan(video.videoWidth, video.videoHeight, length, {fps, longSide, budget});
+		if (plan.width * plan.height > budget || plan.seconds <= 0) throw shown(OVER_LEFT);
 		const step = 1 / plan.fps;
 		const expected = () => {
 			const rate = Math.min(plan.fps, (times.length - 1) / (times[times.length - 1] - from));
@@ -200,12 +203,13 @@ export function mediaNote(row) {
 		(row.cut ? (row.video ? ' · cut to fit this device' : ' · first ' + row.frames + ' of ' + row.total + ' frames, to fit this device') : '') + (row.sound ? ' · sound dropped' : '') + (row.size > DOCUMENT_BYTES ? ' · too large to play in a Rapier document' : '');
 }
 
-export async function convertMedia(file, bytes, kind, {mode, quality, effortFor, resultOf, signal, say = () => {}, progress = () => {}, codec, complete = async () => {}, colors = {}}) {
+export async function convertMedia(file, bytes, kind, {mode, quality, effortFor, resultOf, signal, say = () => {}, progress = () => {}, codec, complete = async () => {}, colors = {}, budget = FRAME_PIXELS}) {
 	return oneAtATime(async () => {
 		signal?.throwIfAborted();
 		const video = kind === 'video';
 		if (video) await complete();
-		const read = video ? await readVideo(file, {signal, say, progress}) : await readAnimation(bytes, kind, {signal, say, progress, convert: !!colors.browser});
+		budget = Math.min(budget, FRAME_PIXELS);
+		const read = video ? await readVideo(file, {signal, say, progress, budget}) : await readAnimation(bytes, kind, {signal, say, progress, convert: !!colors.browser, budget});
 		if (!read) return null;
 		if (!video) await complete();
 		const {width, height, loops, frames} = read, count = frames.length, length = seconds(frames), lossless = mode === 'lossless';

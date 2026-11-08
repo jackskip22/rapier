@@ -6,13 +6,13 @@ export const USE_ENUMS = Object.freeze({
   deployment_version: values('unknown'),
   rpc_family: values('initialize', 'discover', 'tools_list', 'tool_call', 'resources_read', 'skills_read',
     'task_poll', 'task_update', 'task_cancel', 'other', 'invalid', 'unknown'),
-  tool: values('open', 'read', 'edit', 'undo', 'show', 'export', 'none', 'other'),
+  tool: values('open', 'read', 'edit', 'undo', 'show', 'export', 'convert', 'none', 'other'),
   client_family: values('codex', 'openai', 'claude', 'cursor', 'other', 'unknown'),
   feature: values('open_create', 'open_resume', 'open_import', 'read_text', 'read_outline', 'read_image',
     'read_state', 'read_history', 'read_guide', 'read_search', 'read_note', 'read_comparison', 'read_return',
     'edit_note_fields', 'edit_rename', 'edit_unspecified',
     'undo', 'show_pair', 'show_comparison', 'show_ask', 'show_other', 'export_file', 'export_save',
-    'export_clipboard', 'export_sync', 'none', 'unknown'),
+    'export_clipboard', 'export_sync', 'convert', 'none', 'unknown'),
   format: values('markdown', 'html_editor', 'page', 'txt', 'docx', 'pdf', 'plain', 'formatted', 'complete',
     'not_applicable', 'unknown'),
   outcome: values('succeeded', 'tool_error', 'protocol_error', 'auth_refused', 'budget_refused', 'cancelled',
@@ -24,7 +24,7 @@ export const USE_ENUMS = Object.freeze({
   attribution: values('unattributed'),
 });
 export const MAX_USE_OBSERVATION_BYTES = 2048;
-const TOOL_NAMES = USE_ENUMS.tool.slice(0, 6);
+const TOOL_NAMES = USE_ENUMS.tool.slice(0, 7);
 const noop = () => {};
 
 const member = (list, value, fallback) => {

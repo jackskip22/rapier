@@ -616,7 +616,6 @@ body.light .restore-notice__resume{background:rgb(0 0 0 / .07)}
 
 html.rapier-theme-light::view-transition-old(*),html.rapier-theme-light::view-transition-new(*){animation:none;mix-blend-mode:normal}
 html.rapier-theme-light::view-transition-group(*){animation:none}
-html.rapier-pinch-swap::view-transition-old(root),html.rapier-pinch-swap::view-transition-new(root){animation-duration:200ms}
 html.rapier-theme-light :is(button,input,textarea,select,.block-read,.recent-drawer__item,.swatch-wrap,.scroll-fab){transition:none!important}
 
 .icon-btn.rapier-dial{transition:none}

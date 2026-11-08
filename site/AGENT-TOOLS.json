@@ -1,5 +1,5 @@
 {
-  "release": "1.2.56",
+  "release": "1.2.57",
   "core": [
     {
       "name": "open",
@@ -788,6 +788,72 @@
             }
           }
         ]
+      }
+    },
+    {
+      "name": "convert",
+      "title": "Convert pictures with Rapier",
+      "description": "Convert pictures to JPEG XL, or JPEG XL back. Each file's own kind decides: a JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL (a JPEG at lossless is carried exactly and restores byte for byte); a .jxl that carries its JPEG gives back that JPEG byte for byte, any other .jxl a PNG. quality: lossless, high (default) or medium; effort 1-9 (default 7: higher is smaller and slower). At most 32 files and 32 MB in all per call, pictures to 400 megapixels in all. Returns each file's name, sizes and what was kept; the files go to the person.",
+      "effect": "create",
+      "class": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "description": "The file name, with its extension."
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 44739244,
+                  "contentEncoding": "base64",
+                  "description": "The file's exact bytes, base64."
+                }
+              },
+              "required": [
+                "name",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 32
+          },
+          "quality": {
+            "type": "string",
+            "maxLength": 16,
+            "enum": [
+              "lossless",
+              "high",
+              "medium"
+            ]
+          },
+          "effort": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9
+          },
+          "agent": {
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "additionalProperties": false
       }
     }
   ],
@@ -1665,6 +1731,89 @@
             "app"
           ]
         }
+      }
+    },
+    {
+      "name": "convert",
+      "title": "Convert pictures with Rapier",
+      "description": "Convert pictures to JPEG XL, or JPEG XL back, on the person's own device: opens Rapier's converter in this app's view where the app can show one, else answers with its link (https://rapier.website/jxl). The person adds the pictures there and saves the results; nothing is uploaded. files: the pictures' names, if known. quality: lossless, high (default) or medium; effort 1-9 (default 7).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "description": "The file name, with its extension."
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 32
+          },
+          "quality": {
+            "type": "string",
+            "maxLength": 16,
+            "enum": [
+              "lossless",
+              "high",
+              "medium"
+            ]
+          },
+          "effort": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9
+          },
+          "agent": {
+            "type": "string",
+            "description": "Your display name on acts; never grants authority."
+          },
+          "operation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "title": "Convert pictures with Rapier",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "securitySchemes": [
+        {
+          "type": "noauth"
+        }
+      ],
+      "_meta": {
+        "securitySchemes": [
+          {
+            "type": "noauth"
+          }
+        ],
+        "website.rapier/tool-class": "write",
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ],
+          "resourceUri": "ui://rapier/editor"
+        },
+        "openai/toolInvocation/invoking": "Opening the JPEG XL converter",
+        "openai/toolInvocation/invoked": "The converter is ready"
       }
     }
   ]

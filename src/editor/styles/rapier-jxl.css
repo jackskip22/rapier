@@ -24,7 +24,7 @@
 .rapier-jxl-view__end{white-space:nowrap}
 .rapier-jxl-view__effort .rapier-draw-seek{flex:1 1 auto;min-width:96px}
 .rapier-draw-seek>.rapier-jxl-view__effort-level{position:absolute;left:var(--seek);top:50%;transform:translate(-50%,-50%);font:var(--fw-semibold) var(--text-sm)/1 var(--font-mono);letter-spacing:0;color:var(--color-text);pointer-events:none;transition:transform 120ms ease}
-.rapier-draw-seek--active>.rapier-jxl-view__effort-level{transform:translate(-50%,calc(-50% + 34px))}
+.rapier-draw-seek--active>.rapier-jxl-view__effort-level{transform:translate(-50%,calc(-50% + var(--rapier-effort-lift, 34px)))}
 .rapier-jxl-view__fold{display:flex;flex-direction:column;gap:var(--space-6);flex:none}
 .rapier-jxl-view__fold>.rapier-tool-footer{margin-top:var(--space-8)}
 .rapier-jxl-view__more{display:flex;flex-direction:column;gap:var(--space-2);margin:0}

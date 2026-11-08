@@ -1572,8 +1572,59 @@
 
   const part = async id => { if (_rapierPartAvailable(id)) await RapierParts.need(id); };
   const notesDoor = async () => { if (!globalThis.rapierNotesHost) await part('notes'); return globalThis.rapierNotesHost; };
+  async function convertPictures(input, who) {
+    if (!_rapierPartAvailable('jxl') || !await _rapierPartReady('jxl') || !globalThis.RapierJxlConvert) return fail('convert_unavailable');
+    const C = globalThis.RapierJxlConvert, taken = new Set(), rows = [], made = [], assets = globalThis.RapierImageAssets;
+    const {CONVERT_PIXELS} = globalThis.RapierAgentCatalog;
+    let pixels = 0;
+    const sizeOf = bytes => {
+      for (const read of [() => assets.inspectJPEGXL(bytes.subarray(0, Math.min(bytes.length, 4 << 20)), true), () => assets.inspectRaster(bytes, {maximumBytes: Infinity}), () => assets.inspectHEIF(bytes)])
+        try { const info = read(); if (info?.width && info?.height) return info.width * info.height; } catch (_) {}
+      return 0;
+    };
+    const short = name => name.length > 64 ? name.slice(0, 30) + '…' + name.slice(-30) : name;
+    const complete = async () => {
+      const status = RapierParts.status('jxlcomplete')?.status;
+      if (status === 'carried') { await RapierParts.need('jxlcomplete'); return; }
+      if (!['ready', 'stored'].includes(status)) throw Object.assign(new Error('Not converted: needs JPEG XL complete. Open the JPEG XL converter once to get it.'), {shown: true});
+    };
+    const kept = r => r.back === 'jpeg' ? 'original JPEG, byte for byte' : r.back === 'png' ? 'PNG' : r.exact ? 'JPEG carried exactly; restores byte for byte'
+      : r.frames ? (r.mode === 'lossless' ? 'animation, lossless' : 'animation, ' + r.mode) : r.mode === 'lossless' || r.fallback ? 'lossless' : r.mode + ' quality';
+    for (const file of input.files) {
+      if (who.signal?.aborted) break;
+      let picked = null;
+      try {
+        const bytes = Uint8Array.from(atob(file.data), c => c.charCodeAt(0)), counted = sizeOf(bytes);
+        picked = new File([bytes], file.name);
+        if (pixels + counted > CONVERT_PIXELS) { rows.push({name: short(file.name), refused: 'Over this call\'s ' + CONVERT_PIXELS / 1e6 + ' megapixels in all. Send it in another call.'}); continue; }
+        pixels += counted;
+        const left = CONVERT_PIXELS - pixels + counted;
+        if (left < 1) { rows.push({name: short(file.name), refused: 'Over this call\'s ' + CONVERT_PIXELS / 1e6 + ' megapixels in all. Send it in another call.'}); continue; }
+        const r = await C.convert(picked, {mode: input.quality, effort: input.effort, complete, signal: who.signal, budget: left});
+        if (r.frames && r.width) pixels += r.width * r.height * r.frames - counted;
+        else if (!counted && r.width) pixels += r.width * r.height;
+        const name = C.outputName(file.name, taken, r.ext || '.jxl');
+        made.push({name, blob: r.blob, crc: r.crc, size: r.size});
+        rows.push({name: short(file.name), output: short(name), before: r.before, size: r.size, kept: kept(r), ...(r.frames ? {frames: r.frames} : {})});
+      } catch (error) {
+        if (error?.name === 'AbortError') break;
+        rows.push({name: short(file.name), refused: picked ? C.refusal(error, picked) : 'The data is not this file\'s bytes in base64.'});
+      }
+    }
+    const delivered = [];
+    if (made.length === 1) { if (await _download(made[0].blob, made[0].name) !== null) delivered.push(made[0].name); }
+    else if (made.length) {
+      const zips = C.zipSeries(made);
+      for (const [at, zip] of zips.entries()) {
+        const name = zips.length === 1 ? 'rapier-jxl.zip' : 'rapier-jxl-' + (at + 1) + '.zip';
+        if (await _download(zip.blob, name) !== null) delivered.push(name);
+      }
+    }
+    return {outcome: made.length ? 'ok' : 'refused', ...(made.length ? {} : {reason: 'convert_refused'}), converted: made.length, effort: input.effort, quality: input.quality,
+      files: rows, delivered, ...(who.signal?.aborted ? {stopped: true} : {})};
+  }
   const host = {
-    ready: part,
+    ready: part, convert: convertPictures,
     snapshot: async options => {
       try { return await snapshot(options); }
       catch (error) {

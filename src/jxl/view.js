@@ -26,10 +26,10 @@
 		heading.append(title, info);
 		bar.append(heading, shut);
 		const body = make('div', 'rapier-jxl-view__body');
-		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Rapier is a single HTML file that works offline. Free and open source.');
+		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Free and open source. Rapier is a single HTML file that works offline. Press X in the top right to go back to the Markdown editor.');
 		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input');
-		pick.append(make('span', '', 'Choose or drop pictures or videos'), input);
-		input.type = 'file'; input.accept = 'image/*,video/*'; input.multiple = true;
+		pick.append(C.pickLabel(make('span')), input);
+		input.type = 'file'; input.accept = 'image/*,video/*,.jxl'; input.multiple = true;
 		const group = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff');
 		group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Quality');
 		const modes = Object.keys(C.QUALITY).map(mode => {
@@ -48,7 +48,9 @@
 		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), seek, make('span', 'rapier-jxl-view__end', 'Smallest file'));
 		const quality = make('div', 'rapier-jxl-view__part'), effort = make('div', 'rapier-jxl-view__part');
 		quality.append(make('p', 'rapier-jxl-view__label', 'Quality'), group);
-		effort.append(make('p', 'rapier-jxl-view__label', 'Effort'), effortRow);
+		const effortLabel = make('p', 'rapier-jxl-view__label', 'Effort');
+		effort.append(effortLabel, effortRow);
+		C.liftToLabel(seek, level, effortLabel);
 		const status = make('div', 'rapier-jxl-view__status'), line = make('div', 'rapier-progress__bar rapier-jxl-view__line'), cancel = make('button', 'settings-action-btn', 'Cancel');
 		cancel.type = 'button'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
 		const summary = make('div', 'rapier-jxl-view__summary'), count = make('div', 'rapier-jxl-view__count');
@@ -79,6 +81,7 @@
 		if (row.state === 'waiting') text = size(row.file.size) + ' · waiting';
 		else if (row.state === 'working') text = size(row.file.size) + (row.say ? ' · ' + row.say : '') + (row.progress > 0 && row.progress < 1 ? ' · ' + Math.round(row.progress * 100) + '%' : '');
 		else if (row.state === 'failed' || row.state === 'stopped') text = row.say;
+		else if (r.back) text = size(r.before) + ' → ' + size(r.size);
 		else if (r.frames) text = size(r.before) + ' → ' + size(r.size) + (r.video ? '' : ' · ' + percent(r)) + C.mediaNote(r);
 		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, not bit for bit' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
 		note.textContent = text;
@@ -144,11 +147,12 @@
 				if (!row) return;
 				row.state = 'working'; row.progress = 0; row.say = ''; row.stop = new AbortController(); paint(row); overall(self);
 				try {
-					const key = keyOf(self), mode = self.mode;
-					const made = await C.convert(row.file, {mode, effort: self.effort, complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]), say: text => { row.say = text; paint(row); follow1(self, row); }, progress: value => { row.progress = value; paint(row); overall(self); follow1(self, row); }});
+					const key = keyOf(self), mode = self.mode, effort = self.effort;
+					const made = await C.convert(row.file, {mode, effort, complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]), say: text => { row.say = text; paint(row); follow1(self, row); }, progress: value => { row.progress = value; paint(row); overall(self); follow1(self, row); }});
 					const {also, ...kept} = made;
 					row.results.set(key, kept);
-					if (also) row.results.set('lossless|' + self.effort, also);
+					if (also) row.results.set('lossless|' + effort, also);
+					if (kept.ext && !row.outputName.toLowerCase().endsWith(kept.ext)) row.outputName = C.outputName(row.file.name, new Set(self.rows.filter(other => other !== row).map(other => other.outputName.toLowerCase())), kept.ext);
 					const now = row.results.get(keyOf(self));
 					if (now) { row.result = now; row.state = 'done'; } else row.state = 'waiting';
 				} catch (error) {
@@ -212,6 +216,10 @@
 		view.list.append(fragment); overall(); void run();
 	}
 	async function save(blob, name) {
+		if (typeof window.RapierMcpApp?.exportFile === 'function') {
+			if (!await window.RapierMcpApp.exportFile(blob, name)) showToast('Couldn’t save ' + name, 'error');
+			return;
+		}
 		if (typeof window.RapierPlatform?.files?.exportArtifact !== 'function') {
 			const link = make('a'), url = URL.createObjectURL(blob);
 			link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();

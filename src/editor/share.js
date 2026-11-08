@@ -116,8 +116,8 @@ async function _rapierPortableChoices(source, options = {}) {
   await _rapierWhenRuntime('lib-acorn');
   const manifest = document.getElementById('rapier-builtin-plugins'), groups = manifest ? JSON.parse(manifest.textContent) : [];
   const optional = new Set(['rapier-builtin-plugins', ...groups.map(group => group.element)]);
-  const payloads = _rapierUniquePayloads(Array.from(document.querySelectorAll('script')).filter(row =>
-    _RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) && row.id !== 'rapier-apps-runtime' && row.id !== 'rapier-first-paint-runtime' && row.parentNode !== document.head &&
+  const payloads = _rapierUniquePayloads(Array.from(document.body.children).filter(row => row.tagName === 'SCRIPT' &&
+    _RAPIER_PORTABLE_PAYLOAD_TYPES.has(row.type) && row.id !== 'rapier-apps-runtime' && row.id !== 'rapier-first-paint-runtime' &&
     !optional.has(row.id) && !/^rapier-(?:part|plugin)-/.test(row.id)));
   const required = _rapierPortableRequiredPlugins(source, options);
   const used = new Set([...required].map(key => key.startsWith('letters-') ? 'drawing' : key));

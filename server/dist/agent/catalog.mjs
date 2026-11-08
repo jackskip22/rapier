@@ -35,6 +35,10 @@ const readSelection = {
   after_revision: {...integer(0), description: 'With wait_ms: return when the revision passes this.'}, wait_ms: {...integer(0, 20000), description: 'Bounded wait (ms) for the next human revision.'},
 };
 
+export const CONVERT_FILES = 32, CONVERT_BYTES = 32 * 1024 * 1024, CONVERT_PIXELS = 400_000_000;
+const convertFile = object({name: {...string(256), minLength: 1, description: 'The file name, with its extension.'},
+  data: {type: 'string', maxLength: Math.ceil(CONVERT_BYTES / 3) * 4, contentEncoding: 'base64', description: 'The file\'s exact bytes, base64.'}}, ['name', 'data']);
+
 export const TOOLS = Object.freeze([
   tool('open', 'Open Rapier', 'Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:"new", text, title} (title only there), or import a host file {file}. Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:"pair", code}. Share editor_url when available; keep document private.', 'create', {
     document: string(256), url: string(2048, 'This Door\'s editor_url, through its authorized connection. Use alone; other URLs are not fetched.'), text, filename: string(MAX_FILENAME_CHARS), note: noteRef, title: string(256),
@@ -60,6 +64,10 @@ export const TOOLS = Object.freeze([
     format: {...string(32), enum: ['markdown', 'html', 'page', 'txt', 'docx', 'pdf', 'plain', 'formatted', 'complete']}, to: {...string(32), enum: ['file', 'save', 'clipboard', 'sync']}, text, ...scope, revision, compare_id: string(128),
   }, [], {allOf: [{if: {required: ['to'], properties: {to: {type: 'string', const: 'sync'}}},
     then: lacking(['format', 'text', 'block', 'heading', 'revision', 'compare_id'])}]}),
+  tool('convert', 'Convert pictures with Rapier', 'Convert pictures to JPEG XL, or JPEG XL back. Each file\'s own kind decides: a JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL (a JPEG at lossless is carried exactly and restores byte for byte); a .jxl that carries its JPEG gives back that JPEG byte for byte, any other .jxl a PNG. quality: lossless, high (default) or medium; effort 1-9 (default 7: higher is smaller and slower). At most ' + CONVERT_FILES + ' files and ' + CONVERT_BYTES / 1048576 + ' MB in all per call, pictures to ' + CONVERT_PIXELS / 1e6 + ' megapixels in all. Returns each file\'s name, sizes and what was kept; the files go to the person.', 'create', {
+    files: {type: 'array', items: convertFile, minItems: 1, maxItems: CONVERT_FILES},
+    quality: {...string(16), enum: ['lossless', 'high', 'medium']}, effort: integer(1, 9),
+  }, ['files']),
 ]);
 
 export const EDITOR_TOOLS = Object.freeze(OPERATIONS
@@ -86,6 +94,8 @@ export function inputGuide(name, {mcp = false} = {}) {
   return entry ? structuredClone(mcp ? hostedSchema(entry) : entry.inputSchema) : null;
 }
 function hostedSchema(entry) {
+  if (entry.name === 'convert') return {...entry.inputSchema, properties: {...entry.inputSchema.properties,
+    files: {type: 'array', items: object({name: convertFile.properties.name}, ['name']), maxItems: CONVERT_FILES}}, required: []};
   if (entry.name === 'open') return {...entry.inputSchema, oneOf: [
     {required: ['text'], ...lacking(['document', 'url', 'file', 'note', 'title'])},
     {required: ['document'], ...lacking(['url', 'file', 'filename', 'createToken']),
@@ -107,16 +117,19 @@ export function annotations(effect, host = 'mcp', name = '') {
     idempotentHint: effect === 'read', openWorldHint: OPEN_WORLD.has(name)};
 }
 export const OPEN_WORLD = new Set(['open', 'show', 'export']);
+const HOSTED_CONVERT = 'Convert pictures to JPEG XL, or JPEG XL back, on the person\'s own device: opens Rapier\'s converter in this app\'s view where the app can show one, else answers with its link (https://rapier.website/jxl). The person adds the pictures there and saves the results; nothing is uploaded. files: the pictures\' names, if known. quality: lossless, high (default) or medium; effort 1-9 (default 7).';
 export function mcpDescriptors({uiResource, auth = 'anonymous', editor = false} = {}) {
   if (!['anonymous', 'oauth', 'server-bearer'].includes(auth)) throw new TypeError('Unknown MCP authentication profile');
   return (editor ? EDITOR_TOOLS : TOOLS).map(entry => {
     const {effect, class: toolClass, visibility, ...descriptor} = entry;
     const security = auth === 'server-bearer' ? {} : {securitySchemes: auth === 'anonymous' ? [{type: 'noauth'}]
       : [{type: 'oauth2', scopes: effect === 'read' ? ['rapier:read'] : ['rapier:read', 'rapier:write']}]};
-    return {...descriptor, inputSchema: editor ? entry.inputSchema : hostedSchema(entry),
+    return {...descriptor, ...(entry.name === 'convert' && !editor ? {description: HOSTED_CONVERT} : {}),
+      inputSchema: editor ? entry.inputSchema : hostedSchema(entry),
       annotations: {title: entry.title, ...annotations(effect, 'mcp', entry.name)}, ...security,
       _meta: {...security, 'website.rapier/tool-class': toolClass, ...(editor ? {'openai/widgetAccessible': true} : {}), ui: {visibility: editor ? ['app'] : ['model', 'app'],
-        ...(entry.name === 'open' && uiResource ? {resourceUri: uiResource} : {})},
-        ...(entry.name === 'open' && uiResource ? {'openai/toolInvocation/invoking': 'Opening Rapier', 'openai/toolInvocation/invoked': 'Rapier is ready'} : {})}};
+        ...((entry.name === 'open' || entry.name === 'convert' && !editor) && uiResource ? {resourceUri: uiResource} : {})},
+        ...(entry.name === 'open' && uiResource ? {'openai/toolInvocation/invoking': 'Opening Rapier', 'openai/toolInvocation/invoked': 'Rapier is ready'} : {}),
+        ...(entry.name === 'convert' && !editor && uiResource ? {'openai/toolInvocation/invoking': 'Opening the JPEG XL converter', 'openai/toolInvocation/invoked': 'The converter is ready'} : {})}};
   });
 }

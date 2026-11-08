@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.57 (2026-11-08)
+
+- Agents can convert pictures to JPEG XL and back.
+- The converter takes photos up to 268 MP; JPEGs up to 64 MP convert losslessly.
+- Drop a JPEG XL on the converter to get its original JPEG back, or a PNG.
+- Pinch zooms a document without changing the text size; the icon under Settings restores it.
+- Editing a list never moves its words; the item you're on shows its grip.
+- The scroll circle reaches further up and down.
+
 ## 1.2.56 (2026-11-07)
 
 - Pictures use rapier-jxl 8.3.0.

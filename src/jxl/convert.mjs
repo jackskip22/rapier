@@ -5,7 +5,7 @@ import {readPng, isPng} from './png.mjs';
 import {embeddedProfile, avifColors, displayP3Profile, isSrgbProfile} from './profile.mjs';
 import {mediaKind, convertMedia, mediaNote as framesNote} from './frames.mjs';
 
-export const CARRY_BYTES = 16 * 1024 * 1024, PIXELS = 24_000_000;
+export const CARRY_BYTES = 256 * 1024 * 1024, PIXELS = 268_435_456;
 export const QUALITY = Object.freeze({lossless: 100, high: 90, smaller: 75});
 export const ZIP_BYTES = 1024 * 1024 * 1024, ZIP_ENTRIES = 60000;
 
@@ -57,6 +57,21 @@ export function refusal(error, file) {
 	return 'This picture cannot be read or converted.';
 }
 
+const DROPS = '(hover: hover) and (pointer: fine)';
+export const pickWords = () => globalThis.matchMedia?.(DROPS).matches ? 'Choose/drop files' : 'Choose files';
+export function pickLabel(span) {
+	span.textContent = pickWords();
+	globalThis.matchMedia?.(DROPS).addEventListener?.('change', () => { if (span.isConnected) span.textContent = pickWords(); });
+	return span;
+}
+
+export function liftToLabel(seek, level, label) {
+	seek.addEventListener('pointerdown', () => {
+		const at = level.getBoundingClientRect(), to = label.getBoundingClientRect();
+		seek.style.setProperty('--rapier-effort-lift', Math.round(to.bottom - at.bottom) + 'px');
+	}, true);
+}
+
 export function kindOf(bytes) {
 	if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'jpeg';
 	if (isPng(bytes)) return 'png';
@@ -64,10 +79,10 @@ export function kindOf(bytes) {
 	return 'other';
 }
 
-export function outputName(name, taken = new Set()) {
+export function outputName(name, taken = new Set(), ext = '.jxl') {
 	const base = String(name || '').replace(/[\\/]/g, '_').replace(/\.[^.]*$/, '') || 'picture';
-	let out = base + '.jxl', n = 2;
-	while (taken.has(out.toLowerCase())) out = base + '-' + n++ + '.jxl';
+	let out = base + ext, n = 2;
+	while (taken.has(out.toLowerCase())) out = base + '-' + n++ + ext;
 	taken.add(out.toLowerCase());
 	return out;
 }
@@ -94,10 +109,42 @@ export function zipSeries(results, {now = Date.now()} = {}) {
 	return zips;
 }
 
-export function resultOf(bytes) {
+export function resultOf(bytes, type = 'image/jxl') {
 	let crc = 0;
 	for (let at = 0; at < bytes.length; at += 65536) crc = crc32(bytes.subarray(at, at + 65536), crc);
-	return {blob: new Blob([bytes], {type: 'image/jxl'}), crc: crc >>> 0, size: bytes.length};
+	return {blob: new Blob([bytes], {type}), crc: crc >>> 0, size: bytes.length};
+}
+
+async function convertBack(bytes, {complete, signal, say, progress, codec}) {
+	const assets = globalThis.RapierImageAssets, before = bytes.length;
+	let info = null;
+	try { info = assets.inspectJPEGXL(bytes.subarray(0, Math.min(bytes.length, 4 << 20)), true); } catch (_) {}
+	if (info?.reconstruction) {
+		say('Restoring the JPEG');
+		try {
+			const jpeg = await codec('restore', bytes.slice(), {}, {signal, progress});
+			return {...resultOf(jpeg, 'image/jpeg'), before, back: 'jpeg', ext: '.jpg', width: info.width, height: info.height};
+		} catch (error) { if (error?.name === 'AbortError' || exhausted(error)) throw error; }
+	}
+	say('Reading the picture'); progress(0);
+	const canvas = document.createElement('canvas');
+	try {
+		if (await globalThis.RapierEmbeddedImages.whenJxlDisplayKnown?.() === true) {
+			const bitmap = await createImageBitmap(new Blob([bytes], {type: 'image/jxl'}));
+			canvas.width = bitmap.width; canvas.height = bitmap.height;
+			canvas.getContext('2d').drawImage(bitmap, 0, 0); bitmap.close();
+		} else {
+			await complete?.();
+			const pixels = await codec('decode', bytes.slice(), {format: 'uint8', colorSpace: 'srgb', unpremultiplyAlpha: true, maxPixels: PIXELS}, {signal, progress});
+			canvas.width = pixels.width; canvas.height = pixels.height;
+			canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels.data.buffer, pixels.data.byteOffset, pixels.width * pixels.height * 4), pixels.width, pixels.height), 0, 0);
+		}
+		signal?.throwIfAborted();
+		say('Making the file');
+		const blob = await new Promise((done, fail) => canvas.toBlob(made => made ? done(made) : fail(Object.assign(new Error('Not converted: the PNG could not be made.'), {shown: true})), 'image/png'));
+		const png = new Uint8Array(await blob.arrayBuffer());
+		return {...resultOf(png, 'image/png'), before, back: 'png', ext: '.png', width: canvas.width, height: canvas.height};
+	} finally { canvas.width = canvas.height = 0; }
 }
 
 function lossyPng(own) {
@@ -128,6 +175,7 @@ async function animationColors(bytes, type) {
 	return {};
 }
 
+const carriedSize = carried => globalThis.RapierImageAssets.imageDimensions(carried.subarray(0, Math.min(carried.length, 4 << 20)), 'image/jxl', true);
 const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
 export const exhausted = error => error?.code === 'JXL_MEMORY' || error instanceof RangeError || /out of memory|allocation failed|Array buffer allocation/i.test(String(error?.message || ''));
 export const EFFORT = Object.freeze({min: 1, max: 9, start: 7});
@@ -168,19 +216,19 @@ async function opens(bytes) {
 	try { (await createImageBitmap(new Blob([bytes], {type: 'image/jxl'}))).close(); return true; } catch (_) { return false; }
 }
 
-export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, codec = globalThis.RapierEmbeddedImages.codec} = {}) {
+export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
 	const effort = effortOf(asked), effortFor = () => effort;
 	const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
 	if (kindOf(head) === 'other' && mediaKind(head, file.type) === 'video')
-		return convertMedia(file, null, 'video', {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete});
+		return convertMedia(file, null, 'video', {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {})});
 	const bytes = new Uint8Array(await file.arrayBuffer());
 	const kind = kindOf(bytes), before = bytes.length;
 	const animation = kind === 'other' || kind === 'png' ? mediaKind(bytes, file.type) : '';
 	if (animation && animation !== 'video') {
-		const made = await convertMedia(file, bytes, animation, {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete, colors: await animationColors(bytes, animation)});
+		const made = await convertMedia(file, bytes, animation, {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {}), colors: await animationColors(bytes, animation)});
 		if (made) return made;
 	}
-	if (kind === 'jxl') throw Object.assign(new Error('Already JPEG XL.'), {shown: true});
+	if (kind === 'jxl') return convertBack(bytes, {complete, signal, say, progress, codec});
 	if (kind === 'other' && /^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(new TextDecoder().decode(bytes.subarray(0, 1024)))) throw Object.assign(new Error('A vector drawing has no pixels to convert.'), {shown: true});
 	let exact = null;
 	if (kind === 'jpeg' && before <= CARRY_BYTES) {
@@ -189,7 +237,7 @@ export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.s
 			const carried = await codec('recompress', bytes.slice(), {effort}, {signal, progress});
 			say('Checking it restores the original'); progress(1);
 			const restored = await codec('restore', carried.slice(), {}, {signal});
-			if (same(restored, bytes)) exact = {...resultOf(carried), before, exact: true, jpeg: true, mode: 'lossless', ...globalThis.RapierImageAssets.imageDimensions(carried, 'image/jxl')};
+			if (same(restored, bytes)) exact = {...resultOf(carried), before, exact: true, jpeg: true, mode: 'lossless', ...carriedSize(carried)};
 		} catch (error) { if (error?.name === 'AbortError' || exhausted(error)) throw error; }
 		if (exact && mode === 'lossless') return exact;
 	}
@@ -207,7 +255,7 @@ export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.s
 	const shown = await globalThis.RapierEmbeddedImages.whenJxlDisplayKnown?.() === true;
 	for (let attempt = 0;; attempt++) {
 		const native = picture.options ? {...picture.bitDepth === 16 && {bitDepth: 16}, ...picture.options} : {};
-		const encode = (data, options) => codec('encode', {width: picture.width, height: picture.height, data, ...native}, options, {signal, progress});
+		const encode = (data, options) => codec('encode', {width: picture.width, height: picture.height, data, ...native}, {...options, maxPixels: PIXELS}, {signal, progress});
 		const again = shown && !lossless ? picture.data.slice() : null;
 		try {
 			say('Making the file');

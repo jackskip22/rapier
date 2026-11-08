@@ -25,6 +25,14 @@ function _rapierCompareBlockReferences(side) {
 	runtime.references = { ...runtime.references, [side]: { text, references } };
 	return references;
 }
+function _rapierCompareHoldsSentinel(source) {
+	if (/[\uFDD0\uFDD1]/.test(source)) return true;
+	for (const reference of String(source).matchAll(/&#(?:[xX]([0-9A-Fa-f]+)|([0-9]+));?/g)) {
+		const code = reference[1] !== undefined ? parseInt(reference[1], 16) : parseInt(reference[2], 10);
+		if (code === 0xFDD0 || code === 0xFDD1) return true;
+	}
+	return false;
+}
 function _rapierComparePlaceMarks(box, ground) {
 	const sentinel = /[﷐﷑]|%EF%B7%9[01]/i;
 	for (const node of box.querySelectorAll('*')) for (const attribute of node.attributes) if (sentinel.test(attribute.value)) return false;
@@ -66,7 +74,7 @@ function _rapierCompareBlockBody(side, block, marks = []) {
 	const text = side === 'before' ? rapier.compare.currentText : rapier.compare.incomingText;
 	const references = _rapierCompareBlockReferences(side), source = text.slice(block.from, block.to);
 	const literal = block.kind === 'frontmatter' ? _rapierCompareFrontmatterAsCode : value => value;
-	const marked = marks.length ? _rapierMarkdownPreview(literal(RapierDiff.marked(text, block, marks)), references) : null;
+	const marked = marks.length && !_rapierCompareHoldsSentinel(source) ? _rapierMarkdownPreview(literal(RapierDiff.marked(text, block, marks)), references) : null;
 	let box = marked == null ? null : _rapierCompareBlockMarkup(marked);
 	if (!box || !_rapierComparePlaceMarks(box, side === 'before' ? 'remove' : 'add')) {
 		const html = _rapierMarkdownPreview(literal(source), references);

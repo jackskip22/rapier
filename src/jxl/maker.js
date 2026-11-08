@@ -67,9 +67,9 @@
 
 	function build() {
 		const root = make('div', 'rapier-jxl-maker'), fold = make('div', 'rapier-jxl-view__fold');
-		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Rapier is a single HTML file that works offline. Free and open source.');
+		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Free and open source. Rapier is a single HTML file that works offline. Press X in the top right to go back to the Markdown editor.');
 		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input');
-		pick.append(make('span', '', 'Choose or drop pictures, GIFs or videos'), input);
+		pick.append(C.pickLabel(make('span')), input);
 		input.type = 'file'; input.accept = 'image/*,video/*,.heic,.heif'; input.multiple = true;
 
 		const clip = make('div', 'rapier-jxl-maker__clip'), clipVideo = make('video', 'rapier-jxl-maker__video');
@@ -120,6 +120,7 @@
 		effort.seek.insertBefore(level, effort.input);
 		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), effort.seek, make('span', 'rapier-jxl-view__end', 'Smallest file'));
 		const quality = part('Quality', modes.group), effortPart = part('Effort', effortRow);
+		C.liftToLabel(effort.seek, level, effortPart.firstElementChild);
 
 		const go = make('button', 'settings-action-btn rapier-jxl-view__all rapier-jxl-maker__make', 'Make JPEG XL');
 		go.type = 'button'; go.disabled = true;

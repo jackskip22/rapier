@@ -419,6 +419,7 @@ export function mountHtmlBlocks(doc, options = {}) {
         if (++count > 512) throw new Error('HTML node budget exceeded');
         const tag = el.localName.toLowerCase();
         if (!allowed.has(tag)) {el.remove(); continue;}
+        if (el.namespaceURI === 'http://www.w3.org/1999/xhtml' && el.parentNode?.namespaceURI === 'http://www.w3.org/2000/svg') {el.remove(); continue;}
         if (tag === 'style') el.textContent = css(el.textContent);
         if (el.hasAttribute('style')) el.setAttribute('style', css(el.getAttribute('style')));
         for (const attr of [...el.attributes]) {
@@ -451,10 +452,10 @@ export function mountHtmlBlocks(doc, options = {}) {
               if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(svgText)) throw new Error('SVG declarations are unsupported');
               const parsed = new win.DOMParser().parseFromString(svgText, 'image/svg+xml');
               if (parsed.querySelector('parsererror') || parsed.documentElement.localName !== 'svg') throw new Error('Invalid SVG image');
-              const svg = doc.importNode(parsed.documentElement, true);
+              const inert = template.content.ownerDocument, svg = inert.importNode(parsed.documentElement, true);
               if (el.getAttribute('style')) svg.setAttribute('style', el.getAttribute('style'));
               for (const key of ['width','height','class','id']) if (el.hasAttribute(key)) svg.setAttribute(key, el.getAttribute(key));
-              const holder = doc.createElement('div'); holder.append(svg); walk(holder); el.replaceWith(svg); continue;
+              const holder = inert.createElement('div'); holder.append(svg); walk(holder); el.replaceWith(svg); continue;
             }
             el.setAttribute(name, info.first ? 'data:image/gif;base64,' + media.encode(info.first) : url);
             if (info.animated) {

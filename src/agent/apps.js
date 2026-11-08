@@ -1422,6 +1422,10 @@
   async function receive(result, sequence = ++receiveSequence) {
     let data = toolData(result);
     if (!object(data)) return;
+    if (data.outcome === 'converter' && !result.isError) {
+      if (typeof _rapierOpenJxlPart === 'function') _rapierOpenJxlPart();
+      return;
+    }
     rememberEditorKey(result);
     const opened = !result.isError && (data.created === true && data.outcome === 'created' || data.resumed === true && data.outcome === 'resumed') && validToken(data.document);
     if (opened) {

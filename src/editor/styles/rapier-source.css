@@ -121,7 +121,7 @@ html[data-linenumbers="on"] #source-mode:not(.source-mode--prose) .source-stack 
 .scroll-fab {
 	position: fixed;
 	right: -9px;
-	top: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 72px);
+	top: calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 8px);
 	width: 60px;
 	height: 60px;
 	border-radius: 50%;

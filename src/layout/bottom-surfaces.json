@@ -924,7 +924,7 @@
           },
           {
             "property": "top",
-            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 72px)",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 8px)",
             "important": false
           }
         ]
@@ -1609,6 +1609,37 @@
       "interactive": true,
       "edge": "top",
       "reason": "The playing bar stands under the head while a Notes sound plays out of sight; the page moves down by its height and every menu, sheet and toast stands over it."
+    },
+    {
+      "id": "view-zoom-restore",
+      "file": "editor/styles/rapier-editor.css",
+      "selector": ".rapier-view-zoom-restore",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--rapier-view-zoom-top, 0px) + var(--space-3))",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--rapier-view-zoom-left, 0px)",
+            "important": false
+          }
+        ]
+      },
+      "role": "overlay",
+      "interactive": true,
+      "edge": "top",
+      "reason": "The view zoom's restore icon stands under the top bar's settings icon while the document is zoomed; it never reaches the bottom band."
     }
   ],
   "localRules": [

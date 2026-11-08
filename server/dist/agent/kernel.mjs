@@ -20,7 +20,7 @@ import { applyOperations } from '../draw/edit.mjs';
 import {hasRefraction} from '../draw/refraction-rendition.mjs';
 import {requiredRefractionScopes} from '../draw/core.mjs';
 import { parseLayout } from '../layout/markdown.mjs';
-import { getTool as getSurfaceTool, PAGE_TOOLS, validateInput, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS } from './catalog.mjs';
+import { getTool as getSurfaceTool, PAGE_TOOLS, validateInput, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, CONVERT_BYTES } from './catalog.mjs';
 import {getTool as getOperation} from './operation-contracts.mjs';
 import {guideResult} from './guide.mjs';
 import {textHead, textBytes, textTargets, textScope, exactMatches, textContext, excerptRow, planTextChanges, fencedBlocks, blockText, projectSegments, sourcePosition, expandedChanges, keptRangesAfterSplice} from './text-surface.mjs';
@@ -50,6 +50,18 @@ export const showTarget = input => input.target || (input.view ? 'view' : input.
   : input.close || input.compare_id ? 'comparison' : input.code !== undefined ? 'pair' : input.note ? 'note' : input.words !== undefined ? 'pointer'
   : input.act || input.turn_id || input.name !== undefined && input.text !== undefined ? 'comparison' : 'passage');
 export const REVISION_FORMS = 'Pass revision as the integer read or open returned (a decimal string of it also works), or, while a drawing is live, the exact "n:hash" string read returned.';
+export function convertAdmission(input) {
+  const files = input.files.map(file => ({name: String(file.name).replace(/[\\/\u0000-\u001f\u007f]/g, '_'), data: String(file.data).replace(/\s+/g, '')}));
+  let total = 0;
+  for (const file of files) {
+    const padded = file.data.endsWith('=');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(file.data) || (padded ? file.data.length % 4 !== 0 : file.data.length % 4 === 1)) return failure('convert_data_invalid', 'invalid', {file: file.name, hint: 'data is the file\'s exact bytes in base64.'});
+    total += Math.floor(file.data.length * 3 / 4) - (file.data.endsWith('==') ? 2 : file.data.endsWith('=') ? 1 : 0);
+  }
+  if (total > CONVERT_BYTES) return failure('convert_too_large', 'refused', {bytes: total, limitBytes: CONVERT_BYTES, hint: 'Send fewer files per call, or open https://rapier.website/jxl for large batches.'});
+  return {files, quality: input.quality || 'high', effort: input.effort || 7};
+}
+
 export function revisionNumber(value) {
   if (Number.isSafeInteger(value) && value >= 0) return value;
   const match = typeof value === 'string' && /^(0|[1-9]\d{0,15})(?::[0-9a-f]{64})?$/.exec(value);
@@ -5581,6 +5593,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return dispatchOperation('editor.reveal', passage, who, context);
   }
 
+  async function convertPictures(input, who) {
+    const admitted = convertAdmission(input);
+    if (admitted.outcome) return admitted;
+    if (typeof host.convert !== 'function') return failure('convert_unavailable', 'refused', {converter: 'https://rapier.website/jxl', hint: 'This door converts no pictures yet. The person can convert them at https://rapier.website/jxl, on their own device.'});
+    return host.convert(admitted, who);
+  }
+
   async function doorExport(input, who, context) {
     if (input.to === 'sync') return notesSync({action: 'now'}, who, context);
     if (input.to === 'save') {
@@ -5640,6 +5659,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'undo': result = Boolean(input.act) === Boolean(input.turn_id) ? failure(input.act ? 'act_and_turn_conflict' : 'act_or_turn_required', 'invalid') : input.act?.startsWith('notes-source:') && typeof host.notesSourceUndo === 'function' ? await notesSourceUndo(input, who, context) : input.act?.startsWith('notes-controls:') ? await notesUndo(input, who, context) : await undo({change_id: input.act, turn_id: input.turn_id}, who, context); break;
       case 'show': result = await doorShow(input, who, context); break;
       case 'export': result = await doorExport(input, who, context); break;
+      case 'convert': result = await convertPictures(input, who); break;
       case 'document.observe': result = await observe(input, who, context); break;
       case 'document.outline': result = await getOutline(input, who, context); break;
       case 'comments.read': result = listComments(input, who); break;

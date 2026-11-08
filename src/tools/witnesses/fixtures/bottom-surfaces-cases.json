@@ -1146,7 +1146,7 @@
           },
           {
             "property": "top",
-            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 72px)",
+            "value": "calc(var(--top-bar-h) + var(--native-inset-top, env(safe-area-inset-top, 0px)) + 8px)",
             "important": false
           }
         ]
@@ -2001,6 +2001,37 @@
         "attributes": {
           "aria-hidden": "false"
         }
+      }
+    },
+    {
+      "id": "view-zoom-restore",
+      "selector": ".rapier-view-zoom-restore",
+      "rule": {
+        "file": "editor/styles/rapier-editor.css",
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "fixed",
+            "important": false
+          },
+          {
+            "property": "top",
+            "value": "calc(var(--rapier-view-zoom-top, 0px) + var(--space-3))",
+            "important": false
+          },
+          {
+            "property": "left",
+            "value": "var(--rapier-view-zoom-left, 0px)",
+            "important": false
+          }
+        ]
+      },
+      "inactive": {
+        "condition": "#editor-blocks[data-view-zoom] (a pinch has zoomed the document view)",
+        "reason": "Shown only while the document view is zoomed, under the top bar's settings icon; at rest on the phone cases the page is at its own size, and the icon never reaches the bottom band."
       }
     }
   ],

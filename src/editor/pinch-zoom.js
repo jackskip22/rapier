@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-const RAPIER_PINCH_ORDER = ['sm', 'md', 'lg', 'xl'];
 const RAPIER_PINCH_BEGIN = { share: 0.08, pixels: 24 };
-const RAPIER_PINCH_CARRY = 0.1, RAPIER_PINCH_BAND = 0.35, RAPIER_PINCH_LOOK_MS = 100, RAPIER_PINCH_EASE_MS = 300;
-const RAPIER_PINCH_PILL_MS = 600, RAPIER_PINCH_WHEEL_REST_MS = 150;
+const RAPIER_VIEW_ZOOM = { least: 1, most: 4, band: 0.25 };
+const RAPIER_PINCH_WHEEL_REST_MS = 150;
 const RAPIER_PINCH_OWNERS = '.rapier-image-grip, .rapier-image-move, .rapier-image-tools, img[data-rapier-image-selected], [data-rapier-diagram-edit], .section-fold-btn, .section-move-btn, .scroll-fab, input, textarea, select';
 
-const _rapierPinch = { phase: 'idle', host: null, wheel: 0, swallowUntil: 0, indicator: null };
+const _rapierPinch = { phase: 'idle', host: null, wheel: 0, swallowUntil: 0, restore: null };
 const RAPIER_PINCH_LIFT_MS = 350;
 
 function _rapierPinchHost() { return document.getElementById('editor-blocks'); }
 
-function _rapierPinchSizes() {
-	return RAPIER_PINCH_ORDER.map(name => parseFloat(FONT_SIZES[name]));
-}
-function _rapierPinchNow() { return RAPIER_PINCH_ORDER.indexOf(RapierPreferences.read('fontSize')); }
+function _rapierViewZoomNow(host = _rapierPinchHost()) { return Number(host?.dataset.viewZoom) || 1; }
 
 function _rapierPinchMayStart(event, host) {
 	if (!host || host.hidden || event.touches.length !== 2 || document.body.classList.contains('rapier-draw-open')) return false;
@@ -34,21 +30,9 @@ const _rapierPinchFingers = touches => {
 
 function _rapierPinchStart(event) {
 	const state = _rapierPinch, host = _rapierPinchHost();
-	if (state.phase === 'swapping') { if (state.transition) state.transition.skipTransition(); state.finish(); }
 	if (event.touches.length !== 2) { if (state.phase === 'armed') _rapierPinchDisarm(); return; }
 	if (!_rapierPinchMayStart(event, host)) return;
 	const fingers = _rapierPinchFingers(event.touches);
-	if (state.phase === 'settling') {
-		cancelAnimationFrame(state.frame); state.frame = 0;
-		const { scale, dx, dy } = state.shown, box = host.getBoundingClientRect();
-		const ox = 0, oy = fingers.y - box.top;
-		const dx0 = dx + (1 - scale) * (state.ox - ox), dy0 = dy + (1 - scale) * (state.oy - oy);
-		host.style.transformOrigin = ox + 'px ' + oy + 'px';
-		Object.assign(state, { phase: 'zooming', ox, oy, dx0, dy0, dx: dx0, dy: dy0, span0: fingers.span, mid0: fingers, base: scale, samples: [], scale, target: scale });
-		_rapierPinchListen(true);
-		_rapierPinchPaint();
-		return;
-	}
 	Object.assign(state, { phase: 'armed', host, span0: fingers.span, mid0: fingers });
 	_rapierPinchListen(true);
 }
@@ -76,7 +60,7 @@ function _rapierPinchMove(event) {
 	}
 	if (state.phase !== 'zooming') return;
 	if (event.cancelable) event.preventDefault();
-	_rapierPinchTrack(fingers.span / state.span0 * state.base, fingers.x - state.mid0.x, fingers.y - state.mid0.y);
+	_rapierPinchTrack(fingers.span / state.span0, fingers.x - state.mid0.x, fingers.y - state.mid0.y);
 }
 
 function _rapierPinchBegin(event, fingers) {
@@ -89,14 +73,17 @@ function _rapierPinchBegin(event, fingers) {
 	host._rapierBlankPress = null; host._rapierGapPress = null;
 	for (const touch of event.touches) { const wrapper = touch.target.closest && touch.target.closest('.block-wrapper'); if (wrapper) wrapper._rapierEditTap = null; }
 	state.swallowUntil = performance.now() + 1500;
-	const box = host.getBoundingClientRect();
+	_rapierPinchHold(host, fingers);
+	Object.assign(state, { span0: fingers.span, mid0: fingers, was });
+}
+
+function _rapierPinchHold(host, fingers) {
+	const state = _rapierPinch, box = host.getBoundingClientRect();
 	Object.assign(state, {
-		phase: 'zooming', was, anchor: _rapierPinchAnchor(host, fingers.x, fingers.y), at: { x: fingers.x, y: fingers.y },
-		span0: fingers.span, mid0: fingers, base: 1, scale: 1, target: 1, dx: 0, dy: 0, dx0: 0, dy0: 0, by: box.top, samples: [], ox: 0, oy: fingers.y - box.top,
-		shown: { scale: 1, dx: 0, dy: 0 },
+		host, phase: 'zooming', anchor: _rapierPinchAnchor(host, fingers.x, fingers.y), at: { x: fingers.x, y: fingers.y }, z0: _rapierViewZoomNow(host),
+		scale: 1, target: 1, dx: 0, dy: 0, bx: box.left, by: box.top, ox: fingers.x - box.left, oy: fingers.y - box.top, shown: { scale: 1, dx: 0, dy: 0 },
 	});
 	host.style.transformOrigin = state.ox + 'px ' + state.oy + 'px';
-	_rapierPinchIndicate(true, _rapierPinchNow());
 }
 
 function _rapierPinchAnchor(host, x, y) {
@@ -108,31 +95,27 @@ function _rapierPinchAnchor(host, x, y) {
 		const range = document.createRange();
 		range.setStart(node, Math.min(offset, node.data.length)); range.collapse(true);
 		const box = range.getClientRects()[0];
-		if (box && Math.abs(box.top + box.height / 2 - y) < 40) at = { range, drop: y - box.top };
+		if (box && Math.abs(box.top + box.height / 2 - y) < 40) at = { range, drop: y - box.top, side: x - box.left };
 	}
 	if (at) return at;
 	const wrapper = document.elementFromPoint(x, y)?.closest(':is(#editor-blocks, #editor-blocks > .block-sleep-group) > .block-wrapper');
 	if (!wrapper) return null;
 	const box = wrapper.getBoundingClientRect();
-	return { wrapper, share: Math.min(1, Math.max(0, (y - box.top) / Math.max(1, box.height))) };
+	return { wrapper, share: Math.min(1, Math.max(0, (y - box.top) / Math.max(1, box.height))), across: Math.min(1, Math.max(0, (x - box.left) / Math.max(1, box.width))) };
 }
 
-function _rapierPinchDraw(raw) {
-	const sizes = _rapierPinchSizes(), now = sizes[_rapierPinchNow()] || sizes[1];
-	const least = sizes[0] / now, most = sizes[3] / now;
-	if (raw > most) return most * (1 + RAPIER_PINCH_BAND * Math.log(raw / most));
-	if (raw < least) return least / (1 + RAPIER_PINCH_BAND * Math.log(least / raw));
+function _rapierPinchDraw(raw, band = true) {
+	const z0 = _rapierPinch.z0 || 1, least = RAPIER_VIEW_ZOOM.least / z0, most = RAPIER_VIEW_ZOOM.most / z0;
+	if (!band) return Math.min(most, Math.max(least, raw));
+	if (raw > most) return most * (1 + RAPIER_VIEW_ZOOM.band * Math.log(raw / most));
+	if (raw < least) return least / (1 + RAPIER_VIEW_ZOOM.band * Math.log(least / raw));
 	return raw;
 }
 
 function _rapierPinchTrack(raw, dx, dy) {
-	const state = _rapierPinch, now = performance.now();
-	state.target = _rapierPinchDraw(raw);
-	state.dx = 0; state.dy = state.dy0 + dy;
-	state.samples.push({ at: now, ln: Math.log(state.target) });
-	while (state.samples.length > 2 && now - state.samples[0].at > 90) state.samples.shift();
-	state.rawTarget = raw;
-	_rapierPinchIndicate(true, _rapierPinchLanding(state.target).index);
+	const state = _rapierPinch;
+	state.target = _rapierPinchDraw(raw); state.rawTarget = raw;
+	state.dx = dx; state.dy = dy;
 	if (!state.frame) state.frame = requestAnimationFrame(() => { state.frame = 0; if (state.phase === 'zooming') { state.scale = state.target; _rapierPinchPaint(); } });
 }
 
@@ -140,17 +123,6 @@ function _rapierPinchPaint() {
 	const state = _rapierPinch, host = state.host;
 	state.shown = { scale: state.scale, dx: state.dx, dy: state.dy };
 	host.style.transform = 'translate(' + state.dx + 'px,' + state.dy + 'px) scale(' + state.scale + ')';
-}
-
-function _rapierPinchLanding(scale) {
-	const state = _rapierPinch, sizes = _rapierPinchSizes(), now = sizes[_rapierPinchNow()] || sizes[1];
-	const stamp = performance.now(), recent = state.samples.filter(sample => stamp - sample.at < 90);
-	const first = recent[0], last = recent[recent.length - 1];
-	const rate = first && last && last.at > first.at ? (last.ln - first.ln) / (last.at - first.at) : 0;
-	const aimed = Math.log(scale ?? state.scale) + Math.max(-RAPIER_PINCH_CARRY, Math.min(RAPIER_PINCH_CARRY, rate * RAPIER_PINCH_LOOK_MS));
-	let best = 0, gap = Infinity;
-	sizes.forEach((size, index) => { const away = Math.abs(Math.log(size / now) - aimed); if (away < gap) { gap = away; best = index; } });
-	return { index: best, ratio: sizes[best] / now, speed: rate * state.scale };
 }
 
 function _rapierPinchEnd(event) {
@@ -165,57 +137,79 @@ function _rapierPinchEnd(event) {
 }
 
 function _rapierPinchRelease() {
-	const state = _rapierPinch;
+	const state = _rapierPinch, host = state.host;
 	cancelAnimationFrame(state.frame); state.frame = 0;
-	state.scale = state.target;
-	const landing = _rapierPinchLanding();
-	state.phase = 'settling'; state.landing = landing;
-	const omega = 5.8 / (RAPIER_PINCH_EASE_MS / 1000), from = state.scale, start = performance.now();
-	const lead = from - landing.ratio, push = landing.speed * 1000 + omega * lead;
-	_rapierPinchIndicate(true, landing.index);
-	const tick = () => {
-		state.frame = 0;
-		if (state.phase !== 'settling') return;
-		const seconds = (performance.now() - start) / 1000, decay = Math.exp(-omega * seconds);
-		const scale = landing.ratio + (lead + push * seconds) * decay;
-		const done = seconds > RAPIER_PINCH_EASE_MS * 2.2 / 1000 || (seconds > 0.1 && Math.abs(scale - landing.ratio) < 0.0015);
-		state.scale = done ? landing.ratio : scale;
-		_rapierPinchPaint();
-		if (done) { _rapierPinchSwap(); return; }
-		state.frame = requestAnimationFrame(tick);
-	};
-	state.frame = requestAnimationFrame(tick);
+	state.scale = state.target; _rapierPinchPaint();
+	const shown = state.shown, factor = _rapierPinchDraw(state.target, false), zoom = (state.z0 || 1) * factor;
+	const drawn = { x: state.bx + state.ox + shown.scale * (state.at.x - state.bx - state.ox) + shown.dx, y: state.by + state.oy + shown.scale * (state.at.y - state.by - state.oy) + shown.dy };
+	host.style.transform = ''; host.style.transformOrigin = ''; host.style.willChange = '';
+	if (state.was) host.style.overflowY = state.was.overflowY;
+	_rapierViewZoomSet(host, zoom);
+	const anchor = state.anchor;
+	let now = null;
+	if (anchor?.range) { const box = anchor.range.getClientRects()[0]; if (box) now = { x: box.left + anchor.side * zoom / (state.z0 || 1), y: box.top + anchor.drop * zoom / (state.z0 || 1) }; }
+	else if (anchor?.wrapper?.isConnected) { const box = anchor.wrapper.getBoundingClientRect(); now = { x: box.left + anchor.across * box.width, y: box.top + anchor.share * box.height }; }
+	if (now) {
+		if (typeof _rapierNoteViewportWrite === 'function') _rapierNoteViewportWrite();
+		host.scrollLeft += now.x - drawn.x; host.scrollTop += now.y - drawn.y;
+	}
+	state.phase = 'idle'; state.anchor = null;
 }
 
-function _rapierPinchSwap() {
-	const state = _rapierPinch, host = state.host, landing = state.landing, name = RAPIER_PINCH_ORDER[landing.index];
-	const apply = () => {
-		const changed = name !== RapierPreferences.read('fontSize');
-		const shown = state.shown, anchor = state.anchor;
-		if (changed) RapierPreferences.write('fontSize', name);
-		host.style.transform = ''; host.style.transformOrigin = ''; host.style.willChange = '';
-		host.style.overflowY = state.was.overflowY;
-		if (changed && globalThis.RapierImageFlow) globalThis.RapierImageFlow.layoutNow();
-		if (changed && anchor) {
-			const drawn = state.by + state.oy + shown.scale * (state.at.y - state.by - state.oy) + shown.dy;
-			let moved = 0;
-			if (anchor.range) { const box = anchor.range.getClientRects()[0]; if (box) moved = box.top + anchor.drop - drawn; }
-			else if (anchor.wrapper && anchor.wrapper.isConnected) { const box = anchor.wrapper.getBoundingClientRect(); moved = box.top + anchor.share * box.height - drawn; }
-			if (Math.abs(moved) > 0.5) { if (typeof _rapierNoteViewportWrite === 'function') _rapierNoteViewportWrite(); host.scrollTop += moved; }
-		}
-	};
-	const done = () => { state.phase = 'idle'; state.anchor = null; state.transition = null; _rapierPinchIndicate(false); };
-	state.phase = 'swapping';
-	state.finish = () => { document.documentElement.classList.remove('rapier-pinch-swap'); done(); };
-	const quiet = typeof document.startViewTransition !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches || name === RapierPreferences.read('fontSize');
-	if (quiet) { apply(); done(); return; }
-	const root = document.documentElement;
-	root.classList.add('rapier-pinch-swap');
-	try {
-		const transition = state.transition = document.startViewTransition(apply);
-		const clean = () => { if (state.transition === transition) state.finish(); };
-		transition.finished.then(clean, clean);
-	} catch (_) { root.classList.remove('rapier-pinch-swap'); apply(); done(); }
+function _rapierViewZoomSet(host, zoom) {
+	if (!host) return;
+	if (!(zoom > 1.01)) {
+		delete host.dataset.viewZoom;
+		for (const name of ['--rapier-view-zoom', '--rapier-view-width', '--rapier-view-wrap', '--rapier-view-wrap-start']) host.style.removeProperty(name);
+		_rapierViewZoomRestore(false);
+		if (globalThis.RapierImageFlow) globalThis.RapierImageFlow.layoutNow();
+		return;
+	}
+	if (!host.dataset.viewZoom) {
+		const box = host.getBoundingClientRect(), style = getComputedStyle(host);
+		const wrapper = host.querySelector(':scope > .block-wrapper, :scope > .block-sleep-group > .block-wrapper');
+		const start = box.left + parseFloat(style.paddingLeft), width = host.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+		const wrap = wrapper ? wrapper.getBoundingClientRect() : { left: start, width };
+		host.style.setProperty('--rapier-view-width', width + 'px');
+		host.style.setProperty('--rapier-view-wrap', wrap.width + 'px');
+		host.style.setProperty('--rapier-view-wrap-start', (wrap.left - start) + 'px');
+	}
+	host.style.setProperty('--rapier-view-zoom', String(Math.min(RAPIER_VIEW_ZOOM.most, zoom)));
+	host.dataset.viewZoom = String(Math.min(RAPIER_VIEW_ZOOM.most, zoom));
+	_rapierViewZoomRestore(true);
+}
+
+function _rapierViewZoomRestore(on) {
+	const state = _rapierPinch;
+	if (!on) { if (state.restore) state.restore.hidden = true; return; }
+	let button = state.restore;
+	if (!button) {
+		button = state.restore = document.createElement('button');
+		button.type = 'button'; button.className = 'icon-btn rapier-view-zoom-restore';
+		button.setAttribute('aria-label', 'restore page zoom'); button.dataset.tip = 'restore zoom';
+		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+		for (const [name, value] of [['width', '24'], ['height', '24'], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'],
+			['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(name, value);
+		path.setAttribute('d', 'M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3');
+		svg.append(path); button.append(svg);
+		button.addEventListener('click', () => _rapierViewZoomReset());
+		document.body.appendChild(button);
+	}
+	const settings = document.getElementById('btn-overflow'), box = settings?.getBoundingClientRect();
+	if (box && box.width) {
+		button.style.setProperty('--rapier-view-zoom-left', box.left + 'px');
+		button.style.setProperty('--rapier-view-zoom-top', box.bottom + 'px');
+	}
+	button.hidden = false;
+}
+
+function _rapierViewZoomReset() {
+	const host = _rapierPinchHost();
+	if (!host || !host.dataset.viewZoom) return;
+	const zoom = _rapierViewZoomNow(host), box = host.getBoundingClientRect();
+	const middle = (host.scrollTop + box.height / 2) / zoom;
+	_rapierViewZoomSet(host, 1);
+	host.scrollLeft = 0; host.scrollTop = Math.max(0, middle - box.height / 2);
 }
 
 function _rapierPinchWheel(event) {
@@ -223,42 +217,18 @@ function _rapierPinchWheel(event) {
 	const state = _rapierPinch, host = _rapierPinchHost();
 	if (!host || !(event.target instanceof Element) || !host.contains(event.target) || event.target.closest(RAPIER_PINCH_OWNERS)) return;
 	event.preventDefault();
-	if (state.phase === 'swapping' || state.phase === 'armed') return;
-	if (state.phase === 'settling') {
-		cancelAnimationFrame(state.frame); state.frame = 0;
-		Object.assign(state, { phase: 'zooming', dx0: state.shown.dx, dy0: state.shown.dy, base: state.shown.scale, scale: state.shown.scale, samples: [], mid0: { x: 0, y: 0 }, raw: state.shown.scale, wheeled: true });
-	} else if (state.phase === 'idle') {
-		const box = host.getBoundingClientRect(), fingers = { x: event.clientX, y: event.clientY, span: 1 };
+	if (state.phase === 'armed') return;
+	if (state.phase === 'idle') {
 		const was = { overflowY: host.style.overflowY };
 		host.style.overflowY = 'hidden'; host.style.willChange = 'transform';
-		Object.assign(state, { host, phase: 'zooming', was, anchor: _rapierPinchAnchor(host, fingers.x, fingers.y), at: { x: fingers.x, y: fingers.y }, mid0: fingers, span0: 1, base: 1,
-			scale: 1, target: 1, dx: 0, dy: 0, dx0: 0, dy0: 0, by: box.top, samples: [], ox: 0, oy: fingers.y - box.top, shown: { scale: 1, dx: 0, dy: 0 }, raw: 1, wheeled: true });
-		host.style.transformOrigin = state.ox + 'px ' + state.oy + 'px';
+		_rapierPinchHold(host, { x: event.clientX, y: event.clientY });
+		Object.assign(state, { was, raw: 1, wheeled: true });
 	}
 	const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
 	state.raw *= Math.exp(-Math.max(-25, Math.min(25, event.deltaY * unit)) * 0.01);
 	_rapierPinchTrack(state.raw, 0, 0);
 	clearTimeout(state.wheel);
 	state.wheel = setTimeout(() => { if (state.phase === 'zooming' && state.wheeled) { state.wheeled = false; _rapierPinchRelease(); } }, RAPIER_PINCH_WHEEL_REST_MS);
-}
-
-function _rapierPinchIndicate(on, index) {
-	const state = _rapierPinch;
-	clearTimeout(state.pillTimer);
-	if (!on) {
-		state.pillTimer = setTimeout(() => state.indicator?.classList.remove('rapier-pinch-pill--on'), RAPIER_PINCH_PILL_MS);
-		return;
-	}
-	let pill = state.indicator;
-	if (!pill) {
-		pill = state.indicator = document.createElement('div');
-		pill.className = 'rapier-pinch-pill';
-		pill.setAttribute('aria-hidden', 'true');
-		for (const word of ['S', 'M', 'L', 'XL']) { const part = document.createElement('span'); part.textContent = word; pill.appendChild(part); }
-		document.body.appendChild(pill);
-	}
-	[...pill.children].forEach((part, at) => part.toggleAttribute('data-lit', at === index));
-	pill.classList.add('rapier-pinch-pill--on');
 }
 
 const RAPIER_PAGE_ZOOM = { least: 1, most: 4, band: 0.25, ease: 220 };
@@ -359,6 +329,7 @@ function _rapierPinchInstall() {
 	(desk || host).addEventListener('touchstart', start, { capture: true, passive: true });
 	(desk || host).addEventListener('wheel', wheel, { capture: true, passive: false });
 	for (const name of ['gesturestart', 'gesturechange']) (desk || host).addEventListener(name, event => event.preventDefault(), { capture: true, passive: false });
+	window.addEventListener('resize', () => { if (host.dataset.viewZoom) _rapierViewZoomSet(host, 1); });
 	host.addEventListener('click', event => {
 		if (performance.now() > _rapierPinch.swallowUntil) return;
 		event.preventDefault(); event.stopPropagation();

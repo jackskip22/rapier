@@ -18,6 +18,7 @@ import { sourceEdits, mergeSource, replay } from '../kernel/live-merge.mjs';
 import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, agentStrokesFault, replayAgentPainting, sampleAgentPainting, validatePaintRaster } from '../draw/agent-paint.mjs';
 import { VERSION } from '../version.mjs';
 import { mcpServer, CURRENT_DOOR } from '../tools/discovery.mjs';
+import { convertOnDoor } from './convert-door.mjs';
 import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, guideResult, PROMPTS, promptResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap, portableNeeds } from '../skills/rapier-html/wrap.mjs';
@@ -1019,6 +1020,10 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     observation?.feature('read_guide'); observation?.dispatched();
     const guide = guideResult({topic: args.guide}, args.guide === 'water' ? agentPaintBrushRegistry() : null);
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
+  }
+  if (!page && name === 'convert') {
+    observation?.feature('convert'); observation?.dispatched();
+    return envelope(convertOnDoor(args).reply);
   }
   if (!page && name === 'read' && typeof args.cursor === 'string' && args.cursor.startsWith(CURSOR_PREFIX)) {
     const opened = await openCursor(env, args.cursor);

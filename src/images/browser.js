@@ -77,7 +77,8 @@ const _rapierEmbeddedImages = (() => {
     assertCurrent(stamp, identity);
     if (codecs.has(name)) return codecs.get(name);
     const url = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));
-    const held = {codec: createCodec({module: name, workerFactory: () => new Worker(url, {type: 'module'})}), url, idle: 0};
+    const room = name === 'rapier-jxl' ? {maxPixels: 268435456, maxPendingBytes: 268435456 * 4} : {};
+    const held = {codec: createCodec({module: name, ...room, workerFactory: () => new Worker(url, {type: 'module'})}), url, idle: 0};
     codecs.set(name, held);
     return held;
   }

@@ -167,7 +167,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.56.
+Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.57.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -524,7 +524,7 @@ submission; they are not durable server saves.
 
 ## Work with your app's agent
 
-With `agent: true`, the frame registers Rapier's six tools through WebMCP for your page's origin; the
+With `agent: true`, the frame registers Rapier's tools through WebMCP for your page's origin; the
 browser needs WebMCP and the `tools` permission, which mount grants the frame. Where WebMCP is still an origin
 trial, the published pages carry the trial token for `rapier.website` only: serve your own copy with your origin's
 WebMCP trial token (an `Origin-Trial` response header). After `disconnect`, the tools refuse with

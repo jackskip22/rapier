@@ -16384,6 +16384,7 @@ function _rapierClearListItemHandles() {
 	state.observer?.disconnect();
 	state.observer = null;
 	state.wrapper?.classList.remove('block-wrapper--item-handles');
+	state.nodes.forEach(node => node.removeAttribute('data-rapier-item-handle'));
 	state.buttons.forEach(button => button.remove());
 	state.wrapper = state.editDiv = null;
 	state.nodes = [];
@@ -16402,14 +16403,23 @@ function _rapierPlaceListItemHandles() {
 	}
 	const bounds = wrapper.getBoundingClientRect(), tree = _rapierListItemTree(_rapierBoundBlock(wrapper)?.raw || '');
 	if (!tree.list || tree.items.length !== nodes.length) { _rapierClearListItemHandles(); return; }
+	const selection = window.getSelection(), caret = selection?.rangeCount ? selection.focusNode : null;
+	const holder = caret && state.editDiv.contains(caret) ? (caret.nodeType === 1 ? caret : caret.parentElement)?.closest('li') : null;
+	const focused = holder ? nodes.indexOf(holder) : -1;
 	state.buttons.forEach((button, index) => {
-		const li = nodes[index], rect = li.getBoundingClientRect(), number = tree.items[index].kind === 'number';
-		const checkbox = tree.items[index].kind === 'task' ? li.querySelector(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]') : null;
-		const height = parseFloat(getComputedStyle(li).lineHeight) || 28;
-		const center = checkbox ? (checkbox.getBoundingClientRect().top + checkbox.getBoundingClientRect().height / 2)
-			: (rect.top + Math.min(height, 48) / 2);
-		button.style.left = Math.round(rect.left - bounds.left - (number ? 56 : 38)) + 'px';
-		button.style.top = Math.round(center - bounds.top - 16) + 'px';
+		const li = nodes[index], on = index === focused;
+		li.toggleAttribute('data-rapier-item-handle', on);
+		button.hidden = !on;
+		if (!on) return;
+		const kind = tree.items[index].kind, rect = li.getBoundingClientRect();
+		const checkbox = kind === 'task' ? li.querySelector(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]') : null;
+		const mark = getComputedStyle(li, '::before'), box = checkbox ? checkbox.getBoundingClientRect() : {
+			left: rect.left + (parseFloat(mark.left) || 0), top: rect.top + (parseFloat(mark.top) || 0),
+			width: parseFloat(mark.width) || 0, height: parseFloat(mark.height) || 0};
+		const width = button.offsetWidth || 24, height = button.offsetHeight || 32;
+		const left = kind === 'number' ? box.left - width / 2 - 6 : box.left + box.width / 2 - width / 2;
+		button.style.left = Math.round(left - bounds.left) + 'px';
+		button.style.top = Math.round(box.top + box.height / 2 - height / 2 - bounds.top) + 'px';
 	});
 }
 function _rapierSyncListItemHandles(wrapper) {
@@ -34719,12 +34729,12 @@ function _bindScrollFab(fab, host, virtual) {
 		const h = host();
 		const rect = h === document.documentElement ? { top: 0, bottom: window.innerHeight } : h.getBoundingClientRect();
 		const bar = topBar && topBar.getClientRects().length ? topBar.getBoundingClientRect() : null;
-		const top = Math.max(rect.top, bar ? bar.bottom : rect.top) + 72;
+		const top = Math.max(rect.top, bar ? bar.bottom : rect.top) + 8;
 		let floor = rect.bottom - (h === document.documentElement ? 0 : _rapierNativeBottomInset());
 		for (const bar of [dockedStrip && dockedStrip.classList.contains('visible') ? dockedStrip : null, document.querySelector('.rapier-image-tools:not([hidden])'), document.querySelector('.rapier-image-wrap-row:not([hidden])')]) {
 			if (bar && bar.getClientRects().length) floor = Math.min(floor, bar.getBoundingClientRect().top);
 		}
-		const bottom = floor - 16 - fab.offsetHeight;
+		const bottom = floor - 4 - fab.offsetHeight;
 		return { top, bottom: Math.max(top, bottom) };
 	}
 	fab._rapierTrack = trackBounds;

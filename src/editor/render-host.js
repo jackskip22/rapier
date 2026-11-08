@@ -76,7 +76,7 @@ function _rapierBindRenderOwner(kind) {
       RAPIER_RENDERED_HEADING_SELECTOR: typeof RAPIER_RENDERED_HEADING_SELECTOR === 'undefined' ? undefined : RAPIER_RENDERED_HEADING_SELECTOR,
       _rapierApplyMarkdownSpec: typeof _rapierApplyMarkdownSpec === 'undefined' ? undefined : _rapierApplyMarkdownSpec,
       _rapierChromeOwnsId: (...args) => _rapierRenderModule('render-sanitize')._rapierChromeOwnsId(...args),
-      _rapierCodeHtml: typeof _rapierCodeHtml === 'undefined' ? undefined : _rapierLexedCodeHtml,
+      _rapierCodeHtml: typeof _rapierLexedCodeHtml === 'undefined' ? undefined : _rapierLexedCodeHtml,
       _rapierDeriveDarkColor: typeof _rapierDeriveDarkColor === 'undefined' ? undefined : _rapierDeriveDarkColor,
       _rapierDormantHeadings: typeof _rapierDormantHeadings === 'undefined' ? undefined : _rapierDormantHeadings,
       _rapierEmbedAssetSource: typeof _rapierEmbedAssetSource === 'undefined' ? undefined : _rapierEmbedAssetSource,
