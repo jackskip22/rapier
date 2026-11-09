@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {fault} from './fault.mjs';
+import {borrowedBytes, uint32View} from './decode-bits.mjs';
 import {SIGNATURE, FTYP, BRAND, CODESTREAM, PARTIAL, LEVEL, BROB, RECONSTRUCTION} from './decode-tables.mjs';
 
 const INDEX = 0x6a786c69, GAIN = 0x6a68676d;
@@ -19,17 +20,25 @@ function bounded(length, maximum) {
   return length;
 }
 function byteArray(value, name) { if (!(value instanceof Uint8Array)) throw invalid(name + ' is a Uint8Array.'); return value; }
-function joinBytes(parts, maximum) {
-  const length = parts.reduce((sum, part) => bounded(sum + part.length, maximum), 0), result = new Uint8Array(length);
-  let cursor = 0;
-  for (const part of parts) { result.set(part, cursor); cursor += part.length; }
-  return result;
+function joinBytes(parts, maximum, borrowed) {
+  const length = parts.reduce((sum, part) => bounded(sum + part.length, maximum), 0);
+  const subarray = (begin = 0, end = length) => {
+    const result = new Uint8Array(end - begin); let cursor = 0;
+    for (const part of parts) {
+      const a = Math.max(begin, cursor), b = Math.min(end, cursor + part.length);
+      if (b > a) result.set(part.subarray(a - cursor, b - cursor), a - begin);
+      cursor += part.length;
+    }
+    return result;
+  };
+  return borrowed ? borrowedBytes({length, subarray}) : subarray();
 }
-function scanContainer(bytes, maximum, maxBoxes = Number.MAX_SAFE_INTEGER) {
+function scanContainer(bytes, maximum, maxBoxes = Number.MAX_SAFE_INTEGER, borrowed = false) {
   byteArray(bytes, 'JPEG XL input'); bounded(bytes.length, maximum);
   if (bytes[0] === 255 && bytes[1] === 10) return {codestream: bytes, level: 5, minorVersion: 0, entries: [], fragments: []};
   if (!SIGNATURE.every((byte, i) => bytes[i] === byte)) throw invalid('Invalid JPEG XL signature.');
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), entries = [], fragments = [], byIndex = new Map();
+  const view = uint32View(bytes), entries = [], fragments = [], byIndex = new Map();
+  const span = (from, to) => borrowed ? borrowedBytes(bytes, from, to) : bytes.subarray(from, to);
   let minorVersion = 0, level = 5, seenLevel = false, full = null, finalIndex = -1, indexBoxes = 0, gainBoxes = 0;
   for (let at = 12; at < bytes.length;) {
     if (entries.length >= maxBoxes) throw invalid('JPEG XL box count exceeds the limit.');
@@ -38,7 +47,7 @@ function scanContainer(bytes, maximum, maxBoxes = Number.MAX_SAFE_INTEGER) {
     if (bytes.length - at < headerLength) throw invalid('Truncated extended JPEG XL box header.');
     const length = short === 1 ? view.getUint32(at + 8) * 4294967296 + view.getUint32(at + 12) : short || bytes.length - at;
     if (!Number.isSafeInteger(length) || length < headerLength || length > bytes.length - at) throw invalid('Invalid JPEG XL box size.');
-    const body = at + headerLength, end = at + length, data = bytes.subarray(body, end), entry = {at, body, end, type, decoded: type, data, headerLength, unbounded: short === 0};
+    const body = at + headerLength, end = at + length, data = span(body, end), entry = {at, body, end, type, decoded: type, data, headerLength, unbounded: short === 0};
     if (!entries.length) {
       if (type !== FTYP || data.length < 12 || data.length % 4 || view.getUint32(body) !== BRAND)
         throw invalid('The second JPEG XL box must declare the jxl file type.');
@@ -61,7 +70,7 @@ function scanContainer(bytes, maximum, maxBoxes = Number.MAX_SAFE_INTEGER) {
         throw invalid('Repeated or out-of-order version 0 codestream fragment.');
       if (last) { if (finalIndex >= 0) throw invalid('Repeated final codestream fragment.'); finalIndex = sequence; }
       const fragment = {sequence, last, byteOffset: body + 4, byteLength: data.length - 4, headerLength};
-      fragments.push(fragment); byIndex.set(sequence, bytes.subarray(body + 4, end));
+      fragments.push(fragment); byIndex.set(sequence, span(body + 4, end));
     } else if (type === BROB) {
       if (data.length < 4) throw invalid('Truncated compressed JPEG XL box.');
       const inner = view.getUint32(body);
@@ -78,7 +87,7 @@ function scanContainer(bytes, maximum, maxBoxes = Number.MAX_SAFE_INTEGER) {
   if (!full) {
     const parts = [];
     for (let i = 0; i < fragments.length; i++) { if (!byIndex.has(i)) throw invalid('Missing JPEG XL codestream fragment.'); parts.push(byIndex.get(i)); }
-    codestream = joinBytes(parts, maximum);
+    codestream = joinBytes(parts, maximum, borrowed);
   }
   if (codestream[0] !== 255 || codestream[1] !== 10) throw invalid('Invalid logical JPEG XL codestream signature.');
   return {codestream, level, minorVersion, entries, fragments};
@@ -92,7 +101,7 @@ export function inspectContainer(bytes, options = {}) {
 }
 
 export function readContainer(bytes, options = {}) {
-  const source = scanContainer(bytes, limit(options), boxLimit(options));
+  const source = scanContainer(bytes, limit(options), boxLimit(options), options.borrowed);
   return {codestream: source.codestream, level: source.level, minorVersion: source.minorVersion,
     auxiliary: source.entries.filter(row => ![FTYP, LEVEL, CODESTREAM, PARTIAL].includes(row.type)).map(row =>
       ({boxType: fourcc(row.type), data: row.data, extended: row.headerLength === 16}))};

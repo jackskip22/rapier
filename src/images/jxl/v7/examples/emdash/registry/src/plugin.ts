@@ -1,49 +1,36 @@
 import type { SandboxedPlugin } from "emdash/plugin";
+import { WORDS } from "../../media-words.mjs";
 
-// Conversion runs in the site.
-const SETUP = `// astro.config.mjs
-import emdash from 'emdash/astro';
-import {r2} from '@emdash-cms/cloudflare';
-import {rapierStorage} from './storage.mjs';
-import {rapierMediaPlugin} from './media-plugin.mjs';
-emdash({
-  storage: rapierStorage(r2({binding: 'MEDIA'})),
-  plugins: [rapierMediaPlugin()],
-});
+function isSetupPage(input: unknown): boolean {
+	if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+	const value = input as Record<string, unknown>;
+	return value.type === "page_load" && value.page === "/jpeg-xl";
+}
 
-// src/middleware.mjs
-export {onRequest} from '../middleware.mjs';`;
-
-const megabytes = (n: number) => `${(n / 1048576).toFixed(1)} MB`;
-
+// The sandbox uses EmDash's supported Block Kit and the originating request's own site URL.
 const plugin: SandboxedPlugin = {
 	routes: {
 		admin: {
-			handler: async (_routeCtx, ctx) => {
-				let jpegs = 0, bytes = 0, cursor: string | undefined;
-				do {
-					const page = await ctx.media!.list({ mimeType: "image/jpeg", limit: 100, cursor });
-					for (const item of page.items) { jpegs++; bytes += item.size ?? 0; }
-					cursor = page.hasMore ? page.cursor : undefined;
-				} while (cursor);
-				return {
-					blocks: [
-						{ type: "header", text: "Smaller images" },
-						{ type: "section", text: "JPEG uploads are kept as JPEG XL, about a fifth smaller, and every browser gets the same picture: JPEG XL where it shows one, the original JPEG elsewhere." },
-						{ type: "stats", items: [
-							{ label: "JPEGs", value: jpegs },
-							{ label: "Their size", value: megabytes(bytes) },
+			permission: "plugins:read",
+			handler: async (routeCtx) => {
+				if (!isSetupPage(routeCtx.input)) return { blocks: [] };
+				const optimizer = new URL("/_emdash/admin/plugins/rapier-media/jpeg-xl", routeCtx.request.url).href;
+				return { blocks: [
+					{ type: "header", text: WORDS.name },
+					{ type: "section", text: WORDS.setupIntro },
+					{ type: "tab", panels: [
+						{ label: WORDS.setupCommandTab, blocks: [{ type: "code", code: WORDS.setupCommand, language: "bash" }] },
+						{ label: WORDS.setupAgentTab, blocks: [{ type: "code", code: WORDS.setupAgent }] },
+						{ label: WORDS.setupManualTab, blocks: [
+							{ type: "code", code: WORDS.setupInstall, language: "bash" },
+							{ type: "code", code: WORDS.setupManual, language: "ts" },
 						] },
-						{ type: "header", text: "Set up" },
-						{ type: "section", text: "Install rapier-jxl and copy examples/emdash into the site, then these lines:" },
-						{ type: "code", language: "ts", code: SETUP },
-						{ type: "context", text: "The Smaller images page then converts uploads and the existing library." },
-					],
-				};
+					] },
+					{ type: "actions", elements: [{ type: "link", label: WORDS.setupAfter, target: { kind: "external", url: optimizer }, appearance: "inline" }] },
+				] };
 			},
 		},
 	},
 };
 
 export default plugin;
-

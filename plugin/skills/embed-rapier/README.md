@@ -45,7 +45,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.52
+npm install rapier-embed@1.2.57
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -133,7 +133,7 @@ The reader on its own page opens a document at an address on its own origin: `ht
 
 Keep the helper, page and plug-in manifest on one version. For version 1.2.46:
 
-1. Install the helper: `npm install rapier-embed@1.2.52`.
+1. Install the helper: `npm install rapier-embed@1.2.57`.
 2. Create `public/vendor/rapier/` and save the reader into it from
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.46/embed/rapier-reader.html`.
 3. Fetch its plug-ins from the same version's manifest:
@@ -167,7 +167,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.57.
+Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.58.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import

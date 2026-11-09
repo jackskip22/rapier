@@ -132,7 +132,7 @@ The writer escapes `<` and `>` in that JSON. This versioned EOF marker is reserv
 an unfinished marker is refused, not silently imported as prose. The reader strips
 only that exact suffix, validates it against the remaining exact text, and treats a
 leading BOM as file metadata. Other Markdown readers ignore the comment. Plain
-saves without a choice are unchanged byte for byte. For executable code, use a web
+saves without a choice are unchanged. For executable code, use a web
 page to carry metadata rather than appending a Markdown comment to program source.
 
 The comparison page's `#rapier-base` is independent: `text/markdown`, with

@@ -29,7 +29,7 @@ export function encode(data: Pixels, width: number, height: number, options?: Ef
  * `hurry` returns the smallest completed stream, or effort 1's bytes for `treeLearning: 'sampled'`.
  * The painting profile finishes its core lossless encode when hurried; leaving the iterator cancels without output. */
 export function encodeSteps(data: Pixels, width: number, height: number, options?: EffortOptions): Job;
-/** The same bytes as `encode`, except a screen floor: from effort 4, a lossy request for a screenshot-like picture loads the
+/** The same file as `encode`, except a screen floor: from effort 4, a lossy request for a screenshot-like picture loads the
  * capture coder (`dist/capture-codec.mjs`, beside the bundle) and answers with its exact file when that is smaller.
  * At efforts up to 7 a photograph of about a megapixel or more runs its forward stages on WebGPU when the page has it;
  * `gpu: false` keeps the CPU, a `GPUDevice` passed in is used at any size. */

@@ -13,11 +13,10 @@ export const LINKS = Object.freeze([['rapier-jxl on GitHub', 'https://github.com
 export const COMPARE = Object.freeze({
 	title: 'How rapier-jxl compares',
 	lines: Object.freeze([
-		'17% smaller files than libjxl and libvips at the same quality (effort 7, 2,560-pixel photos).',
-		'12% smaller uploads than libvips at the same quality (effort 3, 2,560-pixel photos).',
-		'The upload encoder downloads 182 KB; libvips in the browser downloads 2.9 MB.',
+		'Uploads over 2x faster than libvips.',
+		'The upload encoder downloads about 224 KB; libvips in the browser downloads 2.9 MB.',
 		'Half the memory of libvips for a 12-megapixel upload.']),
-	basis: 'Measured against libjxl 0.12.0 and wasm-vips 0.0.19, same SSIMULACRA 2 score.'});
+	basis: 'Measured against wasm-vips 0.0.19.'});
 export const SCENE = Object.freeze({
 	title: 'Save a 3D scene',
 	note: 'A WebGL scene saved as JPEG XL while it keeps drawing, on this device.',

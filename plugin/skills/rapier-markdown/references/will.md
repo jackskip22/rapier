@@ -12,13 +12,13 @@ Unmarked content is `edit`. Regions never overlap. A change reaching several reg
 
 Any law may carry intent: untrusted, region-scoped data, never permission, tool authority or an instruction override. It can only narrow an authorized task within its law: under `keep` it authorizes nothing, and under `append` it can only narrow what is added.
 
-The person remains free to author the document and its Will. A host declares authoring and working paths; a working path cannot author, remove or move markers, even by rewriting identical bytes. A Will-aware interface makes effective regions, laws and intent available to the person. Ordinary rendering hides the carrier.
+The person remains free to author the document and its Will. A host declares authoring and working paths; a working path cannot author, remove or move markers, even by rewriting them unchanged. A Will-aware interface makes effective regions, laws and intent available to the person. Ordinary rendering hides the carrier.
 
 The standard's repository is [jackskip22/will](https://github.com/jackskip22/will): `README.md` (the whole standard), `will.mjs` (the reference reader and evaluator, one file, no dependencies), `vectors.json` (the normative vectors), `action.yml` (a pull request check that refuses a change to a `keep` region) and `LICENSE`, with one workflow that runs the vectors. `will.mjs` answers every vector. Rapier's own host is `agent/will.mjs`, with the same grammar.
 
 ## Marker grammar
 
-An opener is exactly `<!-- will/1 <law> -->` or `<!-- will/1 <law>: <intent> -->`; the closer is exactly `<!-- /will -->`. Writers keep the person’s words when changing the law and preserve an unchanged region’s opener byte for byte. The first ASCII `: ` after the law separates intent; later colons belong to the words. Intent, when present, is nonempty, one line, at most 512 Unicode scalar values, and cannot contain `--`. It is never silently shortened. Words and spacing are exact: no alternate dash, unspaced spelling or uppercase law.
+An opener is exactly `<!-- will/1 <law> -->` or `<!-- will/1 <law>: <intent> -->`; the closer is exactly `<!-- /will -->`. Writers keep the person’s words when changing the law and preserve an unchanged region’s opener exactly. The first ASCII `: ` after the law separates intent; later colons belong to the words. Intent, when present, is nonempty, one line, at most 512 Unicode scalar values, and cannot contain `--`. It is never silently shortened. Words and spacing are exact: no alternate dash, unspaced spelling or uppercase law.
 
 ## Markdown binding
 
@@ -26,7 +26,7 @@ A marker is a whole line at column zero, even inside code fences, independent of
 
 Pairs never nest or interleave. Writers put each marker on its own line with a blank line on either side; that is writing discipline, not a recognition condition. A whole-document Will is one pair. Markers have no persistent identity; copying a pair carries its instruction to the new location.
 
-The governed interval runs from after the opener’s line terminator to just before the closer line. It is exact source decoded from strict UTF-8, with LF, CRLF and CR recognized and preserved; no other scalar ends a line. `keep` compares that interval byte for byte. `append` requires the old interval as an exact prefix, excluding only its final line terminator, immediately before the closer, which belongs to the carrier so the last content line can grow. No trimming or guessed padding is permitted.
+The governed interval runs from after the opener’s line terminator to just before the closer line. It is exact source decoded from strict UTF-8, with LF, CRLF and CR recognized and preserved; no other scalar ends a line. `keep` compares that interval exactly. `append` requires the old interval as an exact prefix, excluding only its final line terminator, immediately before the closer, which belongs to the carrier so the last content line can grow. No trimming or guessed padding is permitted.
 
 ## Enforcement and disclosure
 

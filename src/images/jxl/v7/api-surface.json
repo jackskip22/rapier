@@ -32,8 +32,6 @@
       "runtime": "./dist/animation.mjs",
       "types": "./types/animation.d.mts",
       "values": [
-        "capture",
-        "configureDecoder",
         "configureWasm",
         "encode",
         "prepare",
@@ -41,8 +39,6 @@
         "supported"
       ],
       "declaredValues": [
-        "capture",
-        "configureDecoder",
         "configureWasm",
         "encode",
         "prepare",
@@ -131,12 +127,20 @@
         "workerd"
       ]
     },
+    "./emdash": {
+      "runtime": "./examples/emdash/index.mjs",
+      "types": "./examples/emdash/index.d.ts",
+      "values": [
+        "jxl"
+      ],
+      "declaredValues": [
+        "jxl"
+      ]
+    },
     "./format": {
       "runtime": "./dist/format.mjs",
       "types": "./types/format.d.mts",
       "values": [
-        "capture",
-        "configureDecoder",
         "configureWasm",
         "encode",
         "format",
@@ -145,8 +149,6 @@
         "supported"
       ],
       "declaredValues": [
-        "capture",
-        "configureDecoder",
         "configureWasm",
         "encode",
         "format",
@@ -346,6 +348,7 @@
       "fidelity",
       "maxPixels",
       "onEncoded",
+      "onPreview",
       "onProgress",
       "readAs",
       "signal",
@@ -410,6 +413,7 @@
       "features",
       "fidelity",
       "maxPixels",
+      "onPreview",
       "onProgress",
       "readAs",
       "signal",
@@ -535,6 +539,7 @@
     ]
   },
   "typeFiles": [
+    "examples/emdash/index.d.ts",
     "examples/page-rects.d.ts",
     "examples/svg-jxl.d.ts",
     "types/animation.d.mts",
@@ -985,6 +990,9 @@
     "types/types.d.mts#JPEGOptions": [
       "effort",
       "icc"
+    ],
+    "types/types.d.mts#PreviewOptions": [
+      "onPreview"
     ],
     "types/types.d.mts#SampleDescription": [
       "alphaPremultiplied",

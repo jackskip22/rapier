@@ -130,6 +130,56 @@
     (br $forward)))
   (call $tkEnd (local.get $out)))
 
+;; tokAns over tokens already made (capture-ans.mjs's, copies included), in two calls. tokAnsBack codes the $n tags at
+;; $tags (u32: histogram << 16 | raw-bit count << 9 | symbol, ans.mjs's) backwards with the tables at $tabs + h * 9232
+;; as tokAns reads them: a token that emits a state word keeps it at $words (u16) and gets bit 15 of its tag. It keeps
+;; the final state and returns the stream's bits (the state, the words and the raw bits).
+(global $tkState (mut i32) (i32.const 0))
+(func (export "tokAnsBack") (param $tags i32) (param $n i32) (param $tabs i32) (param $words i32) (result i32)
+  (local $i i32) (local $at i32) (local $tag i32) (local $s i32) (local $t i32) (local $freq i32) (local $state i32) (local $q i32) (local $bits i32)
+  (local.set $state (i32.const 0x130000)) (local.set $bits (i32.const 32))
+  (local.set $i (local.get $n))
+  (block $done (loop $back
+    (br_if $done (i32.eqz (local.get $i)))
+    (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+    (local.set $at (i32.add (local.get $tags) (i32.shl (local.get $i) (i32.const 2))))
+    (local.set $tag (i32.and (i32.load (local.get $at)) (i32.const 0xffff7fff)))
+    (local.set $s (i32.and (local.get $tag) (i32.const 511)))
+    (local.set $t (i32.add (local.get $tabs) (i32.mul (i32.shr_u (local.get $tag) (i32.const 16)) (i32.const 9232))))
+    (local.set $freq (i32.load16_u (i32.add (local.get $t) (i32.shl (local.get $s) (i32.const 1)))))
+    (local.set $bits (i32.add (local.get $bits) (i32.and (i32.shr_u (local.get $tag) (i32.const 9)) (i32.const 63))))
+    (if (i32.ge_u (i32.shr_u (local.get $state) (i32.const 20)) (local.get $freq)) (then
+      (i32.store16 (i32.add (local.get $words) (i32.shl (local.get $i) (i32.const 1))) (local.get $state))
+      (local.set $tag (i32.or (local.get $tag) (i32.const 32768)))
+      (local.set $bits (i32.add (local.get $bits) (i32.const 16)))
+      (local.set $state (i32.shr_u (local.get $state) (i32.const 16)))))
+    (i32.store (local.get $at) (local.get $tag))
+    (local.set $q (i32.div_u (local.get $state) (local.get $freq)))
+    (local.set $state (i32.add (i32.shl (local.get $q) (i32.const 12))
+      (i32.load16_u (i32.add (i32.add (local.get $t) (i32.const 1040)) (i32.shl
+        (i32.add (i32.load16_u offset=512 (i32.add (local.get $t) (i32.shl (local.get $s) (i32.const 1))))
+          (i32.sub (local.get $state) (i32.mul (local.get $q) (local.get $freq)))) (i32.const 1))))))
+    (br $back)))
+  (global.set $tkState (local.get $state))
+  (local.get $bits))
+;; After tokAnsBack: the final state (32 bits), then each token's state word where its tag has bit 15 and its raw bits
+;; ($extras, u32), after $pending bits ($acc), from $out: the bit count, the partial byte stored after the whole ones.
+(func (export "tokAnsWrite") (param $tags i32) (param $extras i32) (param $n i32) (param $words i32) (param $acc i32) (param $pending i32) (param $out i32) (result i32)
+  (local $i i32) (local $tag i32) (local $count i32)
+  (global.set $tkAcc (i64.extend_i32_u (local.get $acc))) (global.set $tkPending (local.get $pending)) (global.set $tkAt (local.get $out))
+  (call $tkBits (i32.const 16) (i32.and (global.get $tkState) (i32.const 65535)))
+  (call $tkBits (i32.const 16) (i32.shr_u (global.get $tkState) (i32.const 16)))
+  (block $written (loop $forward
+    (br_if $written (i32.ge_u (local.get $i) (local.get $n)))
+    (local.set $tag (i32.load (i32.add (local.get $tags) (i32.shl (local.get $i) (i32.const 2)))))
+    (if (i32.and (local.get $tag) (i32.const 32768))
+      (then (call $tkBits (i32.const 16) (i32.load16_u (i32.add (local.get $words) (i32.shl (local.get $i) (i32.const 1)))))))
+    (local.set $count (i32.and (i32.shr_u (local.get $tag) (i32.const 9)) (i32.const 63)))
+    (if (local.get $count) (then (call $tkBits (local.get $count) (i32.load (i32.add (local.get $extras) (i32.shl (local.get $i) (i32.const 2)))))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1)))
+    (br $forward)))
+  (call $tkEnd (local.get $out)))
+
 ;; buildCaptureTokenCoding's writeTokens: a value under 64 with an entry ($lengths i8 and $bits u32 at h * 64 + value)
 ;; is one write; any other its symbol's code ($codes: length and code, i32 each, at (h * 256 + symbol) * 8; length -1 for a
 ;; symbol the histogram never saw, which returns -1 so the JavaScript refuses it) and its raw bits.

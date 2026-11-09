@@ -503,14 +503,17 @@ static void row_sums(const float *p1, const float *p2, float **down, const float
 // Rows are made four at a time into rings of RING rows. Scratch requirement in floats:
 // ((needReference ? 48 : 0) + 56 + 23*activeBlurs) * width.
 #define RING 16
-EXPORT("s2MetricScale") void s2_metric_scale(int w, int h, int mask, const void *reference, int reference_kind,
+// Whole scores and checkpointed scores take the same rows in the same order. Input contains [input_y,input_y+input_h)
+// of the scale; scratch and sums are the continuation. The whole wrapper specializes these bounds at compile time.
+static __attribute__((always_inline)) inline int metric_scale_rows(int w, int h, int mask, const void *reference, int reference_kind,
   const void *distorted, int distorted_kind, const float *linear, const float *g,
   float *cache0, float *cache1, float *cache2, int cached_mask, float *scratch,
-  double *terms, double *edge_terms, double *sums, int32_t *color_keys, float *color_values) {
+  double *terms, double *edge_terms, double *sums, int32_t *color_keys, float *color_values,
+  int first, int end, int input_y, int input_h, int made) {
 #ifdef S2_FUSED
   // g + 44 holds a madd probe (a, b, c and the fused result, four lanes each); g + 60 receives 1 if it fails.
   if (!wasm_i32x4_all_true(wasm_i32x4_eq(wasm_f32x4_relaxed_madd(wasm_v128_load(g + 44), wasm_v128_load(g + 48),
-      wasm_v128_load(g + 52)), wasm_v128_load(g + 56)))) { *(int32_t *)(g + 60) = 1; return; }
+      wasm_v128_load(g + 52)), wasm_v128_load(g + 56)))) { *(int32_t *)(g + 60) = 1; return made; }
 #endif
   const int ring = RING * w, pixels = w * h, make_reference = (mask & ~cached_mask) != 0;
   float *cache[3]; cache[0] = cache0; cache[1] = cache1; cache[2] = cache2;
@@ -525,18 +528,17 @@ EXPORT("s2MetricScale") void s2_metric_scale(int w, int h, int mask, const void 
     across[c][k] = active ? cursor : 0;
     if (active) {
       cursor += ring; state[c][k] = cursor; cursor += 6 * w; down[c][k] = cursor; cursor += w;
-      for (int x = 0; x < 6 * w; ++x) state[c][k][x] = 0;
+      if (first == -4) for (int x = 0; x < 6 * w; ++x) state[c][k][x] = 0;
     }
   }
-  for (int i = 0; i < 18; ++i) sums[i] = 0;
-  int made = 0;
-  for (int y = -4; y < h; ++y) {
+  if (first == -4) for (int i = 0; i < 18; ++i) sums[i] = 0;
+  for (int y = first; y < end; ++y) {
     while (made < h && made <= y + 4) {
       const int rows = h - made < 4 ? h - made : 4;
       for (int r = 0; r < rows; ++r) {
         const int at = ((made + r) % RING) * w;
         for (int side = make_reference ? 0 : 1; side < 2; ++side)
-          positive_row(side ? distorted : reference, side ? distorted_kind : reference_kind, made + r, w, h, side ? p2 : p1, at,
+          positive_row(side ? distorted : reference, side ? distorted_kind : reference_kind, made + r - input_y, w, input_h, side ? p2 : p1, at,
             linear, color_keys, color_values);
       }
       for (int c = 0; c < 3; ++c) if (mask & (1 << c)) {
@@ -568,4 +570,23 @@ EXPORT("s2MetricScale") void s2_metric_scale(int w, int h, int mask, const void 
         y, w, h, sums + 6 * c, terms, edge_terms);
     }
   }
+  return made;
 }
+
+EXPORT("s2MetricScale") void s2_metric_scale(int w, int h, int mask, const void *reference, int reference_kind,
+  const void *distorted, int distorted_kind, const float *linear, const float *g,
+  float *cache0, float *cache1, float *cache2, int cached_mask, float *scratch,
+  double *terms, double *edge_terms, double *sums, int32_t *color_keys, float *color_values) {
+  metric_scale_rows(w, h, mask, reference, reference_kind, distorted, distorted_kind, linear, g,
+    cache0, cache1, cache2, cached_mask, scratch, terms, edge_terms, sums, color_keys, color_values, -4, h, 0, h, 0);
+}
+
+#ifndef S2_FUSED
+// A resumed score keeps no whole-plane cache or error map: only the row rings, recurrence state and ordered sums.
+EXPORT("s2MetricBand") int s2_metric_band(int w, int h, int first, int end, int input_y, int input_h,
+  const void *reference, int reference_kind, const void *distorted, int distorted_kind,
+  const float *linear, const float *g, float *scratch, double *sums, int32_t *color_keys, float *color_values) {
+  return metric_scale_rows(w, h, 7, reference, reference_kind, distorted, distorted_kind, linear, g,
+    0, 0, 0, 0, scratch, 0, 0, sums, color_keys, color_values, first, end, input_y, input_h, input_y);
+}
+#endif

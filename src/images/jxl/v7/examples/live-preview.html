@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rapier-jxl live preview</title>
+<!-- Put this page and its module beside node_modules containing the candidate rapier-jxl build, then serve the
+     folder over HTTP. A Content-Security-Policy needs 'wasm-unsafe-eval' for kernels and blob: in img-src for previews. -->
+<script type="module" src="./live-preview.mjs"></script>
+<h1>Live preview</h1>
+<form id="encode">
+  <p><label>Photo <input id="file" type="file" accept="image/*" required></label></p>
+  <p><label>Effort <select id="effort"><option>6</option><option selected>7</option><option>8</option><option>9</option></select></label>
+    <label>Quality <input id="quality" type="number" min="1" max="100" step="any" value="80" required></label>
+    <button id="start" disabled>Encode</button> <button id="cancel" type="button" disabled>Cancel</button></p>
+</form>
+<p><output id="status" role="status">Checking JPEG XL support…</output></p>
+<progress id="progress" max="1" value="0" hidden></progress>
+<p id="numbers"></p>
+<div id="picture"></div>
+<p><a id="download" hidden>Save JPEG XL</a></p>
+</html>

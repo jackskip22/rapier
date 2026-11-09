@@ -1,6 +1,6 @@
 ;; SPDX-License-Identifier: BSD-3-Clause
 ;; Generated from ssimulacra2-simd.c (-mrelaxed-simd -DS2_FUSED) and metric-float.h by build-jxl-kernels.mjs.
-;; C inputs sha256 932c5736ff0a3141055c206372cf632cf412081ea9e70b2b048debaeaa6d0b28
+;; C inputs sha256 bcd23b900bc5d02b2edfb8ab1bd62c1858e657be0c054e2492026623381c8b2a
 ;; /*!
 ;;  * Copyright (c) the JPEG XL Project Authors.
 ;;  * All rights reserved.
@@ -2718,13 +2718,13 @@
                           (i32.eq
                             (local.get $l95)
                             (local.get $l101))))
-                      (local.set $p11
-                        (i32.add
-                          (local.get $l74)
-                          (local.get $p10)))
                       (local.set $p9
                         (i32.sub
                           (local.get $l95)
+                          (local.get $p10)))
+                      (local.set $p11
+                        (i32.add
+                          (local.get $l74)
                           (local.get $p10)))
                       (local.set $p10
                         (i32.add
@@ -5043,11 +5043,11 @@
                   (local.set $l39
                     (i32.add
                       (local.get $l41)
-                      (local.get $l69)))
+                      (local.get $l72)))
                   (local.set $l33
                     (i32.add
                       (local.get $l41)
-                      (local.get $l72)))
+                      (local.get $l69)))
                   (local.set $p11
                     (i32.shl
                       (local.get $l40)
@@ -5060,7 +5060,7 @@
                     (f32.store
                       (local.tee $l41
                         (i32.add
-                          (local.get $l39)
+                          (local.get $l33)
                           (local.get $p11)))
                       (f32.load
                         (local.tee $l25
@@ -5070,7 +5070,7 @@
                     (f32.store
                       (local.tee $l30
                         (i32.add
-                          (local.get $l33)
+                          (local.get $l39)
                           (local.get $p11)))
                       (f32.load
                         (local.tee $l42
@@ -5093,10 +5093,6 @@
                         (i32.add
                           (local.get $l42)
                           (i32.const 4))))
-                    (local.set $p10
-                      (i32.add
-                        (local.get $p10)
-                        (i32.const 8)))
                     (local.set $l39
                       (i32.add
                         (local.get $l39)
@@ -5108,6 +5104,10 @@
                     (local.set $l33
                       (i32.add
                         (local.get $l33)
+                        (i32.const 8)))
+                    (local.set $p10
+                      (i32.add
+                        (local.get $p10)
                         (i32.const 8)))
                     (br_if $L141
                       (local.tee $l40

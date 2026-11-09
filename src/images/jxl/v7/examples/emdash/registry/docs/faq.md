@@ -1,0 +1,4 @@
+- **Does it change the original files?** JPEGs are kept as JPEG XL, then converted back losslessly when needed. Other formats always keep the original file. Switch on "Keep original JPEG files" to keep JPEGs too.
+- **Which browsers receive the JPEG XL?** Every browser that supports it. Browsers which cannot display it get served the original file.
+- **How do I remove it?** `npx rapier-jxl remove emdash` restores every original file.
+- **What storage works?** Cloudflare R2 and Node local storage.

@@ -28,7 +28,7 @@ The Mono input comes from
 their [complete original package](https://mirrors.ctan.org/fonts/lm.zip) is also available from CTAN.
 
 `FONT-LICENSE.txt` starts with the source fonts' exact copyrights, followed by the conversion notice and the complete,
-unmodified GUST Font License and LPPL 1.3c. The same bytes are retained in the `/*! ... */` header of `font.js`,
+unmodified GUST Font License and LPPL 1.3c. The same text is kept in the `/*! ... */` header of `font.js`,
 the plug-in and its license sheet. Preserve this notice when packaging. The conversion has a different filename
 and identifies its changes; the original font authors do not maintain it. Rapier's separate typesetter is MIT.
 

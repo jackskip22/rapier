@@ -10,7 +10,7 @@ const early = event => {
   }
 };
 if (events) { port.addEventListener('message', early); port.start?.(); } else port.on('message', early);
-Promise.all([import('./worker-runtime.mjs'), import('./runtime.mjs')]).then(([{install}, runtime]) => {
+Promise.all([import('./worker-runtime.mjs'), import('./runtime.mjs'), import('./preview-relay.mjs')]).then(([{install}, runtime, {previewHub}]) => {
   if (events) port.removeEventListener('message', early); else port.off('message', early);
-  install(port, pending, runtime);
+  install(port, pending, runtime, previewHub);
 });

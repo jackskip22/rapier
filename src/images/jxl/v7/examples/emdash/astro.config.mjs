@@ -3,16 +3,11 @@ import react from '@astrojs/react';
 import {d1, r2} from '@emdash-cms/cloudflare';
 import {defineConfig} from 'astro/config';
 import emdash from 'emdash/astro';
-import {rapierStorage} from './storage.mjs';
-import {rapierMediaPlugin} from './media-plugin.mjs';
+import {jxl} from 'rapier-jxl/emdash';
 
 export default defineConfig({
   output: 'server',
   adapter: cloudflare(),
-  integrations: [react(), emdash({
-    database: d1({binding: 'DB'}),
-    storage: rapierStorage(r2({binding: 'MEDIA'})),
-    plugins: [rapierMediaPlugin()]
-  })],
+  integrations: [react(), jxl(emdash, {database: d1({binding: 'DB'}), storage: r2({binding: 'MEDIA'})})],
   devToolbar: {enabled: false}
 });

@@ -1,6 +1,7 @@
 export {configureWasm} from '../wasm-modules.mjs';
 export {supported} from './capture-support.mjs';
 import {createCodec as createClient} from './client.mjs';
+import {previewReplies} from './preview-relay.mjs';
 import {encoder} from './session.mjs';
 import {fail} from './primitives.mjs';
 import {sharedClient, LEGACY} from './shared.mjs';
@@ -11,9 +12,9 @@ export function createCodec(config = {}) {
     const {worker, ...rest} = config, error = message => { throw fail('JXL_OPTIONS', message); };
     if (worker !== undefined && worker !== false) error('worker may be false; use workerFactory for a custom worker.');
     if (worker === false && rest.workerFactory) error('worker:false and workerFactory are mutually exclusive.');
-    return encoder(createClient(rest, worker === false ? {...LEGACY, inPlace: true} : LEGACY), rest, LEGACY.operations);
+    return encoder(createClient(rest, worker === false ? {...LEGACY, inPlace: true} : LEGACY, previewReplies), rest, LEGACY.operations);
   }
-  return encoder(createClient(config, LEGACY), config, LEGACY.operations);
+  return encoder(createClient(config, LEGACY, previewReplies), config, LEGACY.operations);
 }
 export function encode(input, options) { return defaultCodec().encode(input, options); }
 export function capture(input, options) { return defaultCodec().capture(input, options); }

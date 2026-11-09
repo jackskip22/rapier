@@ -20,6 +20,7 @@ export function kernelProfile(name) {
   if (/^capture(?:\.|$)/.test(name)) return 'capture';
   if (/^upload(?:\.|$)/.test(name)) return 'upload';
   if (/^jpeg(?:\.|$)/.test(name)) return 'jpeg';
+  if (/^resumable(?:\.|$)/.test(name)) return 'resumable';
   if (name === 'verify') return 'verify';
   return null;
 }
@@ -77,43 +78,19 @@ export async function createKernelStripper(codec) {
   return plugin;
 }
 
-export function keptExports(file, needs, optional, allowed, profile, text) {
+export function keptExports(file, needs, optional, allowed, profile) {
   const gaps = profile ? [...needs].filter(name => !allowed.includes(name) && !optional.has(name)) : [];
   if (gaps.length) throw new Error(file + ' calls kernel exports its profile (' + profile + ', kernel-sets.mjs) strips: ' + gaps.sort().join(', '));
-  if (typeof text !== 'string') throw new Error('keptExports needs the file\'s names-kept bundle.');
-  const named = namesIn(text);
-  return allowed.filter(name => named.has(name)).sort();
-}
-
-const namesSeen = new Map();
-function namesIn(text) {
-  if (namesSeen.has(text)) return namesSeen.get(text);
-  const names = new Set();
-  (function walk(node) {
-    if (!node || typeof node.type !== 'string') return;
-    if (node.type === 'Identifier' || node.type === 'PrivateIdentifier') names.add(node.name);
-    else if (node.type === 'Literal' && typeof node.value === 'string') names.add(node.value);
-    else if (node.type === 'TemplateElement') names.add(node.value.cooked);
-    for (const value of Object.values(node)) for (const child of Array.isArray(value) ? value : [value]) if (child && typeof child === 'object') walk(child);
-  })(acorn.parse(text, {ecmaVersion: 'latest', sourceType: 'module'}));
-  namesSeen.clear(); namesSeen.set(text, names);
-  return names;
+  return allowed.filter(name => needs.has(name)).sort();
 }
 
 export function createBridgeCutter(codec) {
-  const file = join(codec, 'kernels.mjs'), capture = join(codec, 'capture-kernels.mjs');
-  const FALLBACK = "(typeof __RAPIER_JXL_CAPTURE_PHOTO__ === 'undefined' || __RAPIER_JXL_CAPTURE_PHOTO__ === true ? PHOTO_KERNELS : null);";
-  return (unreached, photoBridges = true) => ({name: 'kernel-bridges', setup(build) {
+  const file = join(codec, 'kernels.mjs');
+  return unreached => ({name: 'kernel-bridges', setup(build) {
     if (unreached?.length) build.onLoad({filter: /[\\/]kernels\.mjs$/}, async ({path}) => {
       if (resolve(path) !== resolve(file)) return;
       const source = await readFile(file, 'utf8');
       return {contents: cutBridges(source, unreached), loader: 'js'};
-    });
-    if (!photoBridges) build.onLoad({filter: /[\\/]capture-kernels\.mjs$/}, async ({path}) => {
-      if (resolve(path) !== resolve(capture)) return;
-      const source = await readFile(capture, 'utf8');
-      if (source.split(FALLBACK).length !== 2) throw new Error('capture-kernels.mjs photoKernels fallback changed; update the bridge cutter.');
-      return {contents: source.replace(FALLBACK, 'null;'), loader: 'js'};
     });
   }});
 }
@@ -132,6 +109,7 @@ export function cutBridges(source, unreached) {
   for (const statement of factory.body.body) if (statement.type === 'VariableDeclaration')
     for (const d of statement.declarations) if (d.id.type === 'Identifier' && d.init && /Function|Conditional/.test(d.init.type)) declared.set(d.id.name, d.init);
   const named = unreached.map(name => declared.has(name) ? name : name.replace(/\d+$/, '')).filter(name => declared.has(name));
+  if (named.includes('weighted')) named.push('initializeTables');
   const cuts = named.map(name => declared.get(name)).sort((a, b) => b.start - a.start);
   for (const init of cuts) source = source.slice(0, init.start) + 'null' + source.slice(init.end);
   return source;

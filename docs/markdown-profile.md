@@ -2,7 +2,7 @@
 
 [The standard](markdown-standard.md) builds on CommonMark with inline HTML typography, optional comments and ordinary references. This profile lists each syntax and its actual fallback. Readers choose which HTML, styles, extensions and resources they support; Markdown syntax alone does not guarantee identical output.
 
-Rapier parses and renders every syntax below. Exact round-trip means byte for byte through an unrelated edit.
+Rapier parses and renders every syntax below. Exact round-trip means an unrelated edit leaves it exactly as written.
 
 **Status** is one of five kinds:
 
@@ -22,7 +22,7 @@ Rapier parses and renders every syntax below. Exact round-trip means byte for by
 | Underline `<u>x</u>` | CommonMark inline HTML | Toolbar U | yes | yes | underlined text in readers that show HTML; plain words where HTML is stripped |
 | Underline `++x++` | read syntax (markdown-it-ins) | never authored; imported notes keep it | yes | verbatim | literal `++` in GitHub, Obsidian, VS Code and Pandoc |
 | Footnotes `[^1]` | established extension (PHP Markdown Extra) | Insert Footnote | yes | yes | literal `[^1]`, list as plain text |
-| Highlight `==x==` | established extension (Obsidian, Bear, Typora, iA Writer, Pandoc `+mark`) | Highlight picker, default | yes, byte for byte | yes | literal `==` |
+| Highlight `==x==` | established extension (Obsidian, Bear, Typora, iA Writer, Pandoc `+mark`) | Highlight picker, default | yes, exactly | yes | literal `==` |
 | Colored highlight `<mark style="background-color:#35c57a">x</mark>` | CommonMark inline HTML; the picker's five colors (green `#35c57a`, red `#f05a62`, blue `#4f91f7`, yellow `#e6b91e`, purple `#9b6dea`) read as theme-aware swatches | Highlight picker (5 colors) | yes | yes | a colored highlight in readers that show HTML styles; a plain highlight where styles are stripped |
 | Bear's colored highlight `==🟢x==` | read syntax (Bear) | never authored; imported notes keep it | yes | verbatim | literal `==` and the circle emoji (Obsidian and Pandoc `+mark` show a highlight with the emoji) |
 | Superscript `^x^` | read syntax (MultiMarkdown/Pandoc) | never authored | yes | verbatim | literal `^` around text |
@@ -36,7 +36,7 @@ Rapier parses and renders every syntax below. Exact round-trip means byte for by
 | Inline typography `<span style="font-size:13.5pt;color:#175dc4;font-family:serif">…</span>` | ordinary HTML/CSS with a narrow authored profile (`spec/md-marks.mjs`) | Fonts sheet's Selected text / Document scopes and precise size control; text-color picker | yes; original units and wrappers survive unrelated edits | new edits use the canonical span | underlying words, emphasis, links and heading levels with HTML enabled; GitHub strips styles; HTML-disabled readers may show tags |
 | Page break `<!--md-break:v1 page-->` | authored convention (`spec/md-marks.mjs`) | Insert ▸ Line ▸ Page break | yes | yes | invisible comment; two ordinary paragraphs |
 | Table captions `Table: …` | established convention (Pandoc's caption line) | Typed as an ordinary paragraph after a table | yes; bytes never change | yes, unchanged | plain paragraph under the table |
-| Will markers `<!-- will/1 … -->` | authored convention ([Will/1](will.md)) | Will menu (Intent / Add only / Lock) | yes, byte for byte enforced | yes | invisible comments; governed content reads as ordinary text |
+| Will markers `<!-- will/1 … -->` | authored convention ([Will/1](will.md)) | Will menu (Intent / Add only / Lock) | yes, exactly, enforced | yes | invisible comments; governed content reads as ordinary text |
 | Layout comments `<!--md-layout:v1 …-->` | authored convention ([layout grammar](markdown-standard.md)) | Drag/resize/align, image tools | yes; insignificant zeros normalized only on an intentional edit | yes | invisible comment; natural flow and alignment |
 | Obsidian width `![alt\|320](…)` | read syntax (Obsidian) | never introduced; a resize updates the pipe number in place | yes; a resize changes only the number | verbatim, with the number Rapier last set | Obsidian keeps showing its own width. Rapier reads an unescaped final `\|N` with N from 10 to 9999, drops it from the shown description, and shows the picture N px wide within 32 to 2400 px; a layout `width` wins. |
 | Images as reference definitions with data URLs | CommonMark | Insert picture, paste, Draw | yes | yes | a CommonMark reader that allows `data:` picture sources shows the picture (GitHub's renderer drops them); JPEG XL needs a reader that decodes it |
@@ -136,7 +136,7 @@ phone's display; the JPEG XL conversion policy is the codec-byte exception above
 
 ## PDF import (`interchange/pdf-reader.mjs` `readPdf`)
 
-A Rapier PDF carries its exact source as an attachment, and import restores it byte for byte. A PDF without a readable
+A Rapier PDF carries its exact source as an attachment, and import restores it exactly. A PDF without a readable
 attachment (another app's PDF, or a Rapier PDF a viewer has since saved, which appends an incremental update) is read
 from its text layer and page geometry. Will markers in that text come back as exact Will markers; a marker inside a
 table or note, or in a page-image import, is reported as WILL LOST. What the text layer does not carry is not

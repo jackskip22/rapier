@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.58 (2026-11-09)
+
+- The JPEG XL converter makes smaller files at effort 7, and pictures under 128 px keep their quality.
+- In ChatGPT, the converter opens in the chat with the chat's photos, Quality and Effort in one row.
+
 ## 1.2.57 (2026-11-08)
 
 - Agents can convert pictures to JPEG XL and back.

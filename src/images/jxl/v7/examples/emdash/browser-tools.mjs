@@ -1,4 +1,4 @@
-import {variants} from 'rapier-jxl/upload';
+import {variants} from 'rapier-jxl';
 
 export function browserTools(effort) {
   return {

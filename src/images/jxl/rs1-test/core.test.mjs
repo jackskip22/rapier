@@ -15,28 +15,57 @@ async function setup(input, codec = stepper()) {
   const source = {generation: 'fixture/1', sha256: await digest(input), byteLength: input.length};
   const parts = new Map();
   let checkpoint, sourceReads = 0, writes = 0;
+  const sourceSpans = [];
   const persist = result => { for (const {ref, bytes: b} of result.parts) { if (parts.has(ref.hash)) assert.deepEqual(parts.get(ref.hash), b); else { parts.set(ref.hash, new Uint8Array(b)); writes++; } } };
   const initial = await codec.start({source}); persist(initial); checkpoint = initial.checkpoint;
   const host = cp => ({source, expectedRevision: cp.revision, readMany: refs => refs.map(ref => parts.get(ref.hash)), read: ref => parts.get(ref.hash),
-    readSource: (at, n) => { sourceReads++; return input.subarray(at, at + n); }});
+    readSource: (at, n) => { sourceReads++; sourceSpans.push(n); return input.subarray(at, at + n); }});
   const step = async (units = 1) => { const r = await codec.advance(checkpoint, host(checkpoint), {units}); persist(r); checkpoint = r.checkpoint; return r; };
   const output = async () => { const pieces = []; for await (const p of codec.outputParts(checkpoint, host(checkpoint))) pieces.push(p); return join(pieces); };
   return {codec, source, parts, persist, host, step, output, get checkpoint() { return checkpoint; }, set checkpoint(c) { checkpoint = c; },
-    get sourceReads() { return sourceReads; }, get writes() { return writes; }};
+    get sourceReads() { return sourceReads; }, sourceSpans, get writes() { return writes; }};
 }
 
-test('random work partitions give the same file; the original is checked once, then each call that reads it reads it whole and checks it', async () => {
+test('random work partitions give the same file; the original is checked once, then each read reads only the chunks it covers', async () => {
   const input = bytes(3 * 1048576 + 79), visited = [], job = await setup(input, stepper(at => visited.push(at)));
   let count = 0, reading = 0;
   while (job.checkpoint.status !== 'done') {
     const result = await job.step([1, 4, 2, 3][count++ % 4]);
-    if (result.work.some(w => w.phase === 'transform')) reading++;
+    reading += result.work.filter(w => w.phase === 'transform').length;
     assert.ok(JSON.stringify(result.checkpoint).length < 4096);
     for (const p of result.parts) assert.ok(p.bytes.length <= 1048576);
   }
   assert.deepEqual(await job.output(), expected(input));
   assert.deepEqual(visited, Array.from({length: Math.ceil(input.length / 3073)}, (_, i) => i * 3073));
-  assert.equal(job.sourceReads, 2 + reading, 'two digest reads, then one checked whole read per call that reads');
+  assert.ok(job.sourceReads <= 4 + reading, 'four digest reads (a MiB each), then at most one checked read per unit that reads');
+  assert.ok(job.sourceSpans.slice(4).every(n => n <= 2 * 262144), Math.max(...job.sourceSpans.slice(4)));
+});
+
+test('an original of at most 2 MiB is checked in its first unit, with one read; a larger one in 1 MiB units', async () => {
+  for (const [size, units] of [[2 * 1048576, 1], [2 * 1048576 + 1, 3], [8294400, 8], [16 * 1048576 + 1, 17]]) {
+    const input = bytes(size), job = await setup(input);
+    let verifying = 0;
+    while (true) { const r = await job.step(1); if (r.work[0].phase !== 'source') break; verifying++; }
+    assert.equal(verifying, units, `${size} bytes`);
+    assert.equal(job.sourceReads, units + 1, `${size} bytes: the check's reads, then the unit's`);
+  }
+  const input = bytes(2 * 1048576), job = await setup(input), lying = input.slice(); lying[1048576] ^= 1;
+  await assert.rejects(job.codec.advance(job.checkpoint, {...job.host(job.checkpoint), readSource: (at, n) => lying.subarray(at, at + n)}, {units: 1}), code('JXL_INPUT'));
+});
+
+test('a store that answers other bytes after the original was checked is refused', async () => {
+  const input = bytes(1048576 + 5), job = await setup(input);
+  await job.step(4);
+  assert.equal(job.checkpoint.status, 'active');
+  const lying = input.slice(); lying[300000] ^= 1;
+  const host = cp => ({...job.host(cp), readSource: (at, n) => lying.subarray(at, at + n)});
+  let refused = null;
+  for (let i = 0; i < 200 && !refused; i++) {
+    try { const r = await job.codec.advance(job.checkpoint, host(job.checkpoint), {units: 8}); job.persist(r); job.checkpoint = r.checkpoint; }
+    catch (error) { refused = error; }
+  }
+  assert.equal(refused?.code, 'JXL_INPUT');
+  assert.match(refused.message, /pinned digest/);
 });
 
 test('a fresh isolate for every step reuses its completed prefix', async () => {

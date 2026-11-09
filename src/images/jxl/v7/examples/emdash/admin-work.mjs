@@ -3,16 +3,19 @@ export function check(signal) { if (signal?.aborted) throw canceled(); }
 const atPhase = (error, phase) => error?.name === 'AbortError' ? error
   : Object.assign(new Error(error?.message ?? String(error), {cause: error}), {code: error?.code, phase});
 
-export async function api(path, {method = 'GET', body, signal, type, headers = {}} = {}) {
+export const createApi = send => async (path, {method = 'GET', body, signal, type, headers = {}} = {}) => {
   check(signal);
-  const response = await fetch(path, {method, body, signal, credentials: 'same-origin', cache: 'no-store',
-    headers: {Accept: 'application/json', 'X-EmDash-Request': '1', ...(type ? {'Content-Type': type} : {}), ...headers}});
+  const response = await send(path, {method, body, signal, credentials: 'same-origin', cache: 'no-store',
+    headers: {Accept: 'application/json', ...(type ? {'Content-Type': type} : {}), ...headers}});
   check(signal);
-  const json = await response.json().catch(() => ({}));
+  const raw = await response.text();
+  let json;
+  try { json = JSON.parse(raw); } catch { json = {}; }
   check(signal);
-  if (!response.ok || json.success === false) throw Object.assign(new Error(json.error?.message ?? `${response.status}`), {code: json.error?.code});
-  return json.data ?? json;
-}
+  if (!response.ok || json?.success === false) throw Object.assign(new Error(json?.error?.message ?? `${response.status}`),
+    {code: json?.error?.code, status: response.status, detail: raw.slice(0, 4096)});
+  return json && typeof json === 'object' && Object.hasOwn(json, 'data') ? json.data : json;
+};
 
 export function createQueue({change = () => {}, start = () => {}, finish = () => {}, fail = () => {}} = {}) {
   let pending = [], active = null, busy = false, paused = false, wake = null, disposed = false;
@@ -109,7 +112,7 @@ export function createSettings(initial, {read, write, change = () => {}}) {
   let confirmed = structuredClone(initial), pending = [], busy = false, loaded = false, loading = null, error = null, disposed = false;
   const control = new AbortController();
   const value = () => pending.reduce((current, entry) => ({...current, ...entry.patch}), structuredClone(confirmed));
-  const changed = () => { if (!disposed) change({value: value(), confirmed: structuredClone(confirmed), busy, error}); };
+  const changed = () => { if (!disposed) change({value: value(), confirmed: structuredClone(confirmed), loaded, busy, error}); };
   async function load() {
     if (loaded) return confirmed;
     if (loading) return loading;
@@ -170,4 +173,71 @@ export async function rewriteAndRead(result, {rewrite, read, signal}) {
     check(signal);
   }
   return items;
+}
+
+export function createLibraryClient({request, change = () => {}}) {
+  const route = '/_emdash/api/plugins/rapier-media', controller = new AbortController();
+  const failedAdvances = new Map();
+  const checkpoint = job => JSON.stringify([job?.revision, job?.phase, job?.done, job?.canceled, job?.publishing]);
+  let run = null, tail = Promise.resolve(), disposed = false, interruptStaging = false;
+  const report = error => { if (!disposed) change({run, error}); };
+  const accept = value => { check(controller.signal); run = value; report(null); return run; };
+  const call = (path, body) => request(route + path, {signal: controller.signal,
+    ...(body === undefined ? {} : {method:'POST', type:'application/json', body:JSON.stringify(body)})});
+  const serial = action => {
+    const result = tail.then(() => { check(controller.signal); return action(); });
+    tail = result.catch(error => { if (!disposed) report(error); });
+    return result;
+  };
+  return {
+    load: () => serial(async () => accept(await call('/library-status'))),
+    start: items => {
+      interruptStaging = false;
+      return serial(async () => {
+      const selected = items.map(item => ({id:item.mediaId ?? item.id, key:item.storageKey, name:item.name ?? item.filename}))
+        .sort((a,b) => a.id.toUpperCase() < b.id.toUpperCase() ? -1 : a.id.toUpperCase() > b.id.toUpperCase() ? 1 : 0);
+      if (!selected.length) return run;
+      accept(await call('/library-status'));
+      const id = run?.state === 'preparing' ? run.id : crypto.randomUUID().replaceAll('-', '');
+      accept(await call('/library-start', {id, total:selected.length}));
+      for (let offset=0, page=0; offset<selected.length; offset+=8, page++) {
+        if (interruptStaging) return run;
+        accept(await call('/library-append', {id, page, items:selected.slice(offset,offset+8)}));
+      }
+      return interruptStaging ? run : accept(await call('/library-run', {id, action:'resume'}));
+      });
+    },
+    control(action) {
+      if (action === 'cancel') interruptStaging = true;
+      return serial(async () => {
+        if (action === 'resume') failedAdvances.clear();
+        return run ? accept(await call('/library-run', {id:run.id, action})) : null;
+      });
+    },
+    advance: () => serial(async () => {
+      accept(await call('/library-status'));
+      if (!run || !['running','canceling','paused'].includes(run.state) || run.state === 'paused' && !run.current) return run;
+      const current = run.current?.jobId;
+      let failed;
+      if (run.current?.stage === 'waiting' && run.state !== 'canceling') {
+        const job = await call(`/job-status?job=${encodeURIComponent(current)}`), observed = checkpoint(job);
+        const blocked = failedAdvances.get(current);
+        if (blocked && blocked.checkpoint !== observed) failedAdvances.delete(current);
+        if (!job?.done && !job?.canceled && job?.phase !== 'blocked') {
+          failed = failedAdvances.get(current)?.error;
+          if (!failed) try { await call('/job-advance', {job:current}); }
+          catch (error) {
+            check(controller.signal);
+            failed = Object.assign(error, {jobId: current, jobRevision: job?.revision});
+            failedAdvances.set(current, {checkpoint: observed, error: failed});
+          }
+        }
+      }
+      accept(await call('/library-advance', {id:run.id}));
+      if (failed && run.current?.jobId === current) throw failed;
+      if (run.current?.jobId !== current) failedAdvances.delete(current);
+      return run;
+    }),
+    dispose() { disposed = true; controller.abort(); }
+  };
 }

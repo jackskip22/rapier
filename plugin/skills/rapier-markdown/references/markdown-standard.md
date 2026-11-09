@@ -25,7 +25,7 @@ The format has layers, each complete without the next:
 
 The pinned suites hold all 652 [CommonMark 0.31.2](https://spec.commonmark.org/0.31.2/) examples and all 677 examples
 of the published [GFM 0.29 specification](https://github.github.com/gfm/), including its 28 extension examples. The
-editor keeps all 1,329 sources byte for byte through opening, saving, a middle edit, Undo and Redo; it never
+editor keeps all 1,329 sources exactly through opening, saving, a middle edit, Undo and Redo; it never
 normalizes source.
 
 | Measure | CommonMark | GFM |
@@ -453,7 +453,7 @@ double-quoted). A key occurs once.
 | `overflow` | `clip` | Clips painting to the block's box. |
 
 A repeated key, a malformed token, or a known key with an invalid value leaves the fence a code sample. An unknown key
-is ignored and kept byte for byte, so a later version can add one without breaking this one.
+is ignored and kept exactly, so a later version can add one without breaking this one.
 
 ### Placement
 
@@ -730,7 +730,7 @@ fragments, keeping the stored shaft's bends and direction. The head always point
   paragraph keeps one pair, with pieces derived from the line fragments. A bracket beside several lines can stay one
   mark. Opening and saving keep authored bytes, including unsupported spellings.
 - Find and Replace All read a mark's words across its two comments: a phrase may run over the opener or closer and is
-  one hit. A replacement keeps each comment that still has words inside it, byte for byte, with the mark of the hit's
+  one hit. A replacement keeps each comment that still has words inside it exactly, with the mark of the hit's
   first character, and a pair whose words all go goes with them.
 - An agent's edit through the door keeps a pair whole the same way. An edit that takes a pair's last words takes its
   two comments too; one that would leave a comment alone or write an empty pair is refused as `ink_pair_broken`.
@@ -1035,7 +1035,7 @@ without `id="rapier-base"` (a second one with that id carries an optional compar
 
 - Each Markdown image destination that is a data URL the page shows is replaced, over its destination span, by a
   fragment `#id` naming the `<img id="…">` that holds those bytes. This applies only to an inline image's destination
-  or an image reference definition's destination; the same bytes in a code block, a sentence or an ordinary link are
+  or an image reference definition's destination; the same text in a code block, a sentence or an ordinary link are
   never touched. `data-images` lists every id used this way.
 - When the source delimits a destination with `<…>` (`![x](<data:…>)`, `[label]: <data:…>`), the writer keeps those
   delimiters: the carried destination is `&lt;#id>`, and resolving the id restores the exact original spelling. Nested
@@ -1072,7 +1072,7 @@ newline is added after the opening tag and one before the closing tag.
    and authored delimiters kept. Changed pictures or text are refused.
 
 - A leading UTF-8 BOM is included in the carrier and digest, and restored as file metadata when opened. With image
-  compatibility off, the recovered source is the original file byte for byte.
+  compatibility off, the recovered source is exactly the original file.
 - A page carries JPEG XL pictures as they are. With the Share sheet's image compatibility switch on, each is carried
   as the portable picture the page then shows (PNG, or JPEG for an opaque photo when smaller); without it the page
   needs a browser that decodes JPEG XL. Either way, the working file on the device keeps its own codec.

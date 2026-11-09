@@ -132,7 +132,7 @@ live document is refused. The host promises the address serves the exact uploade
 Rapier cannot certify a host's storage durability, access control or eventual serving behavior.
 
 On acknowledgment the transaction writes an ordinary CommonMark URL image, preserving the alt text, title
-and layout, without appending the same bytes. Entity-sensitive URL/title characters are escaped so parsing
+and layout, without appending the picture's data. Entity-sensitive URL/title characters are escaped so parsing
 cannot change their meaning. The frame **never fetches that URL back**: it retains the normalized local picture
 for preview, copying, portable export and reopening an editable drawing. These retained aliases are scoped to
 the current document, survive Undo and transport disconnection, and are not a second persistent storage system.

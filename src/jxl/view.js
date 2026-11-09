@@ -39,6 +39,17 @@
 			return button;
 		});
 		group.append(...modes);
+		const switchOf = (label, cls) => { const node = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff' + (cls ? ' ' + cls : '')); if (label) { node.setAttribute('role', 'radiogroup'); node.setAttribute('aria-label', label); } return node; };
+		const choose = (text, cls) => { const button = make('button', 'theme-switcher__btn onoff-btn' + (cls ? ' ' + cls : ''), text); button.type = 'button'; return button; };
+		const quick = make('div', 'rapier-jxl-view__quick'), openers = switchOf('', 'rapier-jxl-view__openers');
+		const qualityOpen = choose(''), effortOpen = choose('');
+		for (const opener of [qualityOpen, effortOpen]) { opener.setAttribute('aria-haspopup', 'true'); opener.setAttribute('aria-expanded', 'false'); }
+		openers.append(qualityOpen, effortOpen);
+		const qualityDrop = switchOf('Quality', 'rapier-jxl-view__drop'), effortDrop = switchOf('Effort', 'rapier-jxl-view__drop');
+		for (const mode of Object.keys(C.QUALITY)) { const button = choose(QUALITY_WORDS[mode]); button.dataset.mode = mode; button.setAttribute('role', 'radio'); qualityDrop.append(button); }
+		for (let level = C.EFFORT.min; level <= C.EFFORT.max; level++) { const button = choose(String(level)); button.dataset.effort = String(level); button.setAttribute('role', 'radio'); effortDrop.append(button); }
+		qualityDrop.hidden = effortDrop.hidden = true;
+		quick.append(openers, qualityDrop, effortDrop);
 		const effortRow = make('div', 'rapier-jxl-view__effort'), slider = make('input'), seek = make('span', 'rapier-draw-seek'), track = make('span', 'rapier-draw-seek-track'), head = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), level = make('output', 'rapier-jxl-view__effort-level');
 		effortRow.setAttribute('role', 'group'); effortRow.setAttribute('aria-label', 'Effort');
 		slider.type = 'range'; slider.min = String(C.EFFORT.min); slider.max = String(C.EFFORT.max); slider.step = '1'; slider.value = String(C.EFFORT.start); slider.setAttribute('aria-label', 'Effort');
@@ -48,6 +59,7 @@
 		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), seek, make('span', 'rapier-jxl-view__end', 'Smallest file'));
 		const quality = make('div', 'rapier-jxl-view__part'), effort = make('div', 'rapier-jxl-view__part');
 		quality.append(make('p', 'rapier-jxl-view__label', 'Quality'), group);
+		quality.classList.add('rapier-jxl-view__full'); effort.classList.add('rapier-jxl-view__full');
 		const effortLabel = make('p', 'rapier-jxl-view__label', 'Effort');
 		effort.append(effortLabel, effortRow);
 		C.liftToLabel(seek, level, effortLabel);
@@ -61,7 +73,7 @@
 		const files = make('div', 'rapier-jxl-view__files');
 		files.append(line, summary, help, list, all);
 		const fold = make('div', 'rapier-jxl-view__fold');
-		fold.append(note, pick, quality, effort, files, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false));
+		fold.append(note, pick, files, quick, quality, effort, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false));
 		const more = make('section', 'rapier-jxl-view__more'), moreTitle = make('h2', 'rapier-jxl-view__title', C.COMPARE.title), facts = make('ul', 'rapier-jxl-view__facts');
 		moreTitle.id = 'rapier-jxl-compare'; more.setAttribute('aria-labelledby', moreTitle.id);
 		for (const fact of C.COMPARE.lines) facts.append(make('li', 'rapier-jxl-view__note', fact));
@@ -71,7 +83,7 @@
 		scene.append(sceneTitle, make('p', 'rapier-jxl-view__note', C.SCENE.note), stage);
 		_rapierJxlMakerPart.tabs(body, [fold, more, scene, _rapierToolAlso('/jxl')]);
 		root.append(bar, body);
-		return {info, root, shut, input, group, modes, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
+		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
 	}
 
 	function paint(row) {
@@ -83,7 +95,7 @@
 		else if (row.state === 'failed' || row.state === 'stopped') text = row.say;
 		else if (r.back) text = size(r.before) + ' → ' + size(r.size);
 		else if (r.frames) text = size(r.before) + ' → ' + size(r.size) + (r.video ? '' : ' · ' + percent(r)) + C.mediaNote(r);
-		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, not bit for bit' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
+		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, so the JPEG can\'t be restored' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
 		note.textContent = text;
 		download.hidden = row.state !== 'done';
 	}
@@ -216,8 +228,8 @@
 		view.list.append(fragment); overall(); void run();
 	}
 	async function save(blob, name) {
-		if (typeof window.RapierMcpApp?.exportFile === 'function') {
-			if (!await window.RapierMcpApp.exportFile(blob, name)) showToast('Couldn’t save ' + name, 'error');
+		if (typeof window.RapierMcpApp?.saveFile === 'function') {
+			if (!await window.RapierMcpApp.saveFile(blob, name)) showToast('Couldn’t save ' + name, 'error');
 			return;
 		}
 		if (typeof window.RapierPlatform?.files?.exportArtifact !== 'function') {
@@ -294,12 +306,21 @@
 			view.mode = button.dataset.mode;
 			for (const each of view.modes) { const on = each === button; each.toggleAttribute('data-active', on); each.setAttribute('aria-checked', String(on)); }
 			_rapierSwitchSlide(view.group);
+			paintQuick(view);
 			remake();
 		});
+		const {qualityOpen, effortOpen, qualityDrop, effortDrop} = view.quick;
+		const toggle = (drop, opener) => { const show = drop.hidden; dropQuick(view); drop.hidden = !show; opener.toggleAttribute('data-active', show); opener.setAttribute('aria-expanded', String(show)); };
+		qualityOpen.addEventListener('click', () => toggle(qualityDrop, qualityOpen));
+		effortOpen.addEventListener('click', () => toggle(effortDrop, effortOpen));
+		qualityDrop.addEventListener('click', event => { const mode = event.target.closest('[data-mode]')?.dataset.mode; if (!mode) return; dropQuick(view); view.modes.find(button => button.dataset.mode === mode)?.click(); });
+		effortDrop.addEventListener('click', event => { const level = event.target.closest('[data-effort]')?.dataset.effort; if (!level) return; dropQuick(view); configure({effort: Number(level)}); });
+		root.addEventListener('pointerdown', event => { if (!view.quick.root.contains(event.target)) dropQuick(view); });
+		paintQuick(view);
 		view.slider.addEventListener('input', () => seekTo(view));
 		view.slider.addEventListener('pointerdown', () => view.seek.classList.add('rapier-draw-seek--active'));
 		for (const event of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) view.slider.addEventListener(event, () => view.seek.classList.remove('rapier-draw-seek--active'));
-		view.slider.addEventListener('change', () => { view.effort = C.effortOf(view.slider.value); remake(); });
+		view.slider.addEventListener('change', () => { view.effort = C.effortOf(view.slider.value); paintQuick(view); remake(); });
 		seekTo(view);
 		view.group.addEventListener('keydown', event => {
 			const step = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: 1, ArrowUp: -1}[event.key];
@@ -307,7 +328,7 @@
 			const at = view.modes.findIndex(button => button.hasAttribute('data-active')), next = view.modes[(at + step + view.modes.length) % view.modes.length];
 			event.preventDefault(); next.click(); next.focus();
 		});
-		root.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
+		root.addEventListener('keydown', event => { if (event.key !== 'Escape') return; event.preventDefault(); if (!dropQuick(view)) close(); });
 		root.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes('Files')) { event.preventDefault(); view.pick.toggleAttribute('data-over', true); } });
 		root.addEventListener('dragleave', event => { if (!root.contains(event.relatedTarget)) view.pick.removeAttribute('data-over'); });
 		root.addEventListener('drop', event => { if (!event.dataTransfer?.files.length) return; event.preventDefault(); view.pick.removeAttribute('data-over'); add([...event.dataTransfer.files]); });
@@ -343,7 +364,30 @@
 		if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('jxl', false);
 		try { done.wasFocus?.focus({preventScroll: true}); } catch (_) {}
 	}
-	const face = Object.freeze({open, close, save, complete: state => completeFor(state, null)(), get state() { return Object.freeze({open: !!view}); }});
+	function configure({mode, effort} = {}) {
+		if (!view) return;
+		view.modes.find(button => button.dataset.mode === mode && mode !== view.mode)?.click();
+		if (effort === undefined || C.effortOf(effort) === view.effort) return;
+		view.slider.value = String(C.effortOf(effort)); seekTo(view);
+		view.effort = C.effortOf(effort); paintQuick(view); remake();
+	}
+	function paintQuick(of) {
+		const {qualityOpen, effortOpen, qualityDrop, effortDrop} = of.quick;
+		qualityOpen.textContent = 'Quality: ' + QUALITY_WORDS[of.mode];
+		effortOpen.textContent = 'Effort: ' + of.effort;
+		for (const button of qualityDrop.children) { const on = button.dataset.mode === of.mode; button.toggleAttribute('data-active', on); button.setAttribute('aria-checked', String(on)); }
+		for (const button of effortDrop.children) { const on = Number(button.dataset.effort) === of.effort; button.toggleAttribute('data-active', on); button.setAttribute('aria-checked', String(on)); }
+	}
+	function dropQuick(of) {
+		let was = false;
+		for (const [drop, opener] of [[of.quick.qualityDrop, of.quick.qualityOpen], [of.quick.effortDrop, of.quick.effortOpen]]) {
+			if (!drop.hidden) was = true;
+			drop.hidden = true; opener.removeAttribute('data-active'); opener.setAttribute('aria-expanded', 'false');
+		}
+		return was;
+	}
+	const face = Object.freeze({open, close, save, configure, add: files => add([...files]), has: file => !!view?.rows.some(row => row.file === file),
+		complete: state => completeFor(state, null)(), get state() { return Object.freeze({open: !!view}); }});
 	_rapierJxlPart = face;
 	if (_rapierJxlDoor?.born) _rapierBootFactsPublished.then(open, open);
 })();

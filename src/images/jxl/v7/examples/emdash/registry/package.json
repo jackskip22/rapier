@@ -1,5 +1,5 @@
 {
-	"name": "smaller-images",
+	"name": "jxl",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
@@ -14,28 +14,33 @@
 	},
 	"files": [
 		"dist",
-		"emdash-plugin.jsonc"
+		"emdash-plugin.jsonc",
+		"README.md",
+		"docs",
+		"images"
 	],
 	"scripts": {
 		"validate": "emdash-plugin validate",
 		"build": "emdash-plugin build",
 		"dev": "emdash-plugin dev",
 		"typecheck": "tsc --noEmit",
-		"test": "emdash-plugin validate && vitest run",
+		"test:unit": "node --experimental-strip-types --test tests/*.node.mjs",
+		"test": "npm run test:unit && emdash-plugin validate && vitest run",
 		"bundle": "emdash-plugin bundle",
 		"login": "emdash-plugin login",
 		"publish": "emdash-plugin publish",
-		"release:setup": "emdash-plugin release setup"
+		"release:setup": "emdash-plugin release setup",
+		"prebuild": "node scripts/sync-words.mjs",
+		"prevalidate": "node scripts/sync-words.mjs"
 	},
 	"peerDependencies": {
-		"emdash": ">=0.12.0"
+		"emdash": ">=1.4.0 <2.0.0"
 	},
 	"devDependencies": {
 		"@emdash-cms/plugin-cli": "0.13.5",
-		"@emdash-cms/plugin-test": "^0.2.6",
-		"emdash": "^1.0.0",
-		"typescript": "^5.9.0",
-		"vitest": "^4.1.0"
+		"@emdash-cms/plugin-test": "0.2.11",
+		"emdash": "1.4.0",
+		"typescript": "5.9.3",
+		"vitest": "4.1.12"
 	}
 }
-

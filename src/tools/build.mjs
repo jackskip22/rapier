@@ -496,7 +496,7 @@ const unreadModules = [];
     for (const path of [...MODULE_SOURCES.keys()]) {
       if (kept.has(path) || retainedModule(path) || !MODULES.has(path)) continue;
       const readers = importers(path);
-      if (readers.some(owner => named(owner, path)) || !declaresOnly(MODULE_SOURCES.get(path))) continue;
+      if (readers.some(owner => named(owner, path)) || readers.length && !declaresOnly(MODULE_SOURCES.get(path))) continue;
       for (const owner of readers) {
         const source = dropBareImports(MODULE_SOURCES.get(owner), new Set([path]), node => moduleDependency(root, owner, node));
         MODULE_SOURCES.set(owner, source); assemble(owner, source);

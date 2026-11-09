@@ -1,4 +1,5 @@
 import {createCodec as createClient} from './client.mjs';
+import {previewReplies} from './preview-relay.mjs';
 
 export const LEGACY = Object.freeze({
   bytes: true,
@@ -9,4 +10,4 @@ export const LEGACY = Object.freeze({
 });
 
 let shared;
-export function sharedClient() { return shared ||= createClient({}, LEGACY); }
+export function sharedClient() { return shared ||= createClient({}, LEGACY, previewReplies); }

@@ -1,17 +1,35 @@
 {
 	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
-	"slug": "smaller-images",
+	"slug": "jxl",
 	"publisher": "did:web:pds.rapier.website",
-	"name": "Smaller images",
-	"description": "JPEG uploads kept as JPEG XL, about a fifth smaller, and given back exactly.",
+	"name": "JPEG XL Image Optimizer",
+	"description": "Automatic JPEG XL for every image.",
 	"keywords": ["images", "jpeg xl", "media", "storage"],
 	"license": "MIT",
 	"author": { "name": "Rapier", "url": "https://rapier.website" },
 	"security": { "email": "hello@rapier.website" },
-	// Reads media records only: names, types and sizes.
-	"capabilities": ["media:read"],
+	"sections": {
+		"description": { "file": "./docs/description.md" },
+		"installation": { "file": "./docs/installation.md" },
+		"faq": { "file": "./docs/faq.md" },
+		"security": { "file": "./docs/security.md" }
+	},
+	// This companion renders setup instructions without reading site data.
+	"capabilities": [],
 	"allowedHosts": [],
 	"storage": {},
-	"admin": { "pages": [{ "path": "/images", "label": "Smaller images", "icon": "image" }] }
+	"admin": { "pages": [{ "path": "/jpeg-xl", "label": "JPEG XL Image Optimizer", "icon": "image" }] },
+	"release": {
+		"requires": { "env:emdash": ">=1.4.0 <2.0.0" },
+		"artifacts": {
+			"icon": { "file": "./images/icon.png" },
+			"screenshots": [
+				{ "file": "./images/setup-desktop-light.png", "lang": "en" },
+				{ "file": "./images/setup-desktop-dark.png", "lang": "en" },
+				{ "file": "./images/setup-phone-light.png", "lang": "en" },
+				{ "file": "./images/setup-phone-dark.png", "lang": "en" }
+			]
+		}
+	}
 }
 

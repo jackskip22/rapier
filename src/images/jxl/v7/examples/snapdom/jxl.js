@@ -7,8 +7,9 @@ export function jxl({ module = 'rapier-jxl/capture-complete', codec, effort: pre
   const helpers = asked && typeof asked === 'object' ? { ...asked } : asked, key = JSON.stringify([module, helpers]);
   return {
     name: 'jxl',
+    pure: true,
     ...(module === 'rapier-jxl/capture' ? {} : {
-      afterClone(context) { const el = context.element; context[SNAPSHOT] = el ? [measure(el, { edges: (preset ?? 3) >= 4 }), lift(el)] : null; },
+      afterClone(context) { const el = context.element; context[SNAPSHOT] = el ? measure(el, { edges: (preset ?? 3) >= 4 }) : null; },
     }),
     defineExports: ({ exports }) => {
       const encoded = async (context, options) => {
@@ -19,10 +20,11 @@ export function jxl({ module = 'rapier-jxl/capture-complete', codec, effort: pre
         encoder.prepare('capture').catch(() => {});
         const canvas = await abortable(exports.canvas({ ...options, backgroundColor: options.backgroundColor ?? '#ffffff' }), signal);
         signal?.throwIfAborted();
-        const { quality = 0.92 } = options, photo = { quality: Math.max(1, quality * 100) }, [shot, up = 0] = context[SNAPSHOT] ?? [], clip = context.meta?.clip;
-        const area = { x: clip?.x, y: (clip?.y ?? 0) + up, width: clip?.width ?? context.meta?.w0, height: clip?.height ?? context.meta?.h0 };
+        const { quality = 0.92 } = options, photo = { quality: Math.max(1, quality * 100) }, shot = context[SNAPSHOT];
+        const { contentX = 0, contentY = 0, vbW, vbH, clip } = context.meta ?? {};
+        const area = { x: (clip?.x ?? 0) - contentX, y: (clip?.y ?? 0) - contentY, width: vbW, height: vbH };
         const naturalW = area.width ?? shot?.box.width, naturalH = area.height ?? shot?.box.height;
-        const below = !!(shot && naturalW && naturalH && (canvas.width < naturalW || canvas.height < naturalH));
+        const below = !!(shot && naturalW && naturalH && (canvas.width < Math.floor(naturalW) || canvas.height < Math.floor(naturalH)));
         let rects = quality < 1 && module !== 'rapier-jxl/capture' && shot
           ? pageRects(shot, canvas, { area, edges: !below && (effort ?? 3) >= 4 }) : null;
         if (below && !(rects?.photoRects?.length)) rects = null;
@@ -100,7 +102,6 @@ async function save(blob, filename) {
 }
 
 const SNAPSHOT = Symbol('jxl snapshot');
-const lift = el => el === document.documentElement && document.body ? document.body.getBoundingClientRect().top - el.getBoundingClientRect().top : 0;
 
 
 async function captureKeepSmallerJobs(encoder, canvas, base, jobs, hooks) {

@@ -48,14 +48,15 @@ for (const picture of await pictures()) for (const [name, verb, options] of [
   assert.deepEqual(list(out.record).map(withoutBytes), list(await named(ordinary, picture)).map(withoutBytes));
 });
 
-for (const [name, file, options] of [
+const uploadEncode = (await import('../v7/upload.mjs')).encode;
+for (const [name, file, options, verb = encode] of [
   ['a0.png q85 e3', 'graphics/a0.png', {effort: 3, fidelity: {quality: 85}}],
   ['logo.png exact e3', 'graphics/logo.png', {effort: 3, fidelity: 'exact'}],
-  ['plasma-444.jpg exact e3', null, {effort: 3, fidelity: 'exact'}],
+  ['plasma-444.jpg exact e3, upload', null, {effort: 3, fidelity: 'exact'}, uploadEncode],
 ]) test(`encode a stored file ${name}: resumed = ordinary`, {skip: !!file && !process.env.JXL_CORPUS}, async () => {
   const bytes = new Uint8Array(await readFile(file ? join(process.env.JXL_CORPUS, file) : new URL('../public/test/fixtures/plasma-444.jpg', import.meta.url)));
-  const ordinary = await encode(new Blob([bytes]), options);
-  const out = await drive(encode, bytes, {kind: 'file'}, options, {ms: 5});
+  const ordinary = await verb(new Blob([bytes]), options);
+  const out = await drive(verb, bytes, {kind: 'file'}, options, {ms: 5});
   assert.equal(sha256(out.bytes), sha256(ordinary.bytes), `${out.calls} calls`);
   assert.deepEqual(withoutBytes(out.record), withoutBytes(await named(ordinary, bytes)));
 });

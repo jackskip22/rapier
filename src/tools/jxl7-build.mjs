@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 import {join, dirname, resolve, relative, basename} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {reportSizes} from './jxl-budgets.mjs';
-import {shrinkShaders} from './jxl-shaders.mjs';
+import {shrinkShaders, shaderNames} from './jxl-shaders.mjs';
 import {fillChangelogSection, stageJxlChangelog, JXL_HISTORY_BASELINE} from './changelog.mjs';
 import {assertPhotoOwners, assertPhotoKernels} from './jxl-photo-owners.mjs';
 import {createKernelStripper, createBridgeCutter, kernelProfile, keptExports} from './jxl-kernel-strip.mjs';
@@ -35,25 +35,28 @@ const SAFE_COMPRESS = {defaults: false, dead_code: true, conditionals: true, boo
   evaluate: true, unused: true, comparisons: true, side_effects: true, directives: true, loops: true, properties: true, switches: true, typeofs: true,
   reduce_vars: true, collapse_vars: true, hoist_funs: true};
 const CAPTURE_COMPRESS = {...SAFE_COMPRESS, inline: 1, passes: 2, pure_new: true, lhs_constants: true};
-const COMPRESSED = /^(capture(-complete)?(\.worker)?|upload(\.worker)?|index|still\.worker|codec)\.mjs$/;
+const CAPTURE_COMPRESSED = /^capture-complete(\.worker)?\.mjs$/;
+const COMPRESSED = /^(capture(-complete)?(\.worker)?|capture-complete\.(groups\.worker|helper)|upload(\.(worker|helper))?|helpers|index|still\.worker|codec|jpeg(\.(node|worker))?|metadata|polyfill|serve(\.node)?|cli|resumable|verify(\.node)?)\.mjs$/;
 const terserRoot = process.env.TERSER ? resolve(process.env.TERSER) : dirname(createRequire(import.meta.url).resolve('terser/package.json'));
 const terser = createRequire(import.meta.url)(terserRoot), terserVersion = JSON.parse(await readFile(join(terserRoot, 'package.json'), 'utf8')).version;
 if (terserVersion !== TERSER_VERSION) throw new Error('rapier-jxl 7.0 builds with terser ' + TERSER_VERSION + ', not ' + terserVersion + '.');
-const version = '8.3.0';
+const version = '8.3.1';
 
 export const ONE_FILE = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'polyfill', 'serve', 'verify', 'storage', 'resumable'];
-export const WASM_MODULES = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'verify'];
+export const WASM_MODULES = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'verify', 'resumable'];
 export const WORKER_FILES = ['still', 'upload', 'capture', 'capture-complete', 'capture-complete.groups', 'animation', 'format', 'decode', 'jpeg'];
 export const HELPER_FILES = ['still', 'upload', 'animation', 'format', 'capture-complete'];
-export const NODE_FILES = ['serve', 'jpeg', 'decode', 'verify'];
+export const NODE_FILES = ['serve', 'jpeg', 'decode', 'verify', 'resumable'];
 const MODULE_FILE = /^\.\/(index|upload|capture|capture-complete|animation|format|decode|jpeg|codec|helpers|capture-groups|verify)\.mjs$/;
 const common = {absWorkingDir: repo, bundle: true, minify: true, format: 'esm', target: 'es2022', legalComments: 'none', logLevel: 'warning',
   external: ['node:*'], define: {__RAPIER_JXL_VERSION__: JSON.stringify(version), __RAPIER_JXL_SAMPLE__: 'false', __RAPIER_JXL_PROBES__: 'false'}, banner: {js: '/*! rapier-jxl ' + version + ' | MIT */'}};
 
 await rm(out, {recursive: true, force: true});
 await mkdir(dist, {recursive: true});
+const SHADER_FILE = /^(gpu-[\w-]+|int-ops)\.mjs$/;
+const shaderMap = shaderNames(await Promise.all((await readdir(codec)).filter(name => SHADER_FILE.test(name)).map(name => readFile(join(codec, name), 'utf8'))));
 const shaders = {name: 'shaders', setup(build) {
-  build.onLoad({filter: /[\\/](gpu-[\w-]+|int-ops)\.mjs$/}, async ({path}) => ({contents: shrinkShaders(await readFile(path, 'utf8')), loader: 'js'}));
+  build.onLoad({filter: /[\\/](gpu-[\w-]+|int-ops)\.mjs$/}, async ({path}) => ({contents: shrinkShaders(await readFile(path, 'utf8'), dirname(path) === codec ? shaderMap : null), loader: 'js'}));
 }};
 function untimed(text) {
   const pure = node => node.type === 'Literal' || node.type === 'Identifier' || node.type === 'ConditionalExpression' && [node.test, node.consequent, node.alternate].every(pure);
@@ -77,36 +80,66 @@ const nativeDictionary = {name: 'native-dictionary', setup(build) {
   build.onResolve({filter: /(^|\/)brotli-dictionary\.mjs$/}, ({path, resolveDir}) =>
     resolve(resolveDir, path) === join(codec, 'brotli-dictionary.mjs') ? {path: join(codec, 'brotli-dictionary-native.mjs')} : undefined);
 }};
+const UNSTEPPED = /^(serve|metadata)(\.|$)|\.(worker|helper)$/;
+const unstepped = {name: 'unstepped', setup(build) {
+  build.onLoad({filter: /\.mjs$/}, async ({path}) => {
+    if (!path.startsWith(codec + '/')) return undefined;
+    const text = await readFile(path, 'utf8');
+    return /\bjournaling\(\)/.test(text) ? {contents: text.replace(/\bjournaling\(\)/g, 'false'), loader: 'js', resolveDir: dirname(path)} : undefined;
+  });
+}};
 const moduleFiles = {name: 'module-files', setup(build) {
+  build.onResolve({filter: /^\.\/cli-emdash\.mjs$/}, ({path, importer}) =>
+    importer === join(v7, 'cli.mjs') ? {path, external: true} : undefined);
   build.onResolve({filter: MODULE_FILE}, ({path, importer}) => importer === join(v7, 'cli.mjs') && path === './verify.mjs' ? {path: './verify.node.mjs', external: true}
     : importer === join(v7, 'codec-modules.mjs') || importer === join(v7, 'cli.mjs') ? {path, external: true} : undefined);
 }};
 const browserVerify = {name: 'browser-verify', setup(build) {
   build.onResolve({filter: /(^|\/)verify-own\.mjs$/}, () => ({path: join(v7, 'verify-own.browser.mjs')}));
 }};
-const built = {metafile: {inputs: {}, outputs: {}, photoOwners: {}, kernelExports: {}, jpegKernelExports: {}, kernelBridgesCut: {}}}, contents = {};
+const resumableVerify = {name: 'resumable-verify', setup(build) {
+  build.onResolve({filter: /(^|\/)verify-own\.mjs$/}, () => ({path: join(v7, 'verify-own.resumable.mjs')}));
+}};
+const built = {metafile: {inputs: {}, outputs: {}, photoOwners: {}, planarFunctions: {}, kernelExports: {}, jpegKernelExports: {}, kernelBridgesCut: {}}}, contents = {};
 const kernels = await createKernelStripper(codec), bridges = createBridgeCutter(codec), {KERNEL_EXPORTS} = await import(pathToFileURL(join(codec, 'kernel-sets.mjs')).href);
 const sourceTexts = new Map(), sourceText = path => { if (!sourceTexts.has(path)) sourceTexts.set(path, readFile(path, 'utf8')); return sourceTexts.get(path); };
+function planarFunctions(text) {
+  const names = new Set(['encodeChannelsSteps', 'admitPlanarTransforms', 'admitPlanarSqueeze', 'channelLosslessSteps', 'modularPasses']), found = new Set();
+  (function walk(node) {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'FunctionDeclaration' && names.has(node.id?.name)) found.add(node.id.name);
+    for (const value of Object.values(node)) for (const child of Array.isArray(value) ? value : [value])
+      if (child && typeof child === 'object') walk(child);
+  })(acorn.parse(text, {ecmaVersion: 'latest', sourceType: 'module'}));
+  return [...found].sort();
+}
 async function oneFile(name, file = name + '.mjs', from = v7, plugins = []) {
   const define = {...common.define, __RAPIER_JXL_UPLOAD__: String(/^upload(\.|$)/.test(name)), __RAPIER_JXL_JPEG__: String(/^jpeg(\.|$)/.test(name)),
     __RAPIER_JXL_CAPTURE_LEAN__: String(/^capture(\.|$)/.test(name)),
-    __RAPIER_JXL_CAPTURE_DEEP__: String(!/^(capture|upload)(\.|$)/.test(name)),
+    __RAPIER_JXL_CAPTURE_DEEP__: String(!/^capture(\.|$)/.test(name)),
     __RAPIER_JXL_CAPTURE_PHOTO__: String(/^capture-(photo|complete)(\.|$)/.test(name)),
+    __RAPIER_JXL_STILL__: String(/^(index|still|animation)(\.|$)/.test(name)),
     __RAPIER_JXL_METADATA__: String(/^metadata(\.|$)/.test(name)),
-    __RAPIER_JXL_SAMPLE__: String(name === 'verify')};
+    __RAPIER_JXL_SAMPLE__: String(name === 'verify' || /^resumable(\.|$)/.test(name))};
   const names = {...common, minify: false, minifySyntax: true, banner: undefined, define, write: false, metafile: true, entryPoints: [join(from, file)], outfile: join(dist, name + '.mjs')};
   const first = await esbuild.build({...names, plugins: [moduleFiles, probesOut, ...plugins]});
-  const {unreached, capturePhotoAtLoad} = bundleKernelNeeds(first.outputFiles.find(output => output.path.endsWith('.mjs')).text, kernels.exports);
-  const readable = await esbuild.build({...names, plugins: [moduleFiles, probesOut, bridges(unreached, !capturePhotoAtLoad), ...plugins]});
+  const {unreached} = bundleKernelNeeds(first.outputFiles.find(output => output.path.endsWith('.mjs')).text, kernels.exports);
+  const readable = await esbuild.build({...names, plugins: [moduleFiles, probesOut, bridges(unreached), ...plugins]});
   const profile = kernelProfile(name), text = readable.outputFiles.find(output => output.path.endsWith('.mjs')).text;
+  if (/^(index|still|animation|format)(\.|$)/.test(name)) {
+    const held = built.metafile.planarFunctions[name] = planarFunctions(text);
+    if (define.__RAPIER_JXL_STILL__ === 'true' && held.length)
+      throw new Error(name + '.mjs holds an unreachable exact-planar coder: ' + held.join(', '));
+  }
   const embeds = file => Object.keys(readable.metafile.inputs).some(input => input.endsWith('/' + file));
-  const keep = embeds('kernels-bytes.mjs') ? (({needs, optional}) => keptExports(name + '.mjs', needs, optional, profile ? KERNEL_EXPORTS[profile] : kernels.exports, profile, text))(
+  const keep = embeds('kernels-bytes.mjs') ? (({needs, optional}) => keptExports(name + '.mjs', needs, optional, profile ? KERNEL_EXPORTS[profile] : kernels.exports, profile))(
     bundleKernelNeeds(text, kernels.exports)) : null;
-  const jpegKeep = embeds('jpeg-kernels-bytes.mjs') ? [...new Set(['memory', ...keptExports(name + '.mjs', new Set(), new Set(), kernels.jpegExports, null, text)])].sort() : null;
+  const jpegKeep = embeds('jpeg-kernels-bytes.mjs') ? [...new Set(['memory', ...(({needs, optional}) =>
+    keptExports(name + '.mjs', needs, optional, kernels.jpegExports, null))(bundleKernelNeeds(text, kernels.jpegExports))])].sort() : null;
   built.metafile.kernelExports[name] = keep;
-  built.metafile.kernelBridgesCut[name] = capturePhotoAtLoad ? [...unreached, 'capture-kernels PHOTO_KERNELS'] : unreached;
+  built.metafile.kernelBridgesCut[name] = unreached;
   built.metafile.jpegKernelExports[name] = jpegKeep;
-  const result = await esbuild.build({...common, define, metafile: true, sourcemap: 'external', plugins: [moduleFiles, shaders, probesOut, bridges(unreached, !capturePhotoAtLoad), kernels({kernels: keep, jpeg: jpegKeep}), ...plugins],
+  const result = await esbuild.build({...common, define, metafile: true, sourcemap: 'external', plugins: [moduleFiles, shaders, probesOut, bridges(unreached), kernels({kernels: keep, jpeg: jpegKeep}), ...plugins],
     entryPoints: [join(from, file)], outfile: join(dist, name + '.mjs')});
   const {metafile} = result;
   const mapPath = join(dist, name + '.mjs.map');
@@ -117,8 +150,10 @@ async function oneFile(name, file = name + '.mjs', from = v7, plugins = []) {
   const [output] = Object.values(metafile.outputs);
   const loads = output.imports.filter(edge => name === 'verify'
     || /^(index|still|upload|capture)([.-]|$)/.test(name) && edge.path.endsWith('/verify.mjs')
-    || !(edge.external && (edge.path.startsWith('node:') || MODULE_FILE.test(edge.path) || name === 'cli' && edge.path === './verify.node.mjs')));
+    || !(edge.external && (edge.path.startsWith('node:') || MODULE_FILE.test(edge.path) || name === 'cli' &&
+      (edge.path === './verify.node.mjs' || edge.path === './cli-emdash.mjs' && edge.kind === 'dynamic-import'))));
   if (loads.length) throw new Error(file + ' is not one file: ' + loads.map(edge => edge.path).join(', '));
+  if (name === 'resumable.node' && output.imports.length) throw new Error('resumable.node.mjs must have no external imports.');
   contents[name] = Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0).map(([path]) => path);
   refuseDecoder(name, contents[name]);
   refuseSecondScorer(name, contents[name], keep ?? []);
@@ -127,11 +162,11 @@ async function oneFile(name, file = name + '.mjs', from = v7, plugins = []) {
   refuseSecondAnsWriter(name, [...(keep ? [{name: 'kernels', exports: keep}] : []), ...(jpegKeep ? [{name: 'jpeg', exports: jpegKeep}] : [])]);
   refuseSecondRans(name, await Promise.all(contents[name].filter(path => path.endsWith('.mjs')).map(async path => [path, await sourceText(join(repo, path))])));
 }
-for (const name of ONE_FILE) await oneFile(name, undefined, undefined, name === 'verify' ? [browserVerify] : []);
+for (const name of ONE_FILE) await oneFile(name, undefined, undefined, name === 'verify' || name === 'resumable' ? [browserVerify] : UNSTEPPED.test(name) ? [unstepped] : []);
 for (const name of NODE_FILES) {
-  await oneFile(name + '.node', name + '.mjs', v7, [nativeDictionary]);
+  await oneFile(name + '.node', name + '.mjs', v7, [nativeDictionary, ...(name === 'resumable' ? [resumableVerify] : []), ...(UNSTEPPED.test(name) ? [unstepped] : [])]);
   const dictionary = file => contents[file].some(input => input.endsWith('/brotli-dictionary.mjs'));
-  if (dictionary(name + '.node') || name !== 'verify' && !dictionary(name)) throw new Error(name + '.node.mjs holds the dictionary text, or ' + name + '.mjs lacks it');
+  if (dictionary(name + '.node') || !['verify', 'resumable'].includes(name) && !dictionary(name)) throw new Error(name + '.node.mjs holds the dictionary text, or ' + name + '.mjs lacks it');
 }
 {
   const outside = ['capture-photo.mjs','capture-vardct.mjs','photo-xyb.mjs','photo-dct.mjs','v7/client.mjs','v7/session.mjs','v7/worker-runtime.mjs']
@@ -142,11 +177,22 @@ for (const name of NODE_FILES) {
     const held = barred.filter(file => contents[name].some(input => input.endsWith('/' + file)));
     if (held.length) throw new Error(name + '.mjs holds ' + held.join(', '));
   }
+  for (const [name, inputs] of Object.entries(contents)) if (inputs.some(input => /\/sampled[\w-]*\.mjs$/.test(input))) throw new Error(name + '.mjs holds a second Modular learner (sampled*.mjs)');
 }
 await oneFile('cli');
-for (const name of WORKER_FILES) await oneFile(name + '.worker', name + '.worker.mjs');
-for (const name of HELPER_FILES) await oneFile(name + '.helper', name + '.helper.mjs');
+await oneFile('cli-emdash');
+if (contents.cli.some(input => /\/(?:cli-emdash|acorn)\.mjs$/.test(input)))
+  throw new Error('cli.mjs eagerly bundles the EmDash setup or parser');
+for (const name of WORKER_FILES) await oneFile(name + '.worker', name + '.worker.mjs', undefined, [unstepped]);
+for (const name of HELPER_FILES) await oneFile(name + '.helper', name + '.helper.mjs', undefined, [unstepped]);
+for (const [name, inputs] of Object.entries(contents)) if (UNSTEPPED.test(name) && inputs.some(input => /\/resumable(-journal)?\.mjs$/.test(input)))
+  throw new Error(name + '.mjs is built unstepped but holds the resumable driver');
 await oneFile('helpers');
+{
+  const outside = ['photo-split.mjs', 'kernels.mjs', 'capture-codec.mjs', 'vardct.mjs']
+    .filter(file => contents.helpers.some(input => input.endsWith('/' + file)));
+  if (outside.length) throw new Error('helpers.mjs holds encoder code: ' + outside.join(', '));
+}
 await oneFile('capture-groups');
 for (const name of HELPER_FILES) {
   const held = contents[name + '.helper'];
@@ -154,6 +200,11 @@ for (const name of HELPER_FILES) {
     .filter(file => held.some(input => input.endsWith('/' + file)));
   if (spawns.length) throw new Error(name + '.helper.mjs reaches a spawn site: ' + spawns.join(', '));
   if (/\b[a-z-]+\.(helper|worker)\.mjs\b|parallel-worker\.mjs/.test(await readFile(join(dist, name + '.helper.mjs'), 'utf8'))) throw new Error(name + '.helper.mjs names a worker file');
+}
+for (const [name, inputs] of Object.entries(contents)) if (/^capture-(photo|complete)(\.|$)/.test(name)) {
+  const outside = ['photo-plan.mjs', 'photo-advanced.mjs', 'hybrid.mjs', 'parallel-drive.mjs', 'parallel-serve.mjs', 'photo-v6-blocks.mjs', 'block-split.mjs']
+    .filter(file => inputs.some(input => input.endsWith('/' + file)));
+  if (outside.length) throw new Error(name + '.mjs holds a route outside its capture profile: ' + outside.join(', '));
 }
 for (const [name, inputs] of Object.entries(contents)) {
   const stale = ['v7/legacy-queue.mjs', 'v7/shared.mjs', 'v7/runtime.mjs', 'v7/run-codec.mjs', 'v7/worker.mjs', 'v7/offline.mjs'].filter(file => inputs.some(input => input.endsWith('/' + file)));
@@ -168,7 +219,7 @@ for (const [name, inputs] of Object.entries(contents)) {
     'photo-plan.mjs', 'v7/preparation-plan.mjs'];
   const holds = (file, inputs) => { const outside = OUTSIDE.filter(name => inputs.some(input => input.endsWith('/' + name))); if (outside.length) throw new Error(file + ' holds ' + outside.join(', ')); };
   holds('upload.mjs', contents.upload); holds('upload.helper.mjs', contents['upload.helper']);
-  const ALLOWED = ['helper-runtime.mjs', 'photo-split.mjs', 'v7/upload.helper.mjs', 'v7/module-runtime.mjs', 'v7/drive.mjs', 'v7/webgpu.mjs', 'v7/protocol.mjs'];
+  const ALLOWED = ['helper-runtime.mjs', 'photo-split.mjs', 'v7/upload.helper.mjs', 'v7/module-runtime.mjs', 'v7/drive.mjs', 'v7/webgpu.mjs', 'v7/protocol.mjs', 'v7/preview-relay.mjs'];
   const beyond = contents['upload.helper'].filter(input => !contents.upload.includes(input) && !ALLOWED.some(name => input.endsWith('/' + name)));
   if (beyond.length) throw new Error('upload.helper.mjs holds more than upload: ' + beyond.join(', '));
 }
@@ -180,7 +231,7 @@ await oneFile('wasm-modules', 'wasm-modules.mjs', codec);
 for (const file of await readdir(dist)) {
   const path = join(dist, file), module = file.endsWith('.mjs');
   const command = file === 'cli.mjs', source = (await readFile(path, 'utf8')).replace(/^#![^\n]*\n/, '');
-  let {code} = await terser.minify(source, {module, ecma: 2020, compress: COMPRESSED.test(file) && (/^capture-/.test(file) ? CAPTURE_COMPRESS : SAFE_COMPRESS), mangle: true, format: {comments: /^!/}});
+  let {code} = await terser.minify(source, {module, ecma: 2020, compress: COMPRESSED.test(file) && (CAPTURE_COMPRESSED.test(file) ? CAPTURE_COMPRESS : SAFE_COMPRESS), mangle: true, format: {comments: /^!/}});
   if (module) {
     const original = code, parse = text => acorn.parse(text, {ecmaVersion: 'latest', sourceType: 'module'}).body;
     const nodes = parse(original), functions = [], statements = [];
@@ -216,8 +267,10 @@ const conditions = name => ({workerd: `./dist/${name}.workerd.mjs`, 'edge-light'
 for (const condition of ['workerd','edge-light']) {
   const load = name => `import ${name} from './${name}.wasm${condition === 'edge-light' ? '?module' : ''}';`, names = ['kernels','jpeg','decode'];
   await writeFile(join(dist, `wasm.${condition}.mjs`), `${names.map(load).join('\n')}\nimport {wasmBundle} from './wasm-modules.mjs';\nexport default wasmBundle({${names.join(',')}});\n`);
-  for (const name of WASM_MODULES)
-    await writeFile(join(dist, `${name}.${condition}.mjs`), `import wasm from './wasm.${condition}.mjs';\nimport {configureWasm} from './${name}.mjs';\nconfigureWasm(wasm);\nexport * from './${name}.mjs';\n`);
+  for (const name of WASM_MODULES) {
+    const entry = name === 'resumable' ? 'resumable.node' : name;
+    await writeFile(join(dist, `${name}.${condition}.mjs`), `import wasm from './wasm.${condition}.mjs';\nimport {configureWasm} from './${entry}.mjs';\nconfigureWasm(wasm);\nexport * from './${entry}.mjs';\n`);
+  }
 }
 
 await mkdir(join(out, 'types'), {recursive: true});
@@ -237,7 +290,8 @@ for (let at = 0; at < declarations.length; at++) {
 }
 await copyFile(join(codec, 'LICENSE'), join(out, 'LICENSE'));
 await copyFile(join(v7, 'THIRD_PARTY_NOTICES'), join(out, 'THIRD_PARTY_NOTICES'));
-await copyFile(join(v7, 'SKILL.md'), join(out, 'SKILL.md'));
+await mkdir(join(out, 'skills/rapier-jxl'), {recursive: true});
+await copyFile(join(v7, 'skills/rapier-jxl/SKILL.md'), join(out, 'skills/rapier-jxl/SKILL.md'));
 if (existsSync(join(v7, 'webp-comparison.md'))) { await mkdir(join(out, 'bench'), {recursive: true}); await copyFile(join(v7, 'webp-comparison.md'), join(out, 'bench', 'webp-comparison.md')); }
 const changelog = existsSync(join(v7, 'CHANGELOG.md'));
 const webpFiguresFile = join(v7, 'webp-figures.json');
@@ -258,7 +312,7 @@ const fillWebp = (name, text) => text.split('\n').filter(line => {
   : line.replace(/\.$/, '; the rest are being worked on for ' + version.split('.').slice(0, 2).join('.') + '.x.'))
   .join('\n').replace(/__WEBP_([A-Z0-9_]+)__/g, (all, key) => webpFigures[key]);
 
-const EXAMPLES = ['polyfill.html', '09-browser-upload-queue.html', '09-browser-upload-queue.mjs', 'page-rects.js', 'page-rects.d.ts', 'svg-jxl.js', 'svg-jxl.d.ts', 'snapdom'];
+const EXAMPLES = ['polyfill.html', '09-browser-upload-queue.html', '09-browser-upload-queue.mjs', 'page-rects.js', 'page-rects.d.ts', 'svg-jxl.js', 'svg-jxl.d.ts', 'snapdom', 'emdash'];
 await mkdir(join(out, 'examples'), {recursive: true});
 for (const file of EXAMPLES) await cp(join(v7, 'examples', file), join(out, 'examples', file), {recursive: true,
   filter: path => !relative(join(v7, 'examples', file), path).split(/[\\/]/).some(part => part === 'node_modules' || part === 'registry')});
@@ -268,13 +322,16 @@ for (const name of ONE_FILE) exports[name === 'index' ? '.' : './' + name] = {ty
 exports['./wasm'] = {types: './types/wasm.d.mts', ...conditions('wasm'), import: './dist/wasm.mjs'};
 exports['./page-rects'] = {types: './examples/page-rects.d.ts', import: './examples/page-rects.js'};
 exports['./svg-jxl'] = {types: './examples/svg-jxl.d.ts', import: './examples/svg-jxl.js'};
+exports['./emdash'] = {types: './examples/emdash/index.d.ts', import: './examples/emdash/index.mjs'};
 exports['./package.json'] = './package.json';
 const sideEffects = ['./dist/polyfill.mjs', ...WORKER_FILES.map(name => `./dist/${name}.worker.mjs`), ...HELPER_FILES.map(name => `./dist/${name}.helper.mjs`),
   ...[...WASM_MODULES, 'wasm'].flatMap(name => Object.values(conditions(name)))];
+const PEERS = {emdash: '>=1.4.0', '@emdash-cms/cloudflare': '>=1.4.0', '@cloudflare/kumo': '>=2.6.0', astro: '>=6.0.0', react: '>=18.0.0'};
 const {repository, homepage, bugs, keywords} = JSON.parse(await readFile(join(codec, 'package.json'), 'utf8'));
 await writeFile(join(out, 'package.json'), JSON.stringify({name: 'rapier-jxl', version, type: 'module', license: 'MIT',
   description: 'JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.', repository, homepage, bugs, keywords, bin: {'rapier-jxl': 'dist/cli.mjs'}, exports, types: './types/index.d.mts',
-  sideEffects, files: ['dist', 'types', 'examples', 'LICENSE', 'README.md', 'SKILL.md', 'THIRD_PARTY_NOTICES', ...(changelog ? ['CHANGELOG.md'] : [])],
+  sideEffects, peerDependencies: PEERS, peerDependenciesMeta: Object.fromEntries(Object.keys(PEERS).map(name => [name, {optional: true}])),
+  files: ['dist', 'types', 'examples', 'skills', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES', ...(changelog ? ['CHANGELOG.md'] : [])],
   engines: {node: '^20.16.0 || >=22.3.0'}}, null, 1) + '\n');
 
 const measure = bytes => ({min: bytes.length, gzip: gzipSync(bytes, {level: 9}).length,
@@ -284,16 +341,20 @@ for (const file of (await readdir(dist)).filter(name => name.endsWith('.mjs')).s
 const gz = file => sizes.files[file].gzip;
 sizes.modules = {still: gz('index.mjs'), upload: gz('upload.mjs'), capture: gz('capture.mjs'),
   captureComplete: gz('capture-complete.mjs'), captureCompleteWorker: gz('capture-complete.worker.mjs'), animation: gz('animation.mjs'), format: gz('format.mjs'),
-  decode: gz('decode.mjs'), jpeg: gz('jpeg.mjs'), verify: gz('verify.mjs'), decodeNode: gz('decode.node.mjs'), jpegNode: gz('jpeg.node.mjs'), serveNode: gz('serve.node.mjs'), metadata: gz('metadata.mjs'), codec: gz('codec.mjs'), polyfill: gz('polyfill.mjs'), serve: gz('serve.mjs'), storage: gz('storage.mjs'), cli: gz('cli.mjs'),
+  decode: gz('decode.mjs'), jpeg: gz('jpeg.mjs'), verify: gz('verify.mjs'), decodeNode: gz('decode.node.mjs'), jpegNode: gz('jpeg.node.mjs'), serveNode: gz('serve.node.mjs'), metadata: gz('metadata.mjs'), codec: gz('codec.mjs'), polyfill: gz('polyfill.mjs'), serve: gz('serve.mjs'), storage: gz('storage.mjs'), cli: gz('cli.mjs'), cliSetup: gz('cli-emdash.mjs'),
   captureQueued: gz('codec.mjs') + gz('capture.worker.mjs'),
   captureCompleteQueued: gz('codec.mjs') + gz('capture-complete.worker.mjs'), uploadQueued: gz('codec.mjs') + gz('upload.worker.mjs'), stillQueued: gz('codec.mjs') + gz('still.worker.mjs')};
 const br = file => sizes.files[file].brotli;
 sizes.modulesBrotli = Object.fromEntries(Object.entries({still: ['index.mjs'], upload: ['upload.mjs'], capture: ['capture.mjs'],
   captureComplete: ['capture-complete.mjs'], animation: ['animation.mjs'], format: ['format.mjs'], decode: ['decode.mjs'], jpeg: ['jpeg.mjs'],
-  metadata: ['metadata.mjs'], codec: ['codec.mjs'], polyfill: ['polyfill.mjs'], serve: ['serve.mjs'], storage: ['storage.mjs'], cli: ['cli.mjs'], verify: ['verify.mjs'],
+  metadata: ['metadata.mjs'], codec: ['codec.mjs'], polyfill: ['polyfill.mjs'], serve: ['serve.mjs'], storage: ['storage.mjs'], cli: ['cli.mjs'], cliSetup: ['cli-emdash.mjs'], verify: ['verify.mjs'],
   captureQueued: ['codec.mjs', 'capture.worker.mjs'], captureCompleteQueued: ['codec.mjs', 'capture-complete.worker.mjs'],
   uploadQueued: ['codec.mjs', 'upload.worker.mjs'], stillQueued: ['codec.mjs', 'still.worker.mjs']}).map(([key, files]) => [key, files.reduce((sum, file) => sum + br(file), 0)]));
 console.log(reportSizes(sizes.modules));
+for (const file of ['cli.mjs', 'cli-emdash.mjs']) {
+  const {min, gzip, brotli} = sizes.files[file];
+  console.log(`${file} raw ${min} gzip ${gzip} brotli ${brotli}`);
+}
 let readme = fillWebp('README.md', await readFile(join(v7, 'README.md'), 'utf8'));
 const kb = bytes => Math.round(bytes / 1000).toLocaleString('en-US') + ' KB';
 const others = JSON.parse(await readFile(join(codec, 'public/encoder-sizes.json'), 'utf8')).entries;
@@ -333,7 +394,7 @@ sizes.readme = fill;
 if (changelog) {
   const sourceChangelog = await readFile(join(v7, 'CHANGELOG.md'), 'utf8');
   const releaseChangelog = Object.hasOwn(JXL_HISTORY_BASELINE.sections, version) ? sourceChangelog :
-    stageJxlChangelog(sourceChangelog, version, await readFile(join(repo, 'tools/fixtures/jxl-published-v8.2.0.md'), 'utf8'));
+    stageJxlChangelog(sourceChangelog, version, await readFile(join(repo, 'tools/fixtures', JXL_HISTORY_BASELINE.fixture), 'utf8'));
   const text = fillChangelogSection(releaseChangelog, version, section => {
     let current = fillWebp('CHANGELOG.md', section.replaceAll('__AUTO_GPU__', AUTO_GPU));
     for (const [key, value] of Object.entries(fill)) if (typeof value === 'string') current = current.replaceAll('__' + key + '__', value);
@@ -346,7 +407,7 @@ if (changelog) {
 const shipped = [];
 for (const directory of ['dist', 'types', 'examples']) for (const file of (await readdir(join(out, directory), {recursive: true, withFileTypes: true})).filter(entry => entry.isFile()))
   shipped.push(relative(out, join(file.parentPath ?? file.path, file.name)));
-shipped.push('package.json', 'LICENSE', 'README.md', 'SKILL.md', 'THIRD_PARTY_NOTICES', ...(changelog ? ['CHANGELOG.md'] : [])); shipped.sort();
+shipped.push('package.json', 'LICENSE', 'README.md', 'skills/rapier-jxl/SKILL.md', 'THIRD_PARTY_NOTICES', ...(changelog ? ['CHANGELOG.md'] : [])); shipped.sort();
 const fileHashes = Object.fromEntries(await Promise.all(shipped.map(async file => [file, createHash('sha256').update(await readFile(join(out, file))).digest('hex')])));
 sizes.distribution = {sha256: createHash('sha256').update(JSON.stringify(fileHashes)).digest('hex'), files: fileHashes,
   flags: {...common, banner: undefined, passes: ['one file: ' + ONE_FILE.join(','), 'workers: ' + WORKER_FILES.join(','), 'helpers: ' + HELPER_FILES.join(','), 'wasm, wasm-modules', 'terser safe compress: ' + COMPRESSED.source]}};

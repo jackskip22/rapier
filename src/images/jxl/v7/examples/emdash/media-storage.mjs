@@ -1,6 +1,9 @@
 import {header, inspect} from 'rapier-jxl/metadata';
 import {readAll} from 'rapier-jxl/storage';
 import {digest} from './digest.mjs';
+import {originalStorage} from './originals.mjs';
+import {hostLimits, canRetireJpeg, deliveryOnly} from './host-policy.mjs';
+import {originalGeometry, structuralDelivery, SOURCE_HEADER_BYTES} from './structural-delivery.mjs';
 
 const ACTIVE = Symbol.for('rapier-jxl.emdash.storage');
 export function registerStorage(storage, scope) {
@@ -15,9 +18,10 @@ export const hasSidecar = key => /\.(?:jpe?g|jpe|jfif|png|webp|avif)$/i.test(key
 const IMAGE = /\.(?:jpe?g|jpe|jfif|png|webp|avif)$/i;
 const HASH = /^[a-f0-9]{64}$/;
 const COPY_ID = /^[a-f0-9]{32}$/;
+export const INITIAL_DELIVERY = '00000000000000000000000000000000';
 const ROOT = '__rapier_jxl__/';
 const OWNER = 'rapier-jxl/emdash';
-const MAX_COPY_BYTES = 8 * 1024 * 1024, MAX_RECORD_BYTES = 16 * 1024;
+const BOUNDED_COPY_BYTES = 8 * 1024 * 1024, MAX_STORAGE_BYTES = 256 * 1024 * 1024, MAX_RECORD_BYTES = 16 * 1024;
 const utf8 = value => new TextEncoder().encode(value);
 const same = (a, b) => a.length === b.length && a.every((value, i) => value === b[i]);
 const direct = action => action();
@@ -30,13 +34,29 @@ function publicKey(key) {
 }
 
 function meetsFloor(fidelity, floor) {
-  if (fidelity === 'exact' || fidelity?.maxError === 0) return true;
+  if (fidelity === 'exact' || fidelity?.maxError === 0 || fidelity?.quality === 100) return true;
   if (floor === 'exact') return false;
   return typeof floor?.quality === 'number' && typeof fidelity?.quality === 'number' && fidelity.quality >= floor.quality;
 }
 
-export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1024 * 1024, create} = {}) {
+export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1024 * 1024, create, compareAndSet, originalBackend,
+  cpuLimitMs, memoryLimitBytes} = {}) {
   if (create !== undefined && typeof create !== 'function') throw failure('JXL_OPTIONS', 'create is an atomic create-only function.');
+  if (compareAndSet !== undefined && typeof compareAndSet !== 'function')
+    throw failure('JXL_OPTIONS', 'compareAndSet conditionally writes delivery settings.');
+  let originals;
+  const physicalStore = inner;
+  const host = hostLimits(originalBackend?.platform ?? 'node', {cpuLimitMs, memoryLimitBytes});
+  const unboundedNode = host.platform === 'node' && host.cpuLimitMs === null && host.memoryLimitBytes === null;
+  const maxCopyBytes = Math.min(maxInputBytes, unboundedNode ? MAX_STORAGE_BYTES : BOUNDED_COPY_BYTES);
+  if (originalBackend) {
+    const wrapped = originalStorage(inner, {...originalBackend, create, compareAndSet, maxInputBytes, maxPixels,
+      maxDeliveryBytes: maxCopyBytes,
+      allowRetirement: canRetireJpeg(host),
+      preserveDelivery: (key, result, options) => preserveArchiveDelivery(key, result, options),
+      delivery: (key, generation, options = {}) => delivery(key, generation, options.signal, options.call)});
+    inner = wrapped.store; originals = wrapped.originals;
+  }
   async function io(action, signal) {
     signal?.throwIfAborted();
     try { const result = await action(); signal?.throwIfAborted(); return result; }
@@ -66,18 +86,44 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     return {...file, bytes, size: bytes.length};
   }
   const base = async key => ROOT + await digest(utf8(key)) + '.';
+  const deliveryKey = async (key, generation) => await base(key) + generation + '.delivery.json';
+  async function delivery(key, generation, signal, call = direct) {
+    const keyName = await deliveryKey(key, generation);
+    let file;
+    try { file = await io(() => call(() => inner.download(keyName, {signal})), signal); }
+    catch (error) {
+      if (error?.code === 'NOT_FOUND') return {mode: 'copies', revision: INITIAL_DELIVERY, etag: null, size: 0};
+      throw error;
+    }
+    let bytes;
+    try { bytes = await io(() => readAll(file.body, {maxBytes: 2048, signal}), signal); }
+    catch (error) {
+      signal?.throwIfAborted();
+      if (['JXL_INPUT', 'JXL_LIMIT'].includes(error?.code)) return {mode: 'original', revision: null, etag: null, size: 0};
+      throw error;
+    }
+    let value;
+    try { value = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes)); } catch {}
+    if (value?.owner !== OWNER || value.kind !== 'delivery' || value.source !== key || value.generation !== generation ||
+        Number.isSafeInteger(file.size) && file.size !== bytes.length ||
+        !COPY_ID.test(value.revision ?? '') || !['copies', 'original'].includes(value.mode))
+      return {mode: 'original', revision: null, etag: null, size: bytes.length};
+    return {mode: value.mode, revision: value.revision, etag: file.etag, size: bytes.length};
+  }
   const versionOf = file => typeof file?.version === 'string' && file.version.length ? digest(utf8(file.version)) : null;
-  async function generation(key, {signal, range, call = direct} = {}) {
+  async function sourceHead(key, {signal, range, call = direct} = {}) {
     publicKey(key); signal?.throwIfAborted();
     let file, failed = false;
     try {
-      file = await io(() => call(() => inner.download(key, {signal, ...(range ? {range} : {})})));
+      const headed = typeof inner.head === 'function';
+      file = await io(() => call(() => headed ? inner.head(key, {signal}) : inner.download(key, {signal, ...(range ? {range} : {})})));
+      if (!file) return null;
       signal?.throwIfAborted();
-      if (range && (file?.range?.offset !== range.offset || file.range.length !== range.length))
+      if (range && !headed && (file?.range?.offset !== range.offset || file.range.length !== range.length))
         throw failure('JXL_UNSUPPORTED', 'The media backend did not honor the requested source range.');
       const version = await versionOf(file);
       if (range && !version) throw failure('JXL_UNSUPPORTED', 'Source ranges require a backend generation.');
-      return version;
+      return {generation: version, size: file.size};
     } catch (error) {
       failed = true;
       signal?.throwIfAborted();
@@ -89,6 +135,28 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
       signal?.throwIfAborted();
     }
   }
+  const generation = async (key, options) => (await sourceHead(key, options))?.generation ?? null;
+  async function physicalHead(key, {signal, call = direct} = {}) {
+    if (!deliveryOnly(host) || typeof originalBackend?.head !== 'function')
+      throw failure('JXL_UNSUPPORTED', 'Structural delivery requires a known Free host and a physical generation.');
+    const file = await io(() => call(() => originalBackend.head(key, {signal})), signal);
+    return file ? {generation: await versionOf(file), size: file.size} : null;
+  }
+  async function originalHeader(key, before, {signal, call = direct} = {}) {
+    if (!Number.isSafeInteger(before?.size) || before.size < 8 || before.size > maxInputBytes || !before.generation)
+      throw failure('JXL_LIMIT', 'The original does not have a bounded physical size and generation.');
+    const length = Math.min(SOURCE_HEADER_BYTES, before.size);
+    const file = await io(() => call(() => physicalStore.download(key, {range: {offset: 0, length}, signal})), signal);
+    try {
+      if (file?.range?.offset !== 0 || file.range.length !== length)
+        throw failure('JXL_UNSUPPORTED', 'The media backend did not honor the bounded original header read.');
+      if (file.size !== before.size || await versionOf(file) !== before.generation)
+        throw failure('JXL_INPUT', 'The stored original changed during its header read.');
+      const bytes = await io(() => readAll(file.body, {maxBytes: length, signal}), signal);
+      if (bytes.length !== length) throw failure('JXL_INPUT', 'The original header range has the wrong length.');
+      return originalGeometry(bytes, {mimeType: isJpegKey(key) ? 'image/jpeg' : /\.png$/i.test(key) ? 'image/png' : null, maxPixels});
+    } finally { try { await file?.body?.cancel?.(); } catch {} }
+  }
   async function snapshot(key, {signal, call = direct} = {}) {
     publicKey(key);
     if (typeof call !== 'function') throw failure('JXL_OPTIONS', 'Source storage calls use a dispatch function.');
@@ -98,6 +166,37 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     const generation = await versionOf(file);
     signal?.throwIfAborted();
     return {...file, sha256, generation};
+  }
+  async function deliveryState(key, {signal, call = direct} = {}) {
+    const captured = await generation(key, {signal, call});
+    if (!captured) return null;
+    const state = await delivery(key, captured, signal, call);
+    return {generation: captured, mode: state.mode, revision: state.revision};
+  }
+  async function selectDelivery(key, mode, {expectedGeneration, expectedRevision, signal, call = direct} = {}) {
+    publicKey(key);
+    if (!HASH.test(expectedGeneration ?? '') || !COPY_ID.test(expectedRevision ?? '') || typeof call !== 'function')
+      throw failure('JXL_OPTIONS', 'Use the picture and delivery revision shown in the library.');
+    if (!compareAndSet) throw failure('JXL_UNSUPPORTED', 'Delivery settings require conditional storage writes.');
+    if (await generation(key, {signal, call}) !== expectedGeneration)
+      throw failure('JXL_INPUT', 'The picture changed. Refresh the library.');
+    const prior = await delivery(key, expectedGeneration, signal, call);
+    if (prior.revision !== expectedRevision || prior.etag === undefined)
+      throw failure('JXL_INPUT', 'The delivery setting changed. Refresh the library.');
+    const revision = crypto.randomUUID().replaceAll('-', ''), policyKey = await deliveryKey(key, expectedGeneration);
+    const value = {owner: OWNER, kind: 'delivery', source: key, generation: expectedGeneration, revision, mode};
+    let written, uncertain;
+    try {
+      written = await io(() => call(() => compareAndSet(policyKey, utf8(JSON.stringify(value)),
+        {etag: prior.etag, contentType: 'application/json', signal})), signal);
+    } catch (error) { uncertain = error; }
+    if (uncertain) {
+      const observed = await delivery(key, expectedGeneration, signal, call);
+      if (observed.revision !== revision || observed.mode !== mode) throw uncertain;
+    } else if (written !== true) throw failure('JXL_INPUT', 'The delivery setting changed. Refresh the library.');
+    if (await generation(key, {signal, call}) !== expectedGeneration)
+      throw failure('JXL_INPUT', 'The picture changed. Refresh the library.');
+    return {generation: expectedGeneration, revision, mode};
   }
   async function readSource(key, offset, length, {generation: expectedGeneration, signal, call = direct} = {}) {
     publicKey(key); signal?.throwIfAborted();
@@ -149,8 +248,11 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     }
     const result = value?.result;
     if (value?.owner !== OWNER || value.source !== key || value.generation !== match[1] || value.identity !== match[4] || value.sha256 !== match[5] ||
+        !COPY_ID.test(value.deliveryRevision ?? '') ||
+        (value.preservedFor !== undefined && !COPY_ID.test(value.preservedFor)) ||
+        (value.version !== undefined && !HASH.test(value.version)) ||
         !['active', 'retired'].includes(value.state) ||
-        !Number.isSafeInteger(value.bytes) || value.bytes < 2 || value.bytes > MAX_COPY_BYTES ||
+        !Number.isSafeInteger(value.bytes) || value.bytes < 2 || value.bytes > maxCopyBytes ||
         result?.format !== 'jxl' || result.fits !== true || !['jpeg-bytes', 'pixels', 'lossy'].includes(result.kept) ||
         !Number.isSafeInteger(result.width) || !Number.isSafeInteger(result.height) ||
         result.width < 1 || result.height < 1 || result.width * result.height > maxPixels ||
@@ -166,28 +268,33 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     }
     return result;
   }
-  async function payload(owned, signal, call = direct) {
+  async function payload(owned, signal, call = direct, checked = true, object = false) {
     let file;
-    try { file = await read(owned.key, MAX_COPY_BYTES, signal, call); }
+    try { file = await read(owned.key, maxCopyBytes, signal, call); }
     catch (error) { if (['JXL_INPUT', 'JXL_LIMIT'].includes(error?.code) && !signal?.aborted) return null; throw error; }
-    if (!file || file.size !== owned.bytes || await digest(file.bytes) !== owned.sha256) return null;
+    if (!file || file.size !== owned.bytes || checked && await digest(file.bytes) !== owned.sha256) return null;
+    if (!checked && owned.version && (typeof (file.version ?? file.etag) !== 'string' || await digest(utf8(file.version ?? file.etag)) !== owned.version)) return null;
     let info;
     try { info = header(file.bytes); } catch { return null; }
     const rotated = info.orientation >= 5;
     if ((rotated ? info.height : info.width) !== owned.width || (rotated ? info.width : info.height) !== owned.height) return null;
     signal?.throwIfAborted();
-    return file.bytes;
+    return object ? {bytes: file.bytes, version: file.version ?? file.etag} : file.bytes;
   }
   function ownership(owned, state) {
     return {owner: OWNER, source: owned.source, generation: owned.generation, identity: owned.identity,
-      sha256: owned.sha256, bytes: owned.bytes, result: owned.result, kind: owned.kind, state};
+      sha256: owned.sha256, bytes: owned.bytes, result: owned.result, kind: owned.kind, deliveryRevision: owned.deliveryRevision,
+      ...(owned.preservedFor && {preservedFor: owned.preservedFor}), ...(owned.version && {version: owned.version}), state};
   }
   const retiredBytes = owned => utf8(JSON.stringify(ownership(owned, 'retired')));
   async function stateOf(owned, signal, call = direct) {
     const file = await read(owned.recordKey, MAX_RECORD_BYTES, signal, call);
     if (!file) return 'absent';
-    if (same(file.bytes, retiredBytes(owned))) return 'retired';
-    if (same(file.bytes, utf8(JSON.stringify(ownership(owned, 'active'))))) return 'active';
+    let bare = file.bytes;
+    try { const value = JSON.parse(new TextDecoder().decode(file.bytes)); if (value && typeof value.version === 'string') { delete value.version; bare = utf8(JSON.stringify(value)); } } catch {  }
+    const plain = {...owned}; delete plain.version;
+    if (same(bare, retiredBytes(plain))) return 'retired';
+    if (same(bare, utf8(JSON.stringify(ownership(plain, 'active'))))) return 'active';
     return 'changed';
   }
   async function retireRecord(owned, signal, call = direct) {
@@ -208,15 +315,16 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     return true;
   }
   async function remove(owned, signal, call = direct) {
+    if (owned.preservedFor && await generation(owned.source, {signal, call}) === owned.generation) return false;
     if (!await retireRecord(owned, signal, call)) return false;
     let file;
-    try { file = await read(owned.key, MAX_COPY_BYTES, signal, call); }
+    try { file = await read(owned.key, maxCopyBytes, signal, call); }
     catch (error) { if (['JXL_INPUT', 'JXL_LIMIT'].includes(error?.code) && !signal?.aborted) return true; throw error; }
     if (!file || file.size !== owned.bytes || await digest(file.bytes) !== owned.sha256) return true;
     let uncertain;
     try { await io(() => call(() => inner.delete(owned.key, {signal})), signal); }
     catch (error) { uncertain = error; }
-    if (uncertain && await read(owned.key, MAX_COPY_BYTES, signal, call)) throw uncertain;
+    if (uncertain && await read(owned.key, maxCopyBytes, signal, call)) throw uncertain;
     return true;
   }
   async function deliver(owned, bytes, signal, call = direct) {
@@ -224,21 +332,28 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     try { created = await io(() => call(() => create(owned.key, bytes, {contentType: 'image/jxl', signal}))); }
     catch (error) { uncertain = error; }
     signal?.throwIfAborted();
-    if (created !== true) {
+    const made = value => value === true || value?.created === true;
+    if (!made(created)) {
       state = await stateOf(owned, signal, call);
       if (state === 'retired' || state === 'changed') return state;
-      if (!await payload(owned, signal, call)) {
+      const found = await payload(owned, signal, call, true, true);
+      if (!found) {
         if (uncertain) throw uncertain;
         return 'changed';
       }
       if (state === 'active') return 'active';
+      if (typeof found.version === 'string' && found.version) created = {created: false, version: found.version};
+    }
+    if (!owned.version && typeof created?.version === 'string' && created.version) {
+      const version = await digest(utf8(created.version)), bound = {...owned, version}, bytes = utf8(JSON.stringify(ownership(bound, 'active')));
+      if (bytes.length + 1 <= MAX_RECORD_BYTES) { owned.version = version; owned.recordBytes = bytes; owned.recordSize = bytes.length; }
     }
     uncertain = undefined; created = undefined;
     try { created = await io(() => call(() => create(owned.recordKey, owned.recordBytes,
       {contentType: 'application/json', signal}))); }
     catch (error) { uncertain = error; }
     signal?.throwIfAborted();
-    if (created === true) return 'active';
+    if (made(created)) return 'active';
     state = await stateOf(owned, signal, call);
     if (state === 'absent' && uncertain) throw uncertain;
     return state;
@@ -249,87 +364,130 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
   async function current(key, {signal} = {}) {
     try {
       const value = await generation(key, {signal});
-      return value ? records(key, value, signal) : [];
+      if (!value) return [];
+      const selected = await delivery(key, value, signal);
+      return selected.mode === 'copies' ? (await records(key, value, signal)).filter(file => file.deliveryRevision === selected.revision) : [];
     } catch (error) { if (error?.code === 'JXL_LIMIT' && !signal?.aborted) return []; throw error; }
   }
-  async function attach(key, result, {source, expectedGeneration, signal, replace = false, jobIdentity, floor, call = direct} = {}, variant) {
+  async function attach(key, result, {source, expectedGeneration, expectedDeliveryRevision = INITIAL_DELIVERY,
+    signal, replace = false, jobIdentity, floor, receipt: verified, sourcePixels, call = direct, fence} = {}, variant, structural, preservedFor) {
     publicKey(key);
     const {width, height} = result ?? {};
     const refused = reason => ({key, ...(variant ? {width} : {}), stored: null, reason});
     signal?.throwIfAborted();
     if (typeof call !== 'function') throw failure('JXL_OPTIONS', 'Publication storage calls use a dispatch function.');
+    if (fence !== undefined && typeof fence !== 'function') throw failure('JXL_OPTIONS', 'Publication fencing uses a server function.');
+    if (structural && (!deliveryOnly(host) || !HASH.test(expectedGeneration ?? '') || verified !== undefined || jobIdentity !== undefined))
+      throw failure('JXL_UNSUPPORTED', 'Structural publication is delivery-only on an explicitly configured Free Worker.');
+    if (structural && replace)
+      throw failure('JXL_UNSUPPORTED', 'Free delivery uses a fresh delivery revision; replacing copy history requires bounded cleanup.');
     if (!IMAGE.test(key) || (!variant && !hasSidecar(key))) return refused('not_image_key');
-    if (!HASH.test(source ?? '')) return refused('source_required');
+    if (!structural && !HASH.test(source ?? '')) return refused('source_required');
     if (expectedGeneration !== undefined && !HASH.test(expectedGeneration))
       throw failure('JXL_OPTIONS', 'Expected source generation is a captured backend version digest.');
+    if (!COPY_ID.test(expectedDeliveryRevision ?? ''))
+      throw failure('JXL_OPTIONS', 'Expected the delivery revision captured before conversion.');
     if (jobIdentity !== undefined && (typeof jobIdentity !== 'string' || !COPY_ID.test(jobIdentity) || expectedGeneration === undefined))
       throw failure('JXL_OPTIONS', 'A durable rendition needs its 32-character server identity and captured source generation.');
     if (typeof replace !== 'boolean') throw failure('JXL_OPTIONS', 'replace is an explicit boolean.');
     if (result?.fits !== true) return refused(result?.reason?.code ?? 'JXL_TARGET');
     if (result.format !== 'jxl' || !['jpeg-bytes', 'pixels', 'lossy'].includes(result.kept)) return refused('JXL_INPUT');
     const value = result.bytes;
-    if (!(value instanceof Uint8Array) || value.byteLength < 2 || value.byteLength > MAX_COPY_BYTES) return refused('not_jxl');
+    if (!(value instanceof Uint8Array) || value.byteLength < 2 || value.byteLength > maxCopyBytes) return refused('not_jxl');
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width * height > maxPixels)
       return refused('dimensions_differ');
-    const bytes = value.slice(), {bytes: ignored, ...metadata} = result;
+    const bytes = value.slice(), {bytes: ignored, verification: ignoredReceipt, assurance: ignoredAssurance, ...metadata} = result;
     const savedResult = structuredClone(metadata);
-    let info;
-    try { info = await inspect(bytes, {details: ['layout'], maxInputBytes: MAX_COPY_BYTES, maxPixels, maxBoxes: 4096}); }
-    catch { signal?.throwIfAborted(); return refused('not_jxl'); }
-    const rotated = info.orientation >= 5;
-    if ((rotated ? info.height : info.width) !== width || (rotated ? info.width : info.height) !== height)
-      return refused('dimensions_differ');
+    if (verified !== undefined) {
+      if (!jobIdentity || !expectedGeneration || verified?.verified !== true || !(sourcePixels ? verified.source?.kind === 'pixels' && savedResult.source?.kind === 'pixels' &&
+              verified.source.digest === savedResult.source.digest && /^sha256:[a-f0-9]{64}$/.test(verified.source.digest)
+            : verified.source?.kind === 'bytes' && verified.source.digest === 'sha256:' + source) || !/^sha256:[a-f0-9]{64}$/.test(verified.outputDigest ?? '') ||
+          verified.width !== width || verified.height !== height || verified.format !== savedResult.format ||
+          verified.kept !== savedResult.kept || JSON.stringify(verified.fidelity) !== JSON.stringify(savedResult.fidelity))
+        throw failure('JXL_INPUT', 'The saved server receipt does not describe this rendition and its original.');
+    } else if (!structural) {
+      let info;
+      try { info = await inspect(bytes, {details: ['layout'], maxInputBytes: maxCopyBytes, maxPixels, maxBoxes: 4096}); }
+      catch { signal?.throwIfAborted(); return refused('not_jxl'); }
+      const rotated = info.orientation >= 5;
+      if ((rotated ? info.height : info.width) !== width || (rotated ? info.width : info.height) !== height)
+        return refused('dimensions_differ');
+    }
     signal?.throwIfAborted();
-    const before = await snapshot(key, {signal, call});
-    if (original(before) !== source || expectedGeneration !== undefined && before.generation !== expectedGeneration)
+    const before = structural ? await physicalHead(key, {signal, call}) : verified ? await sourceHead(key, {signal, call}) : await snapshot(key, {signal, call});
+    if (!before || !structural && !verified && original(before) !== source || expectedGeneration !== undefined && before.generation !== expectedGeneration)
       return refused('key_changed');
+    if (!variant && bytes.length >= before.size) return refused('not_smaller');
     if (!create || !before.generation) return refused('conditional_write_required');
+    const selected = jobIdentity === undefined ? await delivery(key, before.generation, signal, call) :
+      {mode: 'copies', revision: expectedDeliveryRevision};
+    if (selected.mode !== 'copies' || selected.revision !== expectedDeliveryRevision) return refused('delivery_changed');
     if (floor !== undefined && !meetsFloor(savedResult.fidelity, floor)) return refused('JXL_TARGET');
-    let receipt;
-    try { receipt = await (await import('rapier-jxl/verify')).verify(before.bytes.slice(), {...savedResult, bytes}, {maxPixels, signal}); }
-    catch (error) { signal?.throwIfAborted(); if (replace || !error?.verification) throw error; receipt = error.verification; }
-    if (receipt?.verified !== true) {
+    let receipt = verified;
+    if (structural) {
+      const geometry = await originalHeader(key, before, {signal, call});
+      savedResult.assurance = await structuralDelivery({...savedResult, bytes}, geometry, structural.selected,
+        {width: structural.width, maxPixels});
+    } else if (!receipt) {
+      try { receipt = await (await import('rapier-jxl/verify')).verify(before.bytes.slice(), {...savedResult, bytes}, {maxPixels, signal}); }
+      catch (error) { signal?.throwIfAborted(); if (replace || !error?.verification) throw error; receipt = error.verification; }
+    }
+    if (!structural && receipt?.verified !== true) {
       if (replace) throw failure('JXL_INPUT', 'Rendition replacement was not verified.');
       return refused('not_verified');
     }
     const slot = variant ? `w${width}` : 'main', previous = replace ? await records(key, before.generation, signal, slot, false, call) : [];
     const identity = jobIdentity ?? crypto.randomUUID().replaceAll('-', '');
     if (!COPY_ID.test(identity)) throw failure('JXL_INTERNAL', 'Invalid server copy identity.');
-    const sha256 = await digest(bytes), prefix = await base(key), stem =
+    const sha256 = verified ? verified.outputDigest.slice(7) : await digest(bytes), prefix = await base(key), stem =
       `${prefix}${before.generation}.${slot}.${identity}.${sha256}`;
     const copyKey = stem + '.jxl', recordKey = stem + '.json';
     const valueRecord = {owner: OWNER, source: key, generation: before.generation, identity, sha256, bytes: bytes.length,
-      result: savedResult, kind: variant ? 'variant' : 'sidecar', state: 'active'};
+      result: savedResult, kind: variant ? 'variant' : 'sidecar', deliveryRevision: selected.revision,
+      ...(preservedFor && {preservedFor}), state: 'active'};
     const recordBytes = utf8(JSON.stringify(valueRecord));
     if (recordBytes.length + 1 > MAX_RECORD_BYTES) throw failure('JXL_LIMIT', 'Media ownership record exceeds its byte limit.');
     const owned = {...valueRecord, width, height, key: copyKey, recordKey, recordBytes, recordSize: recordBytes.length, size: bytes.length};
-    let kept = false, retire = jobIdentity === undefined, answer;
+    const changed = fence && await fence();
+    if (changed) return refused(changed);
+    let kept = false, retire = jobIdentity === undefined, fenced = false, answer;
     try {
       const state = await deliver(owned, bytes, signal, call);
       if (state !== 'active') { retire = true; answer = refused(state === 'retired' ? 'copy_retired' : 'copy_exists'); }
-      else if (await generation(key, {signal, call}) !== before.generation) { retire = true; answer = refused('key_changed'); }
+      else if ((structural ? (await physicalHead(key, {signal, call}))?.generation : await generation(key, {signal, call})) !== before.generation) {
+        retire = true; answer = refused('key_changed');
+      }
       else {
-        kept = true;
-        for (const prior of previous) if (prior.key !== copyKey) await remove(prior, signal, call);
-        answer = {key, ...(variant ? {width} : {}), stored: variant ? 'variant' : 'sidecar', reason: null,
-          jxlBytes: bytes.length, result: savedResult, ...(replace && receipt ? {receipt} : {})};
+        const latest = await delivery(key, before.generation, signal, call);
+        let changed;
+        if (latest.mode !== 'copies' || latest.revision !== selected.revision) {
+          retire = true; fenced = true; answer = refused('delivery_changed');
+        } else if (fence && (changed = await fence())) {
+          retire = true; answer = refused(changed);
+        } else {
+          kept = true;
+          for (const prior of previous) if (prior.key !== copyKey) await remove(prior, signal, call);
+          answer = {key, ...(variant ? {width} : {}), stored: variant ? 'variant' : 'sidecar', reason: null,
+            jxlBytes: bytes.length, result: savedResult, ...(replace && receipt ? {receipt} : {})};
+        }
       }
     } finally {
       if (!kept && retire) {
         try {
           if (jobIdentity === undefined) await remove(owned, undefined, call);
-          else if (await retireRecord(owned, undefined, call) && answer) answer.collect = collectable(owned);
+          else if ((fenced || await retireRecord(owned, undefined, call)) && answer) answer.collect = collectable(owned);
         } catch (error) { signal?.throwIfAborted(); throw error; }
       }
     }
     return answer;
   }
-  const collectable = ({source, generation, identity, sha256, bytes, result, kind, key, recordKey}) =>
-    ({source, generation, identity, sha256, bytes, result, kind, key, recordKey});
+  const collectable = ({source, generation, identity, sha256, bytes, result, kind, deliveryRevision, key, recordKey}) =>
+    ({source, generation, identity, sha256, bytes, result, kind, deliveryRevision, key, recordKey});
   async function collect(copy, {signal, call = direct} = {}) {
     if (typeof call !== 'function') throw failure('JXL_OPTIONS', 'Publication storage calls use a dispatch function.');
     const prefix = typeof copy?.source === 'string' && IMAGE.test(copy.source) ? await base(copy.source) : null;
     if (!prefix || !HASH.test(copy.generation ?? '') || !COPY_ID.test(copy.identity ?? '') || !HASH.test(copy.sha256 ?? '') ||
+        !COPY_ID.test(copy.deliveryRevision ?? '') ||
         !['sidecar', 'variant'].includes(copy.kind) || !Number.isSafeInteger(copy.bytes) || typeof copy.key !== 'string' ||
         !copy.key.startsWith(prefix + copy.generation + '.') || !copy.key.endsWith(`.${copy.identity}.${copy.sha256}.jxl`) ||
         copy.recordKey !== copy.key.slice(0, -4) + '.json')
@@ -337,16 +495,53 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     return remove({...copy, owner: OWNER}, signal, call);
   }
 
+  async function preserveArchiveDelivery(key, result, options = {}) {
+    const {signal, call = direct, source, expectedGeneration, expectedDeliveryRevision, receipt, jobIdentity, preservationId} = options;
+    if (!COPY_ID.test(preservationId ?? ''))
+      throw failure('JXL_INPUT', 'Selected archive delivery needs a saved restoration identity.');
+    const eligible = async () => {
+      const current = await deliveryState(key, {signal, call});
+      return current?.generation === expectedGeneration && current.mode === 'copies' && current.revision === expectedDeliveryRevision;
+    };
+    if (!await eligible()) return {preserved: true, reason: 'no_longer_selected'};
+    if (!(result?.bytes instanceof Uint8Array) || result.bytes.length < 2 || result.bytes.length > maxCopyBytes)
+      throw failure('JXL_LIMIT', 'Preserving the selected archive delivery exceeds the bounded copy size.');
+    if (result.kept !== 'jpeg-bytes' || result.fidelity !== 'exact' || receipt?.verified !== true ||
+        receipt.kind !== 'jpeg-restore' || receipt.format !== 'jxl' || receipt.kept !== 'jpeg-bytes' || receipt.fidelity !== 'exact' ||
+        receipt.source?.kind !== 'bytes' || receipt.source.digest !== 'sha256:' + source ||
+        receipt.referenceDigest !== 'sha256:' + source || receipt.restoredDigest !== 'sha256:' + source ||
+        receipt.outputDigest !== 'sha256:' + await digest(result.bytes))
+      throw failure('JXL_INPUT', 'The selected archive delivery has no matching private byte receipt.');
+    const published = await attach(key, result, {source, expectedGeneration, expectedDeliveryRevision, receipt,
+      jobIdentity, signal, call}, false, undefined, preservationId);
+    if (published?.stored === 'sidecar') return {preserved: true, publication: published};
+    if (['key_changed', 'delivery_changed'].includes(published?.reason) && !await eligible()) {
+      if (published.collect) await collect(published.collect, {signal, call});
+      return {preserved: true, reason: 'no_longer_selected'};
+    }
+    throw failure('JXL_IO', 'The selected archive delivery was not acknowledged: ' + (published?.reason ?? 'unknown'));
+  }
+
   const extra = {
     maxPixels,
+    maxInputBytes,
+    host,
+    originals,
+    sourceHead,
+    physicalSourceHead: physicalHead,
     readSource,
+    deliveryState,
+    restoreOriginal: (key, options) => selectDelivery(key, 'original', options),
+    resumeCopies: (key, options) => selectDelivery(key, 'copies', options),
     fingerprint: async (key, {signal} = {}) => original(await snapshot(key, {signal})),
     async sourceSnapshot(key, options) {
       const file = await snapshot(key, options);
       if (!file) return null;
       if (!file.generation) throw failure('JXL_INPUT', 'A durable image source requires a backend generation.');
+      const selected = await delivery(key, file.generation, options?.signal, options?.call);
       return {bytes: file.bytes, contentType: file.contentType,
-        source: {generation: file.generation, sha256: file.sha256, byteLength: file.bytes.length}};
+        delivery: {mode: selected.mode, revision: selected.revision},
+        source: {generation: file.generation, sha256: file.sha256, byteLength: file.bytes.length, deliveryRevision: selected.revision}};
     },
     currentCopies: current,
     async upload(options) {
@@ -374,10 +569,10 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     async family(key, {signal} = {}) {
       publicKey(key);
       if (IMAGE.test(key)) await generation(key, {signal});
-      const originals = (await files(key, signal)).filter(file => file.key === key), owned = await records(key, null, signal, '', true);
-      const listing = new Map((await files(await base(key), signal)).map(file => [file.key, file]));
-      const all = [...originals];
-      const revisionKey = await base(key) + 'revision.json';
+      const originalFiles = (await files(key, signal)).filter(file => file.key === key), owned = await records(key, null, signal, '', true);
+      const prefix = await base(key), listing = new Map((await files(prefix, signal)).map(file => [file.key, file]));
+      const all = [...originalFiles];
+      const revisionKey = prefix + 'revision.json';
       if (listing.has(revisionKey)) {
         let revision;
         try {
@@ -397,9 +592,20 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
         all.push({key: item.recordKey, size: item.recordSize});
         if (listing.has(item.key)) all.push(listing.get(item.key));
       }
+      for (const file of listing.values()) {
+        const match = /^([a-f0-9]{64})\.delivery\.json$/.exec(file.key.slice(prefix.length));
+        if (match) {
+          const selected = await delivery(key, match[1], signal);
+          if (selected.revision) all.push({key: file.key, size: selected.size});
+        }
+      }
+      if (originals) all.push(...await originals.family(key, {signal}));
       return all;
     },
     attach: (key, result, options) => attach(key, result, options, false),
+    attachDelivery(key, result, {settings: selected, width, ...options} = {}) {
+      return attach(key, result, options, width !== undefined, {selected: structuredClone(selected), width});
+    },
     collect,
     attachVariant(key, width, result, options) {
       if (!Number.isSafeInteger(width) || width < 16)
@@ -410,11 +616,13 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     },
     async sidecar(key, {signal} = {}) {
       if (!hasSidecar(key)) return null;
+      const archived = originals && isJpegKey(key) ? await originals.rendition(key, {signal}) : null;
       for (const file of (await current(key, {signal})).filter(file => file.kind === 'sidecar').sort((a, b) => a.size - b.size)) {
+        if (archived && file.size >= archived.bytes.length) break;
         const bytes = await extra.readVariant(file, {signal});
-        if (bytes) return {...file.result, bytes};
+        if (bytes) return {...file.result, bytes, etag: file.sha256.slice(0, 32)};
       }
-      return null;
+      return archived;
     },
     async variants(key, options) {
       const chosen = new Map();
@@ -424,9 +632,14 @@ export function withMediaCopies(inner, {maxPixels = 24e6, maxInputBytes = 32 * 1
     async readVariant(file, {signal} = {}) {
       if (!file || typeof file.source !== 'string') return null;
       const prefix = await base(file.source), latest = await record({key: file.recordKey ?? ''}, file.source, prefix, signal);
-      if (!latest || latest.state !== 'active' || latest.key !== file.key || latest.generation !== await generation(file.source, {signal})) return null;
-      const bytes = await payload(latest, signal);
+      if (!latest || latest.state !== 'active' || latest.key !== file.key) return null;
+      const source = await sourceHead(file.source, {signal});
+      if (latest.generation !== source?.generation || latest.kind === 'sidecar' &&
+          (!Number.isSafeInteger(source.size) || latest.bytes >= source.size)) return null;
+      const bytes = await payload(latest, signal, direct, false);
       if (await generation(file.source, {signal}) !== latest.generation) return null;
+      const selected = await delivery(file.source, latest.generation, signal);
+      if (selected.mode !== 'copies' || selected.revision !== latest.deliveryRevision) return null;
       return bytes;
     }
   };

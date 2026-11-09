@@ -1022,8 +1022,10 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
   }
   if (!page && name === 'convert') {
+    const answered = convertOnDoor(args);
+    if (!answered) return toolError(failure('INVALID_DOCUMENT_INPUT', 'Each file is a chat file the host passes, with its file_id; omit files to let the person pick them.'));
     observation?.feature('convert'); observation?.dispatched();
-    return envelope(convertOnDoor(args).reply);
+    return envelope(answered.reply);
   }
   if (!page && name === 'read' && typeof args.cursor === 'string' && args.cursor.startsWith(CURSOR_PREFIX)) {
     const opened = await openCursor(env, args.cursor);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 import {createJournalStepper} from '../resumable-journal.mjs';
+import {verbSteps} from '../v7/verb-steps-driver.mjs';
 import {capture} from '../v7/capture.mjs';
+import {capture as captureComplete} from '../v7/capture-complete.mjs';
 import {recompress, restore} from '../v7/jpeg.mjs';
 import {encode, fit, variants} from '../v7/index.mjs';
 import {configureModules} from '../wasm-modules.mjs';
@@ -8,12 +10,14 @@ import {prepareCaptureKernels} from '../capture-kernels.mjs';
 import {prepareKernels} from '../kernels.mjs';
 import {wasmBytes} from '../wasm-text.mjs';
 import {KERNELS} from '../kernels-bytes.mjs';
+import {DECODE_KERNELS} from '../decode-kernels-bytes.mjs';
 
 export const BUILD = 'b'.repeat(64);
 let job, steps, ready;
 const jobOf = () => {
   if (!job) {
-    steps = {capture, recompress, restore, encode, fit, variants}[globalThis.RS1_OPERATION ?? 'capture'][Symbol.for('rapier-jxl.steps')];
+    steps = {capture, 'capture-complete': captureComplete, recompress, restore, encode, fit, variants}[globalThis.RS1_OPERATION ?? 'capture'][Symbol.for('rapier-jxl.steps')];
+    if (steps.kind === 'verb') steps = verbSteps(steps);
     job = createJournalStepper({id: steps.id, build: BUILD, normalize: steps.normalize, open: steps.open, run: steps.run, eager: steps.eager});
   }
   return job;
@@ -25,8 +29,8 @@ export async function advance(...args) {
   if (result.work?.[0]) result.work[0].isolateMs = +(performance.now() - t).toFixed(1);
   return result;
 }
-export function configureCaptureKernels({kernels}) {
-  configureModules({kernels});
+export function configureCaptureKernels(modules) {
+  configureModules(modules);
   if (!prepareCaptureKernels()) throw new Error('The host-compiled capture kernel could not be prepared.');
 }
-export const captureKernelBytes = () => ({kernels: wasmBytes(KERNELS)});
+export const captureKernelBytes = () => ({kernels: wasmBytes(KERNELS), decode: wasmBytes(DECODE_KERNELS)});

@@ -1,6 +1,6 @@
 import {serve} from 'rapier-jxl/serve';
 
-const FILE = /^\/_emdash\/api\/media\/file\/([0-9A-HJKMNP-TV-Z]{26}\.(?:jpe?g|jpe|jfif|png|webp|avif))$/i;
+const FILE = /^\/_emdash\/api\/media\/file\/([0-9A-HJKMNP-TV-Z]{26}(?:\.[0-9A-HJKMNP-TV-Z]{26})*\.(?:jpe?g|jpe|jfif|png|webp|avif))$/i;
 const SANDBOX = "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'";
 export const mediaKey = url => FILE.exec(new URL(url).pathname)?.[1] ?? null;
 
@@ -34,7 +34,8 @@ export async function serveMedia({request, storage}) {
     /\.avif$/i.test(key) ? 'image/avif' : 'image/webp';
   if (!acceptsJxl(request.headers.get('accept'), type)) return null;
   const result = await storage.sidecar(key, {signal: request.signal});
-  return result ? secure(await serve(result.bytes, requestForJxl(request), {maxPixels: storage.maxPixels, signal: request.signal})) : null;
+  return result ? secure(await serve(result.bytes, requestForJxl(request), {maxPixels: storage.maxPixels, signal: request.signal,
+    ...(typeof result.etag === 'string' && {etag: result.etag})})) : null;
 }
 
 export async function serveWidth({request, storage, endpoint = '/_image'}) {
@@ -55,14 +56,30 @@ export async function serveWidth({request, storage, endpoint = '/_image'}) {
   const bytes = await storage.readVariant(file, {signal: request.signal});
   if (!bytes) return null;
   if (url.searchParams.has('h') && Number(url.searchParams.get('h')) !== file.result.height) return null;
-  return secure(await serve(bytes, requestForJxl(request), {maxPixels: storage.maxPixels, signal: request.signal}));
+  return secure(await serve(bytes, requestForJxl(request), {maxPixels: storage.maxPixels, signal: request.signal,
+    ...(typeof file.sha256 === 'string' && {etag: file.sha256.slice(0, 32)})}));
+}
+
+export async function announceUpload(hooks, response, id = 'rapier-media') {
+  if (response.status !== 201 || typeof hooks?.getTypedHooks !== 'function' || typeof hooks.getContext !== 'function') return;
+  const item = (await response.clone().json().catch(() => null))?.data?.item;
+  if (!item?.id || typeof item.url !== 'string') return;
+  const media = {id: item.id, filename: item.filename, mimeType: item.mimeType, size: item.size, url: item.url, createdAt: item.createdAt};
+  for (const hook of hooks.getTypedHooks('media:afterUpload').filter(hook => hook.pluginId === id))
+    await hook.handler({media}, hooks.getContext(id));
 }
 
 export async function onRequest(context, next) {
-  const storage = context.locals.emdash?.storage, request = context.request;
-  const rendition = await serveMedia({request, storage}) ?? await serveWidth({request, storage});
+  const emdash = context.locals.emdash, storage = emdash?.storage, request = context.request;
+  const enabled = emdash?.getPublicPluginRouteMeta?.('rapier-media', 'available')?.public === true;
+  const rendition = enabled ? await serveMedia({request, storage}) ?? await serveWidth({request, storage}) : null;
   if (rendition) return rendition;
   const response = await next(), url = new URL(request.url);
+  if (enabled && request.method === 'POST' && url.pathname === '/_emdash/api/media') {
+    const work = announceUpload(emdash?.hooks, response).catch(error => console.error('[rapier-jxl] upload', error));
+    context.locals.cfContext?.waitUntil?.(work);
+    return response;
+  }
   if (!['GET', 'HEAD'].includes(request.method) || !mediaKey(url) && url.pathname !== '/_image') return response;
   const headers = new Headers(response.headers), vary = headers.get('vary');
   if (!vary?.split(',').some(value => ['*', 'accept'].includes(value.trim().toLowerCase())))

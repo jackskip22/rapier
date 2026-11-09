@@ -95,7 +95,8 @@ export function inputGuide(name, {mcp = false} = {}) {
 }
 function hostedSchema(entry) {
   if (entry.name === 'convert') return {...entry.inputSchema, properties: {...entry.inputSchema.properties,
-    files: {type: 'array', items: object({name: convertFile.properties.name}, ['name']), maxItems: CONVERT_FILES}}, required: []};
+    files: {type: 'array', items: object({download_url: string(8192), file_id: string(256), mime_type: string(128), file_name: string(256)},
+      ['download_url', 'file_id']), maxItems: CONVERT_FILES}}, required: []};
   if (entry.name === 'open') return {...entry.inputSchema, oneOf: [
     {required: ['text'], ...lacking(['document', 'url', 'file', 'note', 'title'])},
     {required: ['document'], ...lacking(['url', 'file', 'filename', 'createToken']),
@@ -117,7 +118,7 @@ export function annotations(effect, host = 'mcp', name = '') {
     idempotentHint: effect === 'read', openWorldHint: OPEN_WORLD.has(name)};
 }
 export const OPEN_WORLD = new Set(['open', 'show', 'export']);
-const HOSTED_CONVERT = 'Convert pictures to JPEG XL, or JPEG XL back, on the person\'s own device: opens Rapier\'s converter in this app\'s view where the app can show one, else answers with its link (https://rapier.website/jxl). The person adds the pictures there and saves the results; nothing is uploaded. files: the pictures\' names, if known. quality: lossless, high (default) or medium; effort 1-9 (default 7).';
+const HOSTED_CONVERT = 'Convert pictures to JPEG XL, or JPEG XL back, on the person\'s own device. Opens Rapier\'s converter in this app\'s view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier\'s server: the view reads them from the chat on the person\'s device. Without a view, answers with the converter\'s link (https://rapier.website/jxl) for the person. files: the chat\'s pictures; omit it to let the person pick them. quality: lossless, high (default) or medium; effort 1-9 (default 7: higher is smaller and slower).';
 export function mcpDescriptors({uiResource, auth = 'anonymous', editor = false} = {}) {
   if (!['anonymous', 'oauth', 'server-bearer'].includes(auth)) throw new TypeError('Unknown MCP authentication profile');
   return (editor ? EDITOR_TOOLS : TOOLS).map(entry => {
@@ -130,6 +131,7 @@ export function mcpDescriptors({uiResource, auth = 'anonymous', editor = false} 
       _meta: {...security, 'website.rapier/tool-class': toolClass, ...(editor ? {'openai/widgetAccessible': true} : {}), ui: {visibility: editor ? ['app'] : ['model', 'app'],
         ...((entry.name === 'open' || entry.name === 'convert' && !editor) && uiResource ? {resourceUri: uiResource} : {})},
         ...(entry.name === 'open' && uiResource ? {'openai/toolInvocation/invoking': 'Opening Rapier', 'openai/toolInvocation/invoked': 'Rapier is ready'} : {}),
+        ...(entry.name === 'convert' && !editor ? {'openai/fileParams': ['files']} : {}),
         ...(entry.name === 'convert' && !editor && uiResource ? {'openai/toolInvocation/invoking': 'Opening the JPEG XL converter', 'openai/toolInvocation/invoked': 'The converter is ready'} : {})}};
   });
 }

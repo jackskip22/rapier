@@ -33,3 +33,17 @@
 .rapier-jxl-scene__stage{width:100%;aspect-ratio:1;background:var(--color-surface-2)}
 .rapier-jxl-scene__canvas{display:block;width:100%;height:100%}
 .rapier-jxl-view__more>.rapier-jxl-view__part{margin-top:0}
+.rapier-jxl-view__quick{display:none;position:relative}
+.rapier-jxl-view__quick>.theme-switcher{display:flex;width:100%;box-sizing:border-box}
+.rapier-jxl-view__drop{position:absolute;z-index:2;left:0;right:0;top:100%}
+.rapier-jxl-view__quick>.rapier-jxl-view__drop[hidden]{display:none}
+.rapier-jxl-view__drop .theme-switcher__btn{padding:0}
+html.rapier-app-inline .rapier-jxl-view__quick{display:block}
+html.rapier-app-inline .rapier-jxl-view__fold>.rapier-jxl-view__files{order:1}
+html.rapier-app-inline .rapier-jxl-view__fold>.rapier-tool-footer{order:2}
+html.rapier-app-inline .rapier-jxl-view__full{display:none}
+html.rapier-app-inline .rapier-jxl-view__pick{min-height:56px}
+html.rapier-app-inline .rapier-jxl-tabs{height:60px}
+html.rapier-app-inline .rapier-jxl-view__body{gap:var(--space-4)}
+html.rapier-app-inline .rapier-jxl-view__fold{gap:var(--space-4)}
+html.rapier-app-inline .rapier-jxl-view__fold>.rapier-tool-footer{margin-top:var(--space-2)}

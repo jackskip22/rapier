@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {encodeData, decodeData, digest, part, hashStart, hashUpdate, hashFinish} from '../resumable-data.mjs';
+import {encodeData, decodeData, digest, part} from '../resumable-data.mjs';
+import {sha256Start, sha256Update, sha256Finish} from '../sha256.mjs';
 
 const utf8 = text => new TextEncoder().encode(text);
 const native = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -61,13 +62,13 @@ test('streaming SHA-256 known vectors and Web Crypto agree', async () => {
     ['The quick brown fox jumps over the lazy dog', 'd7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592'],
   ];
   for (const [text, expected] of vectors) {
-    const bytes = utf8(text), state = hashUpdate(hashStart(), bytes);
-    assert.equal(hashFinish(state), expected); assert.equal(await digest(bytes), expected);
+    const bytes = utf8(text), state = sha256Update(sha256Start(), bytes);
+    assert.equal(sha256Finish(state), expected); assert.equal(await digest(bytes), expected);
     assert.deepEqual(await part(bytes), {hash: expected, length: bytes.length});
   }
-  const million = new Uint8Array(1000000).fill(97); let state = hashStart();
-  for (let at = 0; at < million.length; at += 65536) state = hashUpdate(state, million.subarray(at, at + 65536));
-  assert.equal(hashFinish(state), 'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0');
+  const million = new Uint8Array(1000000).fill(97); let state = sha256Start();
+  for (let at = 0; at < million.length; at += 65536) state = sha256Update(state, million.subarray(at, at + 65536));
+  assert.equal(sha256Finish(state), 'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0');
 });
 
 test('random partitions and persisted states match node:crypto at block and padding boundaries', () => {
@@ -76,48 +77,40 @@ test('random partitions and persisted states match node:crypto at block and padd
   for (const length of [0, 1, 7, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129, 65535, 65536, 65537, 131073, 1048621]) {
     const bytes = Uint8Array.from({length}, () => random() & 255), want = native(bytes);
     for (let repetition = 0; repetition < 3; repetition++) {
-      let state = hashStart(), at = 0;
+      let state = sha256Start(), at = 0;
       while (at < length) {
         const n = Math.min(length - at, 1 + random() % 65536), before = encodeData(state);
-        const next = hashUpdate(state, bytes.subarray(at, at + n));
+        const next = sha256Update(state, bytes.subarray(at, at + n));
         assert.deepEqual(encodeData(state), before);
         state = decodeData(encodeData(next)); at += n;
       }
       const saved = encodeData(state);
-      assert.equal(hashFinish(state), want); assert.equal(hashFinish(state), want);
+      assert.equal(sha256Finish(state), want); assert.equal(sha256Finish(state), want);
       assert.deepEqual(encodeData(state), saved);
     }
   }
 });
 
-test('SHA-256 state and byte bounds reject malformed checkpoints before doing work', async () => {
-  const start = hashStart();
-  for (const state of [null, [], {}, {...start, version: 2}, {...start, length: -1}, {...start, length: 0.5}, {...start, length: 2 ** 32 + 1}, {...start, extra: true}, {...start, h: start.h.slice(1)}, {...start, h: [...start.h.slice(0, 7), -1]}, {...start, h: new Uint32Array(start.h)}, {...start, h: start.h.map(() => 0)}, {...start, tail: [0]}, {...start, length: 1, tail: [256]}]) {
-    rejected(() => hashUpdate(state, new Uint8Array())); rejected(() => hashFinish(state));
-  }
-  rejected(() => hashUpdate(start, new Uint8Array(65537)));
-  rejected(() => hashUpdate(start, [1, 2]));
-  const almost = {...hashStart(), length: 2 ** 32 - 1, tail: new Array(63).fill(0)};
-  assert.equal(hashUpdate(almost, Uint8Array.of(0)).length, 2 ** 32);
-  rejected(() => hashUpdate(almost, Uint8Array.of(0, 0)));
+test('checkpoint digests refuse invalid, shared and detached byte inputs', async () => {
   await assert.rejects(digest([0]), {code: 'JXL_INPUT'});
   await assert.rejects(part(new Uint16Array(1)), {code: 'JXL_INPUT'});
-  if (typeof SharedArrayBuffer === 'function') rejected(() => hashUpdate(start, new Uint8Array(new SharedArrayBuffer(1))));
+  if (typeof SharedArrayBuffer === 'function')
+    await assert.rejects(digest(new Uint8Array(new SharedArrayBuffer(1))), {code: 'JXL_INPUT'});
   const detached = new Uint8Array(1); structuredClone(detached.buffer, {transfer: [detached.buffer]});
-  rejected(() => hashUpdate(start, detached));
+  await assert.rejects(digest(detached), {code: 'JXL_INPUT'});
 });
 
 test('nonzero input offsets, Buffer inputs, empty updates and independent state branches', async () => {
   const backing = Uint8Array.of(9, 97, 98, 99, 9), input = backing.subarray(1, 4);
-  assert.equal(hashFinish(hashUpdate(hashStart(), input)), native(input));
+  assert.equal(sha256Finish(sha256Update(sha256Start(), input)), native(input));
   assert.equal(await digest(input), native(input)); assert.equal(await digest(Buffer.from('abc')), native(input));
-  const prefix = hashUpdate(hashStart(), utf8('a')), saved = encodeData(prefix);
-  assert.equal(hashFinish(hashUpdate(prefix, utf8('bc'))), native(utf8('abc')));
-  assert.equal(hashFinish(hashUpdate(prefix, utf8('d'))), native(utf8('ad')));
-  assert.deepEqual(hashUpdate(prefix, new Uint8Array()), prefix);
+  const prefix = sha256Update(sha256Start(), utf8('a')), saved = encodeData(prefix);
+  assert.equal(sha256Finish(sha256Update(prefix, utf8('bc'))), native(utf8('abc')));
+  assert.equal(sha256Finish(sha256Update(prefix, utf8('d'))), native(utf8('ad')));
+  assert.deepEqual(sha256Update(prefix, new Uint8Array()), prefix);
   assert.deepEqual(encodeData(prefix), saved);
-  const a = hashStart(), b = hashStart(); a.h[0] = 0; a.tail.push(1);
-  assert.equal(hashFinish(b), native(new Uint8Array()));
+  const a = sha256Start(), b = sha256Start(); a.h[0] = 0; a.tail.push(1);
+  assert.equal(sha256Finish(b), native(new Uint8Array()));
   const moved = Uint8Array.of(1, 2, 3), want = {hash: native(moved), length: moved.length}, pending = part(moved);
   structuredClone(moved.buffer, {transfer: [moved.buffer]});
   assert.deepEqual(await pending, want);

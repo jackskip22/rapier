@@ -33,7 +33,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 const S2_EXACT_C = 'ssimulacra2-simd';
 const METRICS = [
-  ['ssimulacra2-arithmetic', ['s2MetricInit', 's2MetricDown', 's2MetricScale'], 'BSD-3-Clause', S2_EXACT_C],
+  ['ssimulacra2-arithmetic', ['s2MetricInit', 's2MetricDown', 's2MetricScale', 's2MetricBand'], 'BSD-3-Clause', S2_EXACT_C],
   ['butteraugli-arithmetic', ['baMetricBands', 'baMetricMask', 'baMetricDiff', 'baMetricDown', 'baMetricMix'], 'BSD-3-Clause AND MIT'],
 ];
 const CLANG_VERSION = '23.1.0-wasi-sdk';
@@ -161,7 +161,7 @@ const kernelsSource = '(module (import "env" "memory" (memory 1))\n' + [
   fragment(await readWat('kernels-simd')),
   func(scalar, 'tokens'), func(scalar, 'weighted'), captureWeighted(scalar),
   await readWat('sample-resize'), await readWat('capture-copies'), await readWat('capture-copies-step'), await readWat('capture-patches'),
-  await readWat('capture-tokens'), fragment(await readWat('capture-fused')), reconstruction, ...metrics,
+  await readWat('capture-tokens'), await readWat('capture-trees'), fragment(await readWat('capture-fused')), reconstruction, ...metrics,
 ].join('\n') + '\n)';
 const {KEY, storedWasmByte, wasmBytes, interfaceOf} = await import(new URL('wasm-text.mjs', directory));
 const HOSTED = {KERNELS: 'kernels', JPEG_KERNELS: 'jpeg', DECODE_KERNELS: 'decode'}, interfaces = {};

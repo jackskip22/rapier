@@ -16,14 +16,15 @@ await mkdir(out, {recursive: true});
 const entry = join(resolve(out), 'entry.mjs');
 await writeFile(entry, `globalThis.RS1_OPERATION = ${JSON.stringify(operation)};\nexport * from ${JSON.stringify(fileURLToPath(new URL('./workerd-entry.mjs', import.meta.url)))};\n`);
 const build = await buildWorkerd({sourceDir: fileURLToPath(new URL('../', import.meta.url)), stepper: entry, workerStepper: entry, esbuild: resolve(esbuild), directory: join(out, 'build')});
-const verbs = {...await import('../v7/capture.mjs'), ...await import('../v7/jpeg.mjs'), ...await import('../v7/index.mjs')};
+const verbs = {...await import('../v7/capture.mjs'), ...await import('../v7/jpeg.mjs'), ...await import('../v7/index.mjs'),
+  'capture-complete': (await import('../v7/capture-complete.mjs')).capture};
 const {readPng} = await import('../../../jxl/png.mjs');
 const clock = processCpuClock(), rows = [];
 const median = v => { const s = v.slice().sort((a, b) => a - b); return s[s.length >> 1]; };
 for (const file of files) {
   const file_ = new Uint8Array(await readFile(file)), pixels = operation !== 'recompress';
   const {width, height, data} = pixels ? await readPng(file_) : {data: file_};
-  const options = {effort, ...(operation === 'encode' && {fidelity: {quality: 85}})};
+  const options = {effort, ...(operation === 'encode' && {fidelity: {quality: 85}}), ...JSON.parse(process.env.OPTIONS ?? '{}')};
   const expected = (await verbs[operation](pixels ? {width, height, data: data.slice()} : data.slice(), options)).bytes, hash = sha(data);
   const source = {generation: 'rs1:' + hash.slice(0, 16), sha256: hash, byteLength: data.length, ...(pixels && {width, height})};
   for (const mode of modes) {

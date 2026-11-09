@@ -2,14 +2,28 @@
 import {spawn, execFileSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createServer as createSocket} from 'node:net';
-import {mkdir, writeFile, readFile} from 'node:fs/promises';
+import {mkdir, writeFile, readFile, readlink, readdir} from 'node:fs/promises';
 import {resolve, join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {measureCpu} from './runtime-cpu.mjs';
+import {READ_BATCH_BYTES} from '../resumable-prefetch.mjs';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function processMemoryPid(pid) {
+  const parent = Number(await readlink('/proc/self'));
+  for (const candidate of (await readdir('/proc')).filter(name => /^\d+$/.test(name))) {
+    let status;
+    try { status = await readFile(`/proc/${candidate}/status`, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    const actualParent = Number(/^PPid:\s+(\d+)$/m.exec(status)?.[1]);
+    const namespacePids = /^NSpid:\s+([\d\s]+)$/m.exec(status)?.[1].trim().split(/\s+/).map(Number);
+    if (actualParent === parent && namespacePids?.at(-1) === pid) return Number(candidate);
+  }
+  throw new Error('Cannot identify Workerd child for process memory counters: ' + pid);
+}
 
 async function processMemory(pid) {
   const status = await readFile(`/proc/${pid}/status`, 'utf8');
@@ -34,7 +48,7 @@ export async function buildWorkerd({sourceDir, stepper, esbuild, directory, work
   const entry = `
 ${modules.map(name => `import ${name} from './${name}.wasm';`).join('\n')}
 import * as api from ${JSON.stringify(resolve(workerStepper))};
-api.configureCaptureKernels({kernels});
+api.configureCaptureKernels({${modules.join(', ')}});
 async function bytes(response) {
   response = await response;
   if (!response.ok) throw new Error('Fixture host: ' + response.status + ' ' + await response.text());
@@ -85,8 +99,8 @@ export default {
   return {directory, assets, modules, esbuild: execFileSync(esbuild, ['--version'], {encoding: 'utf8'}).trim()};
 }
 
-export async function fixtureHost(source, maxPartBytes = 1 << 20) {
-  const parts = new Map(), counters = {sourceReads: 0, partReads: 0, partReadBatches: 0, partPuts: 0, duplicates: 0, readBytes: 0, writeBytes: 0, maxPartBytes: 0};
+export async function fixtureHost(source, maxPartBytes = 1 << 20, parts = new Map()) {
+  const counters = {sourceReads: 0, partReads: 0, partReadBatches: 0, partPuts: 0, duplicates: 0, readBytes: 0, writeBytes: 0, maxPartBytes: 0};
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url, 'http://fixture');
@@ -106,7 +120,7 @@ export async function fixtureHost(source, maxPartBytes = 1 << 20) {
           if (!ref || !/^[a-f0-9]{64}$/.test(ref.hash) || !Number.isSafeInteger(ref.length) || ref.length < 0 ||
               ref.length > 1048576 || Object.keys(ref).length !== 2) throw new Error('Invalid batch part reference.');
           const value = parts.get(ref.hash); length += ref.length;
-          if (!value || value.length !== ref.length || length > 1048576) throw new Error('Missing, truncated or oversized part batch.');
+          if (!value || value.length !== ref.length || length > READ_BATCH_BYTES) throw new Error('Missing, truncated or oversized part batch.');
           return value;
         });
         counters.partReadBatches++; counters.partReads += refs.length; counters.readBytes += length;
@@ -174,7 +188,7 @@ const config :Workerd.Config = (
   child.stdout.on('data', append); child.stderr.on('data', append);
   child.on('error', error => { spawnError = error; }); child.on('exit', () => { exited = true; });
   const endpoint = 'http://127.0.0.1:' + port;
-  let startupCpuMs, startupMemory;
+  let startupCpuMs, startupMemory, memoryPid;
   async function close() {
     if (!exited && !spawnError) {
       const done = new Promise(resolve => child.once('exit', resolve));
@@ -194,7 +208,8 @@ const config :Workerd.Config = (
       await delay(25);
     }
     startupCpuMs = Number(await clock.read(child.pid)) / 1e6;
-    startupMemory = await processMemory(child.pid);
+    memoryPid = await processMemoryPid(child.pid);
+    startupMemory = await processMemory(memoryPid);
   } catch (error) { await close(); throw error; }
   return {
     startupCpuMs, startupMemory,
@@ -204,10 +219,11 @@ const config :Workerd.Config = (
         return {status: response.status, value: await response.json()};
       });
       const {result, ...time} = measured;
-      const memory = await processMemory(child.pid);
+      const memory = await processMemory(memoryPid);
+      const sample = {...time, memory, startupCpuMs, startupMemory, coldTotalCpuMs: time.processCpuMs};
       if (result.status !== 200) throw Object.assign(new Error(result.value.error?.message || 'Workerd invocation failed.'),
-        {code: result.value.error?.code || 'RE1_RUNTIME', receipt: {...time, result}});
-      return {...time, memory, startupCpuMs, startupMemory, coldTotalCpuMs: time.processCpuMs, result: result.value};
+        {code: result.value.error?.code || 'RE1_RUNTIME', receipt: {...sample, result}});
+      return {...sample, result: result.value};
     },
     close
   };

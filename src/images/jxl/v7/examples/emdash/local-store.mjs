@@ -1,6 +1,6 @@
 import {join, resolve, sep} from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
-import {link, lstat, mkdir, readFile, rename, stat, unlink, writeFile} from 'node:fs/promises';
+import {link, lstat, mkdir, readFile, rename, stat, unlink, utimes, writeFile} from 'node:fs/promises';
 import {readAll} from 'rapier-jxl/storage';
 
 const STATE = Symbol.for('rapier-jxl.emdash.local-store');
@@ -11,6 +11,9 @@ const publicSource = key => !key.startsWith(PRIVATE) && /\.(?:jpe?g|jpe|jfif|png
 const sameStat = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const invalid = message => Object.assign(new Error(message), {code: 'JXL_INPUT'});
 const cancel = body => { try { Promise.resolve(body?.cancel?.()).catch(() => {}); } catch {} };
+const contentType = key => /\.(?:jpe?g|jpe|jfif)$/i.test(key) ? 'image/jpeg' : /\.png$/i.test(key) ? 'image/png' :
+  /\.jxl$/i.test(key) ? 'image/jxl' : /\.webp$/i.test(key) ? 'image/webp' : /\.avif$/i.test(key) ? 'image/avif' :
+    /\.json$/i.test(key) ? 'application/json' : 'application/octet-stream';
 export function localStore(inner, directory, maxBytes = 256 * 1024 * 1024) {
   const root = resolve(directory), privateDirectory = join(root, PRIVATE);
   function filePath(key) {
@@ -37,6 +40,10 @@ export function localStore(inner, directory, maxBytes = 256 * 1024 * 1024) {
       return [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs, value.birthtimeNs].map(String);
     } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
   }
+  const privateEtag = async key => {
+    const value = await identity(key);
+    return value ? createHash('sha256').update(JSON.stringify(value)).digest('hex') : null;
+  };
   async function locked(key, action) {
     const name = filePath(key), previous = locks.get(name) ?? Promise.resolve();
     const task = previous.catch(() => {}).then(action);
@@ -128,14 +135,16 @@ export function localStore(inner, directory, maxBytes = 256 * 1024 * 1024) {
       const result = await target.download(key, options);
       try {
         options?.signal?.throwIfAborted();
-        if (!publicSource(key)) return result;
+        if (!publicSource(key)) return key.startsWith(PRIVATE) ? {...result, ...(key.endsWith('.json') && {etag: await privateEtag(key)}), version: await privateEtag(key)} : result;
         const saved = await currentRevision(key, await identity(key));
         if (!saved) throw invalid('Local media disappeared during its read.');
         const version = saved.value.version;
-        if (result.size > maxBytes) return {...result, etag: version, version};
+        const metadata = saved.value.originalId ? {originalId: saved.value.originalId, representation: saved.value.representation,
+          contentType: saved.value.contentType ?? result.contentType} : {};
+        if (result.size > maxBytes) return {...result, ...metadata, etag: version, version};
         const bytes = await readAll(result.body, {maxBytes, signal: options?.signal});
         const body = new ReadableStream({start(controller) { controller.enqueue(bytes); controller.close(); }});
-        return {...result, body, etag: version, version};
+        return {...result, ...metadata, body, etag: version, version};
       } catch (error) { cancel(result?.body); throw error; }
     });
     const value = target[property];
@@ -145,9 +154,61 @@ export function localStore(inner, directory, maxBytes = 256 * 1024 * 1024) {
     signal?.throwIfAborted();
     if (await inner.exists(key, {signal})) return false;
     signal?.throwIfAborted();
-    if (key.startsWith(PRIVATE)) return privateWrite({key, body, contentType, signal}, true);
+    if (key.startsWith(PRIVATE)) {
+      const written = await privateWrite({key, body, contentType, signal}, true);
+      return written === true ? {created: true, version: await privateEtag(key)} : written;
+    }
     await mutate(key, () => inner.upload({key, body, contentType, signal}), signal);
     return true;
   });
-  return {store, create};
+  const compareAndSet = (key, body, {etag, contentType, signal} = {}) => locked(key, async () => {
+    if (!key.startsWith(PRIVATE) || !key.endsWith('.json') || etag !== null && (typeof etag !== 'string' || !etag))
+      throw invalid('Private settings require their stored revision.');
+    signal?.throwIfAborted();
+    if (await privateEtag(key) !== etag) return false;
+    const result = await privateWrite({key, body, contentType, signal}, etag === null);
+    return etag === null ? result === true : true;
+  });
+  const head = (key, options = {}) => locked(key, async () => {
+    options.signal?.throwIfAborted();
+    const value = await identity(key);
+    if (!value) return null;
+    const info = await stat(filePath(key));
+    if (!publicSource(key)) return {size: info.size, contentType: contentType(key), lastModified: info.mtime,
+      etag: await privateEtag(key), version: await privateEtag(key)};
+    const saved = await currentRevision(key, value), revision = saved.value;
+    return {size: info.size, contentType: revision.contentType ?? contentType(key), lastModified: info.mtime,
+      etag: revision.version, version: revision.version,
+      ...(revision.originalId ? {originalId: revision.originalId, representation: revision.representation} : {})};
+  });
+  const replace = (key, body, options = {}) => locked(key, async () => {
+    if (!publicSource(key) || !/\.(?:jpe?g|jpe|jfif)$/i.test(key) ||
+        !UUID.test(options.expectedVersion ?? '') || options.etag !== options.expectedVersion ||
+        !/^[a-f0-9]{32}$/.test(options.originalId ?? '') || !['jxl', 'jpeg'].includes(options.representation))
+      throw invalid('Original replacement requires its captured source and archive identity.');
+    options.signal?.throwIfAborted();
+    const before = await identity(key), prior = await currentRevision(key, before);
+    if (!before || prior?.value.version !== options.expectedVersion) return null;
+    await ensurePrivate(true);
+    const intent = revision(key, before), temporary = PRIVATE + randomUUID() + '.tmp';
+    await writeRevision(key, intent);
+    try {
+      await inner.upload({key: temporary, body, contentType: options.contentType, signal: options.signal});
+      options.signal?.throwIfAborted();
+      if (options.lastModified) {
+        const time = new Date(options.lastModified);
+        if (!Number.isFinite(time.getTime())) throw invalid('Original modification time is invalid.');
+        await utimes(filePath(temporary), time, time);
+      }
+      await rename(filePath(temporary), filePath(key));
+      const after = await identity(key);
+      const saved = await writeRevision(key, {...intent, stat: after, originalId: options.originalId,
+        representation: options.representation, contentType: options.contentType});
+      return {etag: saved.value.version, version: saved.value.version, size: body.byteLength};
+    } catch (error) {
+      try { if (sameStat(before, await identity(key))) await writeRevision(key, prior.value, prior.bytes); } catch {}
+      throw error;
+    } finally { await unlink(filePath(temporary)).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+  });
+  return {store, create, compareAndSet, head, replace};
 }

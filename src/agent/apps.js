@@ -14,7 +14,8 @@
   const COMPOSING_IDLE_MS = 4000;
   let editEpoch = 0, lastEdit = 0, composing = false, contextEditing = false, contextEditingAt = 0;
   let staleContexts = 0, staleRevision = null, staleStuck = false;
-  let running = null, timer = 0, failures = 0, connecting = null, notice, modeButton;
+  let running = null, timer = 0, failures = 0, connecting = null, notice;
+  const modeButtons = [];
   const LIVE_CHECK_MS = 60000, LIVE_HTTP_MS = 600000, LIVE_CATCH_UP_MS = 60000, QUIET_DELAYS = [1500, 5000, 15000, 30000];
   const TYPING_CONTEXT_MS = 15000, SETTLED_CONTEXT_MS = 4000;
   let liveNotice = null, syncedNotice = null, syncWanted = Infinity, catchUpAt = Infinity, lastSyncAt = 0, quietSyncs = 0;
@@ -335,8 +336,8 @@
       .rapier-app-image-notice button{font:inherit;text-transform:uppercase;color:var(--color-accent-foreground,#fff);background:var(--color-accent);border:0;border-radius:0;padding:12px 16px;cursor:pointer}
       .rapier-app-pop{z-index:300}.rapier-app-pop p{margin:0 0 var(--space-4);line-height:1.5}.rapier-app-pop input{flex:0 0 auto;width:100%;height:48px;box-sizing:border-box;margin:0 0 var(--space-4);background:var(--color-surface-2);font-family:var(--font-mono)}
       .rapier-app-pair-code{font:var(--fw-medium) 3.5rem/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase}
-      #top-actions{position:relative}
-      .rapier-app-fullscreen{position:absolute;inset-block-start:100%;inset-inline-end:0;background:color-mix(in srgb,var(--color-bg) 50%,transparent);border-radius:0}
+      .rapier-jxl-view__bar>.navigator-close{margin-inline-start:auto;margin-right:0}
+      .rapier-jxl-view__bar>.rapier-app-fullscreen{flex:none;width:48px;height:48px;margin-right:calc(-1 * var(--space-2))}
       html{height:var(--rapier-app-height,560px);overflow:hidden;scroll-behavior:auto}
       body{height:100%;min-height:0;overflow:hidden}
       .editor-area,.compare-mode{min-height:0;overscroll-behavior-y:auto;margin-block-end:max(var(--native-inset-bottom,0px),var(--rapier-keyboard-occlusion,0px))}
@@ -353,25 +354,39 @@
     notice.append(label, button('Retry', retry), button('Review', reviewHostFile), button('Copy draft', downloadDraft));
     (document.getElementById('toast-root') || document.body).append(notice);
 
-    modeButton = button('', () => requestDisplayMode(context.displayMode === 'fullscreen' ? 'inline' : 'fullscreen'), 'icon-btn rapier-app-fullscreen');
-    modeButton.hidden = true;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    for (const [key, value] of Object.entries({width: '22', height: '22', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'})) svg.setAttribute(key, value);
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5');
-    svg.append(path);
-    modeButton.append(svg);
-    document.getElementById('top-actions')?.append(modeButton);
-    const homeButton = button('', showHome, 'icon-btn');
-    homeButton.setAttribute('aria-label', 'Documents');
-    homeButton.title = 'Documents';
-    const homeSvg = svg.cloneNode(false), homePath = path.cloneNode(false);
-    homePath.setAttribute('d', 'M3 9l9-7 9 7v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9m6 12v-9h6v9');
-    homeSvg.append(homePath);
-    homeButton.append(homeSvg);
-    if (!pairedId) document.getElementById('top-actions')?.append(homeButton);
+    document.getElementById('top-actions')?.append(modeButton());
+    const toolSize = new ResizeObserver(() => { updateFrameLayout(); notifySize(); });
+    const toolBars = () => {
+      for (const bar of document.querySelectorAll('.rapier-jxl-view__bar')) if (!bar.querySelector('.rapier-app-fullscreen')) bar.append(modeButton());
+      toolSize.disconnect();
+      for (const part of document.querySelectorAll('.rapier-jxl-view__panel > *')) toolSize.observe(part);
+      updateFrameLayout(); notifySize();
+    };
+    new MutationObserver(toolBars).observe(document.body, {childList: true});
+    toolBars();
+    const quiet = document.createElement('style');
+    quiet.textContent = '.rapier-live-bar{display:none!important}';
+    document.head.append(quiet);
     lock();
     setStatus(status);
+  }
+
+  function modeButton() {
+    const made = button('', () => requestDisplayMode(context.displayMode === 'fullscreen' ? 'inline' : 'fullscreen'), 'icon-btn rapier-app-fullscreen');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const [key, value] of Object.entries({width: '22', height: '22', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'})) svg.setAttribute(key, value);
+    svg.append(document.createElementNS('http://www.w3.org/2000/svg', 'path'));
+    made.append(svg);
+    modeButtons.push(made);
+    paintModeButton(made);
+    return made;
+  }
+
+  function paintModeButton(made) {
+    const expand = context.displayMode !== 'fullscreen';
+    made.setAttribute('aria-label', expand ? 'Expand editor' : 'Exit fullscreen');
+    made.title = made.getAttribute('aria-label');
+    made.querySelector('path').setAttribute('d', expand ? 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5' : 'M3 8h5V3m8 0v5h5M3 16h5v5m8 0v-5h5');
   }
 
   function lock() {
@@ -390,9 +405,25 @@
   function updateFrameLayout() {
     const dimensions = context.containerDimensions || {};
     const fixed = context.displayMode === 'fullscreen' || Number.isFinite(dimensions.height);
-    const height = Number.isFinite(dimensions.maxHeight) && dimensions.maxHeight > 0
-      ? Math.min(560, dimensions.maxHeight) : 560;
-    document.documentElement.style.setProperty('--rapier-app-height', fixed ? '100dvh' : `${height}px`);
+    document.documentElement.style.setProperty('--rapier-app-height', fixed ? '100dvh' : `${contentHeight()}px`);
+    document.documentElement.classList.toggle('rapier-app-inline', context.displayMode !== 'fullscreen');
+  }
+
+  function contentHeight() {
+    const dimensions = context.containerDimensions || {};
+    const most = Number.isFinite(dimensions.maxHeight) && dimensions.maxHeight > 0 ? dimensions.maxHeight
+      : Number.isFinite(window.openai?.maxHeight) && window.openai.maxHeight > 0 ? window.openai.maxHeight : Infinity;
+    return Math.min(most, Math.max(560, toolViewHeight()));
+  }
+
+  function toolViewHeight() {
+    const view = context.displayMode === 'fullscreen' ? null : document.querySelector('.rapier-jxl-view');
+    const body = view?.querySelector('.rapier-jxl-view__body');
+    const panel = body && [...body.querySelectorAll('.rapier-jxl-view__panel')].find(each => !each.hidden);
+    const bottoms = panel ? [...panel.children].filter(part => part.getClientRects().length).map(part => part.getBoundingClientRect().bottom) : [];
+    if (!bottoms.length) return 0;
+    return Math.ceil(Math.max(...bottoms) - view.getBoundingClientRect().top + body.scrollTop +
+      (parseFloat(getComputedStyle(body).paddingBottom) || 0));
   }
 
   function updateContext(value) {
@@ -409,14 +440,8 @@
     document.documentElement.dataset.rapierHostPlatform = typeof context.platform === 'string' ? context.platform : '';
     document.documentElement.dataset.rapierHostTouch = context.deviceCapabilities?.touch === true ? '1' :
       context.deviceCapabilities?.touch === false ? '0' : '';
-    if (modeButton) {
-      const mode = context.displayMode === 'fullscreen' ? 'inline' : 'fullscreen';
-      modeButton.hidden = !Array.isArray(context.availableDisplayModes) || !context.availableDisplayModes.includes(mode);
-      modeButton.setAttribute('aria-label', mode === 'fullscreen' ? 'Expand editor' : 'Exit fullscreen');
-      modeButton.title = modeButton.getAttribute('aria-label');
-      modeButton.querySelector('path').setAttribute('d', mode === 'fullscreen'
-        ? 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5' : 'M3 8h5V3m8 0v5h5M3 16h5v5m8 0v-5h5');
-    }
+    for (const made of modeButtons) if (made.isConnected) paintModeButton(made);
+    modeButtons.splice(0, modeButtons.length, ...modeButtons.filter(made => made.isConnected));
     if (notice) notice.children[3].textContent = object(capabilities.downloadFile) ? 'Download draft' : 'Copy draft';
     updateSafeArea();
     if (initialized) notifySize();
@@ -437,9 +462,15 @@
     if (changed) window.dispatchEvent(new Event('rapier:native-insets'));
   }
 
-  let lastSize = '';
+  let lastSize = '', lastIntrinsic = 0;
   function notifySize() {
-    if (!initialized || closed || context.displayMode === 'fullscreen' || Number.isFinite(context.containerDimensions?.height)) return;
+    if (!initialized || closed || context.displayMode === 'fullscreen') return;
+    const intrinsic = Math.round(contentHeight());
+    if (intrinsic > 0 && intrinsic !== lastIntrinsic && typeof window.openai?.notifyIntrinsicHeight === 'function') {
+      lastIntrinsic = intrinsic;
+      try { window.openai.notifyIntrinsicHeight(intrinsic); } catch (_) {}
+    }
+    if (Number.isFinite(context.containerDimensions?.height)) return;
     const height = Math.round(document.documentElement.getBoundingClientRect().height);
     if (height > 0 && height !== lastSize) {
       lastSize = height;
@@ -448,9 +479,12 @@
   }
 
   async function requestDisplayMode(mode) {
-    if (!['inline', 'fullscreen'].includes(mode) || !context.availableDisplayModes?.includes(mode)) return false;
-    const result = await request('ui/request-display-mode', {mode});
+    if (!['inline', 'fullscreen'].includes(mode)) return false;
+    let result = await request('ui/request-display-mode', {mode}).catch(() => null);
+    if (result?.mode !== mode && typeof window.openai?.requestDisplayMode === 'function')
+      result = await window.openai.requestDisplayMode({mode}).catch(() => null) || result;
     if (['inline', 'fullscreen'].includes(result?.mode)) updateContext({displayMode: result.mode});
+    if (result?.mode !== mode && mode === 'fullscreen') host.notify('Fullscreen isn\u2019t available here.', 'info');
     return result?.mode === mode;
   }
 
@@ -1423,7 +1457,8 @@
     let data = toolData(result);
     if (!object(data)) return;
     if (data.outcome === 'converter' && !result.isError) {
-      if (typeof _rapierOpenJxlPart === 'function') _rapierOpenJxlPart();
+      if (!base && status === 'opening') setStatus('converter');
+      void openConverter(data).catch(failed);
       return;
     }
     rememberEditorKey(result);
@@ -2075,6 +2110,41 @@
     } finally { uploadRunning = false; }
   }
 
+  async function saveFile(blob, filename) {
+    if (closed || !(blob instanceof Blob) || typeof filename !== 'string' || !filename) return false;
+    if (object(capabilities.downloadFile)) return exportFile(blob, filename);
+    if (!canUpload()) return false;
+    try {
+      const result = await window.openai.uploadFile(new File([blob], filename, {type: blob.type || 'application/octet-stream'}), {library: true});
+      if (typeof result?.fileId !== 'string' || !result.fileId) return false;
+      if (!closed) host.notify('Saved ' + filename + ' to ChatGPT Files.', 'info');
+      return true;
+    } catch (_) { return false; }
+  }
+
+  async function hostDownload(fileId, limit, signal, seen) {
+    const link = await window.openai.getFileDownloadUrl({fileId});
+    const url = new URL(link?.downloadUrl);
+    seen?.(url.origin);
+    if (url.protocol !== 'https:' || url.username || url.password) throw new Error('FILE_INVALID');
+    const allowedOrigins = Array.isArray(globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS) ? globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS : [];
+    if (!allowedOrigins.includes(url.origin)) throw new Error('FILE_ORIGIN_REFUSED');
+    signal?.throwIfAborted();
+    const response = await fetch(url.href, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal});
+    if (!response.ok || !response.body) throw new Error('FILE_UNAVAILABLE');
+    if (Number(response.headers.get('content-length')) > limit) throw new Error('FILE_TOO_LARGE');
+    const reader = response.body.getReader(), parts = [];
+    let bytes = 0;
+    for (;;) {
+      const row = await reader.read();
+      if (row.done) break;
+      bytes += row.value.byteLength;
+      if (bytes > limit) { await reader.cancel(); throw new Error('FILE_TOO_LARGE'); }
+      parts.push(row.value);
+    }
+    return parts;
+  }
+
   async function importFile(event, selected = null) {
     if (!(event instanceof Event) || !event.isTrusted || (!selected && !canImport()) ||
         typeof window.openai?.getFileDownloadUrl !== 'function' || importRunning || switching || closed || closing) return false;
@@ -2091,25 +2161,8 @@
       }
       const file = files[0];
       if (typeof file.fileId !== 'string' || !file.fileId || typeof file.fileName !== 'string' || !file.fileName) throw new Error('FILE_INVALID');
-      const link = await window.openai.getFileDownloadUrl({fileId: file.fileId});
-      const url = new URL(link?.downloadUrl);
-      if (url.protocol !== 'https:' || url.username || url.password) throw new Error('FILE_INVALID');
-      const allowedOrigins = Array.isArray(globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS) ? globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS : [];
-      if (!allowedOrigins.includes(url.origin)) throw new Error('FILE_ORIGIN_REFUSED');
       timeout = setTimeout(() => controller.abort(), 20000);
-      const response = await fetch(url.href, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: controller.signal});
-      if (!response.ok || !response.body) throw new Error('FILE_UNAVAILABLE');
-      const limit = globalThis.RapierAgentCatalog.MAX_TEXT_BYTES;
-      if (Number(response.headers.get('content-length')) > limit) throw new Error('FILE_TOO_LARGE');
-      const reader = response.body.getReader(), parts = [];
-      let bytes = 0;
-      for (;;) {
-        const row = await reader.read();
-        if (row.done) break;
-        bytes += row.value.byteLength;
-        if (bytes > limit) { await reader.cancel(); throw new Error('FILE_TOO_LARGE'); }
-        parts.push(row.value);
-      }
+      const parts = await hostDownload(file.fileId, globalThis.RapierAgentCatalog.MAX_TEXT_BYTES, controller.signal);
       clearTimeout(timeout);
       const loaded = await host.readFile(new Blob(parts, {type: file.mimeType || 'application/octet-stream'}), file.fileName);
       if (!loaded || token !== openedToken || switching || closed || closing) return false;
@@ -2130,6 +2183,45 @@
       controller.abort();
       importRunning = false;
     }
+  }
+
+  const CONVERT_MODES = Object.freeze({lossless: 'lossless', high: 'high', medium: 'smaller'});
+  const CHAT_PICTURE_BYTES = 256 * 1024 * 1024, CHAT_PICTURE_MS = 120000;
+  const PICTURE_TYPES = Object.freeze({'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/avif': '.avif', 'image/jxl': '.jxl', 'image/heic': '.heic'});
+  const chatPictures = new Map();
+  let converterRun = 0;
+  async function openConverter(data) {
+    if (typeof _rapierPartAvailable !== 'function' || !_rapierPartAvailable('jxl') || !await _rapierPartReady('jxl') || closed) return;
+    const run = ++converterRun, view = _rapierJxlPart;
+    view.open();
+    if (!view.state.open) return;
+    view.configure({mode: CONVERT_MODES[data.quality], effort: data.effort});
+    const chat = (Array.isArray(data.files) ? data.files : []).filter(file => object(file) && typeof file.file_id === 'string' && file.file_id).slice(0, 32);
+    if (!chat.length) return;
+    if (typeof window.openai?.getFileDownloadUrl !== 'function') { host.notify('Choose the pictures here: this app does not hand the chat\u2019s pictures over.', 'info'); return; }
+    const missed = [], refused = new Set();
+    for (const file of chat) {
+      if (run !== converterRun || closed || !view.state.open) return;
+      const known = chatPictures.get(file.file_id);
+      if (known && view.has(known)) continue;
+      const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), CHAT_PICTURE_MS);
+      let origin = '';
+      try {
+        const type = typeof file.mime_type === 'string' && PICTURE_TYPES[file.mime_type] ? file.mime_type : '';
+        const named = typeof file.name === 'string' && file.name ? file.name : 'picture';
+        const name = /\.[a-z0-9]{2,5}$/i.test(named) || !type ? named : named + PICTURE_TYPES[type];
+        const picture = new File(await hostDownload(file.file_id, CHAT_PICTURE_BYTES, controller.signal, seen => { origin = seen; }), name, type ? {type} : {});
+        if (run !== converterRun || closed || !view.state.open) return;
+        chatPictures.set(file.file_id, picture);
+        view.add([picture]);
+      } catch (error) {
+        chatPictures.delete(file.file_id);
+        if (error?.message === 'FILE_ORIGIN_REFUSED') { console.warn('Rapier: this deployment does not allow chat files from', origin); refused.add(new URL(origin).host); }
+        missed.push(typeof file.name === 'string' && file.name ? file.name : 'a picture');
+      } finally { clearTimeout(timeout); }
+    }
+    if (missed.length && !closed) host.notify('Couldn\u2019t open ' + (missed.length === 1 ? missed[0] : missed.length + ' pictures') + ' from the chat' +
+      (refused.size ? ': ' + [...refused].join(', ') + ' isn\u2019t allowed yet' : '') + '. Choose ' + (missed.length === 1 ? 'it' : 'them') + ' here instead.', 'error');
   }
 
   function retireStrandedDraft(stranded) {
@@ -2791,7 +2883,7 @@
   }
 
   window.RapierMcpApp = Object.freeze({
-    flush, retry, invoke, invokeComment, sendMessage, openDocument, saveCurrent, closeComparison, requestDisplayMode, exportFile, importFile, uploadCurrent, showHome, askAboutSelection, openExternalLink, disconnectAgents, shareDocument,
+    flush, retry, invoke, invokeComment, sendMessage, openDocument, saveCurrent, closeComparison, requestDisplayMode, exportFile, saveFile, importFile, uploadCurrent, showHome, askAboutSelection, openExternalLink, disconnectAgents, shareDocument,
     hostOrigin: () => closed ? null : origin,
     hostLocale: () => (typeof context.locale === 'string' || typeof context.timeZone === 'string') ?
       Object.freeze({locale: context.locale || null, timeZone: context.timeZone || null}) : null,

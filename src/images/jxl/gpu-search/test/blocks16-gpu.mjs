@@ -46,7 +46,7 @@ try {
       const {scaledDCTBases, lowFrequencies} = await import('/vardct-strategies.mjs');
       const {configureKernels, prepareKernels} = await import('/kernels.mjs');
       await prepareKernels(); configureKernels('auto');
-      const {gpuBlocks16Costs, gpuBlocks16Levels, gpuBlocks16Stats} = await import('/gpu-blocks16.mjs');
+      const {gpuBlocksStats} = await import('/gpu-blocks.mjs'), {gpuBlocks16Stats} = await import('/gpu-blocks16.mjs');
       const {encodeAsync} = await import('/effort.mjs');
       const {gpuCoreQualified} = await import('/gpu-core.mjs');
       const adapter = await navigator.gpu.requestAdapter(), device = await adapter.requestDevice({requiredLimits: {maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize, maxBufferSize: adapter.limits.maxBufferSize}});
@@ -106,12 +106,12 @@ try {
               const runs = [];
               for (const effort of whole) {
                 const time = async gpu => { const t = performance.now(); const bytes = await encodeAsync(rgba, width, height, {quality, effort, gpu}); return [bytes, performance.now() - t]; };
-                const [a] = await time(false), before = {...gpuBlocks16Stats}, [b] = await time(device), used = gpuBlocks16Stats.costs - before.costs, energy = gpuBlocks16Stats.energy - before.energy;
+                const [a] = await time(false), before = {...gpuBlocksStats}, energyBefore = gpuBlocks16Stats.energy, [b] = await time(device), used = gpuBlocksStats.costs - before.costs, energy = gpuBlocks16Stats.energy - energyBefore;
                 const cpu = [], gpu = [];
                 for (let i = 0; i < 3; i++) { cpu.push((await time(false))[1]); gpu.push((await time(device))[1]); }
                 const median = v => v.sort((x, y) => x - y)[1];
                 let same = a.length === b.length; for (let i = 0; same && i < a.length; i++) same = a[i] === b[i];
-                runs.push({effort, same, used, energy, bytes: a.length, cpuWarmMs: median(cpu), gpuWarmMs: median(gpu), stats: {...gpuBlocks16Stats}});
+                runs.push({effort, same, used, energy, bytes: a.length, cpuWarmMs: median(cpu), gpuWarmMs: median(gpu), stats: {...gpuBlocksStats, energy: gpuBlocks16Stats.energy}});
               }
               return runs;
             })() : []});
