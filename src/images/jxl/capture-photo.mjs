@@ -139,7 +139,8 @@ export function capturePhotoRegions(data,width,height,hints=[],exactRects=[]){
         inside[a]={x,y,width:Math.max(p.x+p.width,q.x+q.width)-x,height:Math.max(p.y+p.height,q.y+q.height)-y};inside.splice(b,1);a=-1;break;
       }
     }
-    if(inside.length>1&&inside.reduce((s,h)=>s+h.width*h.height,0)>=HINTED*r.width*r.height)out.push(...inside);else out.push(r);
+    if(inside.length>1&&inside.reduce((s,h)=>s+h.width*h.height,0)>=HINTED*r.width*r.height)out.push(...inside);
+    else out.push(inside.reduce((b,h)=>{const x=Math.min(b.x,h.x),y=Math.min(b.y,h.y);return {x,y,width:Math.max(b.x+b.width,h.x+h.width)-x,height:Math.max(b.y+b.height,h.y+h.height)-y};},r));
   }
   return validPhotoRegions(data,width,height,out)?out:expanded;
 }
@@ -157,11 +158,11 @@ function flattenFar(rgba,w,h,exact,far){
   for(let y=0,i=0;y<h;y++)for(let x=0;x<w;x++,i++)if(d[i]>far&&!touched[(y>>3)*bw+(x>>3)]){rgba[i*4]=r;rgba[i*4+1]=g;rgba[i*4+2]=b;}
 }
 export const regionFrameBytes=job=>photoFrameBytes(job);
-function photoFrameBytes({pixels,width,height,quality,areas,colorSpace,effort=7,placement,graphic,sections,exact,far}){
+function photoFrameBytes({pixels,width,height,quality,areas,colorSpace,effort=7,placement,graphic,sections,exact,far,smallRegions}){
   if(exact)fillHoles(pixels,width,height,exact);
   if(far)flattenFar(pixels,width,height,exact,far);
   if(graphic)return lossyModularFrame(pixels,width,height,quality,placement,sections);
-  const image=complete(photoCoefficientSteps(pixels,width,height,quality,colorSpace,false,true,areas));
+  const image=complete(photoCoefficientSteps(pixels,width,height,quality,colorSpace,false,true,areas,{smallRegions}));
   return complete(coefficientAnsSteps(placement===undefined?image:{...image,placement},effort));
 }
 function* photoBlockRegionSteps(job, photoBlocks, photoBlockEffort, readingWebp, signal, photoAdmission) {
@@ -175,13 +176,13 @@ function* photoBlockRegionSteps(job, photoBlocks, photoBlockEffort, readingWebp,
     check(signal);
     return photoAdmission.record(bytes, false);
   }
-  const {pixels,width,height,quality,areas,photoCrops,colorSpace,placement,exact,far} = job;
+  const {pixels,width,height,quality,areas,photoCrops,colorSpace,placement,exact,far,smallRegions} = job;
   const reference = pixels.slice();
   if (exact) fillHoles(pixels,width,height,exact);
   if (far) flattenFar(pixels,width,height,exact,far);
   const rows = (top,count) => pixels.subarray(top*width*4,(top+count)*width*4);
   const floorImage = photoAdmission && photoBlockEffort === 4
-    ? complete(photoCoefficientSteps(pixels,width,height,quality,colorSpace,false,true,areas)) : null;
+    ? complete(photoCoefficientSteps(pixels,width,height,quality,colorSpace,false,true,areas,{smallRegions})) : null;
   const bytes = yield* photoBlocks(rows,width,height,{quality,areas,colorSpace,placement,effort:photoBlockEffort??job.effort,
     photoBlockEffort,readingWebp,signal,photoCrops,photoAdmission,
     ...(floorImage && {floorImage,floorBytes:writeImage(floorImage,job.effort,placement)}),
@@ -306,21 +307,23 @@ export function* composeCapturePhotoSteps(data,width,height,quality,colorSpace,r
       return {source:f,crop:{x:x-r.x,y:y-r.y,width:Math.min(f.x+f.width,r.x+r.width)-x,height:Math.min(f.y+f.height,r.y+r.height)-y}};
     });
   };
-  const own=(r,offGrid=false)=>{
-    const subjects=cropSubjects(r),photoCrops=subjects.map(s=>s.crop);
-    const areas=subjects.map(s=>({...s.crop,quality:regionQuality(data,width,s.source,offGrid,colorSpace)}));
+  const own=(subjects,offGrid=false,small=false)=>{
+    const photoCrops=subjects.map(s=>s.crop);
+    const areas=subjects.map(s=>({...s.crop,quality:regionQuality(data,width,s.source,offGrid,colorSpace,small)}));
     const least=Math.min(...areas.map(a=>a.quality)),most=Math.max(...areas.map(a=>a.quality));
     return least===most?{quality:least,most,photoCrops}:{quality:least,areas,most,photoCrops};
   };
   const jobs=kept.map(({r,exact,masked,graphic,sections,union,offGrid},i)=>{
-    const pixels=crop(data,width,r),last=ends&&i+1===kept.length;
+    const pixels=crop(data,width,r),last=ends&&i+1===kept.length,subjects=cropSubjects(r);
     const modular=graphic&&r.palette;
     const placement={...(modular?{}:{isFirstFrame:false}),isLastFrame:last,saveAsReference:last?0:1,imageWidth:width,imageHeight:band?.imageHeight??height,crop:{...r,y:r.y+top},alphaChannel:alpha,mask:masked};
-    const read=regionQuality?graphic?{quality:own(r).most}:own(r,!!offGrid):{quality};
+    const smallRegions=!graphic&&subjects.length>0&&subjects.every(s=>Math.min(s.source.width,s.source.height)<128);
+    const read=regionQuality?graphic?{quality:own(subjects).most}:own(subjects,!!offGrid,smallRegions):{quality};
     return {pixels,width:r.width,height:r.height,quality:read.quality,...(read.areas&&{areas:read.areas}),
-      photoCrops:read.photoCrops??cropSubjects(r).map(s=>s.crop),colorSpace,effort,placement,graphic:!!modular,...(modular&&!masked&&!alpha&&sections&&read.quality===quality&&{sections}),...(masked&&{exact}),...(union&&{far:1})};
+      photoCrops:read.photoCrops??subjects.map(s=>s.crop),smallRegions,colorSpace,effort,placement,graphic:!!modular,...(modular&&!masked&&!alpha&&sections&&read.quality===quality&&{sections}),...(masked&&{exact}),...(union&&{far:1})};
   });
   if(photoAdmission)for(let i=0;i<jobs.length;i++)jobs[i].photoCropsComplete=completePhotoCrops(photos,kept[i].r,width,band?.imageHeight??height,top);
+  const sources=photoAdmission?.frame?kept.map(k=>cropSubjects(k.r).map(s=>s.source)):null;
   const handle=!photoBlocks&&asks[CAPTURE_HELPERS]&&jobs.length?yield {regions:jobs,ahead:true}:null;
   const parts=[yield* within(band||masked?captureBandSteps(base,width,height,{...(band??{y:0,imageHeight:height}),...level,shape:{colour:3,alpha},colorSpace,[CAPTURE_BASE]:'reference',signal})
     :encodeCaptureSteps(base,width,height,{...level,colorSpace,[CAPTURE_BASE]:'reference',signal}),from,span)];
@@ -330,6 +333,7 @@ export function* composeCapturePhotoSteps(data,width,height,quality,colorSpace,r
     const got=Array.isArray(given)&&given[i] instanceof Uint8Array?given[i]:null;
     parts.push(photoBlocks ? yield* within(photoBlockRegionSteps(jobs[i],photoBlocks,photoBlockEffort,readingWebp,signal,photoAdmission),from+span*(1+i)/(1+kept.length),span/(1+kept.length))
       : got??regionFrameBytes(jobs[i]));jobs[i]=null;
+    if(sources)photoAdmission.frame(sources[i],parts.at(-1));
     yield from+span*(2+i)/(1+kept.length);
   }
   check(signal);const bytes=joined(parts);protection?.record(bytes,selectedProtection);return photoAdmission?photoAdmission.join(bytes,parts):bytes;
@@ -366,7 +370,7 @@ function* photoSteps(data,width,height,options,band,large=false,reading=options.
   const whole=!large&&flat&&!(yield* unit('text-like',()=>textLike(data,width,height)))&&(exact?dense(exact.length,width*height):covers(regions,width,height)||(yield* denseStrips(data,width,height,{...level,colorSpace,maxError:0,signal},0)));
   if(whole&&exactRects.length&&band&&!band.shape.alpha)return exact??(yield* exactFile(0));
   if(whole&&!exactRects.length){
-    const own=options.regionQuality?.(data,width,{x:0,y:0,width,height},false,colorSpace)??quality;
+    const own=(options.wholeQuality??options.regionQuality)?.(data,width,{x:0,y:0,width,height},false,colorSpace)??quality;
     const measuredCrops=photoAdmission&&options.photoBlocks&&(options.photoBlockEffort??effort??DEFAULT_EFFORT)>=4&&photoSubjects.some(r=>r.x>0||r.y>0||r.x+r.width<width||r.y+r.height<height);
     if(!band&&!measuredCrops){
       const route=options.wholePhotoRoute;

@@ -6,7 +6,7 @@ import {searchV6} from '../photo-v6-search.mjs';
 import {photoAnsSteps} from '../photo-v6-blocks.mjs';
 import {EXACT_LADDER} from '../exact-ladder.mjs';
 import {encodePhotoSteps} from '../photo-advanced.mjs';
-import {encodeToScoreSteps} from '../score.mjs';
+import {scoreTarget} from './score-target.mjs';
 import {coreSteps} from './instant.mjs';
 import {check, dimensions, fail, declared, callers} from './primitives.mjs';
 import {drain, encodeOptions, callOptions, targetSource} from './common.mjs';
@@ -40,7 +40,7 @@ async function encodeHere(input, options = {}) {
     if (source.orientation !== undefined || source.extraChannels !== undefined)
       throw fail('JXL_INPUT', 'A measured fidelity needs 8-bit straight sRGB RGBA, no orientation or extra channels.');
     targetSource(data, source, captured.codec);
-    return (await drain(encodeToScoreSteps(data, width, height, {target: captured.target, effort: captured.codec.effort}), hooks)).bytes;
+    return (await scoreTarget(data, width, height, source, captured.codec, captured.target, hooks, webgpu)).bytes;
   }
   if (featured && (captured.codec.quality === 100 || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray)))
     throw fail('JXL_UNSUPPORTED', 'Orientation, extra channels and features need 8-bit lossy; use format({kind: \'channels\'}) for exact extra channels.');

@@ -991,6 +991,13 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (humanNamed && (door === '/muse' || authority.source !== 'page' && typeof editorProof !== 'string')) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This operation needs the editor's own authority."));
   const keyArgument = humanNamed ? args.editorKey ?? editorProof : undefined;
   if (humanNamed) { args = {...args}; delete args.editorKey; }
+  let unpassed = 0;
+  if (name === 'convert' && authority.source !== 'page' && args && typeof args === 'object' && Array.isArray(args.files)) {
+    const usable = args.files.filter(file => file && typeof file === 'object' && !Array.isArray(file) && typeof file.file_id === 'string' && file.file_id && typeof file.download_url === 'string')
+      .map(file => Object.fromEntries(['download_url', 'file_id', 'mime_type', 'file_name'].filter(key => typeof file[key] === 'string').map(key => [key, file[key]])));
+    unpassed = args.files.length - usable.length;
+    args = {...args, files: usable};
+  }
   try { args = validateInput(toolInputShape(descriptor), args, 'arguments', !EDITOR_ONLY_TOOLS.has(name)); }
   catch (error) {
     if (error.code !== 'invalid_arguments') throw error;
@@ -1022,8 +1029,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
   }
   if (!page && name === 'convert') {
-    const answered = convertOnDoor(args);
-    if (!answered) return toolError(failure('INVALID_DOCUMENT_INPUT', 'Each file is a chat file the host passes, with its file_id; omit files to let the person pick them.'));
+    const answered = convertOnDoor(args, unpassed);
     observation?.feature('convert'); observation?.dispatched();
     return envelope(answered.reply);
   }

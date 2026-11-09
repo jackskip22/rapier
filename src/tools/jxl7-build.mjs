@@ -8,7 +8,8 @@ import {join, dirname, resolve, relative, basename} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {reportSizes} from './jxl-budgets.mjs';
 import {shrinkShaders, shaderNames} from './jxl-shaders.mjs';
-import {fillChangelogSection, stageJxlChangelog, JXL_HISTORY_BASELINE} from './changelog.mjs';
+import {fillChangelogSection, jxlReleaseNotes, JXL_HISTORY_BASELINE} from './changelog.mjs';
+import {notesPath} from './release-notes.mjs';
 import {assertPhotoOwners, assertPhotoKernels} from './jxl-photo-owners.mjs';
 import {createKernelStripper, createBridgeCutter, kernelProfile, keptExports} from './jxl-kernel-strip.mjs';
 import {bundleKernelNeeds} from './jxl-kernel-reach.mjs';
@@ -42,7 +43,7 @@ const terser = createRequire(import.meta.url)(terserRoot), terserVersion = JSON.
 if (terserVersion !== TERSER_VERSION) throw new Error('rapier-jxl 7.0 builds with terser ' + TERSER_VERSION + ', not ' + terserVersion + '.');
 const version = '8.3.1';
 
-export const ONE_FILE = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'polyfill', 'serve', 'verify', 'storage', 'resumable'];
+export const ONE_FILE = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'codec-upload', 'codec-capture', 'codec-capture-complete', 'codec-animation', 'codec-format', 'codec-decode', 'codec-jpeg', 'polyfill', 'serve', 'verify', 'storage', 'resumable'];
 export const WASM_MODULES = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'verify', 'resumable'];
 export const WORKER_FILES = ['still', 'upload', 'capture', 'capture-complete', 'capture-complete.groups', 'animation', 'format', 'decode', 'jpeg'];
 export const HELPER_FILES = ['still', 'upload', 'animation', 'format', 'capture-complete'];
@@ -89,10 +90,10 @@ const unstepped = {name: 'unstepped', setup(build) {
   });
 }};
 const moduleFiles = {name: 'module-files', setup(build) {
-  build.onResolve({filter: /^\.\/cli-emdash\.mjs$/}, ({path, importer}) =>
+  build.onResolve({filter: /^\.\/cli-(emdash|selftest)\.mjs$/}, ({path, importer}) =>
     importer === join(v7, 'cli.mjs') ? {path, external: true} : undefined);
   build.onResolve({filter: MODULE_FILE}, ({path, importer}) => importer === join(v7, 'cli.mjs') && path === './verify.mjs' ? {path: './verify.node.mjs', external: true}
-    : importer === join(v7, 'codec-modules.mjs') || importer === join(v7, 'cli.mjs') ? {path, external: true} : undefined);
+    : importer === join(v7, 'codec-modules.mjs') || /[\\/]codec-(spec-[\w-]+|runner|door)\.mjs$/.test(importer) || importer === join(v7, 'cli.mjs') ? {path, external: true} : undefined);
 }};
 const browserVerify = {name: 'browser-verify', setup(build) {
   build.onResolve({filter: /(^|\/)verify-own\.mjs$/}, () => ({path: join(v7, 'verify-own.browser.mjs')}));
@@ -151,7 +152,7 @@ async function oneFile(name, file = name + '.mjs', from = v7, plugins = []) {
   const loads = output.imports.filter(edge => name === 'verify'
     || /^(index|still|upload|capture)([.-]|$)/.test(name) && edge.path.endsWith('/verify.mjs')
     || !(edge.external && (edge.path.startsWith('node:') || MODULE_FILE.test(edge.path) || name === 'cli' &&
-      (edge.path === './verify.node.mjs' || edge.path === './cli-emdash.mjs' && edge.kind === 'dynamic-import'))));
+      (edge.path === './verify.node.mjs' || /^\.\/cli-(emdash|selftest)\.mjs$/.test(edge.path) && edge.kind === 'dynamic-import'))));
   if (loads.length) throw new Error(file + ' is not one file: ' + loads.map(edge => edge.path).join(', '));
   if (name === 'resumable.node' && output.imports.length) throw new Error('resumable.node.mjs must have no external imports.');
   contents[name] = Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0).map(([path]) => path);
@@ -181,8 +182,9 @@ for (const name of NODE_FILES) {
 }
 await oneFile('cli');
 await oneFile('cli-emdash');
-if (contents.cli.some(input => /\/(?:cli-emdash|acorn)\.mjs$/.test(input)))
-  throw new Error('cli.mjs eagerly bundles the EmDash setup or parser');
+await oneFile('cli-selftest');
+if (contents.cli.some(input => /\/(?:cli-emdash|cli-selftest|selftest|acorn)\.mjs$/.test(input)))
+  throw new Error('cli.mjs eagerly bundles the EmDash setup, the self-test or the parser');
 for (const name of WORKER_FILES) await oneFile(name + '.worker', name + '.worker.mjs', undefined, [unstepped]);
 for (const name of HELPER_FILES) await oneFile(name + '.helper', name + '.helper.mjs', undefined, [unstepped]);
 for (const [name, inputs] of Object.entries(contents)) if (UNSTEPPED.test(name) && inputs.some(input => /\/resumable(-journal)?\.mjs$/.test(input)))
@@ -317,21 +319,22 @@ await mkdir(join(out, 'examples'), {recursive: true});
 for (const file of EXAMPLES) await cp(join(v7, 'examples', file), join(out, 'examples', file), {recursive: true,
   filter: path => !relative(join(v7, 'examples', file), path).split(/[\\/]/).some(part => part === 'node_modules' || part === 'registry')});
 const exports = {};
-for (const name of ONE_FILE) exports[name === 'index' ? '.' : './' + name] = {types: `./types/${name}.d.mts`, ...(WASM_MODULES.includes(name) && conditions(name)),
+for (const name of ONE_FILE) exports[name === 'index' ? '.' : './' + name.replace(/^codec-/, 'codec/')] = {types: `./types/${name}.d.mts`, ...(WASM_MODULES.includes(name) && conditions(name)),
   ...(NODE_FILES.includes(name) && {node: `./dist/${name}.node.mjs`}), import: `./dist/${name}.mjs`};
 exports['./wasm'] = {types: './types/wasm.d.mts', ...conditions('wasm'), import: './dist/wasm.mjs'};
 exports['./page-rects'] = {types: './examples/page-rects.d.ts', import: './examples/page-rects.js'};
 exports['./svg-jxl'] = {types: './examples/svg-jxl.d.ts', import: './examples/svg-jxl.js'};
 exports['./emdash'] = {types: './examples/emdash/index.d.ts', import: './examples/emdash/index.mjs'};
 exports['./package.json'] = './package.json';
+const browser = Object.fromEntries(Object.entries(exports).filter(([, value]) => value.import).map(([key, value]) => [key === '.' ? './index.js' : key, value.import]));
 const sideEffects = ['./dist/polyfill.mjs', ...WORKER_FILES.map(name => `./dist/${name}.worker.mjs`), ...HELPER_FILES.map(name => `./dist/${name}.helper.mjs`),
   ...[...WASM_MODULES, 'wasm'].flatMap(name => Object.values(conditions(name)))];
 const PEERS = {emdash: '>=1.4.0', '@emdash-cms/cloudflare': '>=1.4.0', '@cloudflare/kumo': '>=2.6.0', astro: '>=6.0.0', react: '>=18.0.0'};
 const {repository, homepage, bugs, keywords} = JSON.parse(await readFile(join(codec, 'package.json'), 'utf8'));
 await writeFile(join(out, 'package.json'), JSON.stringify({name: 'rapier-jxl', version, type: 'module', license: 'MIT',
-  description: 'JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.', repository, homepage, bugs, keywords, bin: {'rapier-jxl': 'dist/cli.mjs'}, exports, types: './types/index.d.mts',
+  description: 'JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.', repository, homepage, bugs, keywords, bin: {'rapier-jxl': 'dist/cli.mjs'}, exports, browser, types: './types/index.d.mts',
   sideEffects, peerDependencies: PEERS, peerDependenciesMeta: Object.fromEntries(Object.keys(PEERS).map(name => [name, {optional: true}])),
-  files: ['dist', 'types', 'examples', 'skills', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES', ...(changelog ? ['CHANGELOG.md'] : [])],
+  files: ['dist', 'types', 'examples', 'skills', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES'],
   engines: {node: '^20.16.0 || >=22.3.0'}}, null, 1) + '\n');
 
 const measure = bytes => ({min: bytes.length, gzip: gzipSync(bytes, {level: 9}).length,
@@ -341,17 +344,17 @@ for (const file of (await readdir(dist)).filter(name => name.endsWith('.mjs')).s
 const gz = file => sizes.files[file].gzip;
 sizes.modules = {still: gz('index.mjs'), upload: gz('upload.mjs'), capture: gz('capture.mjs'),
   captureComplete: gz('capture-complete.mjs'), captureCompleteWorker: gz('capture-complete.worker.mjs'), animation: gz('animation.mjs'), format: gz('format.mjs'),
-  decode: gz('decode.mjs'), jpeg: gz('jpeg.mjs'), verify: gz('verify.mjs'), decodeNode: gz('decode.node.mjs'), jpegNode: gz('jpeg.node.mjs'), serveNode: gz('serve.node.mjs'), metadata: gz('metadata.mjs'), codec: gz('codec.mjs'), polyfill: gz('polyfill.mjs'), serve: gz('serve.mjs'), storage: gz('storage.mjs'), cli: gz('cli.mjs'), cliSetup: gz('cli-emdash.mjs'),
+  decode: gz('decode.mjs'), jpeg: gz('jpeg.mjs'), verify: gz('verify.mjs'), decodeNode: gz('decode.node.mjs'), jpegNode: gz('jpeg.node.mjs'), serveNode: gz('serve.node.mjs'), metadata: gz('metadata.mjs'), codec: gz('codec.mjs'), polyfill: gz('polyfill.mjs'), serve: gz('serve.mjs'), storage: gz('storage.mjs'), cli: gz('cli.mjs'), cliSetup: gz('cli-emdash.mjs'), cliSelftest: gz('cli-selftest.mjs'),
   captureQueued: gz('codec.mjs') + gz('capture.worker.mjs'),
   captureCompleteQueued: gz('codec.mjs') + gz('capture-complete.worker.mjs'), uploadQueued: gz('codec.mjs') + gz('upload.worker.mjs'), stillQueued: gz('codec.mjs') + gz('still.worker.mjs')};
 const br = file => sizes.files[file].brotli;
 sizes.modulesBrotli = Object.fromEntries(Object.entries({still: ['index.mjs'], upload: ['upload.mjs'], capture: ['capture.mjs'],
   captureComplete: ['capture-complete.mjs'], animation: ['animation.mjs'], format: ['format.mjs'], decode: ['decode.mjs'], jpeg: ['jpeg.mjs'],
-  metadata: ['metadata.mjs'], codec: ['codec.mjs'], polyfill: ['polyfill.mjs'], serve: ['serve.mjs'], storage: ['storage.mjs'], cli: ['cli.mjs'], cliSetup: ['cli-emdash.mjs'], verify: ['verify.mjs'],
+  metadata: ['metadata.mjs'], codec: ['codec.mjs'], polyfill: ['polyfill.mjs'], serve: ['serve.mjs'], storage: ['storage.mjs'], cli: ['cli.mjs'], cliSetup: ['cli-emdash.mjs'], cliSelftest: ['cli-selftest.mjs'], verify: ['verify.mjs'],
   captureQueued: ['codec.mjs', 'capture.worker.mjs'], captureCompleteQueued: ['codec.mjs', 'capture-complete.worker.mjs'],
   uploadQueued: ['codec.mjs', 'upload.worker.mjs'], stillQueued: ['codec.mjs', 'still.worker.mjs']}).map(([key, files]) => [key, files.reduce((sum, file) => sum + br(file), 0)]));
 console.log(reportSizes(sizes.modules));
-for (const file of ['cli.mjs', 'cli-emdash.mjs']) {
+for (const file of ['cli.mjs', 'cli-emdash.mjs', 'cli-selftest.mjs']) {
   const {min, gzip, brotli} = sizes.files[file];
   console.log(`${file} raw ${min} gzip ${gzip} brotli ${brotli}`);
 }
@@ -391,23 +394,24 @@ for (const [key, value] of Object.entries(fill)) if (typeof value === 'string') 
 if (/__[A-Z][A-Z_0-9]*__/.test(readme)) throw new Error('README.md placeholder left unfilled: ' + readme.match(/__[A-Z][A-Z_0-9]*__/)[0]);
 await writeFile(join(out, 'README.md'), readme);
 sizes.readme = fill;
-if (changelog) {
+await rm(notesPath(out), {force: true});
+if (changelog && !Object.hasOwn(JXL_HISTORY_BASELINE.notes, version)) {
   const sourceChangelog = await readFile(join(v7, 'CHANGELOG.md'), 'utf8');
-  const releaseChangelog = Object.hasOwn(JXL_HISTORY_BASELINE.sections, version) ? sourceChangelog :
-    stageJxlChangelog(sourceChangelog, version, await readFile(join(repo, 'tools/fixtures', JXL_HISTORY_BASELINE.fixture), 'utf8'));
-  const text = fillChangelogSection(releaseChangelog, version, section => {
+  const filled = fillChangelogSection(sourceChangelog, version, section => {
     let current = fillWebp('CHANGELOG.md', section.replaceAll('__AUTO_GPU__', AUTO_GPU));
     for (const [key, value] of Object.entries(fill)) if (typeof value === 'string') current = current.replaceAll('__' + key + '__', value);
     return current.replaceAll('__RELEASE_DATE__', process.env.RAPIER_RELEASE_DATE || new Date().toISOString().slice(0, 10));
   });
-  if (/__[A-Z][A-Z_0-9]*__/.test(text)) throw new Error('CHANGELOG.md placeholder left unfilled: ' + text.match(/__[A-Z][A-Z_0-9]*__/)[0]);
-  await writeFile(join(out, 'CHANGELOG.md'), text);
+  const notes = jxlReleaseNotes(filled, version, await readFile(join(repo, 'tools/fixtures', JXL_HISTORY_BASELINE.fixture), 'utf8'));
+  if (/__[A-Z][A-Z_0-9]*__/.test(notes)) throw new Error('release notes placeholder left unfilled: ' + notes.match(/__[A-Z][A-Z_0-9]*__/)[0]);
+  await writeFile(notesPath(out), notes);
+  sizes.notes = createHash('sha256').update(notes).digest('hex');
 }
 
 const shipped = [];
 for (const directory of ['dist', 'types', 'examples']) for (const file of (await readdir(join(out, directory), {recursive: true, withFileTypes: true})).filter(entry => entry.isFile()))
   shipped.push(relative(out, join(file.parentPath ?? file.path, file.name)));
-shipped.push('package.json', 'LICENSE', 'README.md', 'skills/rapier-jxl/SKILL.md', 'THIRD_PARTY_NOTICES', ...(changelog ? ['CHANGELOG.md'] : [])); shipped.sort();
+shipped.push('package.json', 'LICENSE', 'README.md', 'skills/rapier-jxl/SKILL.md', 'THIRD_PARTY_NOTICES'); shipped.sort();
 const fileHashes = Object.fromEntries(await Promise.all(shipped.map(async file => [file, createHash('sha256').update(await readFile(join(out, file))).digest('hex')])));
 sizes.distribution = {sha256: createHash('sha256').update(JSON.stringify(fileHashes)).digest('hex'), files: fileHashes,
   flags: {...common, banner: undefined, passes: ['one file: ' + ONE_FILE.join(','), 'workers: ' + WORKER_FILES.join(','), 'helpers: ' + HELPER_FILES.join(','), 'wasm, wasm-modules', 'terser safe compress: ' + COMPRESSED.source]}};

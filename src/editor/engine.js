@@ -7062,6 +7062,23 @@ function _rapierRawEditorReason(raw, referenceIndex = null) {
 			entitySource = lines.join('\n');
 		}
 	}
+	if (entity.test(entitySource) && /&(?:lt|amp);/.test(entitySource) && !/[]/.test(entitySource) && md) {
+		try {
+			const own = entitySource.replace(/&(lt|amp);/g, (_, name) => name === 'lt' ? '' : '');
+			const wanted = (own.match(/[]/g) || []).length, environment = _rapierMarkdownEnvironment(referenceIndex || rapier.semantic.references);
+			const ownTokens = md.parse(own, environment);
+			let inText = 0, table = false;
+			const count = rows => (rows || []).forEach(token => {
+				if (token.type === 'table_open') table = true;
+				if (token.type === 'text') inText += (token.content.match(/[]/g) || []).length;
+				else if (token.type === 'inline') count(token.children);
+			});
+			count(ownTokens);
+			const html = tokens => md.renderer.render(tokens, md.options, environment);
+			if (!table && inText === wanted &&
+				html(ownTokens).replace(//g, '&lt;').replace(//g, '&amp;') === html(md.parse(entitySource, environment))) entitySource = own;
+		} catch (_) {}
+	}
 	if (!supportedDetails && entity.test(entitySource)) {
 		let noteBlank = false;
 		const definition = /^ {0,3}\[\^([^\]\s]+)\]:/.exec(value);
@@ -7250,6 +7267,7 @@ function _rapierHandleEditCompositionStart(editDiv) {
 	else if (host) host._rapierHeldWord = null;
 	_rapierSnapEditCaret(editDiv);
 	_rapierKeepTypingMarks(editDiv, { inputType: 'insertCompositionText' });
+	_rapierTypeOutsideCode(editDiv, { inputType: 'insertCompositionText' });
 	editDiv._rapierComposeStart = _rapierComposeSnapshot(editDiv);
 	rapier.composition.block = true;
 	_rapierEnterDecision({ type: 'compositionstart' }, editDiv);
@@ -9449,6 +9467,7 @@ function _rapierPrepareEditInput(editDiv, event) {
 	_rapierSettleCaretIntoText(editDiv);
 	_rapierSnapEditCaret(editDiv);
 	_rapierKeepTypingMarks(editDiv, event);
+	_rapierTypeOutsideCode(editDiv, event);
 	const nextFamily = _rapierInputFamily(event?.inputType);
 	const replacesSelection = _rapierInputReplacesSelection(editDiv, event);
 	const currentFamily = editDiv._rapierHistoryInputFamily || '';
@@ -9471,6 +9490,25 @@ function _rapierPrepareEditInput(editDiv, event) {
 	_rapierDeleteWholeGrapheme(editDiv, event);
 }
 
+
+function _rapierTypeOutsideCode(editDiv, event) {
+	if (!/^insert(?:Text|CompositionText)$/.test(String(event?.inputType || '')) || editDiv._rapierTypingMarks) return;
+	const selection = window.getSelection && window.getSelection();
+	const range = selection && selection.rangeCount && selection.isCollapsed ? selection.getRangeAt(0) : null;
+	const node = range && range.startContainer;
+	if (!node || node.nodeType !== Node.TEXT_NODE) return;
+	const code = node.parentElement && node.parentElement.closest('code');
+	if (!code || code.closest('pre') || !editDiv.contains(code)) return;
+	const before = document.createRange(), after = document.createRange();
+	before.setStart(code, 0); before.setEnd(node, range.startOffset);
+	after.setStart(node, range.startOffset); after.setEnd(code, code.childNodes.length);
+	if (before.toString() && after.toString()) return;
+	const context = _activeBlockEditContext();
+	const surface = context && context.editDiv === editDiv ? _rapierTypingSurface(context, node) : null;
+	if (!surface || surface.cell) return;
+	const at = _rapierStableLiveOffset(surface.root, node, range.startOffset);
+	editDiv._rapierTypingMarks = { root: surface.root, at, caret: at, marks: { code: false }, spaces: true };
+}
 
 function _rapierAtomicHistoryBoundary(inputType) {
 	return inputType === 'insertParagraph' || inputType === 'insertLineBreak' ||
@@ -14200,8 +14238,8 @@ function _rapierRangeStrictlyIntersectsNode(range, node) {
 	} catch (_) { return true; }
 }
 
-function _rapierSnapRangeToAtoms(range, root) {
-	const atoms = Array.from(root.querySelectorAll(RAPIER_HIGHLIGHT_ATOMIC_SELECTOR));
+function _rapierSnapRangeToAtoms(range, root, cutsCode = false) {
+	const atoms = Array.from(root.querySelectorAll(RAPIER_HIGHLIGHT_ATOMIC_SELECTOR)).filter(atom => !(cutsCode && atom.matches('code')));
 	for (let pass = 0, moved = true; moved && pass < 8; pass++) {
 		moved = false;
 		for (const atom of atoms) {
@@ -14287,7 +14325,7 @@ function _rapierOtherSemanticsFingerprint(raw, excludeMark, excludeLinks = false
 			parts.push(otherMark + ':' + _rapierMarkRuns(root, spec.selector)
 				.map(run => run.start + '-' + run.end).sort().join(','));
 		}
-		parts.push('code:' + _rapierMarkRuns(root, 'code').map(run => run.start + '-' + run.end).sort().join(','));
+		if (excludeMark !== 'code') parts.push('code:' + _rapierMarkRuns(root, 'code').map(run => run.start + '-' + run.end).sort().join(','));
 		for (const tag of ['sub', 'sup']) if (tag !== excludeMark) parts.push(tag + ':' + _rapierMarkRuns(root, tag).map(run => run.start + '-' + run.end).sort().join(','));
 		if (!excludeLinks) parts.push('link:' + _rapierMarkRuns(root, 'a[href]', 'href')
 			.map(run => run.start + '-' + run.end + '-' + run.attr).sort().join(','));
@@ -14313,13 +14351,15 @@ function _rapierClearHasWork(raw, start, end) {
 		return probe && _rapierMarkTouches(probe.runs, start, end);
 	});
 	if (marksTouch) return true;
+	const codeProbe = _rapierRenderedMarkProbe(raw, 'bold');
+	if (codeProbe && _rapierMarkTouches(_rapierMarkRuns(codeProbe.root, ':not(pre) > code'), start, end)) return true;
 	const highlightProbe = _rapierRenderedHighlightProbe(raw);
 	return !!(highlightProbe && highlightProbe.runs.some(run => run.start === start && run.end === end));
 }
 
 function _rapierApplyExactMark(cmd, state) {
 	if (!state || !state.range || state.range.collapsed) return null;
-	const segments = _rapierHighlightSegments(state);
+	const segments = _rapierHighlightSegments(state, cmd === 'clear');
 	if (!segments || !segments.some(segment => segment.start < segment.end)) return null;
 	const nextRaw = [];
 	for (let index = 0; index < segments.length; index++) {
@@ -14542,14 +14582,14 @@ function _rapierKeepTypingMarks(editDiv, event) {
 		editDiv._rapierTypingMarks = null;
 	}
 }
-function _rapierTypedCode(surface, from, to, on) {
+function _rapierTypedCode(surface, from, to, on, spaces = false) {
 	const root = surface.root;
 	from = _rapierTextOffsetForStable(root, from);
 	to = _rapierTextOffsetForStable(root, to);
 	const text = String(root.textContent || '');
 	let start = from, stop = to;
-	while (start < stop && /\s/.test(text.charAt(start))) start++;
-	while (stop > start && /\s/.test(text.charAt(stop - 1))) stop--;
+	while (!spaces && start < stop && /\s/.test(text.charAt(start))) start++;
+	while (!spaces && stop > start && /\s/.test(text.charAt(stop - 1))) stop--;
 	if (start >= stop) return true;
 	const a = _rapierPointForTextOffset(root, start, true), b = _rapierPointForTextOffset(root, stop);
 	if (!a || !b || a.node.nodeType !== Node.TEXT_NODE || b.node.nodeType !== Node.TEXT_NODE) return false;
@@ -14612,7 +14652,7 @@ function _rapierApplyTypingMarks(editDiv) {
 	if (!/\S/.test(typed.replace(/\u00a0/g, ' '))) return false;
 	editDiv._rapierTypingMarks = null;
 	if (Object.hasOwn(pending.marks, 'code')) {
-		if (surface.cell || !_rapierTypedCode(surface, pending.at, caret, pending.marks.code)) return _rapierFormatCantGoHere();
+		if (surface.cell || !_rapierTypedCode(surface, pending.at, caret, pending.marks.code, !!pending.spaces)) return _rapierFormatCantGoHere();
 		_markEditDivDirty(editDiv);
 		requestAnimationFrame(refreshFormatToolbar);
 		return true;
@@ -14655,7 +14695,7 @@ function _rapierApplyExactBlockClear(state) {
 	const beforeRaw = String(state.blocksBefore[0]?.raw || '');
 	if (!beforeRaw || beforeRaw.length > RAPIER_EXACT_MARK_RAW_LIMIT || _rapierLiveRawForWrapper(wrapper) !== beforeRaw) return null;
 
-	const range = _rapierSnapRangeToAtoms(state.range.cloneRange(), live);
+	const range = _rapierSnapRangeToAtoms(state.range.cloneRange(), live, true);
 	if (!_nodeInside(live, range.startContainer) || !_nodeInside(live, range.endContainer)) return null;
 	const text = String(live.textContent || '');
 	let start = _charOffsetForRangePoint(live, range.startContainer, range.startOffset);
@@ -14785,7 +14825,7 @@ function _rapierProjectLiveOffset(root, at) {
 	return _rapierProjectionOffset(_rapierStableLiveText(root), rendered, at);
 }
 
-function _rapierHighlightSegments(state) {
+function _rapierHighlightSegments(state, cutsCode = false) {
 	const segments = [];
 	const across = state.wrappers.length > 1;
 	for (let index = 0; index < state.wrappers.length; index++) {
@@ -14798,7 +14838,7 @@ function _rapierHighlightSegments(state) {
 			continue;
 		}
 		if (across && !_rapierBlockCarriesMarks(wrapper)) { segments.push({ wrapper, live, text: '', start: 0, end: 0, selected: '' }); continue; }
-		const range = _rapierSnapRangeToAtoms(state.range.cloneRange(), live);
+		const range = _rapierSnapRangeToAtoms(state.range.cloneRange(), live, cutsCode);
 		const text = String(live.textContent || '');
 		let start = _nodeInside(live, range.startContainer)
 			? _charOffsetForRangePoint(live, range.startContainer, range.startOffset) : 0;
@@ -15322,6 +15362,11 @@ function _rapierInkDrawInto(root) {
 	return draw.drawInk(root, { spec, ink, dark: _rapierDeriveDarkColor, place: 'start' });
 }
 
+function _rapierRangeInsideFence(range) {
+	const node = range && range.commonAncestorContainer;
+	const el = node && (node.nodeType === 1 ? node : node.parentElement);
+	return !!(el && el.closest && el.closest('pre'));
+}
 function _rapierRangeInsideCode(range) {
 	if (!range) return false;
 	const node = range.commonAncestorContainer;
@@ -15329,8 +15374,8 @@ function _rapierRangeInsideCode(range) {
 	return !!(el && el.closest && el.closest('code, pre'));
 }
 
-function _rapierFormatRefusal(range) {
-	if (_rapierRangeInsideCode(range)) return 'Code can’t be formatted.';
+function _rapierFormatRefusal(range, cmd = '') {
+	if (cmd === 'clear' ? _rapierRangeInsideFence(range) : _rapierRangeInsideCode(range)) return 'Code can’t be formatted.';
 	if (_rapierCommandHasRawTarget()) return 'Format this block in its Markdown.';
 	return '';
 }
@@ -15479,7 +15524,7 @@ function rapierFmt(cmd, value) {
 		else if (_rapierRangeInsideCode(selection.rangeCount ? selection.getRangeAt(0) : null)) showToast(_rapierFormatRefusal(selection.getRangeAt(0)), 'info');
 		return false;
 	}
-	const refusal = inline || cmd === 'code' ? _rapierFormatRefusal(selection?.rangeCount ? selection.getRangeAt(0) : null) : '';
+	const refusal = inline || cmd === 'code' ? _rapierFormatRefusal(selection?.rangeCount ? selection.getRangeAt(0) : null, cmd) : '';
 	if (refusal) { showToast(refusal, 'info'); return false; }
 	if ((cmd === 'highlight' || cmd === 'color') && !selection?.isCollapsed) return false;
 	const state = selection && !selection.isCollapsed ? _rapierFormatSelectionState({ marks: inline }) : null;

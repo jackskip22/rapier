@@ -150,6 +150,8 @@ const PLAN_LIT_TOUCHED = new Uint16Array(4096);
 const PLAN_SLOTS = [0, 0, 0];
 
 function planModularChannel(plane, width, height, predictor, freq) {
+  const planned = predictor === GRADIENT_PREDICTOR ? kernelHooks.dcPlan?.(plane, width, height, freq) : null;
+  if (planned) return planned;
   const n = width * height, tags = new Uint32Array(n), extra = new Uint32Array(n), lengths = new Uint32Array(33);
   const litCounts = PLAN_LIT_COUNTS, litTouched = PLAN_LIT_TOUCHED, slots = PLAN_SLOTS;
   let used = 0, run = 0, touchedLen = 0, overflow = null;
@@ -235,7 +237,7 @@ export function writeModularStream(w, planes, predictor, ans, kernels) {
       const f = freqs[c], lengths = histograms[c + 1].code.lengths;
       for (let s = 0; s < lengths.length; s++) if (f[s]) prefixBits += f[s] * (lengths[s] + (s < 224 ? (s > 1 ? s - 1 : 0) : Math.max(0, s - 236)));
       const model = losslessCoding(plan)[1], cfg = model.config, slots = PLAN_SLOTS;
-      if (cfg.split !== 0 || cfg.msb !== 0 || cfg.lsb !== 0) {
+      if ((cfg.split !== 0 || cfg.msb !== 0 || cfg.lsb !== 0) && !kernelHooks.planTokens?.(plan, cfg)) {
         const tags = plan.tags, extra = plan.extra, used = plan.used;
         for (let i = 0; i < used; i++) {
           const symbol = tags[i] & 511;

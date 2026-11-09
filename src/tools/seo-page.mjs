@@ -15,7 +15,7 @@ import {HOME_H1, PLAY_URL, CURRENT_DOOR} from './discovery.mjs';
 export const PAGE_IDENTITY = 'rapier-page-id';
 export const PAGE_IDENTITY_HEADING = 'rapier-page-title';
 const sitePage = path => 'https://rapier.website' + path;
-const SUMMARY = `Rapier is a free online Markdown editor. Write on the formatted page or in the Markdown source, on your phone or computer; there is no split preview. The file stays plain Markdown. Open a .md file to read it formatted, or import Word or PDF. Free and open source (AGPL-3.0-only); no account, ads or tracking; works offline.
+const SUMMARY = `Rapier is a fast, free Markdown editor for your phone and computer. You write on the formatted page and the file stays plain Markdown. Keep notes, draw and paint. Open a .md file to read it formatted, and open and save Word and PDF. Open source (AGPL-3.0-only); works offline, with no account, ads or tracking.
 
 ## Free online Markdown editor
 

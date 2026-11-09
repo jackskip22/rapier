@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "8.3.0",
+  "version": "8.3.1",
   "packageExports": {
     ".": {
       "runtime": "./dist/index.mjs",
@@ -99,6 +99,76 @@
     "./codec": {
       "runtime": "./dist/codec.mjs",
       "types": "./types/codec.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./codec/animation": {
+      "runtime": "./dist/codec-animation.mjs",
+      "types": "./types/codec-animation.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./codec/capture": {
+      "runtime": "./dist/codec-capture.mjs",
+      "types": "./types/codec-capture.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./codec/capture-complete": {
+      "runtime": "./dist/codec-capture-complete.mjs",
+      "types": "./types/codec-capture-complete.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./codec/decode": {
+      "runtime": "./dist/codec-decode.mjs",
+      "types": "./types/codec-decode.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./codec/format": {
+      "runtime": "./dist/codec-format.mjs",
+      "types": "./types/codec-format.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./codec/jpeg": {
+      "runtime": "./dist/codec-jpeg.mjs",
+      "types": "./types/codec-jpeg.d.mts",
+      "values": [
+        "createCodec"
+      ],
+      "declaredValues": [
+        "createCodec"
+      ]
+    },
+    "./codec/upload": {
+      "runtime": "./dist/codec-upload.mjs",
+      "types": "./types/codec-upload.d.mts",
       "values": [
         "createCodec"
       ],
@@ -237,13 +307,22 @@
       "types": "./types/resumable.d.mts",
       "values": [
         "advance",
+        "configureWasm",
         "finish",
-        "start"
+        "start",
+        "workerAdmission"
       ],
       "declaredValues": [
         "advance",
+        "configureWasm",
         "finish",
-        "start"
+        "start",
+        "workerAdmission"
+      ],
+      "conditions": [
+        "edge-light",
+        "node",
+        "workerd"
       ]
     },
     "./serve": {
@@ -545,6 +624,13 @@
     "types/animation.d.mts",
     "types/capture-complete.d.mts",
     "types/capture.d.mts",
+    "types/codec-animation.d.mts",
+    "types/codec-capture-complete.d.mts",
+    "types/codec-capture.d.mts",
+    "types/codec-decode.d.mts",
+    "types/codec-format.d.mts",
+    "types/codec-jpeg.d.mts",
+    "types/codec-upload.d.mts",
     "types/codec.d.mts",
     "types/codec/animation-atlas.d.mts",
     "types/codec/animation.d.mts",
@@ -582,6 +668,15 @@
     "types/wasm.d.mts"
   ],
   "typeOptions": {
+    "examples/emdash/index.d.ts#HostLimits": [
+      "cpuLimitMs",
+      "emdash",
+      "hooks",
+      "memoryLimitBytes",
+      "name",
+      "plugins",
+      "storage"
+    ],
     "examples/svg-jxl.d.ts#SvgJxlOptions": [
       "cache",
       "codec",
@@ -867,6 +962,15 @@
       "split",
       "splitToken"
     ],
+    "types/format.d.mts#ByteDescription": [
+      "alphaPremultiplied",
+      "bitDepth",
+      "colorSpace",
+      "icc",
+      "intensityTarget",
+      "sampleFormat",
+      "transferFunction"
+    ],
     "types/format.d.mts#FormatOptions": [
       "effort",
       "fidelity"
@@ -915,15 +1019,23 @@
     ],
     "types/resumable.d.mts#AdvanceOptions": [
       "budget",
-      "ms"
+      "ms",
+      "reads",
+      "verify"
     ],
     "types/resumable.d.mts#FinishOptions": [
       "input",
       "signal"
     ],
+    "types/resumable.d.mts#ResumableVerificationOptions": [
+      "maxPixels",
+      "parts",
+      "result"
+    ],
     "types/resumable.d.mts#StartOptions": [
       "input",
-      "options"
+      "options",
+      "verify"
     ],
     "types/serve.d.mts#ServeOptions": [
       "cacheControl",

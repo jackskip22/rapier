@@ -22,7 +22,7 @@ function histogramKey(tokens, length, raw) {
 }
 
 export class TokenCounts {
-  constructor(contexts) { this.contexts = contexts; this.small = new Uint32Array(contexts * 64); this.large = Array.from({length: contexts}, () => null); this.totals = new Float64Array(contexts); }
+  constructor(contexts) { this.contexts = contexts; this.small = new Uint32Array(contexts * 64); this.large = new Array(contexts).fill(null); this.totals = new Float64Array(contexts); }
   add(ctx, value) {
     this.totals[ctx]++;
     if (value < 64) { this.small[ctx * 64 + value]++; return; }
@@ -122,7 +122,7 @@ export function tokenCountsData({contexts, small, totals, large}) {
 export function tokenCountsFrom({contexts, at, values, totals, large: list, gaps = false}) {
   const small = new Uint32Array(contexts * 64);
   for (let j = 0, i = 0; j < at.length; j++) { i = gaps ? i + at[j] : at[j]; small[i] = values[j]; }
-  const large = Array.from({length: contexts}, () => null);
+  const large = new Array(contexts).fill(null);
   for (let i = 0; i < list.length;) {
     const map = large[list[i]] = new Map();
     for (let n = list[i + 1], j = i + 2; n > 0; n--, j += 2) map.set(list[j], list[j + 1]);

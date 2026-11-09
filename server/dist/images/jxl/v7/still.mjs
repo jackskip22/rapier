@@ -26,6 +26,7 @@ import {needsBands} from './band-size.mjs';
 import {recodeBand} from './band-recode.mjs';
 import {ordinaryStillReader} from './ordinary-still-policy.mjs';
 import {lowPhotoSteps, lowPhotoRoute} from './low-photo.mjs';
+import {textFloorEligible, textFloorSteps} from '../text-floor.mjs';
 import {settledFacts, lowWebpEligible} from './low-webp-quality.mjs';
 import {settleScans} from './settle-scans.mjs';
 import {stillPhotoTargetSteps} from './still-photo-target.mjs';
@@ -171,9 +172,10 @@ async function encodePicture({data, width, height, ...source}, codec, hooks, hel
     exact: () => effortJob(data, width, height, {...settings, quality: 100, effort: 4}, false,
       undefined, undefined, undefined, DEEP, HDR)});
   const low = target ?? lowPhotoSteps(data, width, height, settings, await journaled(hooks.journal, 'low-route', () => lowPhotoRoute(data, width, height, settings, settledFacts.get(data))));
-  const steps = low ?? (settings.effort === 1 ? coreSteps(data, width, height, settings)
+  const coded = low ?? (settings.effort === 1 ? coreSteps(data, width, height, settings)
     : effortJob(data, width, height, settings, !!gpu, undefined, lossy && settings.effort >= 8 ? searchV6 : undefined,
         lossy && settings.effort >= 6 ? photoAnsSteps : undefined, DEEP, HDR));
+  const steps = lossy && !target && textFloorEligible(data, width, height, settings.colorSpace) ? textFloorSteps(coded, data, width, height, settings.colorSpace) : coded;
   return helpers && (low || settings.effort !== 1) ? driveSteps(steps, hooks, gpu, width * height, helpers, low ? null : parallelJob) : drain(steps, hooks, gpu);
 }
 

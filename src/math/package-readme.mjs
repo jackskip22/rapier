@@ -30,7 +30,7 @@ Try it in [Rapier](https://rapier.website): type \\$x^2\\$.
 
 Types ship with every entry. The classic file is the one to copy or inline: ${resources.bytes.toLocaleString('en-US')} bytes, ${resources.gzipBytes.toLocaleString('en-US')} gzipped, font included. The ES modules import \`src/math/\`, so serve or bundle the whole package rather than copying \`dist/index.mjs\` alone.
 
-[API](docs/api.md) · [MathML and accessibility](docs/semantics.md) · [Examples](examples/README.md) · [Font](docs/font-source.md) · [Changes](CHANGELOG.md)
+[API](docs/api.md) · [MathML and accessibility](docs/semantics.md) · [Examples](examples/README.md) · [Font](docs/font-source.md) · [Changes](https://github.com/jackskip22/rapier-math/releases)
 
 ## Build
 

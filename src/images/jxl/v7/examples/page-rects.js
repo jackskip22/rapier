@@ -1,6 +1,7 @@
 
-export function measure(element, { edges = false } = {}) {
-  return { box: elementBox(element), text: textParts(element), photos: photoParts(element), ...(edges && { edges: edgeParts(element) }) };
+export function measure(element, { edges = false, keep } = {}) {
+  const clip = clipper(element, keep);
+  return { box: elementBox(element), text: textParts(element, clip), photos: photoParts(element, clip), ...(edges && { edges: edgeParts(element, clip) }) };
 }
 
 export function pageRects(page, canvas, { area = {}, edges = false } = {}) {
@@ -26,13 +27,14 @@ function elementBox(element) {
   return { left: r.left, top: r.top, width: r.width, height: r.height };
 }
 
-const FIELD = /^(TEXTAREA|SELECT)$/, INPUT_TEXT = /^(text|search|email|url|tel|password|number|date|datetime-local|month|week|time|button|submit|reset|file)$/;
+const FIELD = /^(TEXTAREA|SELECT|METER|PROGRESS)$/, INPUT_TEXT = /^(text|search|email|url|tel|password|number|date|datetime-local|month|week|time|button|submit|reset|file|checkbox|radio|range|color)$/;
 const REPLACED = /^(IMG|VIDEO|CANVAS|IFRAME|EMBED|OBJECT|AUDIO|PICTURE|SOURCE|INPUT|TEXTAREA|SELECT|BR|HR)$/;
 function pseudoHosts() {
   const hosts = new Set();
   const scan = rules => { for (const rule of rules) {
     if (rule.cssRules) scan(rule.cssRules);
     if (rule.styleSheet) scan(rule.styleSheet.cssRules);
+    if (/::?first-letter/.test(rule.selectorText ?? '')) hosts.letters = true;
     if (!/::?(before|after)/.test(rule.selectorText ?? '') || !rule.style?.content) continue;
     try { for (const el of document.querySelectorAll(rule.selectorText.replace(/::?(before|after)/g, '') || '*')) hosts.add(el); } catch { hosts.add(null); }
   } };
@@ -40,7 +42,49 @@ function pseudoHosts() {
   return hosts.has(null) ? null : hosts;
 }
 
-function textParts(root) {
+const fixedBlock = s => s.transform !== 'none' || s.perspective !== 'none' || (s.filter ?? 'none') !== 'none' ||
+  (s.backdropFilter ?? 'none') !== 'none' || /paint|layout|strict|content/.test(s.contain ?? '') || /transform|perspective|filter/.test(s.willChange ?? '');
+const holds = (s, mode) => mode === 'static' || (mode === 'absolute' ? s.position !== 'static' || fixedBlock(s) : fixedBlock(s));
+const parentOf = el => el.parentElement ?? el.getRootNode?.().host ?? null;
+
+function clipper(root, keep) {
+  const up = el => el === root ? null : parentOf(el);
+  const dropped = new Map(), gone = el => {
+    if (!el || el === root) return false;
+    if (!dropped.has(el)) {
+      const parent = el.parentElement;
+      dropped.set(el, keep && !keep.has(el) || !!(parent?.shadowRoot && !el.assignedSlot) || gone(up(el)));
+    }
+    return dropped.get(el);
+  };
+  const meet = (a, b) => !a ? b : !b ? a : { left: Math.max(a.left, b.left), top: Math.max(a.top, b.top), right: Math.min(a.right, b.right), bottom: Math.min(a.bottom, b.bottom) };
+  const memo = { static: new Map(), absolute: new Map(), fixed: new Map() }, inner = new Map();
+  const child = (el, mode) => {
+    if (!el) return null;
+    const m = memo[mode];
+    if (!m.has(el)) m.set(el, holds(getComputedStyle(el), mode) ? within(el) : child(up(el), mode));
+    return m.get(el);
+  };
+  const within = el => {
+    if (!inner.has(el)) {
+      const s = getComputedStyle(el), paint = /paint|strict|content/.test(s.contain ?? ''), x = paint || (s.overflowX ?? 'visible') !== 'visible', y = paint || (s.overflowY ?? 'visible') !== 'visible';
+      const b = (x || y) && contentBox(el, false);
+      const own = b ? { left: x ? b.left : -Infinity, top: y ? b.top : -Infinity, right: x ? b.right : Infinity, bottom: y ? b.bottom : Infinity } : null;
+      inner.set(el, meet(own, of(el)));
+    }
+    return inner.get(el);
+  };
+  const of = el => child(up(el), mode(getComputedStyle(el).position));
+  const mode = p => p === 'absolute' ? 'absolute' : p === 'fixed' ? 'fixed' : 'static';
+  const cut = (r, c) => {
+    if (!c) return r;
+    const o = meet(r, c);
+    return o.right > o.left && o.bottom > o.top ? { ...r, left: o.left, top: o.top, right: o.right, bottom: o.bottom } : null;
+  };
+  return { of, in: within, child, cut, gone };
+}
+
+function textParts(root, clip = clipper(root)) {
   const parts = [], range = document.createRange(), hosts = pseudoHosts();
   const shadows = new Map(), filterReach = el => {
     if (!el) return 0;
@@ -55,6 +99,21 @@ function textParts(root) {
     }
     return r;
   };
+  const letters = new Map(), firstLetter = (el, style) => {
+    if (hosts && !hosts.letters && el.getRootNode() === document) return null;
+    if (!letters.has(el)) {
+      const f = getComputedStyle(el, '::first-letter');
+      let reach = 0;
+      if (f.textShadow !== 'none') for (const shadow of f.textShadow.split(/,(?![^(]*\))/)) {
+        const [x = 0, y = 0, blur = 0] = (shadow.replace(/rgba?\([^)]*\)|#\w+|[a-z]+\([^)]*\)/gi, '').match(/-?[\d.]+px/g) ?? []).map(parseFloat);
+        reach = Math.max(reach, 1 + Math.max(Math.abs(x), Math.abs(y)) + 1.5 * blur);
+      }
+      const styled = f.color !== style.color || f.textShadow !== style.textShadow || f.webkitTextStrokeWidth !== style.webkitTextStrokeWidth;
+      const size = parseFloat(f.fontSize) || 0, em = parseFloat(style.fontSize) || 0;
+      letters.set(el, styled || size > em ? { styled, size: size > em ? size : 0, reach: styled ? reach + (parseFloat(f.webkitTextStrokeWidth) || 0) / 2 : 0 } : null);
+    }
+    return letters.get(el);
+  };
   const reach = new Map(), grow = el => {
     let g = reach.get(el);
     if (g === undefined) {
@@ -65,6 +124,8 @@ function textParts(root) {
         const [x = 0, y = 0, blur = 0] = (shadow.replace(/rgba?\([^)]*\)|#\w+|[a-z]+\([^)]*\)/gi, '').match(/-?[\d.]+px/g) ?? []).map(parseFloat);
         g = Math.max(g, 1 + Math.max(Math.abs(x), Math.abs(y)) + 1.5 * blur);
       }
+      const first = firstLetter(el, style);
+      if (first) g = Math.max(g, first.reach);
       reach.set(el, g += filterReach(el));
     }
     return g;
@@ -73,13 +134,17 @@ function textParts(root) {
     let v = plain.get(el);
     if (v === undefined) {
       const style = getComputedStyle(el);
-      plain.set(el, v = style.textShadow === 'none' && !filterReach(el) && !parseFloat(style.webkitTextStrokeWidth) && style.webkitTextFillColor === style.color
+      plain.set(el, v = !firstLetter(el, style)?.styled && style.textShadow === 'none' && !filterReach(el) && !parseFloat(style.webkitTextStrokeWidth) && style.webkitTextFillColor === style.color
         && style.backgroundClip !== 'text' && style.webkitBackgroundClip !== 'text');
     }
     return v;
   };
-  const add = (r, el, text) => parts.push({ r: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, grow: el ? grow(el) : 1,
-    solidText: !!(text && el && solid(el) && !/\p{Extended_Pictographic}/u.test(text)) });
+  const add = (r, el, text, c = el && clip.of(el)) => {
+    const g = el ? grow(el) : 1, solidText = !!(text && el && solid(el) && !/\p{Extended_Pictographic}/u.test(text));
+    if (!c) { parts.push({ r: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, grow: g, solidText }); return; }
+    const shown = clip.cut({ left: r.left - g, top: r.top - g, right: r.right + g, bottom: r.bottom + g }, c);
+    if (shown) parts.push({ r: shown, grow: 0, solidText });
+  };
   const seen = new Map(), shown = new Map(), drawn = el => {
     let v = seen.get(el);
     if (v === undefined) seen.set(el, v = getComputedStyle(el).display === 'contents' ? getComputedStyle(el).visibility === 'visible' && boxed(el)
@@ -92,19 +157,22 @@ function textParts(root) {
     if (v === undefined) shown.set(up, v = getComputedStyle(up).display === 'contents' ? boxed(up) : !up.checkVisibility || up.checkVisibility({ opacityProperty: true }));
     return v;
   };
-  const text = (el, pseudo) => (!hosts || hosts.has(el) || el.tagName === 'Q' || el.getRootNode() !== document) && /"[^"]*[^"\s][^"]*"|counters?\(|attr\(|(open|close)-quote/.test(getComputedStyle(el, pseudo).content);
+  const text = (el, pseudo) => (!hosts || hosts.has(el) || el.tagName === 'Q' || el.shadowRoot || el.getRootNode() !== document) && /"[^"]*[^"\s][^"]*"|counters?\(|attr\(|(open|close)-quote/.test(getComputedStyle(el, pseudo).content);
   const visit = el => {
     if (el.namespaceURI === 'http://www.w3.org/2000/svg') {
-      if (!drawn(el) || /^(svg|g|defs)$/.test(el.tagName) || el.closest('defs, mask, clipPath, pattern, symbol')) return;
+      if (clip.gone(el) || !drawn(el) || /^(svg|g|defs)$/.test(el.tagName) || el.closest('defs, mask, clipPath, pattern, symbol')) return;
       const style = getComputedStyle(el), r = el.getBoundingClientRect();
       const inked = style.fill === style.color && style.fill !== 'none' || style.stroke === style.color && style.stroke !== 'none';
       if (/^(text|tspan|textPath)$/.test(el.tagName) || inked && r.width <= 64 && r.height <= 64) add(r, el);
       return;
     }
     if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml') return;
+    if (clip.gone(el)) return;
     if (!drawn(el)) { if (el.shadowRoot) walk(el.shadowRoot); return; }
-    if (FIELD.test(el.tagName) || el.tagName === 'INPUT' && INPUT_TEXT.test(el.type)) add(el.getBoundingClientRect(), el);
-    else if (el.tagName === 'IFRAME') { if (el.contentDocument) add(el.getBoundingClientRect(), null); }
+    const letter = firstLetter(el, getComputedStyle(el));
+    if (letter?.size) { const c = contentBox(el, true); add({ left: c.left, top: c.top, right: c.left + letter.size, bottom: c.top + letter.size * 1.3 }, el, '', clip.in(el)); }
+    if (FIELD.test(el.tagName) || el.tagName === 'INPUT' && INPUT_TEXT.test(el.type) || el.tagName === 'AUDIO' && el.controls) add(el.getBoundingClientRect(), el);
+    else if (el.tagName === 'IFRAME') { if (el.contentDocument) add(el.getBoundingClientRect(), null, '', clip.of(el)); }
     else if (!REPLACED.test(el.tagName)) {
       for (const p of [null, '::before', '::after']) {
         const cs = getComputedStyle(el, p);
@@ -112,17 +180,21 @@ function textParts(root) {
         const masked = (cs.maskImage ?? 'none') !== 'none' || (cs.webkitMaskImage ?? 'none') !== 'none';
         if (cs.backgroundColor !== cs.color || cs.color === 'rgba(0, 0, 0, 0)' || !(masked || p)) continue;
         const r = el.getBoundingClientRect(), pw = parseFloat(cs.width) || 0, ph = parseFloat(cs.height) || 0;
-        if ((p ? pw * ph : r.width * r.height) <= 4096) add(p ? {left: r.left - pw, top: r.top - ph, right: r.right + pw, bottom: r.bottom + ph} : r, el);
+        if ((p ? pw * ph : r.width * r.height) <= 4096) add(p ? {left: r.left - pw, top: r.top - ph, right: r.right + pw, bottom: r.bottom + ph} : r, el, '', p ? clip.in(el) : clip.of(el));
       }
       const pseudo = ['::before', '::after'].filter(p => text(el, p));
       if (pseudo.length) {
         const r = el.getBoundingClientRect(), em = Math.max(...pseudo.map(p => parseFloat(getComputedStyle(el, p).fontSize) || 0));
-        add(r.height < em ? { left: r.left - em / 2, right: r.right + em / 2, top: r.top - em, bottom: r.bottom + em } : r, el);
+        add(r.height < em ? { left: r.left - em / 2, right: r.right + em / 2, top: r.top - em, bottom: r.bottom + em } : r, el, '', clip.in(el));
+        for (const p of pseudo) { const b = placed(el, p); if (b) add(b, el, '', clip.child(el, getComputedStyle(el, p).position)); }
       }
-      const style = /^(LI|SUMMARY)$/.test(el.tagName) && getComputedStyle(el);
-      if (style && style.display === 'list-item' && (style.listStyleType !== 'none' || style.listStyleImage !== 'none')) {
+      const style = getComputedStyle(el);
+      if (/list-item/.test(style.display) && (style.listStyleType !== 'none' || style.listStyleImage !== 'none' || !/^(normal|none)$/.test(getComputedStyle(el, '::marker').content))) {
         const box = el.getBoundingClientRect(), em = parseFloat(style.fontSize), line = parseFloat(style.lineHeight) || em * 1.5;
-        add({left: box.left - 3 * em, top: box.top, right: box.left + 3 * em, bottom: box.top + line}, el);
+        const vertical = /^vertical|^sideways/.test(style.writingMode), rtl = style.direction === 'rtl';
+        add(!vertical ? { left: rtl ? box.right - 3 * em : box.left - 3 * em, top: box.top, right: rtl ? box.right + 3 * em : box.left + 3 * em, bottom: box.top + line }
+          : { left: /-rl$/.test(style.writingMode) ? box.right - line : box.left, right: /-rl$/.test(style.writingMode) ? box.right : box.left + line,
+            top: (rtl ? box.bottom : box.top) - 3 * em, bottom: (rtl ? box.bottom : box.top) + 3 * em }, el);
       }
     }
     if (el.shadowRoot) walk(el.shadowRoot);
@@ -131,9 +203,9 @@ function textParts(root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       if (node.nodeType === Node.ELEMENT_NODE) { visit(node); continue; }
-      if (!node.data.trim() || node.parentElement && !drawn(node.parentElement)) continue;
+      if (!node.data.trim() || node.parentElement && (clip.gone(node.parentElement) || !drawn(node.parentElement))) continue;
       range.selectNodeContents(node);
-      for (const r of range.getClientRects()) add(r, node.parentElement, node.data);
+      for (const r of range.getClientRects()) add(r, node.parentElement, node.data, node.parentElement && clip.in(node.parentElement));
     }
   };
   visit(root); walk(root);
@@ -146,8 +218,29 @@ function contentBox(el, padding) {
   return { left: r.left + inset('Left'), top: r.top + inset('Top'), right: r.right - inset('Right'), bottom: r.bottom - inset('Bottom') };
 }
 
-function edgeParts(root) {
-  const parts = [], all = node => [...node.querySelectorAll('*')].flatMap(el => el.shadowRoot ? [el, ...all(el.shadowRoot)] : [el]);
+function placed(el, pseudo) {
+  const s = getComputedStyle(el, pseudo);
+  if (s.position !== 'absolute' && s.position !== 'fixed') return null;
+  let block = el;
+  while (block && !holds(getComputedStyle(block), s.position)) block = parentOf(block);
+  if (!block && s.position !== 'fixed') return null;
+  let c = { left: 0, top: 0, right: innerWidth, bottom: innerHeight }, kx = 1, ky = 1;
+  if (block) {
+    const r = block.getBoundingClientRect(), bs = getComputedStyle(block), w = block.offsetWidth, h = block.offsetHeight;
+    kx = w ? r.width / w : 1; ky = h ? r.height / h : 1;
+    const b = side => parseFloat(bs[`border${side}Width`]) || 0;
+    c = { left: r.left + b('Left') * kx, top: r.top + b('Top') * ky, right: r.right - b('Right') * kx, bottom: r.bottom - b('Bottom') * ky };
+  }
+  const px = v => parseFloat(v), w = (px(s.width) || 0) * kx, h = (px(s.height) || 0) * ky;
+  const em = parseFloat(s.fontSize) || 0, line = parseFloat(s.lineHeight) || em * 1.5;
+  const left = !isNaN(px(s.left)) ? c.left + px(s.left) * kx : !isNaN(px(s.right)) ? c.right - px(s.right) * kx - w : NaN;
+  const top = !isNaN(px(s.top)) ? c.top + px(s.top) * ky : !isNaN(px(s.bottom)) ? c.bottom - px(s.bottom) * ky - h : NaN;
+  if (isNaN(left) || isNaN(top)) return null;
+  return { left, top, right: left + Math.max(w, em * kx), bottom: top + Math.max(h, line * ky) };
+}
+
+function edgeParts(root, clip = clipper(root)) {
+  const found = [], all = node => [...node.querySelectorAll('*')].flatMap(el => el.shadowRoot ? [el, ...all(el.shadowRoot)] : [el]);
   const turned = new Map(), transformed = el => {
     if (!el || el === root.parentElement) return false;
     let v = turned.get(el);
@@ -155,8 +248,8 @@ function edgeParts(root) {
     return v;
   };
   for (const el of [root, ...(root.shadowRoot ? all(root.shadowRoot) : []), ...all(root)]) {
-    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
-    const s = getComputedStyle(el);
+    if (clip.gone(el) || el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    const s = getComputedStyle(el), c = clip.of(el), parts = { push: p => { const shown = clip.cut(p, c); if (shown) found.push(shown); } };
     if (el.namespaceURI === 'http://www.w3.org/2000/svg') {
       const w = parseFloat(s.strokeWidth) || 0;
       if (/^(path|line|polyline|polygon|rect|circle|ellipse)$/.test(el.localName) && s.stroke && s.stroke !== 'none' && w > 0) {
@@ -183,35 +276,24 @@ function edgeParts(root) {
     if (ow) strips(r.left - oo, r.top - oo, r.right + oo, r.bottom + oo, ow, ow, ow, ow);
     const radius = Math.max(...['TopLeft', 'TopRight', 'BottomLeft', 'BottomRight'].map(c => parseFloat(s[`border${c}Radius`]) || 0));
     if (radius && (t || rt || b || l)) {
-      const c = radius + Math.max(t, rt, b, l);
-      for (const [x, y] of [[r.left, r.top], [r.right - c, r.top], [r.left, r.bottom - c], [r.right - c, r.bottom - c]]) parts.push({ left: x, top: y, right: x + c, bottom: y + c });
+      const k = radius + Math.max(t, rt, b, l);
+      for (const [x, y] of [[r.left, r.top], [r.right - k, r.top], [r.left, r.bottom - k], [r.right - k, r.bottom - k]]) parts.push({ left: x, top: y, right: x + k, bottom: y + k });
     }
   }
-  return parts;
+  return found;
 }
 
-function photoParts(root) {
-  const clips = new Map(), clipOf = el => {
-    if (clips.has(el)) return clips.get(el);
-    const up = el === root ? null : el.parentElement ?? el.getRootNode?.().host ?? null;
-    let c = up ? clipOf(up) : null;
-    if (up) {
-      const s = getComputedStyle(up);
-      if ((s.overflowX ?? 'visible') !== 'visible' || (s.overflowY ?? 'visible') !== 'visible') {
-        const b = contentBox(up, false);
-        c = c ? { left: Math.max(c.left, b.left), top: Math.max(c.top, b.top), right: Math.min(c.right, b.right), bottom: Math.min(c.bottom, b.bottom) } : b;
-      }
-    }
-    clips.set(el, c);
-    return c;
-  };
+function photoParts(root, clip = clipper(root)) {
   const parts = [], all = node => [...node.querySelectorAll('*')].flatMap(el => el.shadowRoot ? [el, ...all(el.shadowRoot)] : [el]);
+  const pictured = el => /^(IMG|VIDEO|CANVAS)$/.test(el.tagName) || el.namespaceURI === 'http://www.w3.org/2000/svg' && el.localName === 'image';
   for (const el of [root, ...(root.shadowRoot ? all(root.shadowRoot) : []), ...all(root)]) {
-    if (!/^(IMG|VIDEO|CANVAS)$/.test(el.tagName) && !getComputedStyle(el).backgroundImage.includes('url(')) continue;
-    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
-    const b = contentBox(el, /^(IMG|VIDEO|CANVAS)$/.test(el.tagName)), c = clipOf(el);
-    const r = c ? { left: Math.max(b.left, c.left), top: Math.max(b.top, c.top), right: Math.min(b.right, c.right), bottom: Math.min(b.bottom, c.bottom) } : b;
-    if (r.right > r.left && r.bottom > r.top) parts.push(r);
+    if (!pictured(el)) {
+      const s = getComputedStyle(el);
+      if (!s.backgroundImage.includes('url(') || s.backgroundClip === 'text' || s.webkitBackgroundClip === 'text') continue;
+    }
+    if (clip.gone(el) || el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    const r = clip.cut(contentBox(el, pictured(el)), clip.of(el));
+    if (r) parts.push(r);
   }
   return parts;
 }

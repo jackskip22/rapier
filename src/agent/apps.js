@@ -2122,9 +2122,21 @@
     } catch (_) { return false; }
   }
 
-  async function hostDownload(fileId, limit, signal, seen) {
-    const link = await window.openai.getFileDownloadUrl({fileId});
-    const url = new URL(link?.downloadUrl);
+  async function hostDownload(fileId, limit, signal, seen, {fallback = '', alive} = {}) {
+    let link = '';
+    if (typeof window.openai?.getFileDownloadUrl === 'function') {
+      try {
+        link = (await new Promise((resolve, reject) => {
+          signal?.throwIfAborted();
+          signal?.addEventListener('abort', () => reject(signal.reason), {once: true});
+          Promise.resolve(window.openai.getFileDownloadUrl({fileId})).then(resolve, reject);
+        }))?.downloadUrl;
+      } catch (error) { if (signal?.aborted || !fallback) throw error; }
+    }
+    if (typeof link !== 'string' || !link) link = fallback;
+    if (!link) throw new Error('FILE_UNAVAILABLE');
+    alive?.();
+    const url = new URL(link);
     seen?.(url.origin);
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('FILE_INVALID');
     const allowedOrigins = Array.isArray(globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS) ? globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS : [];
@@ -2133,11 +2145,13 @@
     const response = await fetch(url.href, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal});
     if (!response.ok || !response.body) throw new Error('FILE_UNAVAILABLE');
     if (Number(response.headers.get('content-length')) > limit) throw new Error('FILE_TOO_LARGE');
+    alive?.();
     const reader = response.body.getReader(), parts = [];
     let bytes = 0;
     for (;;) {
       const row = await reader.read();
       if (row.done) break;
+      alive?.();
       bytes += row.value.byteLength;
       if (bytes > limit) { await reader.cancel(); throw new Error('FILE_TOO_LARGE'); }
       parts.push(row.value);
@@ -2186,42 +2200,79 @@
   }
 
   const CONVERT_MODES = Object.freeze({lossless: 'lossless', high: 'high', medium: 'smaller'});
-  const CHAT_PICTURE_BYTES = 256 * 1024 * 1024, CHAT_PICTURE_MS = 120000;
+  const CHAT_PICTURE_BYTES = 256 * 1024 * 1024, CHAT_PICTURE_STALL_MS = 20000, CHAT_PICTURE_MS = 300000;
   const PICTURE_TYPES = Object.freeze({'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/avif': '.avif', 'image/jxl': '.jxl', 'image/heic': '.heic'});
-  const chatPictures = new Map();
+  const chatPictures = new Map(), chatLinks = new Map();
   let converterRun = 0;
+  function rememberChatLinks(args) {
+    for (const file of Array.isArray(args?.files) ? args.files : [])
+      if (object(file) && typeof file.file_id === 'string' && file.file_id && typeof file.download_url === 'string' && file.download_url) chatLinks.set(file.file_id, file.download_url);
+  }
+  function tellAssistant(text) {
+    if (initialized && modelAvailable && !pairedId) void request('ui/update-model-context', {content: [{type: 'text', text, _meta: {'openai/title': 'Rapier converter'}}]}, 5000).catch(() => {});
+    const api = window.openai;
+    if (typeof api?.setWidgetState !== 'function') return;
+    const state = object(api.widgetState) ? api.widgetState : {};
+    try { void Promise.resolve(api.setWidgetState({...state, modelContent: text})).catch(() => {}); } catch (_) {}
+  }
+  const megabytes = bytes => (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0) + ' MB';
   async function openConverter(data) {
     if (typeof _rapierPartAvailable !== 'function' || !_rapierPartAvailable('jxl') || !await _rapierPartReady('jxl') || closed) return;
     const run = ++converterRun, view = _rapierJxlPart;
     view.open();
     if (!view.state.open) return;
     view.configure({mode: CONVERT_MODES[data.quality], effort: data.effort});
-    const chat = (Array.isArray(data.files) ? data.files : []).filter(file => object(file) && typeof file.file_id === 'string' && file.file_id).slice(0, 32);
-    if (!chat.length) return;
-    if (typeof window.openai?.getFileDownloadUrl !== 'function') { host.notify('Choose the pictures here: this app does not hand the chat\u2019s pictures over.', 'info'); return; }
-    const missed = [], refused = new Set();
+    rememberChatLinks(window.openai?.toolInput);
+    const passed = Array.isArray(data.files) ? data.files.filter(object) : [];
+    const chat = passed.filter(file => typeof file.file_id === 'string' && file.file_id).slice(0, 32);
+    const unpassed = Number.isInteger(data.unpassed) && data.unpassed > 0 ? data.unpassed : 0;
+    const got = [], missed = [];
+    view.settled(rows => {
+      if (run !== converterRun) return;
+      const told = rows.map(row => row.state === 'done' ? row.name + ' converted, ' + megabytes(row.before) + ' to ' + megabytes(row.size) :
+        row.name + ': ' + (row.say || 'not converted'));
+      tellAssistant('Rapier’s converter on the person’s device: ' + told.join('; ') + '.' + (missed.length ? ' ' + missedWords(missed, true) : '') +
+        (rows.some(row => row.state === 'done') ? ' The person saves the results from the converter.' : ''));
+    });
+    if (!chat.length && !unpassed) return;
     for (const file of chat) {
       if (run !== converterRun || closed || !view.state.open) return;
       const known = chatPictures.get(file.file_id);
       if (known && view.has(known)) continue;
-      const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), CHAT_PICTURE_MS);
-      let origin = '';
+      const type = typeof file.mime_type === 'string' && PICTURE_TYPES[file.mime_type] ? file.mime_type : '';
+      const named = typeof file.name === 'string' && file.name ? file.name : 'picture';
+      const name = /\.[a-z0-9]{2,5}$/i.test(named) || !type ? named : named + PICTURE_TYPES[type];
+      const controller = new AbortController(), stop = () => controller.abort(new Error('FILE_TIMEOUT'));
+      let stall = setTimeout(stop, CHAT_PICTURE_STALL_MS), origin = '';
+      const whole = setTimeout(stop, CHAT_PICTURE_MS);
+      view.say('Getting ' + name + ' from the chat…');
       try {
-        const type = typeof file.mime_type === 'string' && PICTURE_TYPES[file.mime_type] ? file.mime_type : '';
-        const named = typeof file.name === 'string' && file.name ? file.name : 'picture';
-        const name = /\.[a-z0-9]{2,5}$/i.test(named) || !type ? named : named + PICTURE_TYPES[type];
-        const picture = new File(await hostDownload(file.file_id, CHAT_PICTURE_BYTES, controller.signal, seen => { origin = seen; }), name, type ? {type} : {});
+        const parts = await hostDownload(file.file_id, CHAT_PICTURE_BYTES, controller.signal, seen => { origin = seen; },
+          {fallback: chatLinks.get(file.file_id) || '', alive: () => { clearTimeout(stall); stall = setTimeout(stop, CHAT_PICTURE_STALL_MS); }});
         if (run !== converterRun || closed || !view.state.open) return;
+        const picture = new File(parts, name, type ? {type} : {});
         chatPictures.set(file.file_id, picture);
+        got.push(name);
         view.add([picture]);
       } catch (error) {
         chatPictures.delete(file.file_id);
-        if (error?.message === 'FILE_ORIGIN_REFUSED') { console.warn('Rapier: this deployment does not allow chat files from', origin); refused.add(new URL(origin).host); }
-        missed.push(typeof file.name === 'string' && file.name ? file.name : 'a picture');
-      } finally { clearTimeout(timeout); }
+        const refused = error?.message === 'FILE_ORIGIN_REFUSED';
+        if (refused) console.warn('Rapier: this deployment does not allow chat files from', origin);
+        missed.push({name, host: origin ? new URL(origin).host : '', refused, late: error?.message === 'FILE_TIMEOUT'});
+      } finally { clearTimeout(stall); clearTimeout(whole); }
     }
-    if (missed.length && !closed) host.notify('Couldn\u2019t open ' + (missed.length === 1 ? missed[0] : missed.length + ' pictures') + ' from the chat' +
-      (refused.size ? ': ' + [...refused].join(', ') + ' isn\u2019t allowed yet' : '') + '. Choose ' + (missed.length === 1 ? 'it' : 'them') + ' here instead.', 'error');
+    if (run !== converterRun || closed || !view.state.open) return;
+    for (let k = 0; k < unpassed; k++) missed.push({name: '', host: '', refused: false, late: false});
+    view.say(missed.length ? missedWords(missed) : '');
+    tellAssistant('Rapier’s converter is open on the person’s device. ' + (got.length ? 'It got ' + got.join(', ') + ' from the chat; ' + (got.length === 1 ? 'it converts' : 'they convert') + ' there now. ' : '') +
+      (missed.length ? missedWords(missed, true) : ''));
+  }
+  function missedWords(missed, assistant = false) {
+    const hosts = [...new Set(missed.filter(each => each.host).map(each => each.host + (each.refused ? ' (not allowed yet)' : each.late ? ' (no answer)' : '')))];
+    const one = missed.length === 1, what = one ? missed[0].name || 'the picture' : missed.length + ' pictures';
+    if (assistant) return 'It could not get ' + what + (hosts.length ? ' from ' + hosts.join(', ') : ': the chat gave no file to read') +
+      (missed.some(each => each.refused) ? '; this deployment’s FILE_DOWNLOAD_ORIGINS does not list that host' : '') + '. The person can choose ' + (one ? 'it' : 'them') + ' in the converter.';
+    return 'Couldn’t get ' + what + ' from ' + (hosts.length ? hosts.join(', ') : 'the chat') + '. Choose ' + (one ? 'it' : 'them') + ' here.';
   }
 
   function retireStrandedDraft(stranded) {
@@ -2641,6 +2692,7 @@
         typeof value.params?.uri === 'string' && value.params.uri === activeFile()?.file.resourceUri) void refreshHostFile();
     else if (value.method === 'ui/notifications/tool-result') { finishHostWork(); void receive(value.params).catch(failed); }
     else if (value.method === 'ui/notifications/tool-input') {
+      rememberChatLinks(value.params?.arguments);
       if (!token && validToken(value.params?.arguments?.document)) token = value.params.arguments.document;
       beginHostWork(value.params);
       schedule(0);

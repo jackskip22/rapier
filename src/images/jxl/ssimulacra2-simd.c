@@ -42,7 +42,7 @@
 #include "metric-float.h"
 #include <wasm_simd128.h>
 // S2_FUSED builds the same arithmetic with relaxed SIMD's madd, a true fused multiply-add where the engine lowers it to
-// one (x86 FMA3, ARM64): exactly metric_fma. Every madd is inside s2MetricScale, which first checks a madd whose
+// one (x86 FMA3, ARM64): exactly metric_fma. Every madd is inside s2MetricScale or s2MetricBand, each of which first checks a madd whose
 // unfused result differs and reports a failure instead of computing; the caller then uses the exact build.
 #ifdef S2_FUSED
 #define FUSED_INLINE __attribute__((always_inline)) inline
@@ -581,12 +581,11 @@ EXPORT("s2MetricScale") void s2_metric_scale(int w, int h, int mask, const void 
     cache0, cache1, cache2, cached_mask, scratch, terms, edge_terms, sums, color_keys, color_values, -4, h, 0, h, 0);
 }
 
-#ifndef S2_FUSED
 // A resumed score keeps no whole-plane cache or error map: only the row rings, recurrence state and ordered sums.
+// Both builds export it: a banded score on the fused build checks its madd probe first, as s2MetricScale does.
 EXPORT("s2MetricBand") int s2_metric_band(int w, int h, int first, int end, int input_y, int input_h,
   const void *reference, int reference_kind, const void *distorted, int distorted_kind,
   const float *linear, const float *g, float *scratch, double *sums, int32_t *color_keys, float *color_values) {
   return metric_scale_rows(w, h, 7, reference, reference_kind, distorted, distorted_kind, linear, g,
     0, 0, 0, 0, scratch, 0, 0, sums, color_keys, color_values, first, end, input_y, input_h, input_y);
 }
-#endif

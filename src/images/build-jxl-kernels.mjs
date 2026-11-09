@@ -160,7 +160,7 @@ for (const [name, exports, license, c = name] of METRICS) metrics.push(metricFra
 const kernelsSource = '(module (import "env" "memory" (memory 1))\n' + [
   fragment(await readWat('kernels-simd')),
   func(scalar, 'tokens'), func(scalar, 'weighted'), captureWeighted(scalar),
-  await readWat('sample-resize'), await readWat('capture-copies'), await readWat('capture-copies-step'), await readWat('capture-patches'),
+  await readWat('sample-resize'), await readWat('screen-photo-tiles'), await readWat('capture-copies'), await readWat('capture-copies-step'), await readWat('capture-patches'),
   await readWat('capture-tokens'), await readWat('capture-trees'), fragment(await readWat('capture-fused')), reconstruction, ...metrics,
 ].join('\n') + '\n)';
 const {KEY, storedWasmByte, wasmBytes, interfaceOf} = await import(new URL('wasm-text.mjs', directory));
@@ -171,11 +171,13 @@ const fusedSource = await metricSource('ssimulacra2-fused', 'BSD-3-Clause', {c: 
 {
   const functions = forms(fusedSource).filter(form => form.startsWith('(func '));
   const exported = forms(fusedSource).filter(form => /^\(export\s/.test(form)).map(form => /^\(export\s+"([^"]+)"\s+\(func\s+(\S+?)\)\)/.exec(form));
-  if (exported.length !== 1 || exported[0][1] !== 's2MetricScale') throw new Error('The fused metric must export only s2MetricScale');
-  const wrapper = functions.find(form => form.startsWith(`(func ${exported[0][2]} `) || form.startsWith(`(func ${exported[0][2]}\n`));
-  const target = wrapper && /\bcall (\$\S+)/.exec(wrapper.replace(/call \$__wasm_call_\w+/g, ''))?.[1];
-  for (const form of functions) if (/relaxed/.test(form) && !form.startsWith(`(func ${target} `) && !form.startsWith(`(func ${target}\n`))
-    throw new Error('A relaxed SIMD instruction is outside the probed s2MetricScale');
+  if (exported.map(e => e[1]).sort().join() !== 's2MetricBand,s2MetricScale') throw new Error('The fused metric must export only s2MetricScale and s2MetricBand');
+  const targets = exported.map(([, , name]) => {
+    const wrapper = functions.find(form => form.startsWith(`(func ${name} `) || form.startsWith(`(func ${name}\n`));
+    return wrapper && /\bcall (\$\S+)/.exec(wrapper.replace(/call \$__wasm_call_\w+/g, ''))?.[1];
+  });
+  for (const form of functions) if (/relaxed/.test(form) && !targets.some(target => form.startsWith(`(func ${target} `) || form.startsWith(`(func ${target}\n`)))
+    throw new Error('A relaxed SIMD instruction is outside the probed s2MetricScale and s2MetricBand');
 }
 const outputs = [
   ['kernels-bytes.mjs', '// Generated from the canonical kernel sources by build-jxl-kernels.mjs. MIT and BSD-3-Clause; see source notices and v7/THIRD_PARTY_NOTICES. Do not edit.\n', [['kernels', 'KERNELS'], ['kernels-probe', 'SIMD_PROBE']], 'latin1'],

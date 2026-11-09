@@ -9,8 +9,8 @@ export const DISCOVERY_LINKS = '<link rel="describedby" href="https://rapier.web
 export const PLAY_URL = 'https://play.google.com/store/apps/details?id=app.rapier';
 export const HOME_TITLE = 'Rapier: Free Online Markdown Editor';
 export const HOME_H1 = 'Free online Markdown editor';
-export const HOME_DESCRIPTION = 'Write Markdown on the formatted page or in the source, on your phone or computer. ' +
-  'Import Word or PDF. Free, works offline, no account.';
+export const HOME_DESCRIPTION = 'The fast, free Markdown editor for your phone and computer. Notes, drawing and painting. ' +
+  'Opens and saves Word and PDF. Works offline, no account.';
 export const APP_DESCRIPTION = 'Free Markdown editor and notes app for Android, the web, Windows and Linux. ' +
   'Write on the formatted page or in the Markdown source, make Mermaid diagrams, draw editable SVG and paint watercolor. ' +
   'Text and pictures stay in one plain Markdown file. Import Word and PDF; export Word, PDF, text and offline HTML for free. ' +

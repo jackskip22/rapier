@@ -21,6 +21,10 @@ export const SCENE = Object.freeze({
 	title: 'Save a 3D scene',
 	note: 'A WebGL scene saved as JPEG XL while it keeps drawing, on this device.',
 	missing: 'The scene could not load. Reload the page and try again.'});
+export const EXAMPLE = Object.freeze({
+	title: 'An animated JPEG XL',
+	credit: 'Eadweard Muybridge’s horse. Public domain, from Wikimedia Commons.',
+	missing: 'The example could not load. Reload the page and try again.'});
 export const ABOUT = Object.freeze([
 	'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies.',
 	'It encodes lossless and lossy pictures, carries a JPEG exactly, and keeps alpha and HDR.',
@@ -69,6 +73,19 @@ export function liftToLabel(seek, level, label) {
 		const at = level.getBoundingClientRect(), to = label.getBoundingClientRect();
 		seek.style.setProperty('--rapier-effort-lift', Math.round(to.bottom - at.bottom) + 'px');
 	}, true);
+}
+
+export const SHOW_REFUSED = 'This browser cannot show JPEG XL.';
+export function showMade(blob, cls, alt) {
+	const url = URL.createObjectURL(blob), image = document.createElement('img'), shown = {node: image, end: () => URL.revokeObjectURL(url)};
+	image.className = cls; image.alt = alt; image.decoding = 'async';
+	image.addEventListener('error', () => {
+		const words = document.createElement('p');
+		words.className = 'rapier-jxl-view__note ' + cls; words.textContent = SHOW_REFUSED;
+		image.replaceWith(words); shown.node = words;
+	}, {once: true});
+	image.src = url;
+	return shown;
 }
 
 export function kindOf(bytes) {

@@ -41,6 +41,7 @@
 .rapier-jxl-maker__pane[hidden]{display:none}
 .rapier-jxl-maker__media,.rapier-jxl-maker__slot{display:block;width:100%;height:auto;background:var(--color-surface-2)}
 .rapier-jxl-maker__slot>.rapier-jxl-maker__media{background:none}
+.rapier-jxl-maker__slot:has(>p){background:none}
 .rapier-jxl-maker__question{margin:var(--space-2) 0 0;font:var(--fw-semibold) var(--text-sm)/1.4 var(--font-sans)}
 .rapier-jxl-tabs{flex:none;display:flex;align-items:center;justify-content:safe center;gap:16px;height:76px;margin:0 0 calc(var(--space-2) - var(--space-6));overflow-x:auto;scrollbar-width:none}
 .rapier-jxl-tabs::-webkit-scrollbar{display:none}

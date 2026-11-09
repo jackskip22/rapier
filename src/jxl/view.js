@@ -81,9 +81,13 @@
 		const scene = make('section', 'rapier-jxl-view__more'), sceneTitle = make('h2', 'rapier-jxl-view__title', C.SCENE.title), stage = make('div', 'rapier-jxl-scene__stage');
 		sceneTitle.id = 'rapier-jxl-scene'; scene.setAttribute('aria-labelledby', sceneTitle.id);
 		scene.append(sceneTitle, make('p', 'rapier-jxl-view__note', C.SCENE.note), stage);
-		_rapierJxlMakerPart.tabs(body, [fold, more, scene, _rapierToolAlso('/jxl')]);
+		const example = make('section', 'rapier-jxl-view__more'), exampleTitle = make('h2', 'rapier-jxl-view__title', C.EXAMPLE.title), exampleSlot = make('div', 'rapier-jxl-view__example');
+		const exampleNote = make('p', 'rapier-jxl-view__note');
+		exampleTitle.id = 'rapier-jxl-example'; example.setAttribute('aria-labelledby', exampleTitle.id);
+		example.append(exampleTitle, exampleSlot, exampleNote, make('p', 'rapier-jxl-view__note', C.EXAMPLE.credit));
+		_rapierJxlMakerPart.tabs(body, [fold, more, example, scene, _rapierToolAlso('/jxl')]);
 		root.append(bar, body);
-		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
+		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, example, exampleSlot, exampleNote, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
 	}
 
 	function paint(row) {
@@ -98,6 +102,15 @@
 		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, so the JPEG can\'t be restored' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
 		note.textContent = text;
 		download.hidden = row.state !== 'done';
+		media(row);
+	}
+	function media(row) {
+		const r = row.state === 'done' && row.result?.frames && !row.result.back ? row.result : null;
+		if (row.shown?.result === r) return;
+		row.shown?.node.remove(); row.shown?.end(); row.shown = null;
+		if (!r) return;
+		row.shown = {...C.showMade(r.blob, 'rapier-jxl-view__media', row.outputName), result: r};
+		row.node.append(row.shown.node);
 	}
 	function overall(of = view) {
 		if (!of) return;
@@ -169,6 +182,7 @@
 					if (now) { row.result = now; row.state = 'done'; } else row.state = 'waiting';
 				} catch (error) {
 					if (error?.name === 'AbortError') { row.state = 'stopped'; row.say = 'Canceled'; }
+					else if (error?.code === 'IMAGE_CANCELLED' && (row.again = (row.again || 0) + 1) <= 3) row.state = 'waiting';
 					else if (C.exhausted(error)) {
 						out = true; row.state = 'stopped'; row.say = 'Not converted: this device ran out of memory';
 						self.help.textContent = 'This device ran out of memory. The files that finished are kept; choose the rest again, a few at a time.';
@@ -184,6 +198,7 @@
 			for (const row of self.rows) if (row.state === 'waiting') { row.state = 'stopped'; row.say = signal.aborted ? 'Canceled' : 'Not converted'; paint(row); }
 			self.running = false; self.controller = null; overall(self);
 			if (!signal.aborted) document.getElementById('sr-live')?.replaceChildren(document.createTextNode(self.rows.filter(row => row.state === 'done').length + ' files converted'));
+			if (!signal.aborted) try { self.settled?.(self.rows.map(row => ({file: row.file, name: row.name, state: row.state, say: row.say, before: row.result?.before, size: row.result?.size}))); } catch (_) {}
 		}
 	}
 
@@ -219,7 +234,7 @@
 			remove.addEventListener('click', () => {
 				if (row.state === 'working') { row.removed = true; row.stop?.abort(); }
 				const at = view.rows.indexOf(row);
-				view.rows.splice(at, 1); node.remove(); row.results.clear(); row.result = null; overall();
+				view.rows.splice(at, 1); node.remove(); row.shown?.end(); row.results.clear(); row.result = null; overall();
 				(view.list.children[at]?.querySelector('.navigator-close') || view.pick.querySelector('input'))?.focus();
 			});
 			actions.append(download, remove); node.append(text, actions); fragment.append(node);
@@ -334,6 +349,7 @@
 		root.addEventListener('drop', event => { if (!event.dataTransfer?.files.length) return; event.preventDefault(); view.pick.removeAttribute('data-over'); add([...event.dataTransfer.files]); });
 		root.addEventListener('paste', event => { const files = [...event.clipboardData?.files || []].filter(file => /^(image|video)\//.test(file.type)); if (files.length) { event.preventDefault(); add(files); } });
 		sceneWhenNear(view);
+		exampleWhenNear(view);
 		overall();
 		view.pick.querySelector('input').focus({preventScroll: true});
 		if (view.chosen?.length) { const chosen = view.chosen; view.chosen = null; view.input.value = ''; add(chosen); }
@@ -349,14 +365,31 @@
 		}, {root: self.stage.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
 		self.near.observe(self.stage);
 	}
+	function exampleWhenNear(self) {
+		if (!_rapierPartAvailable('jxlexample')) { self.example.hidden = true; return; }
+		const near = new IntersectionObserver(entries => {
+			if (!entries.some(entry => entry.isIntersecting)) return;
+			near.disconnect();
+			RapierParts.check('jxlexample').catch(() => {}).then(() => RapierParts.need('jxlexample')).then(() => {
+				if (view !== self || self.exampleShown) return;
+				const E = globalThis.RapierJxlExample, bytes = Uint8Array.from(atob(E.JXL), c => c.charCodeAt(0));
+				self.exampleShown = C.showMade(new Blob([bytes], {type: 'image/jxl'}), 'rapier-jxl-view__media', 'A galloping horse, animated JPEG XL');
+				self.exampleSlot.replaceChildren(self.exampleShown.node);
+				self.exampleNote.textContent = 'GIF ' + size(E.GIF_BYTES) + ' → JPEG XL ' + size(bytes.length) + ' · ' + percent({size: bytes.length, before: E.GIF_BYTES});
+			}, () => { if (view === self) self.exampleSlot.replaceChildren(make('p', 'rapier-jxl-view__note', C.EXAMPLE.missing)); });
+		}, {root: self.example.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
+		near.observe(self.example);
+		self.exampleNear = near;
+	}
 	function close() {
 		if (!view) return;
 		view.controller?.abort();
-		view.near?.disconnect(); view.mounted?.unmount();
+		view.near?.disconnect(); view.exampleNear?.disconnect(); view.mounted?.unmount();
 		const done = view;
 		view = null;
 		done.follow?.popup.end();
-		for (const row of done.rows) { row.results.clear(); row.result = null; }
+		for (const row of done.rows) { row.shown?.end(); row.results.clear(); row.result = null; }
+		done.exampleShown?.end();
 		if (done.notices?.root.parentElement === done.root) done.notices.home.append(done.notices.root);
 		done.maker?.unbind();
 		done.root.remove();
@@ -386,7 +419,8 @@
 		}
 		return was;
 	}
-	const face = Object.freeze({open, close, save, configure, add: files => add([...files]), has: file => !!view?.rows.some(row => row.file === file),
+	const say = text => { if (view) view.help.textContent = text; };
+	const face = Object.freeze({open, close, save, configure, say, settled: fn => { if (view) view.settled = fn; }, add: files => add([...files]), has: file => !!view?.rows.some(row => row.file === file),
 		complete: state => completeFor(state, null)(), get state() { return Object.freeze({open: !!view}); }});
 	_rapierJxlPart = face;
 	if (_rapierJxlDoor?.born) _rapierBootFactsPublished.then(open, open);

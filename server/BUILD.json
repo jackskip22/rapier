@@ -1,18 +1,18 @@
 {
-  "version": "1.2.58",
+  "version": "1.2.59",
   "development": false,
   "chromium": "supplied and exactly pinned by the administrator",
   "profiles": {
     "reader": {
       "path": "rapier-reader.html",
-      "bytes": 423879,
-      "sha256": "7da3a57c7cb71b82b55d35f375375d9d70f81965446056ffcacca4252f370c51",
-      "gzip": 408099,
+      "bytes": 423865,
+      "sha256": "43f70b5e6f7388b16f5a2befa6b17f5ed86b567b51a7cdb578560eef2e9cbb7e",
+      "gzip": 408085,
       "budget": {
         "warn": 1200000,
         "refuse": 1250000
       },
-      "builtAt": "2026-11-09T03:52:09.080Z",
+      "builtAt": "2026-11-09T14:24:52.336Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
@@ -20,23 +20,23 @@
       "parts": {
         "core": {
           "raw": 1084647,
-          "gzip": 346134,
-          "base124": 338830
+          "gzip": 346118,
+          "base124": 338799
         },
         "licenses": {
           "raw": 88151,
           "gzip": 24862,
-          "base124": 24401
+          "base124": 24399
         }
       }
     },
     "full": {
       "path": "rapier.html",
-      "bytes": 2318099,
-      "sha256": "a2bf759e9406ee116c56500cb2f14994b60fe7d0a1d3cab23c342291945f43b8",
+      "bytes": 2333514,
+      "sha256": "81fe04ee19dceb894dcc4431157a593eca20b0ec711ed5678d196a08c63c32e0",
       "budget": {
         "warn": 1800000,
-        "refuse": 2330000
+        "refuse": 2345000
       },
       "spans": [
         {
@@ -72,20 +72,20 @@
         {
           "element": "rapier-jxl-worker",
           "name": "jpeg.worker.mjs",
-          "bytes": 483956,
-          "sha256": "519dab99b8a5b0eb1174231ed5a171a1fe3a8a986551eaee7af643f8cd6ef000"
+          "bytes": 486226,
+          "sha256": "d2f739bf5e8af6335c0f9c0d87d0f7e55da9df5ad9fc4c402e4d260de794d705"
         },
         {
           "element": "rapier-jxl-worker",
           "name": "still.worker.mjs",
-          "bytes": 1191332,
-          "sha256": "e4331f3b378b0661d3ed462f2013a236010b43baa225a9f76554fe41728f7449"
+          "bytes": 1231198,
+          "sha256": "f9bc07226b49c094f2e3b865bfc107ee8cac0475a77d96c05da45c141758de8c"
         },
         {
           "element": "rapier-jxl-worker",
           "name": "codec.mjs",
-          "bytes": 73775,
-          "sha256": "b7790bfc9109ba50d8eb9af777115a0533aa4d2d3ab1c7f328dd7c48f90535ca"
+          "bytes": 75663,
+          "sha256": "3cfd5aa6cf2125248af42860122fb318b4adc042927751ddc1c4a18496bfdfc0"
         },
         {
           "element": "rapier-platform-runtime",
@@ -121,19 +121,19 @@
           "element": "rapier-platform-runtime",
           "name": "rapier-plugin-loader.js",
           "bytes": 28077,
-          "sha256": "16ec464579f7a9240450cc151a9d6b95a59bd988b8b9c77116a50f0f1f3c0537"
+          "sha256": "37413892dbda3f5b757176978712dc089403b8db2bbf0b2f6ca5e24d63b711f0"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-font-subset-plugin.js",
           "bytes": 856,
-          "sha256": "ad27da7402e4f320598254f87605e0e14ffaadc3b6656afcd610423a1a2667d1"
+          "sha256": "2e4dac026db3a42e5abb4c6cac1f91df181cb2e2967490a10b447155544d8aec"
         },
         {
           "element": "rapier-platform-runtime",
           "name": "rapier-parts.js",
-          "bytes": 9824,
-          "sha256": "5ab89f65c390f25a73acdf31262b67c010eb939117dfaf0eaebf38cd9f95e475"
+          "bytes": 10011,
+          "sha256": "f3cab9ad57799657bc524724166fbd837df4eb4011c62daed984ceea182b3faf"
         },
         {
           "element": "rapier-styles-runtime",
@@ -169,21 +169,21 @@
           "element": "rapier-editor-runtime",
           "name": "rapier-shared.js",
           "bytes": 2536405,
-          "sha256": "213619a39df7ff41b858250b719497ff6f6ff14e725f5ce0ec03927145772754"
+          "sha256": "2826e82a0d1b208f0b9a12b74b3660c37695b04486cccdab2ed2de2f36961d9d"
         },
         {
           "element": "rapier-editor-runtime",
           "name": "rapier-editor.js",
-          "bytes": 2444979,
-          "sha256": "a831cc61083f913eb3072f4bd1c223062b49f2d0b4cfa78d8d11db983beb18ea"
+          "bytes": 2449369,
+          "sha256": "c33c2cb7820deb10cf841ddf830b2842f6a6701e8db948d933fb75e997452497"
         }
       ],
       "parts": [
         {
           "id": "document",
-          "file": "rapier-document-b861d04a222f14d0.txt",
-          "bytes": 902468,
-          "sri": "U8JMo7sGofVRpWn3H91n+dKNCSQi4wSUqyYNiOJz+U54KGjUs1TzLv75WvtlaPYN",
+          "file": "rapier-document-c9965c2dd7cc0a76.txt",
+          "bytes": 902419,
+          "sri": "FmAdLvJp7I6k62VazyfXjSkqZwzPXkqLX+NGAhTyvZw3IECegrRSwtvdFOBgM1Hc",
           "scripts": [
             "editor/document-layout.js"
           ],
@@ -196,9 +196,9 @@
         },
         {
           "id": "presets",
-          "file": "rapier-presets-efe29cd6ca18cbb2.txt",
-          "bytes": 252362,
-          "sri": "aAAO74i+lGmNJ6SRouPlpXBFZZsBZiLMHGTbadSn7uj5UCY/wx/dTc5FX2ka8F/c",
+          "file": "rapier-presets-cb37747cb43e667c.txt",
+          "bytes": 252327,
+          "sri": "wM940Bwd6grs5ra1kN348Gdhs63RTUaoRXb4OWzRQOz/59d/AumuUyle89/vypZx",
           "scripts": [
             "presets/browser.js",
             "editor/composer.js"
@@ -218,9 +218,9 @@
         },
         {
           "id": "drawing",
-          "file": "rapier-drawing-f60c92ea4b3bb4d3.txt",
-          "bytes": 792916,
-          "sri": "C0Q9bu0cGBkd2J/nXHHfRSA0ch1J7SwaOxB31vR62LCERf/VrXNdZcSphgg+Mpis",
+          "file": "rapier-drawing-9db49fe1283b9a15.txt",
+          "bytes": 800000,
+          "sri": "neYIzSoKdlWf6NVraQn6OPmZhcmNpxHj2BLUT9RqiRhPlxeF1e4j2JmmFuvPwfdt",
           "scripts": [
             "draw/draw.js",
             "draw/effects-tool.js",
@@ -303,6 +303,7 @@
             "images/jxl/exact-math.mjs",
             "images/jxl/photo-xyb.mjs",
             "images/jxl/photo-preference.mjs",
+            "images/jxl/band-scratch.mjs",
             "images/jxl/photo-v6.mjs",
             "images/jxl/memory-plan.mjs",
             "images/jxl/butteraugli-memory.mjs",
@@ -353,8 +354,10 @@
             "images/jxl/photo-low-ladder.mjs",
             "images/jxl/coefficient-ans.mjs",
             "images/jxl/split-hooks.mjs",
+            "images/jxl/small-palette.mjs",
             "images/jxl/weighted.mjs",
             "images/jxl/screen-photo-regions.mjs",
+            "images/jxl/screen-photo-kernels.mjs",
             "images/jxl/exact-ladder.mjs",
             "images/jxl/photo-split-ladder.mjs",
             "images/jxl/local.mjs",
@@ -458,6 +461,13 @@
             "images/jxl/v7/kernels-ready.mjs",
             "images/jxl/v7/webgpu.mjs",
             "images/jxl/gpu-gate.mjs",
+            "images/jxl/photo-low.mjs",
+            "images/jxl/photo-low-settings.mjs",
+            "images/jxl/v7/low-photo.mjs",
+            "images/jxl/v7/webp-quality.mjs",
+            "images/jxl/photo-whole-rebuild.mjs",
+            "images/jxl/photo-reference.mjs",
+            "images/jxl/photo-s2-stream.mjs",
             "images/jxl/source.mjs",
             "images/jxl/exif-orientation.mjs",
             "images/jxl/sample-transforms.mjs",
@@ -479,14 +489,11 @@
             "images/jxl/v7/bands.mjs",
             "images/jxl/v7/band-size.mjs",
             "images/jxl/v7/band-recode.mjs",
-            "images/jxl/v7/low-photo.mjs",
-            "images/jxl/photo-low.mjs",
-            "images/jxl/photo-low-settings.mjs",
-            "images/jxl/v7/webp-quality.mjs",
             "images/jxl/v7/ordinary-still-policy.mjs",
             "images/jxl/photo-intent.mjs",
             "images/jxl/v7/low-webp-quality.mjs",
             "images/jxl/v7/native-still-prediction.mjs",
+            "images/jxl/text-floor.mjs",
             "images/jxl/v7/settle-scans.mjs",
             "images/jxl/v7/still-photo-target.mjs",
             "images/jxl/photo-whole-search.mjs",
@@ -494,8 +501,6 @@
             "images/jxl/photo-plane-search.mjs",
             "images/jxl/photo-plane-measured.mjs",
             "images/jxl/photo-measured-steps.mjs",
-            "images/jxl/photo-whole-rebuild.mjs",
-            "images/jxl/photo-reference.mjs",
             "images/jxl/photo-hdr.mjs",
             "images/jxl/sample-values.mjs",
             "images/jxl/v7/rows.mjs",
@@ -539,9 +544,9 @@
         },
         {
           "id": "jxl",
-          "file": "rapier-jxl-cad16a87c710faba.txt",
-          "bytes": 33800,
-          "sri": "9lBRM4DTsax1tU50VOwxjkQ7kZKAFeHmA0fYSsRu+3UINQAAezByLRcQXv53X6JP",
+          "file": "rapier-jxl-922bb153e640e89a.txt",
+          "bytes": 34290,
+          "sri": "dc2912kV5VqkXu9vjS9SEM8hlsYHuZM6LXih8k1XJbmwUkcR+WQHD3TiTyfcwXRv",
           "scripts": [
             "jxl/maker.js",
             "jxl/view.js"
@@ -560,9 +565,9 @@
         },
         {
           "id": "convert",
-          "file": "rapier-convert-dab283a540922d98.txt",
-          "bytes": 5779,
-          "sri": "UoH/QlaKc2LCIMDAExBVlAwk3rIPD2QoxJl55PrkozMt9xXNGNppE5E0T5ypJgcL",
+          "file": "rapier-convert-b440c709c079893f.txt",
+          "bytes": 5793,
+          "sri": "LZPjEvCgZQ0n1fXte39B14Yyh8isd5uHwHqTOichN4chfJwEoITJfSxmdLx2LOyG",
           "scripts": [
             "interchange/convert-view.js"
           ],
@@ -571,9 +576,9 @@
         },
         {
           "id": "diagrams",
-          "file": "rapier-diagrams-0062c52b4a7b34c4.txt",
-          "bytes": 6013,
-          "sri": "mFAYGLuk1Vv6a72U31zW4hFYOsgIprdjb/3d8JxCj9BXf+7UbuVHz6wEtWlr3EnY",
+          "file": "rapier-diagrams-d9ef611ce999b655.txt",
+          "bytes": 6020,
+          "sri": "kY6RGQ2OOfSaTx03fIWfsEY7g8J9uLDfT+Yz21ndAOxfMk6nUHhJdKlNa2NaphLS",
           "scripts": [
             "diagrams/view.js"
           ],
@@ -595,9 +600,9 @@
         },
         {
           "id": "jxlcomplete",
-          "file": "rapier-jxlcomplete-60fd76b6fdbaa5e4.txt",
-          "bytes": 513446,
-          "sri": "BikJLgMUT2tIexaSN+SVqA0tZVWDzd4PM+YItdbWNRmpbP8Jkhqa090whwq55Mvi",
+          "file": "rapier-jxlcomplete-1bf39ddc233affd1.txt",
+          "bytes": 523680,
+          "sri": "yr1C+8TVivCLRHfgxqNSc78GH92448YRFpROBFKtGxWXXdGHRg2o6UMDMSU1OnHe",
           "scripts": [
             "jxl/complete.js"
           ],
@@ -606,9 +611,9 @@
         },
         {
           "id": "jxlscene",
-          "file": "rapier-jxlscene-4cee179d734c1973.txt",
-          "bytes": 5348,
-          "sri": "nyK5sf5DqMFLwtcwfEeFzQMYbTrayJ8Z6OyRZp359XD3JdTvlLmsD7TIqj4Lm4yD",
+          "file": "rapier-jxlscene-4d76c586610a6ed4.txt",
+          "bytes": 5355,
+          "sri": "fA/rMbmLHFTL11X04SjmriwbXUwWX9cexeZgObEhgMxxuJXMZ5RHrv9tPMtSsqkI",
           "scripts": [
             "jxl/scene.js"
           ],
@@ -620,10 +625,23 @@
           ]
         },
         {
+          "id": "jxlexample",
+          "file": "rapier-jxlexample-4fa7ea2f6482f3d1.txt",
+          "bytes": 136575,
+          "sri": "gtc0OSX8/D0EoXg1NSQvqrfgf5kOAMBsyO4cnO9mkRCh3JJdtWchGEz+Vq++pFRY",
+          "scripts": [],
+          "modules": [
+            "jxl/example.mjs"
+          ],
+          "globals": [
+            "RapierJxlExample"
+          ]
+        },
+        {
           "id": "diff",
-          "file": "rapier-diff-fef8ac5e35f704d9.txt",
-          "bytes": 4985,
-          "sri": "gyge9eF5roE2mWUzzJyNNT9Wn/hCq3w2dE7KjKNk9WcFl0divd6PJmkRQ0csTrd+",
+          "file": "rapier-diff-496470bfed0e81c6.txt",
+          "bytes": 4978,
+          "sri": "Xm6hP3j5ZMhHKQZB49QIGzRlmkSAxxwLJwyZ6DS9YHIgLp8/BcyPL8CAB5TzGi0M",
           "scripts": [
             "editor/diff-view.js"
           ],
@@ -632,9 +650,9 @@
         },
         {
           "id": "mathview",
-          "file": "rapier-mathview-ee9970140cc430df.txt",
+          "file": "rapier-mathview-bfa3a3ef8d8b804d.txt",
           "bytes": 4871,
-          "sri": "yfGAa+I4qd0kAvDE+qjep9rVIiFRvb+Tc1GJd0GeDafMxaK6GdAw9ueI4TpDcQMg",
+          "sri": "rLDCB/OdsB6t13kMVY7nlD3UJ+4U556fQVBMXPo3xfE7kY4Dpovzy8G/7aXP+dz3",
           "scripts": [
             "editor/math-view.js"
           ],
@@ -643,9 +661,9 @@
         },
         {
           "id": "fonts",
-          "file": "rapier-fonts-3e181035c6a85afd.txt",
-          "bytes": 11169,
-          "sri": "3W6CJj/TM1fwoGQUkSGnuNvuk63dv4ogHFMDovriGTRlYJbWdJx5sopvLB8Pdqcu",
+          "file": "rapier-fonts-2b16c1361a729684.txt",
+          "bytes": 11176,
+          "sri": "3h7CBujyl2NeP7gUThDdTLE/oBBZsPoEh8dQ0W28dWQA8wdvtBl9vRJPJbnTEPcO",
           "scripts": [
             "editor/font-library.js"
           ],
@@ -663,9 +681,9 @@
         },
         {
           "id": "notes",
-          "file": "rapier-notes-2a23322dfbd5ddc1.txt",
+          "file": "rapier-notes-ae151f83c72f6668.txt",
           "bytes": 394683,
-          "sri": "mtvTXEC1WLc854HvwzFNd03jr3ZhY7BVjqZW+1P9AKC5lM39RFa8PKcmwdglTPD3",
+          "sri": "d0RbgIOzh1635KoVCj0bQJ4oohmLyZh7trEYgOh2t4jNWbfucaOGM5okRqDfYHYd",
           "scripts": [
             "notes/notes.js",
             "notes/todo.js",
@@ -1129,6 +1147,7 @@
           "ZIP_BYTES",
           "ZIP_ENTRIES",
           "pickWords",
+          "SHOW_REFUSED",
           "resultOf"
         ],
         "jxl/frames.mjs": [
@@ -1245,30 +1264,6 @@
           "lowWebpQuality",
           "settleLowWebp"
         ],
-        "images/jxl/v7/low-photo.mjs": [
-          "encodeLowSplit",
-          "makeLowUpload",
-          "finishLowUpload",
-          "closeLowUpload",
-          "smoothDecides"
-        ],
-        "images/jxl/v7/webp-quality.mjs": [
-          "settleWebp",
-          "webpCoding"
-        ],
-        "images/jxl/photo-low.mjs": [
-          "lowWholePhotoSteps",
-          "encodeLowSplit",
-          "makeLowUpload",
-          "finishLowUpload",
-          "closeLowUpload",
-          "lowPhotoUsesFilter",
-          "lowPhotoBudgets",
-          "lowPhotoFilteredQuality",
-          "chooseLowPhoto",
-          "lowPhotoSizeFailure",
-          "LOW_PHOTO_SMALL_BUDGET"
-        ],
         "images/jxl/v7/band-size.mjs": [
           "BAND_PIXELS",
           "COMPACT_WHOLE",
@@ -1330,6 +1325,30 @@
           "pngStructure",
           "pngPassRows",
           "readSource"
+        ],
+        "images/jxl/v7/low-photo.mjs": [
+          "encodeLowSplit",
+          "makeLowUpload",
+          "finishLowUpload",
+          "closeLowUpload",
+          "smoothDecides"
+        ],
+        "images/jxl/v7/webp-quality.mjs": [
+          "settleWebp",
+          "webpCoding"
+        ],
+        "images/jxl/photo-low.mjs": [
+          "lowWholePhotoSteps",
+          "encodeLowSplit",
+          "makeLowUpload",
+          "finishLowUpload",
+          "closeLowUpload",
+          "lowPhotoUsesFilter",
+          "lowPhotoBudgets",
+          "lowPhotoFilteredQuality",
+          "chooseLowPhoto",
+          "lowPhotoSizeFailure",
+          "LOW_PHOTO_SMALL_BUDGET"
         ],
         "images/jxl/gpu-gate.mjs": [
           "GPU_FROM"
@@ -1459,12 +1478,8 @@
           "s2EffortSearchSteps",
           "certain"
         ],
-        "images/jxl/photo-whole-policy.mjs": [
-          "SMALL_REBUILD_MARGIN"
-        ],
         "images/jxl/photo-browser-margin.mjs": [
-          "BROWSER_MARGIN",
-          "browserMargin"
+          "BROWSER_MARGIN"
         ],
         "images/jxl/photo-quality-table.mjs": [
           "QUALITY_TARGETS",
@@ -1567,9 +1582,6 @@
         ],
         "images/jxl/ssimulacra2.mjs": [
           "recursiveGaussian",
-          "GAUSS32",
-          "scaleNorm",
-          "scoreNorms",
           "srgbToLinear",
           "downsample"
         ],
@@ -1581,8 +1593,7 @@
           "ssimulacra2WorkBytes",
           "FUSED_PROBE",
           "compileFusedMetric",
-          "fusedMetric",
-          "scaleBand"
+          "fusedMetric"
         ],
         "images/jxl/exact-region.mjs": [
           "subBase",
@@ -1779,6 +1790,7 @@
           "strategyTableParameters",
           "channelNorm",
           "TransformCache",
+          "slabAllocator",
           "VB_CONFIG",
           "VB_NZ"
         ],
@@ -2650,35 +2662,35 @@
       ],
       "jxl": {
         "version": "8.3.1",
-        "source": "c0f48e9ee0dba6b01a1995386649fa10bd2e2010a677e1444bfd4ac335a5a77e",
+        "source": "08970b55e474f2f661bc2ba71356f7274d545d3acc8b195f17f72c8ce45d5c3c",
         "page": {
           "jpeg.worker.mjs": {
-            "bytes": 483956,
-            "sha256": "519dab99b8a5b0eb1174231ed5a171a1fe3a8a986551eaee7af643f8cd6ef000"
+            "bytes": 486226,
+            "sha256": "d2f739bf5e8af6335c0f9c0d87d0f7e55da9df5ad9fc4c402e4d260de794d705"
           },
           "still.worker.mjs": {
-            "bytes": 1191332,
-            "sha256": "e4331f3b378b0661d3ed462f2013a236010b43baa225a9f76554fe41728f7449"
+            "bytes": 1231198,
+            "sha256": "f9bc07226b49c094f2e3b865bfc107ee8cac0475a77d96c05da45c141758de8c"
           },
           "codec.mjs": {
-            "bytes": 73775,
-            "sha256": "b7790bfc9109ba50d8eb9af777115a0533aa4d2d3ab1c7f328dd7c48f90535ca"
+            "bytes": 75663,
+            "sha256": "3cfd5aa6cf2125248af42860122fb318b4adc042927751ddc1c4a18496bfdfc0"
           }
         },
         "parts": {
           "jxlcomplete": {
             "decode.worker.mjs": {
-              "bytes": 373774,
-              "sha256": "6c730b34372a0cef2eb6193480b2fd8fb6e0ea42ad125d760eea50332f388296"
+              "bytes": 373889,
+              "sha256": "01d3e1c6063ae71c24caf12fa0ba88c309d386ec17a4d7e5db034745227ed6ee"
             },
             "animation.worker.mjs": {
-              "bytes": 1207410,
-              "sha256": "3c175018ea749b36e356617a2125b9674069ccf5cd785ea5509647ed27489a84"
+              "bytes": 1247408,
+              "sha256": "7f8ac53ee8d72331d0862b9af27269971a218172aab5a246aa3c3ac2e5fec629"
             }
           }
         }
       },
-      "builtAt": "2026-11-09T03:53:40.184Z",
+      "builtAt": "2026-11-09T14:29:05.914Z",
       "node": "v22.23.4",
       "mode": "release",
       "packing": "zopfli",
@@ -2708,8 +2720,8 @@
       "sha256": "94b5941c8bf905ea8c96e18994ac5444288bac13615f8e18ed7f110383c2c3b5"
     },
     "dist/mcp/worker.mjs": {
-      "bytes": 338670,
-      "sha256": "acf040792cc7a8d3eb055c5135a99784d11434d35d8a0ff0640d2ba313cbecda"
+      "bytes": 339105,
+      "sha256": "93df06b0b502fcc33d23aeea1e047f0a820720f0128b516f9f6d3db61d6ef9b8"
     },
     "dist/mcp/use-observation.mjs": {
       "bytes": 6386,
@@ -3000,8 +3012,8 @@
       "sha256": "1a80d5e9183b4dfa3500652dce40b99997ddf54ee0c1ca1cea033a5a388bbd9b"
     },
     "dist/images/jxl/kernel-hooks.mjs": {
-      "bytes": 605,
-      "sha256": "5f9b74feef86dd9c139adfc32835f4c4ae9aa40d6bbc13603161d7ff77fee8a3"
+      "bytes": 637,
+      "sha256": "6bb1e47a00011cec96060f0fbc9be5ea9e2500fdd0bd6e939ce0e83d973d49d5"
     },
     "dist/images/jxl/screen-codes.mjs": {
       "bytes": 873,
@@ -3060,8 +3072,8 @@
       "sha256": "94b4f4be0580730c7972cd6de960eeb9f2b973582f0df1e05164a6d6a3080f15"
     },
     "dist/images/jxl/entropy.mjs": {
-      "bytes": 25488,
-      "sha256": "b985e14030fa1b824796a7ef4208c54f8ddde0e8f375068d0c52320690067dad"
+      "bytes": 25464,
+      "sha256": "a3d900f78a2c37a9e3b1846bb73f59e9244733012c77c999930f0f156e870943"
     },
     "dist/images/jxl/entropy-log.mjs": {
       "bytes": 545,
@@ -3257,7 +3269,7 @@
     },
     "dist/version.mjs": {
       "bytes": 369,
-      "sha256": "0dbccabcb6390c4b23a86173dd3c7fed9035e8013f27ac914c60f498af3a8017"
+      "sha256": "16bd3ec21e432b5732922ccf19f489f311cbcd0035e9545d3bab413a21cceb6f"
     },
     "dist/agent/visual.mjs": {
       "bytes": 10397,
@@ -3424,8 +3436,8 @@
       "sha256": "bb772b761c5b3b3d434442f658c5e3673ee4cf42e9e89349ccb96cc5c3a05b55"
     },
     "dist/images/jxl/v7/still.mjs": {
-      "bytes": 12687,
-      "sha256": "edd63daa077a8823727dae7fca506e89a4b801bdfb3bfcb129a5fec6c63e77f0"
+      "bytes": 12927,
+      "sha256": "31a8f5da1712ecb1eaaaafffe14b76d35087486200b570240250c2a89aef66e5"
     },
     "dist/images/jxl/v7/result-operation.mjs": {
       "bytes": 4088,
@@ -3480,8 +3492,8 @@
       "sha256": "b48ba1c152ed6a00b3a91d066383a26404322340bf61643655f39812ca48656b"
     },
     "dist/images/jxl/effort-job.mjs": {
-      "bytes": 25638,
-      "sha256": "66c7fd0cdba5e7f4874c5171f0ba6e77b73fb7698b900a0c32b4bf4957b3979c"
+      "bytes": 25862,
+      "sha256": "bc5d99dfbed95e9f66907e0cbca12f84893e24d3db2bfcda32a1b65016e9fde8"
     },
     "dist/images/jxl/modular-channel.mjs": {
       "bytes": 6642,
@@ -3516,20 +3528,20 @@
       "sha256": "2cbe33ce096d2d33b8b43879317f85cbc1c79f73a558ee9aabd23f9c489c35a3"
     },
     "dist/images/jxl/capture-kernels.mjs": {
-      "bytes": 35940,
-      "sha256": "b35241a342bbb27235ae9d7f9aa9cec1eab29c08767f1096f66df88d071c2312"
+      "bytes": 35964,
+      "sha256": "ca6280f5d728f78316ad89e13fbef0b7284d726eb8a05f8c402d11a11b2176e9"
     },
     "dist/images/jxl/kernel-runtime.mjs": {
       "bytes": 1732,
       "sha256": "109a18ec8a6e52c499243dd3a9680db9b8c99d7cd6a90a47eb06d46052731b2f"
     },
     "dist/images/jxl/kernels-bytes.mjs": {
-      "bytes": 218670,
-      "sha256": "71301cdd37ae468d183059f685cd5810f9c409b856766eaf40359ac66c443c08"
+      "bytes": 223018,
+      "sha256": "898097dbe86752f3455eb2c712ca0b4b2d81cc1b717f5e2aa5be33c58a7f8957"
     },
     "dist/images/jxl/wasm-text.mjs": {
-      "bytes": 453,
-      "sha256": "e0173eadee7bbab5a60f94cfa07b9fba615abb132f33cb7ae04db068a21d145a"
+      "bytes": 589,
+      "sha256": "f02865010d2ffd81e2409a5bf71f1a5b3bd58b0c14ed98e5d4773b6eccc921f7"
     },
     "dist/images/jxl/wasm-modules.mjs": {
       "bytes": 3909,
@@ -3540,8 +3552,8 @@
       "sha256": "1228426fb5387d72301b88d4dedab332b2ac64d4354ef3e709b297572f1874ad"
     },
     "dist/images/jxl/wasm-interfaces.mjs": {
-      "bytes": 167,
-      "sha256": "8cb2a74706d0999f17695c24cc05699d4fffa40ae675d570e0aae53d1d4fe56a"
+      "bytes": 168,
+      "sha256": "afa2b65cf13f563be8e1bba3e634edc3304f8effc843f92e500989627b39ddef"
     },
     "dist/images/jxl/capture-wasm-error.mjs": {
       "bytes": 248,
@@ -3560,8 +3572,8 @@
       "sha256": "08306c2763f54fa611ba8d9b858667ca1a6efaeedc1ad0be5a9253f90ca21853"
     },
     "dist/images/jxl/photo-dct.mjs": {
-      "bytes": 15405,
-      "sha256": "10587a2c11b92112f56a30b001d8931e79261503352b30f62b058abffd761422"
+      "bytes": 15540,
+      "sha256": "add8e2c70063a7716e0fbb46fc51c68da2656870eaa0ab686d99573f00f7357b"
     },
     "dist/images/jxl/quality-calibration.mjs": {
       "bytes": 1056,
@@ -3572,16 +3584,20 @@
       "sha256": "c1a5954fcd284b11acec558778e7d64e731993e6bf32c3e27502a392dd0e4ffe"
     },
     "dist/images/jxl/photo-xyb.mjs": {
-      "bytes": 35223,
-      "sha256": "b1b11e117e36291f1023f0f717d3d3e9b1cc6d3e374a7f70497658f031e1edb1"
+      "bytes": 35400,
+      "sha256": "6af01b81ed473cc9e30322aa3a89164d8c4dd9acdb453df589c615cbe3b57537"
     },
     "dist/images/jxl/photo-preference.mjs": {
       "bytes": 1196,
       "sha256": "9a5bf2112b185955005f3f05b86415abc3a9e0047d8c5b7402771435c1a71ead"
     },
+    "dist/images/jxl/band-scratch.mjs": {
+      "bytes": 453,
+      "sha256": "95603997b5bb0e495e26abebcbfb18db8c4c703563ada80e1fb72459eb43ddee"
+    },
     "dist/images/jxl/photo-v6.mjs": {
-      "bytes": 22975,
-      "sha256": "d0e32ae4d8950d158b339103a19c7408f6f9ed49e6443eacfcc050b5b85d87f8"
+      "bytes": 23145,
+      "sha256": "262ac3331efedb58f5eefaf318f830aa9c4e7569f23f2535d2418ba0082b29a7"
     },
     "dist/images/jxl/memory-plan.mjs": {
       "bytes": 12495,
@@ -3616,8 +3632,8 @@
       "sha256": "a6a7c79078460b70e5277f91759aaeb1ff4659d7e3280fc577111dac17ab0ffd"
     },
     "dist/images/jxl/photo-split.mjs": {
-      "bytes": 39074,
-      "sha256": "6864632694a6eb1868234431123f1c98a7e61a2d5da2c0d89f6ad6082ffecf3f"
+      "bytes": 41506,
+      "sha256": "b37a0a4dbf536f9818f608d088549e021e8bc21dade2ef77ea240d24650b06fb"
     },
     "dist/images/jxl/photo-levels.mjs": {
       "bytes": 2105,
@@ -3628,16 +3644,16 @@
       "sha256": "54c9ca188326f0f6cba45d3c2a5c31daca1ebe6fa5ca87213d76c03b16a08c47"
     },
     "dist/images/jxl/vardct.mjs": {
-      "bytes": 50590,
-      "sha256": "6f10b3e8bb0d35084cf9dd6279d00fcf3056ccabd42cc2299fd8188bf8955c02"
+      "bytes": 50773,
+      "sha256": "8554805325e7db8e986594a713eb2d6eeab9a66e6d4dfe34373a84f96439ac3a"
     },
     "dist/images/jxl/photo-shown.mjs": {
       "bytes": 688,
       "sha256": "b3eca024909d43642ebbf9bc7ec700d219c601e7d0dc2fb5fed70375f2952c4c"
     },
     "dist/images/jxl/vardct-planes.mjs": {
-      "bytes": 6830,
-      "sha256": "90dcafff7c67dbdefd1601762c0f912b20ef7cb37651983912211a7bda3143ff"
+      "bytes": 6916,
+      "sha256": "07df211ce68622248b2bd8937e3a6b403d03ad2fd7cfdc413741c8e3084187e0"
     },
     "dist/images/jxl/vardct-header.mjs": {
       "bytes": 7724,
@@ -3724,20 +3740,20 @@
       "sha256": "ff470ff9e42ce2afd9b52e37ec63913abdcccda7d354866dcb1b1d74ee185da1"
     },
     "dist/images/jxl/capture-codec.mjs": {
-      "bytes": 125293,
-      "sha256": "271dda7764701adbd577e0fa5d9874200c876c5e6456a4dabd649081a30319a0"
+      "bytes": 125471,
+      "sha256": "167e4764a7c5b7e19df905db00dbd8c1808cac4030aff60c5f03f5804e4c9ea1"
     },
     "dist/images/jxl/capture-ans.mjs": {
       "bytes": 6621,
       "sha256": "091c0c139515111e935a1f26ee843d163b6bc312429f586fc4502ac6bbddd50d"
     },
     "dist/images/jxl/ans-core.mjs": {
-      "bytes": 14455,
-      "sha256": "b18c31b1ea4e04b7b5d4f64d203f6722c650589e658c59333d04b798dd1f43ea"
+      "bytes": 14796,
+      "sha256": "0712ab44c54c6cdeecd398a6033e0a5bbff5e56511fb6dfd1de64fb19508cf38"
     },
     "dist/images/jxl/kernels.mjs": {
-      "bytes": 99585,
-      "sha256": "b33500777e50023ab7713e2dd9c0ab7b23d58cc4e7f968cd59e0dee0a360404b"
+      "bytes": 102688,
+      "sha256": "f583cf2d871c1dd3465b4508a883bab8e8101563b1a4e5d04ece23babd461a96"
     },
     "dist/images/jxl/arena.mjs": {
       "bytes": 73,
@@ -3748,8 +3764,8 @@
       "sha256": "4598c903f36d794e74053fdf799adad9e4b573259e640f6c1c8440e03f062107"
     },
     "dist/images/jxl/jpeg-kernels-bytes.mjs": {
-      "bytes": 12896,
-      "sha256": "8206f3f077affe4da055e7a58aa1bd60c9d4998cb5c55d6c94749de2a5dfe650"
+      "bytes": 13054,
+      "sha256": "16f123c4ec5bf3207372ee13aa9eaa0c7532e43b3ba1d58709e7181d32c8cace"
     },
     "dist/images/jxl/lf-options.mjs": {
       "bytes": 561,
@@ -3768,8 +3784,8 @@
       "sha256": "9576a5713818fa78a80851d4e2178be9a6925faae2f44c4f58106a49a6f1d254"
     },
     "dist/images/jxl/photo-low-ladder.mjs": {
-      "bytes": 2196,
-      "sha256": "83e371cff3d8a11aaf8233f6bf5788692e8225b0c132fee1d86b1bcd21210c53"
+      "bytes": 2410,
+      "sha256": "20e1d7624afb33d06bb0893c9d6e9300bc77ebd424a26f07d7670bd808f5b22d"
     },
     "dist/images/jxl/coefficient-ans.mjs": {
       "bytes": 11127,
@@ -3779,13 +3795,21 @@
       "bytes": 75,
       "sha256": "d2bd8841c66b01fa0e7633a82b1992896454d82aab79fbcf7eb186436554a9fa"
     },
+    "dist/images/jxl/small-palette.mjs": {
+      "bytes": 433,
+      "sha256": "9fa18ad6d93bd9264feba65b1f88868164a838a02084b7496989833b983fadef"
+    },
     "dist/images/jxl/weighted.mjs": {
       "bytes": 905,
       "sha256": "5dbe9873cd3c0db2a6fd82520af2b1a5cbe8b64cdaf061711fa88832a02fdb57"
     },
     "dist/images/jxl/screen-photo-regions.mjs": {
-      "bytes": 8078,
-      "sha256": "3d2fb1cba0d726bd407c43cfa43367860a1d03cf8400ea35b8e9658fab872730"
+      "bytes": 8040,
+      "sha256": "ed705a63bd0dd00dcda4d99a8ceca4dbe5c33a8e310242a031f634024676ef96"
+    },
+    "dist/images/jxl/screen-photo-kernels.mjs": {
+      "bytes": 1995,
+      "sha256": "cf559b2dd0663c0d43a21f55c7a6334114663e1c0bbc923fec2982a62a81ad24"
     },
     "dist/images/jxl/exact-ladder.mjs": {
       "bytes": 486,
@@ -3808,8 +3832,8 @@
       "sha256": "7b5f98afd5815b06a3eb8d2a399867c9547ac91b4fb171b7ab8f6fd2e5f25bec"
     },
     "dist/images/jxl/varblock-core.mjs": {
-      "bytes": 42006,
-      "sha256": "6f9e60fdd3eda7f712485eace2a65733cad490c5620012ed2ee995c976fc6ade"
+      "bytes": 42611,
+      "sha256": "04f7be708197ed32bd9b7fa7b5bf7a0617a64f72b0dcec4d337564d5e9ed750e"
     },
     "dist/images/jxl/photo-mask.mjs": {
       "bytes": 4469,
@@ -3852,8 +3876,8 @@
       "sha256": "829e9a1df1acb5b25feb517a5ea8fad12f91bed5daf6229caadf55397efc4a72"
     },
     "dist/images/jxl/photo-rebuild.mjs": {
-      "bytes": 11785,
-      "sha256": "960e96e4b6643084afa45070c0bdb759f2cdad433f2a0042684826c45c0dee6a"
+      "bytes": 11994,
+      "sha256": "d9939d322abc7cac1d71723d1323295ea6fccb9ea11513ec63ad6eab02929bce"
     },
     "dist/images/jxl/rebuild-kernels.mjs": {
       "bytes": 689,
@@ -3872,8 +3896,8 @@
       "sha256": "45110b5c75b699e1bb874305161eb64186d9d58a74a341766cde3d20ca0e3c41"
     },
     "dist/images/jxl/vardct-inverse.mjs": {
-      "bytes": 5530,
-      "sha256": "99a0e577f7519572df2f794524a18da72bd2438ee463620a556d0217219abf2c"
+      "bytes": 5551,
+      "sha256": "01cd1199313e07169ee971099645108eb05117ed8c75cb7fe24e39bb23143c79"
     },
     "dist/images/jxl/opsin.mjs": {
       "bytes": 7794,
@@ -3920,8 +3944,8 @@
       "sha256": "4529fa25a5452189def805e3be59c6ad1307bc7ccd65d4451dfd0b77aaed84c7"
     },
     "dist/images/jxl/photo-reconstruct-bands.mjs": {
-      "bytes": 12194,
-      "sha256": "01d4f8f62724a80314d07ae2107a21c57e53d06a75eb0adfc3eba17d03e9a8ec"
+      "bytes": 12546,
+      "sha256": "c89115fc9aa6cd4da28ceba6792eadf5f2c6f60041c69ad1639abaab273e082e"
     },
     "dist/images/jxl/s2-cells.mjs": {
       "bytes": 10399,
@@ -3944,12 +3968,12 @@
       "sha256": "36952c156a808bdaeca160440318f9dfc8e0599e4061f732cb4b82145e060275"
     },
     "dist/images/jxl/ssimulacra2-arithmetic.mjs": {
-      "bytes": 12851,
-      "sha256": "7f49a2f76f3438751576044f4ae3848210ce80229d944ba8da0f49d238b59ab0"
+      "bytes": 13418,
+      "sha256": "86c7198f1872aed4c465e0c2f86725788b62b0aae9d836a4a6d3f9b1e71a66dc"
     },
     "dist/images/jxl/ssimulacra2-fused-bytes.mjs": {
-      "bytes": 30968,
-      "sha256": "4c3e0cd02ea0a9af7cbe5e8bb985125fc2bc1279e17c6cc4a3dca84c74475392"
+      "bytes": 49456,
+      "sha256": "146e59284c9f91a16b258a490189a524f3e315a580b33bf0e62c87d9f2023d9a"
     },
     "dist/images/jxl/ssimulacra2-gaussian.mjs": {
       "bytes": 2148,
@@ -3964,8 +3988,8 @@
       "sha256": "7e45164fac23c13a1f31782d8d52fe15841bd1ab1e9b938d8b73005961f5a1d6"
     },
     "dist/images/jxl/photo-measure.mjs": {
-      "bytes": 6746,
-      "sha256": "9bca9b77bbc3f9b3e756c0c7c34956b283d510062a8c63136d6416b031832b93"
+      "bytes": 6968,
+      "sha256": "55e0dc2f5af31dcfae9ad422e09185e83bedcb0bc92d13cd5a661baea3623ee8"
     },
     "dist/images/jxl/photo-native-scores.mjs": {
       "bytes": 3004,
@@ -3984,8 +4008,8 @@
       "sha256": "6b0e7df37d85bce7ede15eba5c8b1dd2c555bf2d8d8c74a53804989e1074aef8"
     },
     "dist/images/jxl/photo-quality-search.mjs": {
-      "bytes": 6737,
-      "sha256": "da5e59fc6066d9b588eb8380664d5f85ff5cf87b553144908c82d36139caab73"
+      "bytes": 6804,
+      "sha256": "f8ae1f2a04382599e1806d1afc01e5c9f3da7adf87dd5aa136f6616d6477203e"
     },
     "dist/images/jxl/photo-output-policy.mjs": {
       "bytes": 1226,
@@ -4092,8 +4116,8 @@
       "sha256": "947829c39a3da10564369c255f11cf6f721502bf5103c8cc2803ceb9c880f9a9"
     },
     "dist/images/jxl/v7/measured-search.mjs": {
-      "bytes": 2666,
-      "sha256": "8f065ad84ee1049480ef8fce1d77ff702cd22828fb7aded29bd73fee78ce24b8"
+      "bytes": 2673,
+      "sha256": "fdeb3170bcfe07f5a49ab87040a33f40ccebf83f45ef8eb12551107eaf6d3bb8"
     },
     "dist/images/jxl/v7/common.mjs": {
       "bytes": 3981,
@@ -4132,8 +4156,8 @@
       "sha256": "247bdd6e61fa41176667cee975e09590eff6bf36589e31432ff290a0ae074786"
     },
     "dist/images/jxl/v7/score-target.mjs": {
-      "bytes": 827,
-      "sha256": "fb7ce17eb5e34eab1019292cdd576415049c9a94def06a9745d74402d90bc2a4"
+      "bytes": 3585,
+      "sha256": "35da36e93daebf098491711103f8d16ec64e4f830527ad328fe9a8d7590c3d6c"
     },
     "dist/images/jxl/score.mjs": {
       "bytes": 13692,
@@ -4239,6 +4263,34 @@
       "bytes": 194,
       "sha256": "c1a90af4be756ce1ac508a04e1d929bbe17e674a2e87357d8d004302369b1e7f"
     },
+    "dist/images/jxl/photo-low.mjs": {
+      "bytes": 10651,
+      "sha256": "9feb377613fadbe20e7fb493aab8d62942e081a43f32ff5a194b53c5556a5a95"
+    },
+    "dist/images/jxl/photo-low-settings.mjs": {
+      "bytes": 228,
+      "sha256": "9ec7734de3e72a35698304f02562e5fc2e4432c82fc8f0b344d2780260d567cc"
+    },
+    "dist/images/jxl/v7/low-photo.mjs": {
+      "bytes": 2346,
+      "sha256": "48cc5491f4d5824914bd9883be966da662db9e95636cd27d8b1a683b0f6f4620"
+    },
+    "dist/images/jxl/v7/webp-quality.mjs": {
+      "bytes": 7543,
+      "sha256": "2bd1041f9d2b261dc8834cc721c5ecf85da09089478b81beeb65757fcab5a3bf"
+    },
+    "dist/images/jxl/photo-whole-rebuild.mjs": {
+      "bytes": 9489,
+      "sha256": "132b0bc9be1fdb2c6e99fcfeac78909206234326df1c0b0cf44ed3ac8d3e7df4"
+    },
+    "dist/images/jxl/photo-reference.mjs": {
+      "bytes": 321,
+      "sha256": "33cdf5b289d94d0d6e95e30030a76a2e7f2ab20f9229d7352029a7e1cef3ff6a"
+    },
+    "dist/images/jxl/photo-s2-stream.mjs": {
+      "bytes": 3862,
+      "sha256": "992e2fb6bbb57a9fd56777fc27bde9b5c945b4923f680c83e3d0a4aa445730be"
+    },
     "dist/images/jxl/source.mjs": {
       "bytes": 27745,
       "sha256": "45e4e6361ee0e0668e59a110a7be34fc1d554b8a766f70149c85c813f06a4dde"
@@ -4256,8 +4308,8 @@
       "sha256": "3fe1abade0bad47d8957b6427e68063839a09d15af027cb68f6b32f36d5132d7"
     },
     "dist/images/jxl/core-steps.mjs": {
-      "bytes": 2291,
-      "sha256": "5eef9ccad06e5c61878ef6d76b75f08545a31c886fa6cacce39bd857a56d1c0e"
+      "bytes": 2755,
+      "sha256": "0fddf488d5499521172620d6ed53a38562a76d69fb6c418000f6512187bf5116"
     },
     "dist/images/jxl/parallel-drive.mjs": {
       "bytes": 9636,
@@ -4268,8 +4320,8 @@
       "sha256": "5f89d04f1aed5cbece87702323c2c376473ff54f2436868ba90bd65222f68cf3"
     },
     "dist/images/jxl/screen-floor.mjs": {
-      "bytes": 1436,
-      "sha256": "596b96e382e29ff27a94af0360237029e37ff08b24a917cb6539d74d1c038f01"
+      "bytes": 1601,
+      "sha256": "13a24d038d08983b7373d1b7c8c1f76925507a6f77572ae5b07de1a26d8a233c"
     },
     "dist/images/jxl/parallel-serve.mjs": {
       "bytes": 6008,
@@ -4327,22 +4379,6 @@
       "bytes": 2143,
       "sha256": "8675fc73bb37783ae4335f925c8cc0fcc2cd61ad6e071854b8fb4be587cb8fa0"
     },
-    "dist/images/jxl/v7/low-photo.mjs": {
-      "bytes": 2346,
-      "sha256": "48cc5491f4d5824914bd9883be966da662db9e95636cd27d8b1a683b0f6f4620"
-    },
-    "dist/images/jxl/photo-low.mjs": {
-      "bytes": 10563,
-      "sha256": "52072e5c303401a932070586957ba8fe1d024cfe87ef885e8eb6e3224265da0d"
-    },
-    "dist/images/jxl/photo-low-settings.mjs": {
-      "bytes": 228,
-      "sha256": "9ec7734de3e72a35698304f02562e5fc2e4432c82fc8f0b344d2780260d567cc"
-    },
-    "dist/images/jxl/v7/webp-quality.mjs": {
-      "bytes": 7344,
-      "sha256": "0e5ac8ad421c154d93d36b9ee84a3770f2257e7b195bad1fa1385d0d96707bb6"
-    },
     "dist/images/jxl/v7/ordinary-still-policy.mjs": {
       "bytes": 2451,
       "sha256": "577124560d263796f082144079dd58fd19ff6730236a1c37794f02c91c114bb3"
@@ -4359,17 +4395,21 @@
       "bytes": 2299,
       "sha256": "943c40abd87fccd3207696e666fb0e6f852a4a1e49bef0e3385f2b0304b6a4e0"
     },
+    "dist/images/jxl/text-floor.mjs": {
+      "bytes": 1761,
+      "sha256": "9c37591d2761ea459c6034a44af69a0a59e38530216b39729ad9d3310217c08c"
+    },
     "dist/images/jxl/v7/settle-scans.mjs": {
       "bytes": 455,
       "sha256": "088d2ccf37e64bd3560265d05800b98e20dd754d6c3950887bc27ada14b6c9bd"
     },
     "dist/images/jxl/v7/still-photo-target.mjs": {
-      "bytes": 2632,
-      "sha256": "5e6b8e826b80726245a81995756bafc35e2adc65e1cb8f339cb0cbd1d5a025e8"
+      "bytes": 2958,
+      "sha256": "bcb202fa7c6212f402e6b4954f51260d29adb5767b6a4c2471dd8ef4672d63c0"
     },
     "dist/images/jxl/photo-whole-search.mjs": {
-      "bytes": 31723,
-      "sha256": "60ca2ce1d14b3f3c6246348af609cd8945915b90a8e2438af85f881d35c0c27b"
+      "bytes": 32768,
+      "sha256": "f5aef2efb841d49fee026f8ceb6751dea6ba9b62ab23c72615cefd2a0d2076a4"
     },
     "dist/images/jxl/photo-plane-levels.mjs": {
       "bytes": 2680,
@@ -4386,14 +4426,6 @@
     "dist/images/jxl/photo-measured-steps.mjs": {
       "bytes": 1004,
       "sha256": "5e6dac9684dbb08ee51e88fb2d48fb61060e1b26e01e1b9b0e8e9d66d6df02c3"
-    },
-    "dist/images/jxl/photo-whole-rebuild.mjs": {
-      "bytes": 8715,
-      "sha256": "8daa06bf9e1a037a5c3b63d6e5473fa2919dd5fad98139c0baa75407b31a80ab"
-    },
-    "dist/images/jxl/photo-reference.mjs": {
-      "bytes": 321,
-      "sha256": "33cdf5b289d94d0d6e95e30030a76a2e7f2ab20f9229d7352029a7e1cef3ff6a"
     },
     "dist/images/jxl/photo-hdr.mjs": {
       "bytes": 3370,
@@ -4460,12 +4492,12 @@
       "sha256": "2aeb5c81bcb7e093762e187dc687a2a95a9d84d01c5b238fc7618c9fa176fb85"
     },
     "dist/tools/discovery.mjs": {
-      "bytes": 2490,
-      "sha256": "79301f53d88902ccf6e360f8b11447a8a17e5aab0af27ebbc55b05ea5a0461db"
+      "bytes": 2501,
+      "sha256": "12e7936b60fea99ef1afbcfa3d32491aea3c6397a5090e22f9c81c0a6ea2db43"
     },
     "dist/mcp/convert-door.mjs": {
-      "bytes": 1148,
-      "sha256": "e470ecae0212fa6ef583846801d7fd189b63bc35ae091d1425d22126335fa556"
+      "bytes": 1839,
+      "sha256": "f7f86a1fc54d283c515809fd07d6aacbf79be0935bedbdbda7a9d2bc3b284254"
     },
     "dist/skills/rapier-html/return-address.mjs": {
       "bytes": 1255,
@@ -4792,12 +4824,12 @@
       "sha256": "c08addf494279c452116ebd2aca16619f0bca5f9e1d6174a619b501e2597cc50"
     },
     "dist/dist/chatgpt/rapier-app.html": {
-      "bytes": 2351204,
-      "sha256": "fe6f61a40eb2230ff68dc0e711cd065c04b5e343856b9d59f9d6c48ff62b388b"
+      "bytes": 2367214,
+      "sha256": "b05e0f48c488f845b81d42d79e3e0f16382c35cd77153111ec904d1fb5f38cbd"
     },
     "dist/dist/chatgpt/rapier.html": {
-      "bytes": 7043430,
-      "sha256": "018618615b4239c490c4631483e3a5b7025e96e2adbddafea2877cd155c26b2e"
+      "bytes": 7213252,
+      "sha256": "a8a307b65a52125720edc44fd3a3dcf1ca2fa9b426018686b777024ed1874f1c"
     },
     "dist/dist/chatgpt/icon-192.png": {
       "bytes": 1541,
@@ -4807,57 +4839,61 @@
       "bytes": 4210,
       "sha256": "50b8aa84b051df09cf11b99afc00f160aad6baa43cc7a523f1b49cc3d6f6a75a"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-document-b861d04a222f14d0.txt": {
-      "bytes": 902468,
-      "sha256": "b861d04a222f14d0e2137ca29c90d244126bb5d1649b4e5c1a4a1743b296f072"
+    "dist/dist/chatgpt/editor-assets/rapier-document-c9965c2dd7cc0a76.txt": {
+      "bytes": 902419,
+      "sha256": "c9965c2dd7cc0a76f94effdcdf7f600822d54f647b9b0ff7dd5b1782e2b1ae8d"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-presets-efe29cd6ca18cbb2.txt": {
-      "bytes": 252362,
-      "sha256": "efe29cd6ca18cbb29bbd4bc61753796587651478eb3912d5ef52f3e1dcdfaa61"
+    "dist/dist/chatgpt/editor-assets/rapier-presets-cb37747cb43e667c.txt": {
+      "bytes": 252327,
+      "sha256": "cb37747cb43e667ce2ed3c59369d9a2d18aeb48098dda93e38678c4f17908757"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-drawing-f60c92ea4b3bb4d3.txt": {
-      "bytes": 792916,
-      "sha256": "f60c92ea4b3bb4d32d388c4920903ea4b29e9813f3bb79c9539c1d0bb3adcafb"
+    "dist/dist/chatgpt/editor-assets/rapier-drawing-9db49fe1283b9a15.txt": {
+      "bytes": 800000,
+      "sha256": "9db49fe1283b9a154a1fc561a994ef33cb04d0461dd6751ffc81e0263de904f7"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-jxl-cad16a87c710faba.txt": {
-      "bytes": 33800,
-      "sha256": "cad16a87c710faba11433f440941acfcf9758e8c50ed124cfc9845efad377902"
+    "dist/dist/chatgpt/editor-assets/rapier-jxl-922bb153e640e89a.txt": {
+      "bytes": 34290,
+      "sha256": "922bb153e640e89a86e08d3b152f1faba764c18d7e123853bc758cd3e689c837"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-convert-dab283a540922d98.txt": {
-      "bytes": 5779,
-      "sha256": "dab283a540922d981faf7403036dfa5614bdce1abd51890241cb9d0764acd010"
+    "dist/dist/chatgpt/editor-assets/rapier-convert-b440c709c079893f.txt": {
+      "bytes": 5793,
+      "sha256": "b440c709c079893f17ab0dccb08bb9c79ed5589f860b08fd1c830bdcdaf1771d"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-diagrams-0062c52b4a7b34c4.txt": {
-      "bytes": 6013,
-      "sha256": "0062c52b4a7b34c457be2d8fd69f4b40145faa703a277f96499ee11657eb6492"
+    "dist/dist/chatgpt/editor-assets/rapier-diagrams-d9ef611ce999b655.txt": {
+      "bytes": 6020,
+      "sha256": "d9ef611ce999b655fdd983eeab368b43395546c5f746e9a12b9a170915feccb7"
     },
     "dist/dist/chatgpt/editor-assets/rapier-diagramtheme-31e471e2bc1f912d.txt": {
       "bytes": 7205,
       "sha256": "31e471e2bc1f912dd820feb86001f2c982dc3b72d5d2e47a694aec9a8a7508a8"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-jxlcomplete-60fd76b6fdbaa5e4.txt": {
-      "bytes": 513446,
-      "sha256": "60fd76b6fdbaa5e4b01b86f780beec654d92c0016ea9c2c4766c274757855717"
+    "dist/dist/chatgpt/editor-assets/rapier-jxlcomplete-1bf39ddc233affd1.txt": {
+      "bytes": 523680,
+      "sha256": "1bf39ddc233affd1d8239f8b500a95370726f26d7b8552b9920baf3f0fcaada1"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-jxlscene-4cee179d734c1973.txt": {
-      "bytes": 5348,
-      "sha256": "4cee179d734c19734e3bcdd93857755043348298426aa03c76013ba7b80b310a"
+    "dist/dist/chatgpt/editor-assets/rapier-jxlscene-4d76c586610a6ed4.txt": {
+      "bytes": 5355,
+      "sha256": "4d76c586610a6ed40c16f2fc06f973a84674abaf0eb2dbdb8c892d4a3eadf546"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-diff-fef8ac5e35f704d9.txt": {
-      "bytes": 4985,
-      "sha256": "fef8ac5e35f704d98ccf40a38697734f3f1ce3dd04f0d4479c1c83dd42e71637"
+    "dist/dist/chatgpt/editor-assets/rapier-jxlexample-4fa7ea2f6482f3d1.txt": {
+      "bytes": 136575,
+      "sha256": "4fa7ea2f6482f3d128716ba7730b256fef85fd62a4c63177f01a6bb4d0b4143f"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-mathview-ee9970140cc430df.txt": {
+    "dist/dist/chatgpt/editor-assets/rapier-diff-496470bfed0e81c6.txt": {
+      "bytes": 4978,
+      "sha256": "496470bfed0e81c6552ff1d05e6628a33af918e2dfd793b76c6793794501f8c4"
+    },
+    "dist/dist/chatgpt/editor-assets/rapier-mathview-bfa3a3ef8d8b804d.txt": {
       "bytes": 4871,
-      "sha256": "ee9970140cc430dfb463e8e1da95e0bd84eea36b0edfabb0030974dd8cb10499"
+      "sha256": "bfa3a3ef8d8b804d268b59d7e45492812e90c667f5bb5ee33df85cc18e004504"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-fonts-3e181035c6a85afd.txt": {
-      "bytes": 11169,
-      "sha256": "3e181035c6a85afd81ef90c54532cbfe8cdf11a2fd591f477b6ed5fc7ff287f5"
+    "dist/dist/chatgpt/editor-assets/rapier-fonts-2b16c1361a729684.txt": {
+      "bytes": 11176,
+      "sha256": "2b16c1361a7296847df8136fb191e9842f732c5115be6b2a7ea61e693f2553e7"
     },
-    "dist/dist/chatgpt/editor-assets/rapier-notes-2a23322dfbd5ddc1.txt": {
+    "dist/dist/chatgpt/editor-assets/rapier-notes-ae151f83c72f6668.txt": {
       "bytes": 394683,
-      "sha256": "2a23322dfbd5ddc12b38165a4be26d59e8f9c7e646e79d247aefae9f0792fe41"
+      "sha256": "ae151f83c72f6668225c5a30cce82f3125135d7651012bcb09631d6db2ea764e"
     },
     "dist/dist/chatgpt/editor-assets/rapier-plugin-math-971908eb6249a60c.txt": {
       "bytes": 453195,
@@ -4909,7 +4945,7 @@
     },
     "dist/dist/chatgpt/rapier-skills.json": {
       "bytes": 1592889,
-      "sha256": "c913c389767f0b350d2bce29850c05b13b08cc30061aed3c7bc7bd6bde16295e"
+      "sha256": "16cea552e29b7737ebf979e54596f370af94540625e0c12a3b9db452509992ba"
     }
   }
 }

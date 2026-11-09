@@ -19,6 +19,9 @@
 .rapier-jxl-view__row-actions{display:flex;align-items:center;gap:var(--space-1)}
 .rapier-jxl-view__row .settings-action-btn{width:auto;background:var(--color-bg)}
 .rapier-jxl-view__row .navigator-close{width:48px;height:48px}
+.rapier-jxl-view__media{display:block;max-width:100%;height:auto;margin:0}
+.rapier-jxl-view__row>.rapier-jxl-view__media{grid-column:1/-1}
+.rapier-jxl-view__example:empty{display:none}
 .rapier-jxl-view__all{justify-content:center;text-align:center}
 .rapier-jxl-view__effort{display:flex;align-items:center;gap:var(--space-2);font:var(--fw-semibold) var(--text-sm)/1.4 var(--font-mono);letter-spacing:var(--track-caps-ui);text-transform:uppercase}
 .rapier-jxl-view__end{white-space:nowrap}

@@ -95,6 +95,7 @@ const regionTable = rows => rows.map(([first, falls, dc]) => {
     return {first, bits, shape, dc};
   });
 const REGION_TABLE = regionTable([[10, [0, -0.3, -0.3, -0.3, -0.3], 2.5], [18, [0, -0.3, -0.3, -0.3, -0.3], 4.5], [18, [0, -0.3, -0.3, -0.3, -0.3], 4.5]]);
+const SMALL_REGION_TABLE = REGION_TABLE.map((row,c)=>c===1?{...row,first:4.5,dc:1.125}:row);
 const RGB_TABLE = /* @__PURE__ */ regionTable([[30, [0, -0.3, -0.3, -0.3, -0.3], 4.5], [10, [0, -0.3, -0.3, -0.3, -0.3], 2.5], [30, [0, -0.3, -0.3, -0.3, -0.3], 4.5]]);
 const strengthOf = quality => Math.max(0, Math.min(1, (90 - quality) / 15));
 const distanceOf = (quality, kind) => Math.max(0.1, calibration(quality, kind) * (quality >= 30 ? 0.1 + (100 - quality) * 0.09 : 53 / 3000 * quality * quality - 23 / 20 * quality + 25));
@@ -132,7 +133,7 @@ export function* photoCoefficientSteps(data, width, height, quality, colorSpace,
     coeffs: new Int16Array(stride * rows * 64)}));
   let quantTable = null;
   if (table && !gray) quantTable = components.map((component, c) => {
-    const {first: ratio, bits, shape, dc} = REGION_TABLE[c], base = quantScale * distance * stepScale, first = float16Bits(8 * 255 * quantScale / (FIELD * base * ratio) / 64);
+    const {first: ratio, bits, shape, dc} = (options.smallRegions?SMALL_REGION_TABLE:REGION_TABLE)[c], base = quantScale * distance * stepScale, first = float16Bits(8 * 255 * quantScale / (FIELD * base * ratio) / 64);
     const quant = component.quant = shape.map(value => 8 * 255 * quantScale / (FIELD * half(first) * 64) * value);
     quant[0] = Math.max(1, Math.round(base * dc));
     return [first, ...bits];

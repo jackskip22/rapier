@@ -20,9 +20,10 @@ export async function compileCaptureKernels() {
   try { return await compileKernels() && prepareCaptureKernels(); } catch { return false; }
 }
 
+const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 export function prepareCaptureKernels() {
   try {
-    if (typeof WebAssembly !== 'object' || new Uint8Array(new Uint32Array([1]).buffer)[0] !== 1) return false;
+    if (typeof WebAssembly !== 'object' || !LITTLE) return false;
     simd ??= SIMD_OK();
     if (!simd) return false;
     compiled ||= kernelModule();

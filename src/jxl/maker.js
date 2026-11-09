@@ -437,7 +437,7 @@
 	}
 	function stale(self) {
 		if (!self.result || self.result.key === keyOf(self)) return;
-		URL.revokeObjectURL(self.result.url); self.result = null;
+		URL.revokeObjectURL(self.result.url); self.result = null; self.shown?.end(); self.shown = null;
 		self.after.hidden = true; self.download.hidden = true; self.afterSlot.replaceChildren();
 	}
 	const keyOf = self => JSON.stringify([self.frames.map(frame => [frame.id, frame.duration, frame.skip]), self.settings, self.mode, self.effortValue, M.loopsOf(self.loops.value)]);
@@ -478,23 +478,14 @@
 			say(self, error?.name === 'AbortError' ? 'Canceled' : C.exhausted(error) ? 'This device ran out of memory. Try fewer frames or a smaller scale.' : C.refusal(error));
 		} finally { self.making = false; working(self, false); self.go.disabled = !M.timeline(self.frames).count; }
 	}
-	async function showResult(self, bytes) {
+	async function showResult(self) {
 		const r = self.result, change = Math.round((1 - r.size / r.before) * 100);
 		const video = self.sources.some(each => each.kind === 'Video');
 		self.afterNote.textContent = 'JPEG XL · ' + size(r.size) + (video ? '' : change > 0 ? ' · ' + change + '% smaller' : change < 0 ? ' · ' + -change + '% larger' : '') + (r.exact ? ' · every frame exact' : '');
 		self.after.hidden = false; self.download.hidden = false;
-		if (await globalThis.RapierEmbeddedImages.whenJxlDisplayKnown?.() === true) {
-			const image = make('img', 'rapier-jxl-maker__media'); image.alt = 'The animated JPEG XL'; image.src = r.url;
-			self.afterSlot.replaceChildren(image); return;
-		}
-		const decoded = await globalThis.RapierEmbeddedImages.codec('decode', bytes.slice(), {});
-		const canvas = make('canvas', 'rapier-jxl-maker__media'); canvas.width = decoded.width; canvas.height = decoded.height;
-		self.afterSlot.replaceChildren(canvas);
-		const context = canvas.getContext('2d');
-		const frames = await Promise.all((decoded.frames?.length ? decoded.frames : [decoded]).map(async frame => ({bitmap: await createImageBitmap(new ImageData(new Uint8ClampedArray(frame.data.buffer, frame.data.byteOffset, decoded.width * decoded.height * 4), decoded.width, decoded.height)), ms: Math.max(1, (frame.durationSeconds || 0) * 1000)})));
-		let at = -1, due = 0;
-		const step = now => { if (self.result !== r || !self.live) { for (const frame of frames) frame.bitmap.close(); return; } if (now >= due) { at = (at + 1) % frames.length; context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(frames[at].bitmap, 0, 0); due = (due && now - due < 1000 ? due : now) + frames[at].ms; } requestAnimationFrame(step); };
-		requestAnimationFrame(step);
+		self.shown?.end();
+		self.shown = C.showMade(r.blob, 'rapier-jxl-maker__media', 'The animated JPEG XL');
+		self.afterSlot.replaceChildren(self.shown.node);
 	}
 	function save(self) {
 		const r = self.result;
@@ -617,6 +608,7 @@
 		self.live = false;
 		self.controller?.abort(); cancelAnimationFrame(self.raf);
 		if (self.result) URL.revokeObjectURL(self.result.url);
+		self.shown?.end();
 		if (self.clipUrl) URL.revokeObjectURL(self.clipUrl);
 		for (const frame of [...self.frames, ...self.history.flat()]) frame.picture.show?.close?.();
 		self.frames = []; self.history = []; self.future = [];

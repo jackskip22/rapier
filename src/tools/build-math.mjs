@@ -14,7 +14,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const MATH_VERSION = '3.0.0';
 export const MATH_BUNDLE = 'rapier-math-' + MATH_VERSION + '.js';
 export const MATH_SOURCES = ['font.js', 'symbols.js', 'parser.js', 'source.js', 'variants.js', 'layout.js', 'fallbacks.js', 'responsive.js', 'api.js', 'browser.js', 'mathml.js', 'semantic-api.js', 'combined.js', 'classic.js'].map(name => 'math/' + name);
-export const MATH_RECIPE = ['math/build-font.py', 'math/FONT-SOURCE.md', 'math/FONT-LICENSE.txt', 'math/package-verify.mjs', 'tools/build-math.mjs', 'math/LICENSE-MIT', 'math/adoption-verify.mjs', 'math/package-build.mjs', 'math/package-layout.mjs', 'math/package-check.mjs', 'math/package-readme.mjs', 'math/README.md', 'math/CHANGELOG.md', 'math/SEMANTICS.md', 'math/semantic-verify.mjs', 'math/typeset-verify.mjs'];
+export const MATH_RECIPE = ['math/build-font.py', 'math/FONT-SOURCE.md', 'math/FONT-LICENSE.txt', 'math/package-verify.mjs', 'tools/build-math.mjs', 'math/LICENSE-MIT', 'math/adoption-verify.mjs', 'math/package-build.mjs', 'math/package-layout.mjs', 'math/package-check.mjs', 'math/package-readme.mjs', 'math/README.md', 'math/SEMANTICS.md', 'math/semantic-verify.mjs', 'math/typeset-verify.mjs'];
 export const MATH_ADOPTION = ['delimiters.mjs', 'markdown-rules.mjs', 'reuse.mjs', 'integration.mjs', 'markdown-it.mjs', 'rehype.mjs', 'stream.mjs',
   'accessible.mjs', 'accessible.css', 'mathml.d.ts', 'combined.d.ts', 'accessible.d.ts',
   'index.d.ts', 'classic.d.ts', 'delimiters.d.ts', 'integration.d.ts', 'markdown-it.d.ts', 'rehype.d.ts', 'stream.d.ts',

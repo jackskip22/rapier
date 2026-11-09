@@ -390,6 +390,8 @@
     (local $bestLen i32) (local $bestDist i32) (local $bestCost i32)
     (local $atAddr i32) (local $prevAddr i32) (local $prev i32) (local $d i32) (local $cost i32) (local $k i32)
     (local $head i64) (local $mask i32) (local $ok i32)
+    (local $pair i32) (local $atPair i32)
+    (local $rq v128) (local $okq v128) (local $addrq v128) (local $vq v128)
     (local.set $bestCost (i32.const -10))
     (block $found
       (br_if $found (i32.gt_s (i32.add (local.get $at) (local.get $minimum)) (local.get $n)))
@@ -459,6 +461,11 @@
         ;; Probe N: a copy from the row above. Its tests are computed together, with one branch.
         (block $probeN
           (local.set $prevAddr (i32.add (local.get $values) (i32.shl (local.get $prev) (i32.const 1))))
+          (if (local.get $bestLen)
+            (then
+              (local.set $pair (i32.xor (i32.load (i32.add (local.get $atAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))
+                (i32.load (i32.add (local.get $prevAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))))
+              (br_if $probeN (i32.and (local.get $pair) (i32.const 0xffff)))))
           (local.set $d (i32.sub (local.get $at) (local.get $prev)))
           (local.set $cost
             (select (i32.load8_u (i32.add (local.get $spatial) (local.get $d))) (i32.const 0)
@@ -466,23 +473,15 @@
           (local.set $k (i32.sub (i32.sub (i32.const 31) (i32.clz (local.get $d))) (i32.const 0)))
           (local.set $cost
             (select (local.get $cost) (select (local.get $k) (i32.const 2) (i32.gt_s (local.get $k) (i32.const 2))) (local.get $cost)))
-          ;; The same three values; with a copy so far, the same value at its last position, and at the one after it
-          ;; unless this copy costs less (each read stays inside the arena).
+          ;; The same three values; with a copy so far (its last value tested above), the value after it unless this
+          ;; copy costs less.
           (br_if $probeN
             (i32.eqz
               (i32.and
                 (i64.eq (i64.and (i64.load (local.get $prevAddr)) (i64.const 0xffffffffffff)) (local.get $head))
                 (i32.or (i32.eqz (local.get $bestLen))
-                  (i32.and
-                    (i32.eq
-                      (i32.load16_u (i32.add (local.get $prevAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))
-                      (i32.load16_u (i32.add (local.get $atAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1)))))
-                    (i32.or (i32.lt_s (local.get $cost) (local.get $bestCost))
-                      (i32.and
-                        (i32.lt_s (i32.add (local.get $at) (local.get $bestLen)) (local.get $n))
-                        (i32.eq
-                          (i32.load16_u (i32.add (local.get $prevAddr) (i32.shl (local.get $bestLen) (i32.const 1))))
-                          (i32.load16_u (i32.add (local.get $atAddr) (i32.shl (local.get $bestLen) (i32.const 1))))))))))))
+                  (i32.or (i32.lt_s (local.get $cost) (local.get $bestCost))
+                    (i32.eqz (i32.shr_u (local.get $pair) (i32.const 16))))))))
           (local.set $k (call $copyExtent (local.get $prevAddr) (local.get $atAddr) (local.get $d) (local.get $at) (local.get $n) (local.get $scratch)))
           (if
             (i32.gt_s
@@ -496,25 +495,31 @@
       ;; A copy at W or N of `nice` values or more stands without the recent and chain probes (effort 1).
       (br_if $found (i32.ge_s (local.get $bestLen) (local.get $nice)))
       (br_if $found (i32.eqz (local.get $depth)))
-      ;; The recent distances (other than W and N) whose value equals this one, as a mask, without a branch each.
+      ;; The recent distances (other than W and N) whose value equals this one, as a mask, without a branch each: four
+      ;; distances a step, each one's value read at its own address (this position's own where the distance does not apply).
       (local.set $v (i32.load16_u (local.get $atAddr)))
       (local.set $i (i32.const 0))
       (local.set $mask (i32.const 0))
       (loop $gather
-        (local.set $r (i32.load (i32.add (local.get $scratch) (i32.shl (local.get $i) (i32.const 2)))))
-        (local.set $ok
-          (i32.and
-            (i32.and (i32.gt_s (local.get $r) (i32.const 1)) (i32.ne (local.get $r) (local.get $width)))
-            (i32.le_s (local.get $r) (local.get $at))))
+        (local.set $rq (v128.load (i32.add (local.get $scratch) (i32.shl (local.get $i) (i32.const 2)))))
+        (local.set $okq
+          (v128.and
+            (v128.and (i32x4.gt_s (local.get $rq) (i32x4.splat (i32.const 1))) (i32x4.ne (local.get $rq) (i32x4.splat (local.get $width))))
+            (i32x4.le_s (local.get $rq) (i32x4.splat (local.get $at)))))
+        (local.set $addrq
+          (v128.bitselect
+            (i32x4.sub (i32x4.splat (local.get $atAddr)) (i32x4.shl (local.get $rq) (i32.const 1)))
+            (i32x4.splat (local.get $atAddr)) (local.get $okq)))
+        (local.set $vq (i32x4.splat (i32.load16_u (i32x4.extract_lane 0 (local.get $addrq)))))
+        (local.set $vq (i32x4.replace_lane 1 (local.get $vq) (i32.load16_u (i32x4.extract_lane 1 (local.get $addrq)))))
+        (local.set $vq (i32x4.replace_lane 2 (local.get $vq) (i32.load16_u (i32x4.extract_lane 2 (local.get $addrq)))))
+        (local.set $vq (i32x4.replace_lane 3 (local.get $vq) (i32.load16_u (i32x4.extract_lane 3 (local.get $addrq)))))
         (local.set $mask
           (i32.or (local.get $mask)
             (i32.shl
-              (i32.and (local.get $ok)
-                (i32.eq (local.get $v)
-                  (i32.load16_u
-                    (select (i32.sub (local.get $atAddr) (i32.shl (local.get $r) (i32.const 1))) (local.get $atAddr) (local.get $ok)))))
+              (i32x4.bitmask (v128.and (local.get $okq) (i32x4.eq (local.get $vq) (i32x4.splat (local.get $v)))))
               (local.get $i))))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (local.set $i (i32.add (local.get $i) (i32.const 4)))
         (br_if $gather (i32.lt_u (local.get $i) (i32.const 16))))
       ;; Probed in order, until a copy reaches 1024.
       (block $recDone
@@ -526,6 +531,11 @@
           ;; Probe a recent distance: a copy from a recent copy's distance, cheaper by 5 bits. Its tests are computed together, with one branch.
           (block $probeR
             (local.set $prevAddr (i32.add (local.get $values) (i32.shl (local.get $prev) (i32.const 1))))
+            (if (local.get $bestLen)
+              (then
+                (local.set $pair (i32.xor (i32.load (i32.add (local.get $atAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))
+                  (i32.load (i32.add (local.get $prevAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))))
+                (br_if $probeR (i32.and (local.get $pair) (i32.const 0xffff)))))
             (local.set $d (i32.sub (local.get $at) (local.get $prev)))
             (local.set $cost
               (select (i32.load8_u (i32.add (local.get $spatial) (local.get $d))) (i32.const 0)
@@ -533,23 +543,15 @@
             (local.set $k (i32.sub (i32.sub (i32.const 31) (i32.clz (local.get $d))) (i32.const 5)))
             (local.set $cost
               (select (local.get $cost) (select (local.get $k) (i32.const 2) (i32.gt_s (local.get $k) (i32.const 2))) (local.get $cost)))
-            ;; The same three values; with a copy so far, the same value at its last position, and at the one after it
-            ;; unless this copy costs less (each read stays inside the arena).
+            ;; The same three values; with a copy so far (its last value tested above), the value after it unless this
+            ;; copy costs less (inside the plane).
             (br_if $probeR
               (i32.eqz
                 (i32.and
                   (i64.eq (i64.and (i64.load (local.get $prevAddr)) (i64.const 0xffffffffffff)) (local.get $head))
                   (i32.or (i32.eqz (local.get $bestLen))
-                    (i32.and
-                      (i32.eq
-                        (i32.load16_u (i32.add (local.get $prevAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))
-                        (i32.load16_u (i32.add (local.get $atAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1)))))
-                      (i32.or (i32.lt_s (local.get $cost) (local.get $bestCost))
-                        (i32.and
-                          (i32.lt_s (i32.add (local.get $at) (local.get $bestLen)) (local.get $n))
-                          (i32.eq
-                            (i32.load16_u (i32.add (local.get $prevAddr) (i32.shl (local.get $bestLen) (i32.const 1))))
-                            (i32.load16_u (i32.add (local.get $atAddr) (i32.shl (local.get $bestLen) (i32.const 1))))))))))))
+                    (i32.or (i32.lt_s (local.get $cost) (local.get $bestCost))
+                      (i32.and (i32.lt_s (i32.add (local.get $at) (local.get $bestLen)) (local.get $n)) (i32.eqz (i32.shr_u (local.get $pair) (i32.const 16)))))))))
             (local.set $k (call $copyExtent (local.get $prevAddr) (local.get $atAddr) (local.get $d) (local.get $at) (local.get $n) (local.get $scratch)))
             (if
               (i32.gt_s
@@ -563,15 +565,24 @@
       (local.set $h (call $copyHash (local.get $atAddr)))
       (local.set $p (i32.load (i32.add (local.get $heads) (i32.shl (local.get $h) (i32.const 2)))))
       (local.set $links (i32.const 0))
+      (if (local.get $bestLen)
+        (then (local.set $atPair (i32.load (i32.add (local.get $atAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1)))))))
       (block $chDone
         (loop $ch
           (br_if $chDone
             (i32.or
               (i32.or (i32.lt_s (local.get $p) (i32.const 0)) (i32.ge_s (local.get $links) (local.get $depth)))
               (i32.or (i32.ge_s (i32.add (local.get $at) (local.get $bestLen)) (local.get $n)) (i32.ge_s (local.get $bestLen) (i32.const 1024)))))
-              ;; Probe the chain: a copy from an earlier position of the same three values. Its tests are computed together, with one branch.
+              ;; Probe the chain: a copy from an earlier position of the same three values. A copy so far is tested first
+              ;; on its last value and the one after it (one 32-bit compare, against $atPair); a probe that passes then
+              ;; computes its cost and compares the first three values. Inside this loop at + bestLen < n.
               (block $probeC
                 (local.set $prevAddr (i32.add (local.get $values) (i32.shl (local.get $p) (i32.const 1))))
+                (if (local.get $bestLen)
+                  (then
+                    (local.set $pair (i32.xor (local.get $atPair)
+                      (i32.load (i32.add (local.get $prevAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))))
+                    (br_if $probeC (i32.and (local.get $pair) (i32.const 0xffff)))))
                 (local.set $d (i32.sub (local.get $at) (local.get $p)))
                 (local.set $cost
                   (select (i32.load8_u (i32.add (local.get $spatial) (local.get $d))) (i32.const 0)
@@ -579,23 +590,13 @@
                 (local.set $k (i32.sub (i32.sub (i32.const 31) (i32.clz (local.get $d))) (i32.const 0)))
                 (local.set $cost
                   (select (local.get $cost) (select (local.get $k) (i32.const 2) (i32.gt_s (local.get $k) (i32.const 2))) (local.get $cost)))
-                ;; The same three values; with a copy so far, the same value at its last position, and at the one after it
-                ;; unless this copy costs less (each read stays inside the arena).
                 (br_if $probeC
                   (i32.eqz
                     (i32.and
                       (i64.eq (i64.and (i64.load (local.get $prevAddr)) (i64.const 0xffffffffffff)) (local.get $head))
                       (i32.or (i32.eqz (local.get $bestLen))
-                        (i32.and
-                          (i32.eq
-                            (i32.load16_u (i32.add (local.get $prevAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))
-                            (i32.load16_u (i32.add (local.get $atAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1)))))
-                          (i32.or (i32.lt_s (local.get $cost) (local.get $bestCost))
-                            (i32.and
-                              (i32.lt_s (i32.add (local.get $at) (local.get $bestLen)) (local.get $n))
-                              (i32.eq
-                                (i32.load16_u (i32.add (local.get $prevAddr) (i32.shl (local.get $bestLen) (i32.const 1))))
-                                (i32.load16_u (i32.add (local.get $atAddr) (i32.shl (local.get $bestLen) (i32.const 1))))))))))))
+                        (i32.or (i32.lt_s (local.get $cost) (local.get $bestCost))
+                          (i32.eqz (i32.shr_u (local.get $pair) (i32.const 16))))))))
                 (local.set $k (call $copyExtent (local.get $prevAddr) (local.get $atAddr) (local.get $d) (local.get $at) (local.get $n) (local.get $scratch)))
                 (if
                   (i32.gt_s
@@ -604,7 +605,8 @@
                   (then
                     (local.set $bestLen (local.get $k))
                     (local.set $bestDist (local.get $d))
-                    (local.set $bestCost (local.get $cost)))))
+                    (local.set $bestCost (local.get $cost))
+                    (local.set $atPair (i32.load (i32.add (local.get $atAddr) (i32.shl (i32.sub (local.get $bestLen) (i32.const 1)) (i32.const 1))))))))
           (local.set $p (i32.load (i32.add (local.get $chain) (i32.shl (local.get $p) (i32.const 2)))))
           (local.set $links (i32.add (local.get $links) (i32.const 1)))
           (br $ch))))

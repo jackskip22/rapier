@@ -1503,6 +1503,8 @@ function* markSteps(source, imageWidth, imageHeight, colorSpace, coding, mode) {
   const patches = mode ? yield* unit('patches', () => timed('patches', () => capturePatches(source, imageWidth, imageHeight, 0.03))) : null;
   if (!patches) return yield* pageSteps(source, imageWidth, imageHeight, colorSpace, coding);
   const alone = imageWidth * imageHeight > SMALL_PICTURE && patches.cover >= 0.045 && (yield* unit('one-palette', () => onePalette(source, imageWidth, imageHeight)));
+  if (alone && patches.cover < 2 * patches.width * patches.height / (imageWidth * imageHeight))
+    return yield* pageSteps(source, imageWidth, imageHeight, colorSpace, coding);
   const patched = yield* scaledSteps(within(patchedSteps(source, imageWidth, imageHeight, colorSpace, coding, patches)), 0, alone ? 1 : 1 / 2);
   if (!patched) return yield* pageSteps(source, imageWidth, imageHeight, colorSpace, coding);
   if (alone && patches.dictionary <= patched.length * 4) return patched;

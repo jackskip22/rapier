@@ -10,6 +10,7 @@ import {lossySteps} from './lossy.mjs';
 import {photoSteps, admitPhotoFilter, screenImageSteps, screenRouted} from './photo-job.mjs';
 import {coefficientAnsSteps} from './coefficient-ans.mjs';
 import {preferXYB} from './photo-xyb.mjs';
+import {smallPalette, SMALL_SCREEN, SMALL_PHOTO} from './small-palette.mjs';
 import {WEIGHTED_PREDICTOR, WEIGHTED_PROPERTY, WEIGHTED_CUTS, codeWeighted} from './weighted.mjs';
 import {fault, admitOptions, admitPixels} from './admit.mjs';
 import {admitSampleFormat} from './admit-samples.mjs';
@@ -59,11 +60,12 @@ function* effortSteps(data, width, height, quality, colorSpace, effort, photo = 
     }
     const palette = (function* () {
       const screen = effort >= 2 && typeof colorSpace !== 'object' && screenLike(data, width, height);
-      const captured = screen ? yield {capture: {data, width, height, colorSpace}} : null;
-      const photograph = photo && effort >= 2 && typeof colorSpace !== 'object' && !screen && preferXYB(data, width, height), parts = photograph ? 3 : 2;
+      const small = smallPalette(data, width, height, colorSpace);
+      const captured = screen || small === SMALL_SCREEN ? yield {capture: {data, width, height, colorSpace}} : null;
+      const photograph = photo && effort >= 2 && typeof colorSpace !== 'object' && (small ? small === SMALL_PHOTO : !screen && preferXYB(data, width, height)), parts = photograph ? 3 : 2;
       const exact = captured instanceof Uint8Array ? captured : yield* part(effortSteps(data, width, height, 100, colorSpace, effort, true, undefined, false, undefined, undefined, deep), 0, parts);
-      let bytes;
-      try { bytes = yield* part(lossySteps(data, width, height, {quality, shape, colorSpace}), 1, parts); }
+      let bytes = exact;
+      if (!small) try { bytes = yield* part(lossySteps(data, width, height, {quality, shape, colorSpace}), 1, parts); }
       catch (error) { if (error.code !== 'JXL_SIZE' && (!(error instanceof RangeError) || error.code)) throw error; bytes = exact; }
       let best = exact.length <= bytes.length ? exact : bytes;
       if (photograph) {

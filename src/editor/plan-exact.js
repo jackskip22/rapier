@@ -270,8 +270,97 @@ function _rapierPlanExactMark(raw, selectedText, mark, targetStart, targetEnd, o
 	const sized = valid.map(next => [window(next), next]).sort((a, b) => a[0] - b[0]);
 	return sized[0][0] < sized[1][0] ? sized[0][1] : null;
 }
+function _rapierPlanClearCode(raw, targetStart, targetEnd, options = null) {
+	const source = String(raw || ''), tableCell = !!options?.tableCell;
+	const read = value => {
+		const probe = _rapierRenderedMarkProbe(value, 'bold', tableCell);
+		return probe && {text: probe.text, runs: _rapierMarkRuns(probe.root, ':not(pre) > code')};
+	};
+	const fingerprint = value => _rapierOtherSemanticsFingerprint(tableCell ? '| ' + value + ' |\n| --- |' : value, 'code');
+	const before = read(source);
+	if (!before) return null;
+	if (!before.runs.some(run => run.start < targetEnd && run.end > targetStart)) return source;
+	const spans = [];
+	for (let at = 0; at < source.length;) {
+		if (source[at] === '\\') { at += 2; continue; }
+		if (source[at] === ']' && source[at + 1] === '(') {
+			const close = source.indexOf(')', at + 2);
+			if (close > 0) { at = close + 1; continue; }
+		}
+		if (source[at] !== '`') { at++; continue; }
+		let open = at;
+		while (source[at] === '`') at++;
+		const size = at - open;
+		let close = -1;
+		for (let k = at; k < source.length;) {
+			if (source[k] !== '`') { k++; continue; }
+			let m = k;
+			while (source[m] === '`') m++;
+			if (m - k === size) { close = k; break; }
+			k = m;
+		}
+		if (close < 0) continue;
+		spans.push({open, inner: at, close, end: close + size, fence: source.slice(open, at)});
+		at = close + size;
+	}
+	const shown = [];
+	for (let at = 0, k = 0; k < before.runs.length; k++) {
+		const want = before.text.slice(before.runs[k].start, before.runs[k].end);
+		const shows = span => {
+			const flat = source.slice(span.inner, span.close).replace(/\r\n?|\n/g, ' ');
+			const strip = flat.length > 2 && flat[0] === ' ' && flat.at(-1) === ' ' && /[^ ]/.test(flat) ? 1 : 0;
+			return flat.slice(strip, flat.length - strip) === want;
+		};
+		while (at < spans.length && !shows(spans[at])) at++;
+		if (at >= spans.length) return null;
+		shown.push(spans[at++]);
+	}
+	spans.splice(0, spans.length, ...shown);
+	const semantics = fingerprint(source);
+	if (semantics == null) return null;
+	const kept = [];
+	let next = source;
+	for (let index = spans.length - 1; index >= 0; index--) {
+		const span = spans[index], run = before.runs[index], inner = source.slice(span.inner, span.close);
+		if (run.end <= targetStart || run.start >= targetEnd) { kept.push([run.start, run.end]); continue; }
+		const flat = inner.replace(/\r\n?|\n/g, ' ');
+		if (flat.length !== inner.length) return null;
+		const strip = flat.length > 2 && flat[0] === ' ' && flat.at(-1) === ' ' && /[^ ]/.test(flat) ? 1 : 0;
+		if (flat.slice(strip, flat.length - strip) !== before.text.slice(run.start, run.end)) return null;
+		let a = Math.max(run.start, targetStart) - run.start, b = Math.min(run.end, targetEnd) - run.start;
+		const body = inner.slice(strip, inner.length - strip);
+		while (a > 0 && /\s/.test(body[a - 1])) a--;
+		while (b < body.length && /\s/.test(body[b])) b++;
+		const head = body.slice(0, a), words = body.slice(a, b), tail = body.slice(b);
+		if (head) kept.push([run.start, run.start + a]);
+		if (tail) kept.push([run.start + b, run.end]);
+		const fence = text => {
+			if (!text) return [''];
+			const runs = new Set((text.match(/`+/g) || []).map(run => run.length));
+			let size = span.fence.length;
+			if (runs.has(size)) for (size = 1; runs.has(size); size++);
+			const ticks = '`'.repeat(size), pad = /^`|`$/.test(text) || /^ .*[^ ].* $/s.test(text) ? ' ' : '';
+			return [...new Set([ticks + pad + text + pad + ticks, ticks + ' ' + text + ' ' + ticks])];
+		};
+		const plain = [...new Set([words, words.replace(/[!-/:-@[-`{-~]/g, '\\$&'), words.replace(/\r\n?|\n/g, ' ').replace(/[!-/:-@[-`{-~]/g, '\\$&')])];
+		const choices = [];
+		for (const h of fence(head)) for (const w of plain) for (const t of fence(tail)) choices.push(h + w + t);
+		const wanted = JSON.stringify(kept.filter(k => k[0] >= run.start && k[1] <= run.end).sort((x, y) => x[0] - y[0]));
+		const proved = choices.map(piece => next.slice(0, span.open) + piece + next.slice(span.end)).find(candidate => {
+			const after = read(candidate);
+			return !!after && after.text === before.text && fingerprint(candidate) === semantics &&
+				JSON.stringify(after.runs.filter(r => r.start < run.end && r.end > run.start).map(r => [r.start, r.end])) === wanted;
+		});
+		if (proved == null) return null;
+		next = proved;
+	}
+	const after = read(next);
+	return after && after.text === before.text && JSON.stringify(after.runs.map(r => [r.start, r.end])) === JSON.stringify(kept.sort((x, y) => x[0] - y[0])) ? next : null;
+}
 function _rapierPlanExactClear(raw, selectedText, targetStart, targetEnd, options = null) {
-	const source = String(raw || ''), none = {family: null, color: null, size: null};
+	const original = String(raw || ''), none = {family: null, color: null, size: null};
+	const source = _rapierPlanClearCode(original, targetStart, targetEnd, options);
+	if (source == null) return null;
 	const selected = String(selectedText || '').replace(/\u2060/g, '\n');
 	const touched = (source, mark) => {
 		const probe = _rapierRenderedMarkProbe(source, mark);
@@ -313,7 +402,7 @@ function _rapierPlanExactClear(raw, selectedText, targetStart, targetEnd, option
 		}
 		return null;
 	};
-	const done = next => next == null || next === source ? null : next;
+	const done = next => next == null || next === original ? null : next;
 	const typed = _rapierTypographyRuns(source, options);
 	if (!typed) return null;
 	const painted = style => !!(style.family || style.color || style.size);

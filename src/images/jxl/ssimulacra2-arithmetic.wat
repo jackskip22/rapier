@@ -1,6 +1,6 @@
 ;; SPDX-License-Identifier: BSD-3-Clause
 ;; Generated from ssimulacra2-simd.c and metric-float.h by build-jxl-kernels.mjs.
-;; C inputs sha256 6003bcf8be0e8a3f1ed4e3eea96a4d46fd1c0f0dce28bf5286c9cb2e3eb8e8eb
+;; C inputs sha256 984d388f5243166ba0f4350202348cb31378d005da746203f768b55969d39d68
 ;; /*!
 ;;  * Copyright (c) the JPEG XL Project Authors.
 ;;  * All rights reserved.

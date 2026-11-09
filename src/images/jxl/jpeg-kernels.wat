@@ -137,6 +137,36 @@
     (f64.store (i32.add (global.get $SUMS) (i32.shl (local.get $i) (i32.const 3))) (local.get $sum))
     (f64.add (f64.neg (local.get $sum)) (call $pop (local.get $total))))
 
+;; $terms after cluster i's row gains OWN, adding OWN to the row as it goes: a symbol OWN does not touch keeps its
+  ;; count, so its term is the one already in POPS (every row write is followed by $terms); the others are looked up
+  ;; again. The sums run in symbol order over the same terms, so the result is $terms'.
+  (func $termsGained (param $i i32) (result f64)
+    (local $s i32) (local $row i32) (local $pops i32) (local $own i32) (local $c i32) (local $n i32) (local $count f64) (local $term f64) (local $total f64) (local $sum f64)
+    (local.set $row (call $row (local.get $i)))
+    (local.set $pops (i32.add (global.get $POPS) (i32.shl (local.get $i) (i32.const 9))))
+    (local.set $own (global.get $OWN))
+    (block $done (loop $symbol
+      (br_if $done (i32.eq (local.get $s) (i32.const 64)))
+      (local.set $c (i32.load (i32.add (local.get $own) (i32.shl (local.get $s) (i32.const 2)))))
+      (local.set $n (i32.load (i32.add (local.get $row) (i32.shl (local.get $s) (i32.const 2)))))
+      (if (local.get $c)
+        (then
+          (local.set $n (i32.add (local.get $n) (local.get $c)))
+          (i32.store (i32.add (local.get $row) (i32.shl (local.get $s) (i32.const 2))) (local.get $n))
+          (local.set $count (f64.convert_i32_u (local.get $n)))
+          (local.set $term (if (result f64) (f64.lt (local.get $count) (f64.const 65536)) (then (f64.load (i32.shl (i32.trunc_f64_u (local.get $count)) (i32.const 3)))) (else (call $pop (local.get $count)))))
+          (f64.store (i32.add (local.get $pops) (i32.shl (local.get $s) (i32.const 3))) (local.get $term)))
+        (else
+          (local.set $count (f64.convert_i32_u (local.get $n)))
+          (local.set $term (f64.load (i32.add (local.get $pops) (i32.shl (local.get $s) (i32.const 3)))))))
+      (local.set $total (f64.add (local.get $total) (local.get $count)))
+      (local.set $sum (f64.add (local.get $sum) (local.get $term)))
+      (local.set $s (i32.add (local.get $s) (i32.const 1)))
+      (br $symbol)))
+    (f64.store (i32.add (global.get $TOTALS) (i32.shl (local.get $i) (i32.const 3))) (local.get $total))
+    (f64.store (i32.add (global.get $SUMS) (i32.shl (local.get $i) (i32.const 3))) (local.get $sum))
+    (f64.add (f64.neg (local.get $sum)) (call $pop (local.get $total))))
+
   ;; mergedBits(cluster i, OWN): where OWN's count is 0 the term is the cluster's own, already in POPS.
   (func $mergedOwn (param $i i32) (result f64)
     (local $s i32) (local $a i32) (local $b i32) (local $pops i32) (local $n f64) (local $total f64) (local $bits f64) (local $c i32)
@@ -1240,15 +1270,8 @@
           (i32.store (i32.add (local.get $assign) (i32.shl (local.get $t) (i32.const 2))) (local.get $k))
           (local.set $k (i32.add (local.get $k) (i32.const 1))))
         (else
-          ;; A merge: the row gains OWN; terms also returns entropyBits, without another population pass.
-          (local.set $row (call $row (local.get $best)))
-          (local.set $s (i32.const 0))
-          (block $merged (loop $merge
-            (br_if $merged (i32.eq (local.get $s) (i32.const 256)))
-            (v128.store (i32.add (local.get $row) (local.get $s)) (i32x4.add (v128.load (i32.add (local.get $row) (local.get $s))) (v128.load (i32.add (global.get $OWN) (local.get $s)))))
-            (local.set $s (i32.add (local.get $s) (i32.const 16)))
-            (br $merge)))
-          (f64.store (i32.add (global.get $BITS) (i32.shl (local.get $best) (i32.const 3))) (call $terms (local.get $best)))
+          ;; A merge: the row gains OWN; termsGained also returns entropyBits, without another population pass.
+          (f64.store (i32.add (global.get $BITS) (i32.shl (local.get $best) (i32.const 3))) (call $termsGained (local.get $best)))
           (i32.store (i32.add (local.get $assign) (i32.shl (local.get $t) (i32.const 2))) (local.get $best))))
       (local.set $t (i32.add (local.get $t) (i32.const 1)))
       (br $context)))

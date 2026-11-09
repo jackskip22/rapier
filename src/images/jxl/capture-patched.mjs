@@ -573,6 +573,7 @@ export function* patchedPageSteps(source, width, height, {quality, regions = [],
   let unboxedSource = null;
   const readUnboxed = width * height <= UNBOXED_PIXELS
     ? (y0, h) => unboxedSource ??= unboxedSourceMarks(source, width, height, y0, h) : null;
+  if (!protection && unconfirmed && !journaling()) return yield* exact();
   const requested = yield* unit('text-pieces', () => textPieces(source, width, height, exactRects, regions, [], readUnboxed));
   if (!protection) unboxedSource = null;
   const requiredPieces = requested.pieces.flatMap(piece => placed(piece).map(position => ({...position, mask: piece.mask})));
@@ -618,6 +619,11 @@ export function* patchedPageSteps(source, width, height, {quality, regions = [],
   let own = regions.length || areas.length ? [...regions.map((r, i) => ({x: r.x + dx, y: r.y + dy, width: r.width, height: r.height, quality: looked[i]})), ...areas.map(a => ({...a, x: a.x + dx, y: a.y + dy}))] : null;
   const crop = dx || dy ? {x: -dx, y: -dy, width: fw, height: fh} : null;
   const placement = {imageWidth: width, imageHeight: height, crop};
+  const verdictPairs = photoAdmission?.crops ? regions.map(r => ({source: r, crops: (photoRects.length ? photoRects : regions).map(p => {
+    const x = Math.max(0, p.x), y = Math.max(0, p.y);
+    return {x, y, width: Math.min(width, p.x + p.width) - x, height: Math.min(height, p.y + p.height) - y};
+  }).filter(c => c.width > 0 && c.height > 0 && c.x < r.x + r.width && r.x < c.x + c.width && c.y < r.y + r.height && r.y < c.y + c.height)}))
+    .filter(p => p.crops.length) : null;
   const photoCrops = (photoRects.length ? photoRects : regions).map(r => {
     if (!photoAdmission) return {...r, x: r.x + dx, y: r.y + dy};
     const x = Math.max(0, r.x), y = Math.max(0, r.y);
@@ -656,7 +662,7 @@ export function* patchedPageSteps(source, width, height, {quality, regions = [],
     return photoBlocks ? steps() : fileStage('page-frame', steps, bytes => bytes, photoAdmission);
   };
   if (!all.length) {
-    const bytes = yield* frame({}, 0, 1); collector?.record(bytes, selectedProtection); return shorter(bytes);
+    const bytes = yield* frame({}, 0, 1); if (verdictPairs) photoAdmission.crops(verdictPairs, bytes); collector?.record(bytes, selectedProtection); return shorter(bytes);
   }
   const packing = [...pieces.filter(r => !r.block), ...blocks], placing = [...packing, ...muls];
   const made = atlasArea([...layered, ...boxes], blocks) <= WHOLE && (yield* unit('atlas-pack', () => {
@@ -672,6 +678,7 @@ export function* patchedPageSteps(source, width, height, {quality, regions = [],
   const first = yield* scaled(encodeAtlasSteps(atlas, aw, ah, width, height, {...exactOptions, colorSpace}, big ? 256 : undefined), 0, 0.5);
   const patches = {groups: groups.map(r => ({x: r.x, y: r.y, w: r.w, h: r.h, ax: r.ax, ay: r.ay, mode: r.role === 'mul' ? PEEL_MUL : r.role === 'add' ? PEEL_ADD : undefined, positions: (r.positions ?? [r.x, r.y]).map((v, i) => v + (i & 1 ? dy : dx))}))};
   const page = yield* frame({isFirstFrame: false, patches}, 0.5, 0.5);
+  if (verdictPairs) photoAdmission.crops(verdictPairs, page);
   const bytes = new Uint8Array(first.length + page.length);
   bytes.set(first); bytes.set(page, first.length);
   collector?.record(bytes, selectedProtection);
@@ -682,11 +689,12 @@ export function* fileStage(name, steps, file, admission, whole = false) {
   const made = yield* stage(name, function* () {
     const value = yield* steps(), bytes = file(value);
     return {value, exact: !!bytes && captureExact(bytes), passed: bytes && admission ? admission.accepts(bytes) : null,
-      measured: bytes && admission ? admission.measurements(bytes) : null};
+      measured: bytes && admission ? admission.scored?.(bytes) ?? admission.measurements(bytes) : null};
   }, undefined, whole);
   const bytes = file(made.value);
   if (bytes && made.exact && !captureExact(bytes)) markCaptureExact(bytes);
-  if (bytes && admission && made.passed !== null && made.passed !== admission.accepts(bytes)) admission.record(bytes, made.passed, made.measured);
+  if (bytes && admission && made.passed !== null && (made.passed !== admission.accepts(bytes) || made.measured?.length && !admission.scored?.(bytes)?.length))
+    admission.record(bytes, made.passed, made.measured);
   return made.value;
 }
 
