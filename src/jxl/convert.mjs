@@ -9,24 +9,29 @@ export const CARRY_BYTES = 256 * 1024 * 1024, PIXELS = 268_435_456;
 export const QUALITY = Object.freeze({lossless: 100, high: 90, smaller: 75});
 export const ZIP_BYTES = 1024 * 1024 * 1024, ZIP_ENTRIES = 60000;
 
-export const LINKS = Object.freeze([['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl'], ['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl']]);
+export const LINKS = Object.freeze([['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl'], ['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl'], ['SnapDOM JPEG XL plugin', 'https://snapdom.dev/plugins/jxl/'], ['EmDash JPEG XL plugin', 'https://plugins.emdashcms.com/plugins/@rapier.website/jxl']]);
+export const LOCAL_NOTE = Object.freeze([
+	'Runs locally on your device, no uploads.',
+	'Press X in the top right to go back to the Markdown editor.']);
 export const COMPARE = Object.freeze({
-	title: 'How rapier-jxl compares',
+	title: 'What is rapier-jxl?',
 	lines: Object.freeze([
-		'Uploads over 2x faster than libvips.',
-		'The upload encoder downloads about 224 KB; libvips in the browser downloads 2.9 MB.',
-		'Half the memory of libvips for a 12-megapixel upload.']),
+		'This page turns your pictures, GIFs and videos into JPEG XL files that are smaller, and still look as good as a high-quality JPEG.',
+		'It runs on your device. Nothing is uploaded.',
+		'Lossless keeps every pixel. High and Medium make a smaller file; start with High if you want it to look as good as possible. For a JPEG, Lossless can shrink the file and still restore the original exactly.',
+		'The upload encoder is about 224 KB, over twice as fast as libvips in the browser, and uses about half the memory for a 12-megapixel picture.']),
 	basis: 'Measured against wasm-vips 0.0.19.'});
 export const SCENE = Object.freeze({
 	title: 'Save a 3D scene',
 	note: 'A WebGL scene saved as JPEG XL while it keeps drawing, on this device.',
 	missing: 'The scene could not load. Reload the page and try again.'});
 export const EXAMPLE = Object.freeze({
-	title: 'An animated JPEG XL',
-	credit: 'Eadweard Muybridge’s horse. Public domain, from Wikimedia Commons.',
+	title: 'Animated JPEG XL:',
+	credit: 'Earth from the International Space Station. NASA, public domain.',
 	missing: 'The example could not load. Reload the page and try again.'});
 export const ABOUT = Object.freeze([
 	'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies.',
+	'Rapier is a single HTML file that works offline, free and open source.',
 	'It encodes lossless and lossy pictures, carries a JPEG exactly, and keeps alpha and HDR.',
 	'In your own site or app: npm install rapier-jxl, then import {encode} from "rapier-jxl/upload". encode(file) returns the JPEG XL bytes.']);
 

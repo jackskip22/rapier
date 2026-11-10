@@ -18,14 +18,15 @@ The pure route tests run under Node's TypeScript stripping. The integration test
 
 ## Listing images
 
-`images/icon.svg` is the editable icon; `images/icon.png` is its 256 × 256 raster export. The setup screenshots show the running EmDash admin with the companion in its Node sandbox.
+`images/icon.svg` is the editable icon; `images/icon.png` is its 256 × 256 raster export. The screenshots show the optimizer on a real EmDash 1.4.0 Node site with rapier-jxl 8.3.2, at the default effort 7 and quality 90, on open photos.
 
 | File | View |
 | --- | --- |
-| `images/setup-desktop-light.png` | 1440 × 1000, light mode |
-| `images/setup-desktop-dark.png` | 1440 × 1000, dark mode |
-| `images/setup-phone-light.png` | 390 × 844, light mode |
-| `images/setup-phone-dark.png` | 390 × 844, dark mode |
+| `images/optimizer-1440x1000-light.png` | 1440 × 1000, light mode |
+| `images/optimizer-390x844-light.png` | 390 × 844, light mode |
+| `images/recent-menu-1440x1000-light.png` | 1440 × 1000, light mode, a photo's menu open |
+| `images/optimizer-1440x1000-dark.png` | 1440 × 1000, dark mode |
+| `images/optimizer-390x844-dark.png` | 390 × 844, dark mode |
 
 The release accepts at most eight screenshots in PNG, JPEG or WebP, each at most 1 MiB and 8192 pixels per side. Listing assets live under `images/` and are declared in `release.artifacts`; they are separate from the runtime bundle.
 

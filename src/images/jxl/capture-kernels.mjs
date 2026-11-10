@@ -50,7 +50,7 @@ export function captureWeighted(w, targets, plane, width, height, offset, contex
       i32.fill(0, state >> 2, (state >> 2) + (width + 2) * 10);
     } else i32.set(plane.subarray(y0 * width, n), (base >> 2) + y0 * width);
     if (y0 < height) engine.captureWeighted(base + y0 * width * 4, width, height, offset, residual + y0 * width * 4, property + y0 * width * 4, y0, 0, 0, DIV, WEIGHTS, state);
-    if (keep > 1) {
+    if (!(typeof __RAPIER_JXL_JPEG__ !== 'undefined' && __RAPIER_JXL_JPEG__ === true) && keep > 1) {
       new Int16Array(buf, sPlane, n).set(plane.subarray(0, n));
       engine.smooth(sPlane, width, 0, height, sVal, sCtx);
       if (keep > 2 && height === 8) resident = {buffer: plane.buffer, offset: plane.byteOffset, width, height: keep, base};
@@ -131,7 +131,7 @@ export function captureCopies(values, stride, origin, width, height, contexts, d
   try {
     if (!prepareCaptureKernels()) throw wasmRequired();
     const n = width * height;
-    const smooth = values instanceof Int16Array;
+    const smooth = !(typeof __RAPIER_JXL_JPEG__ !== 'undefined' && __RAPIER_JXL_JPEG__ === true) && values instanceof Int16Array;
     if (!(values instanceof Uint16Array || smooth && stride === width && !origin && contexts === null) ||
         !Number.isInteger(width) || width < 1 || width > 16384 || !Number.isInteger(height) || height < 1 ||
         n > 1048576 || !Number.isInteger(stride) || stride < width || !Number.isInteger(origin) || origin < 0 ||

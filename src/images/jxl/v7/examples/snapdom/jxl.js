@@ -57,7 +57,8 @@ function create(module, codec, preset, webgpu, helpers) {
           (canvas.width < Math.floor(naturalW) || canvas.height < Math.floor(naturalH)));
         const measured = [shot, unclipped].filter(Boolean).map(s => pageRects(s, canvas, { area, edges: !below && (effort ?? 3) >= 4 }));
         let rects = quality < 1 && !exactOnly && measured.length
-          ? { exactRects: measured.flatMap(r => r.exactRects), photoRects: measured.flatMap(r => r.photoRects) } : null;
+          ? { exactRects: measured.flatMap(r => r.exactRects), photoRects: measured.flatMap(r => r.photoRects),
+            ...(measured.every(r => r.textComplete === true) && { textComplete: true }) } : null;
         if (below && (!rects?.photoRects?.length || atLimit(canvas))) rects = null;
 
         let exact = false;
@@ -239,6 +240,7 @@ function inView(shot, meta, fitted, exported) {
     box: { left: 0, top: 0, width, height },
     text: shot.text.map(t => ({ ...t, r: move(t.r) })),
     photos: shot.photos.map(move),
+    ...(shot.textComplete === true && { textComplete: true }),
     ...(shot.edges && { edges: shot.edges.map(move) }),
   };
 }

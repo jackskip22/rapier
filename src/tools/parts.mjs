@@ -24,7 +24,8 @@ export const PARTS = Object.freeze([
   {id: 'diagramtheme', label: 'Diagram theme', scripts: [], styles: [], globals: {RapierDiagramTheme: 'shell/diagram-theme.mjs'}},
   {id: 'jxlcomplete', label: 'JPEG XL complete', scripts: ['jxl/complete.js'], styles: [], globals: {}},
   {id: 'jxlscene', label: '3D scene', scripts: ['jxl/scene.js'], styles: [], globals: {RapierJxlScene: 'jxl/scene.mjs'}},
-  {id: 'jxlexample', label: 'Animated example', scripts: [], styles: [], globals: {RapierJxlExample: 'jxl/example.mjs'}},
+  {id: 'jxlexample', label: 'Animated example', scripts: [], styles: [], globals: {RapierJxlExample: 'jxl/example.mjs'},
+    fetched: true},
   {id: 'diff', label: 'Compare', scripts: ['editor/diff-view.js'], styles: ['rapier-diff-style'], globals: {}},
   {id: 'mathview', label: 'Equation editor', scripts: ['editor/math-view.js'], styles: ['rapier-math-style'], globals: {}},
   {id: 'fonts', label: 'Font library', scripts: ['editor/font-library.js'], styles: [],
@@ -153,7 +154,7 @@ export function inlineParts(html, parts) {
   for (const part of parts) {
     if (!part || seen.has(part.id)) throw new Error('Each part is inlined once: ' + (part && part.id));
     seen.add(part.id);
-    if (html.includes('id="rapier-part-' + part.id + '"')) continue;
+    if (html.includes('id="rapier-part-' + part.id + '"') || PARTS.find(row => row.id === part.id)?.fetched) continue;
     extra += part.element || partElement(part.id, part.body);
   }
   if ([...seen].join() !== PART_IDS.join()) throw new Error('The carried page must hold every part: ' + [...seen].join(', '));

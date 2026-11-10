@@ -54,12 +54,12 @@ export function prepare(operation = 'encode') {
 }
 
 const encodeBytes = (input, options) => regioned(encodeHere, input, options).catch(error => { throw error === options?.signal?.reason ? error : declared(error); });
-encodeBytes[DRIVE] = (input, options, helpers) => regioned(encodeHere, input, options, helpers).catch(error => { throw error === options?.signal?.reason ? error : declared(error); });
+if (!(typeof __RAPIER_JXL_HELPER__ !== 'undefined' && __RAPIER_JXL_HELPER__ === true)) encodeBytes[DRIVE] = (input, options, helpers) => regioned(encodeHere, input, options, helpers).catch(error => { throw error === options?.signal?.reason ? error : declared(error); });
 export const encode = resultOperation(encodeBytes, {preview: previewCall});
-Object.defineProperty(encode, STEPS, {value: verbSteps('encode:rapier-jxl', encode, {taken: ['fidelity', 'effort', 'readAs', 'maxPixels', 'features', 'webgpu'], rows: true, files: true})});
+if (!(typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true)) Object.defineProperty(encode, STEPS, {value: verbSteps('encode:rapier-jxl', encode, {taken: ['fidelity', 'effort', 'readAs', 'maxPixels', 'features', 'webgpu'], rows: true, files: true})});
 export {resultJSON} from './result.mjs';
 async function encodeHere(input, given = {}, helpers = null, region) {
-  const journal = given?.[JOURNAL], fit = given?.[FIT_BYTES];
+  const journal = (typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true) ? undefined : given?.[JOURNAL], fit = given?.[FIT_BYTES];
   const options = journal === undefined && fit === undefined ? given : (({[JOURNAL]: _journal, [FIT_BYTES]: _fit, ...rest}) => rest)(given);
   const {codec: {target, ...codec}, hooks: {webgpu, maxPixels}} = callOptions(encodeOptions(options));
   const reader = ordinaryStillReader({signal: options.signal, maxPixels});
@@ -176,7 +176,7 @@ async function encodePicture({data, width, height, ...source}, codec, hooks, hel
     : effortJob(data, width, height, settings, !!gpu, undefined, lossy && settings.effort >= 8 ? searchV6 : undefined,
         lossy && settings.effort >= 6 ? photoAnsSteps : undefined, DEEP, HDR));
   const steps = lossy && !target && textFloorEligible(data, width, height, settings.colorSpace) ? textFloorSteps(coded, data, width, height, settings.colorSpace) : coded;
-  return helpers && (low || settings.effort !== 1) ? driveSteps(steps, hooks, gpu, width * height, helpers, low ? null : parallelJob) : drain(steps, hooks, gpu);
+  return !(typeof __RAPIER_JXL_HELPER__ !== 'undefined' && __RAPIER_JXL_HELPER__ === true) && helpers && (low || settings.effort !== 1) ? driveSteps(steps, hooks, gpu, width * height, helpers, low ? null : parallelJob) : drain(steps, hooks, gpu);
 }
 
 async function regioned(run, input, options, helpers) {

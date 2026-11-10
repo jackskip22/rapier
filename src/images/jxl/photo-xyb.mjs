@@ -347,7 +347,7 @@ export function* photoXYBSteps(data, width, height, quality, options) {
     (gab.strength ?? 1) === 1 && !gab.adapt && (fastGab || (gab.boost ?? 1) === 1);
   if (band?.only && !kernelBand) return null;
   let pre = null;
-  if (gab && !kernelBand && !fastGab) {
+  if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && gab && !kernelBand && !fastGab) {
     const W = Math.ceil(width / 8) * 8, H = Math.ceil(height / 8) * 8;
     pre = options.pre ?? (band ? gaborishPlanes(band.data, width, band.data.length / 4 / width, options).map(p => p.subarray(band.top * W, (band.top + H) * W))
       : gaborishPlanes(data, width, height, options));
@@ -356,7 +356,7 @@ export function* photoXYBSteps(data, width, height, quality, options) {
   const dctBlocks = fast ? transformDCT8BlocksFast : transformDCT8Blocks;
   const T = options?.transform, lms = T?.lms;
   const stride = Math.ceil(width / 8), rows = Math.ceil(height / 8), quantScale = 256;
-  if (options?.planesOnly) return {planes: xybPlanes(data, width, height, T, stride * 8, rows * 8)};
+  if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && options?.planesOnly) return {planes: xybPlanes(data, width, height, T, stride * 8, rows * 8)};
   const q = Math.min(quality, 99.9);
   const distance = Math.max(fast || options?.smallFloor ? 0.0248 : 0.046, calibration(q, options?.calibrationRow ?? fast) * (q >= 99 ? 0.19 - 0.16 * (q - 99) : q >= 30 ? 0.1 + (100 - q) * 0.09 : 53 / 3000 * q * q - 23 / 20 * q + 25));
   const strength = Math.max(0, Math.min(1, (90 - q) / 15)), stepScale = 1 - 0.1 * strength, acScale = 1.175 + 0.075 * strength;
@@ -426,7 +426,7 @@ export function* photoXYBSteps(data, width, height, quality, options) {
       fastGaborishBand(band.data, width, total, band.top, height, {...job, packed: null});
     }
     nonZeroBand = counts;
-  } else if (kernelBand) {
+  } else if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && kernelBand) {
     const counts = [0, 1, 2].map(() => new Uint8Array(stride * rows));
     if (kernelHooks.gabBand(band.data, width, band.data.length / 4 / width, band.top, height, {roots: ROOTS, linear: LINEAR, mix: SRGB_MIX, bias: BIAS,
       rootBias: ROOT_BIAS, weights: [0, 1, 2].map(c => gab.weights?.[c] ?? GAB_DEFAULT), iterations: gab.iterations ?? 4,

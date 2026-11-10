@@ -135,7 +135,7 @@ function openImage(bytes,options) {
 }
 export function* openImageSteps(bytes,options) {
   return yield* journalTool('openImage')(bytes,options,{admitInput,storageNext,repairedHeader,uint32View,
-    readContainerSteps,fourCC,part,requireDecode,JxlBits,readDecodeImageHeader,iccProfileLimit,admitDecodedICCSteps,
+    readContainer,readContainerSteps,fourCC,part,requireDecode,JxlBits,readDecodeImageHeader,iccProfileLimit,admitDecodedICCSteps,
     readDecodeFrameHeader,readDecodeTOC});
 }
 function reopenImage(opened) {

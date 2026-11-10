@@ -3,7 +3,7 @@
 	"slug": "jxl",
 	"publisher": "did:web:pds.rapier.website",
 	"name": "JPEG XL Image Optimizer",
-	"description": "Automatic JPEG XL for every image.",
+	"description": "Makes images smaller with JPEG XL. Photos shrink about 75% with the same look, text stays sharp. Originals kept for incompatible browsers.",
 	"keywords": ["images", "jpeg xl", "media", "storage"],
 	"license": "MIT",
 	"author": { "name": "Rapier", "url": "https://rapier.website" },
@@ -24,10 +24,11 @@
 		"artifacts": {
 			"icon": { "file": "./images/icon.png" },
 			"screenshots": [
-				{ "file": "./images/setup-desktop-light.png", "lang": "en" },
-				{ "file": "./images/setup-desktop-dark.png", "lang": "en" },
-				{ "file": "./images/setup-phone-light.png", "lang": "en" },
-				{ "file": "./images/setup-phone-dark.png", "lang": "en" }
+				{ "file": "./images/optimizer-1440x1000-light.png", "lang": "en" },
+				{ "file": "./images/optimizer-390x844-light.png", "lang": "en" },
+				{ "file": "./images/recent-menu-1440x1000-light.png", "lang": "en" },
+				{ "file": "./images/optimizer-1440x1000-dark.png", "lang": "en" },
+				{ "file": "./images/optimizer-390x844-dark.png", "lang": "en" }
 			]
 		}
 	}

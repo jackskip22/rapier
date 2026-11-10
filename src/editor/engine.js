@@ -1712,10 +1712,13 @@ function renderToast(msg, type = 'success', action = null) {
 	controller = _rapierMountToast(toast, type === 'error' || action?.stay === true ? 0 : hasAction ? 8000 : 4500);
 }
 
+function _rapierSystemThemeIsLight() {
+	return !/^\/jxl\/?$/.test(location.pathname) && matchMedia('(prefers-color-scheme: light)').matches;
+}
+
 function applyTheme(value) {
 	const theme = value === 'light' || value === 'dark' ? value : 'system';
-	const mq = window.matchMedia('(prefers-color-scheme: light)');
-	const isLight = theme === 'light' || (theme === 'system' && mq.matches);
+	const isLight = theme === 'light' || (theme === 'system' && _rapierSystemThemeIsLight());
 	document.documentElement.classList.toggle('rapier-boot-light', isLight);
 	document.body.classList.toggle('light', isLight);
 	document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
@@ -1736,7 +1739,7 @@ function _rapierApplyImageInversion() {
 function _rapierThemeLight(value, change) {
 	const root = document.documentElement, previous = root._rapierThemeLight;
 	if (previous) { previous.apply(); previous.skip(); previous.clean(); }
-	const light = value === 'light' || (value === 'system' && matchMedia('(prefers-color-scheme: light)').matches);
+	const light = value === 'light' || (value === 'system' && _rapierSystemThemeIsLight());
 	if (light === document.body.classList.contains('light') || typeof document.startViewTransition !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) return change();
 	const names = [], animations = [];
 	const seen = element => element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';

@@ -41,8 +41,12 @@ leaves finished files untouched.
 import {encode, fit} from 'rapier-jxl/upload';
 
 // file: a File or Blob from an input, a drop or a fetch.
-const compress = async file => new Blob([(await encode(file, {fidelity: {quality: 82}})).bytes], {type: 'image/jxl'});
-const small = file => fit(file, {maxBytes: 100_000}); // best quality under 100 KB
+const compress = async file => {
+  const result = await encode(file, {fidelity: {quality: 82}});
+  if (!result.bytes) throw Object.assign(new Error(result.reason.message), {code: result.reason.code});
+  return new Blob([result.bytes], {type: 'image/jxl'});
+};
+const small = file => fit(file, {maxBytes: 100_000}); // best quality under 100 KB; `fits` says whether it got there
 ```
 
 `variants` makes several sizes from one upload. All calls accept `onProgress` and `signal`, for progress bars and
@@ -61,7 +65,7 @@ await writeFile('picture.jxl', (await encode(picture, {fidelity: {quality: 90}})
 
 Takes RGBA `{data, width, height}`, `ImageData`, a canvas (2D, WebGL or WebGPU), an `ImageBitmap`, a `VideoFrame`, a
 `Blob`, a decoded image or a GPU texture `{texture, device}`, and returns a result record with the output in `result.bytes`. 8 or 16-bit, `Float16Array`
-or `Float32Array` samples, including HDR. For animations, use `rapier-jxl/animation`.
+or `Float32Array` samples, including HDR. For animations, including an animated GIF `Blob`, use `rapier-jxl/animation`.
 
 - Lossless JPEG recompression is `recompress` from `rapier-jxl/jpeg`; in `rapier-jxl/upload`, `encode(jpegFile, {fidelity: 'exact'})` does the same. The full `encode` takes pixels.
 - `fidelity`: `{quality: 1–100}`, default 90. `'exact'` is lossless.

@@ -2122,8 +2122,16 @@
     } catch (_) { return false; }
   }
 
+  function fileOriginAllowed(url, allowed, fromHost) {
+    if (typeof allowed !== 'string') return false;
+    const pattern = /^https:\/\/([a-z0-9]{3,40})\*\.((?:[a-z0-9-]+\.)+[a-z]{2,63})$/.exec(allowed);
+    if (!pattern) return url.origin === allowed;
+    if (fromHost !== true) return false;
+    const label = url.hostname.endsWith('.' + pattern[2]) ? url.hostname.slice(0, -pattern[2].length - 1) : '';
+    return url.protocol === 'https:' && url.port === '' && label.startsWith(pattern[1]) && /^[a-z0-9-]{1,63}$/.test(label.slice(pattern[1].length)) && label.length <= 63;
+  }
   async function hostDownload(fileId, limit, signal, seen, {fallback = '', alive} = {}) {
-    let link = '';
+    let link = '', fromHost = false;
     if (typeof window.openai?.getFileDownloadUrl === 'function') {
       try {
         link = (await new Promise((resolve, reject) => {
@@ -2133,14 +2141,15 @@
         }))?.downloadUrl;
       } catch (error) { if (signal?.aborted || !fallback) throw error; }
     }
-    if (typeof link !== 'string' || !link) link = fallback;
+    if (typeof link === 'string' && link) fromHost = true;
+    else link = fallback;
     if (!link) throw new Error('FILE_UNAVAILABLE');
     alive?.();
     const url = new URL(link);
     seen?.(url.origin);
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('FILE_INVALID');
     const allowedOrigins = Array.isArray(globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS) ? globalThis.RAPIER_FILE_DOWNLOAD_ORIGINS : [];
-    if (!allowedOrigins.includes(url.origin)) throw new Error('FILE_ORIGIN_REFUSED');
+    if (!allowedOrigins.some(allowed => fileOriginAllowed(url, allowed, fromHost))) throw new Error('FILE_ORIGIN_REFUSED');
     signal?.throwIfAborted();
     const response = await fetch(url.href, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal});
     if (!response.ok || !response.body) throw new Error('FILE_UNAVAILABLE');

@@ -67,7 +67,8 @@
 
 	function build() {
 		const root = make('div', 'rapier-jxl-maker'), fold = make('div', 'rapier-jxl-view__fold');
-		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Free and open source. Rapier is a single HTML file that works offline. Press X in the top right to go back to the Markdown editor.');
+		const note = make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center');
+		note.append(document.createTextNode(C.LOCAL_NOTE[0]), document.createElement('br'), document.createTextNode(C.LOCAL_NOTE[1]));
 		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input');
 		pick.append(C.pickLabel(make('span')), input);
 		input.type = 'file'; input.accept = 'image/*,video/*,.heic,.heif'; input.multiple = true;
@@ -118,8 +119,9 @@
 		const effortRow = make('div', 'rapier-jxl-view__effort'), effort = seeker('Effort', C.EFFORT.min, C.EFFORT.max, 1, C.EFFORT.start), level = make('output', 'rapier-jxl-view__effort-level');
 		effortRow.setAttribute('role', 'group'); effortRow.setAttribute('aria-label', 'Effort');
 		effort.seek.insertBefore(level, effort.input);
-		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), effort.seek, make('span', 'rapier-jxl-view__end', 'Smallest file'));
-		const quality = part('Quality', modes.group), effortPart = part('Effort', effortRow);
+		effortRow.classList.add('rapier-jxl-view__effort--range');
+		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), effort.seek, make('span', 'rapier-jxl-view__end', 'Small'));
+		const quality = part('Quality:', modes.group), effortPart = part('Effort:', effortRow);
 		C.liftToLabel(effort.seek, level, effortPart.firstElementChild);
 
 		const go = make('button', 'settings-action-btn rapier-jxl-view__all rapier-jxl-maker__make', 'Make JPEG XL');
@@ -137,7 +139,7 @@
 		const download = make('button', 'settings-action-btn rapier-jxl-view__all', 'Download');
 		download.type = 'button'; download.hidden = true;
 
-		fold.append(note, pick, clip, edit, canvasPart, quality, effortPart, go, line, status, cancel, preview, download, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false));
+		fold.append(note, pick, clip, edit, canvasPart, quality, effortPart, go, line, status, cancel, preview, download, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false, C.LINKS.slice(2)));
 		const more = make('section', 'rapier-jxl-view__more'), moreTitle = make('h2', 'rapier-jxl-view__title', M.ANSWERS.title);
 		moreTitle.id = 'rapier-jxl-maker-answers'; more.setAttribute('aria-labelledby', moreTitle.id);
 		more.append(moreTitle);

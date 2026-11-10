@@ -31,7 +31,7 @@ export interface EncoderOptions {
   worker: string | URL | (() => Worker);
   /** Images that may wait behind the active one. Default 2. */
   maxQueue?: number | undefined;
-  /** Default 24 million pixels. */
+  /** Default 40 million pixels. */
   maxPixels?: number | undefined;
   /** Milliseconds to wait for the worker's version handshake. Default 15000. */
   startupTimeout?: number | undefined;

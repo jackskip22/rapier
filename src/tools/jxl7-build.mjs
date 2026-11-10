@@ -15,6 +15,7 @@ import {createKernelStripper, createBridgeCutter, kernelProfile, keptExports} fr
 import {bundleKernelNeeds} from './jxl-kernel-reach.mjs';
 import {refuseDecoder, refuseBrowserVerifyDecoder, refuseSecondAnsWriter, refuseSecondRans, refuseSecondScorer, refuseOtherFormat} from './jxl-module-checks.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
+import {unsteppedSource} from './jxl-unstepped.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..'), codec = join(repo, 'images/jxl'), v7 = join(codec, 'v7');
 const {GPU_FROM} = await import(pathToFileURL(join(codec, 'gpu-gate.mjs')).href);
@@ -41,7 +42,7 @@ const COMPRESSED = /^(capture(-complete)?(\.worker)?|capture-complete\.(groups\.
 const terserRoot = process.env.TERSER ? resolve(process.env.TERSER) : dirname(createRequire(import.meta.url).resolve('terser/package.json'));
 const terser = createRequire(import.meta.url)(terserRoot), terserVersion = JSON.parse(await readFile(join(terserRoot, 'package.json'), 'utf8')).version;
 if (terserVersion !== TERSER_VERSION) throw new Error('rapier-jxl 7.0 builds with terser ' + TERSER_VERSION + ', not ' + terserVersion + '.');
-const version = '8.3.1';
+const version = '8.3.2';
 
 export const ONE_FILE = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'codec-upload', 'codec-capture', 'codec-capture-complete', 'codec-animation', 'codec-format', 'codec-decode', 'codec-jpeg', 'polyfill', 'serve', 'verify', 'storage', 'resumable'];
 export const WASM_MODULES = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'verify', 'resumable'];
@@ -85,8 +86,8 @@ const UNSTEPPED = /^(serve|metadata)(\.|$)|\.(worker|helper)$/;
 const unstepped = {name: 'unstepped', setup(build) {
   build.onLoad({filter: /\.mjs$/}, async ({path}) => {
     if (!path.startsWith(codec + '/')) return undefined;
-    const text = await readFile(path, 'utf8');
-    return /\bjournaling\(\)/.test(text) ? {contents: text.replace(/\bjournaling\(\)/g, 'false'), loader: 'js', resolveDir: dirname(path)} : undefined;
+    const text = await readFile(path, 'utf8'), timed = /[\\/]capture-codec\.mjs$/.test(path) ? untimed(text) : text, next = unsteppedSource(timed);
+    return next !== text ? {contents: next, loader: 'js', resolveDir: dirname(path)} : undefined;
   });
 }};
 const moduleFiles = {name: 'module-files', setup(build) {
@@ -116,6 +117,7 @@ function planarFunctions(text) {
 }
 async function oneFile(name, file = name + '.mjs', from = v7, plugins = []) {
   const define = {...common.define, __RAPIER_JXL_UPLOAD__: String(/^upload(\.|$)/.test(name)), __RAPIER_JXL_JPEG__: String(/^jpeg(\.|$)/.test(name)),
+    __RAPIER_JXL_WORKER__: String(/\.(?:worker|helper)$/.test(name)), __RAPIER_JXL_HELPER__: String(/\.helper$/.test(name)), __RAPIER_JXL_UNSTEPPED__: String(UNSTEPPED.test(name)),
     __RAPIER_JXL_CAPTURE_LEAN__: String(/^capture(\.|$)/.test(name)),
     __RAPIER_JXL_CAPTURE_DEEP__: String(!/^capture(\.|$)/.test(name)),
     __RAPIER_JXL_CAPTURE_PHOTO__: String(/^capture-(photo|complete)(\.|$)/.test(name)),
@@ -123,9 +125,9 @@ async function oneFile(name, file = name + '.mjs', from = v7, plugins = []) {
     __RAPIER_JXL_METADATA__: String(/^metadata(\.|$)/.test(name)),
     __RAPIER_JXL_SAMPLE__: String(name === 'verify' || /^resumable(\.|$)/.test(name))};
   const names = {...common, minify: false, minifySyntax: true, banner: undefined, define, write: false, metafile: true, entryPoints: [join(from, file)], outfile: join(dist, name + '.mjs')};
-  const first = await esbuild.build({...names, plugins: [moduleFiles, probesOut, ...plugins]});
+  const first = await esbuild.build({...names, plugins: [moduleFiles, ...plugins, probesOut]});
   const {unreached} = bundleKernelNeeds(first.outputFiles.find(output => output.path.endsWith('.mjs')).text, kernels.exports);
-  const readable = await esbuild.build({...names, plugins: [moduleFiles, probesOut, bridges(unreached), ...plugins]});
+  const readable = await esbuild.build({...names, plugins: [moduleFiles, ...plugins, probesOut, bridges(unreached)]});
   const profile = kernelProfile(name), text = readable.outputFiles.find(output => output.path.endsWith('.mjs')).text;
   if (/^(index|still|animation|format)(\.|$)/.test(name)) {
     const held = built.metafile.planarFunctions[name] = planarFunctions(text);
@@ -140,7 +142,7 @@ async function oneFile(name, file = name + '.mjs', from = v7, plugins = []) {
   built.metafile.kernelExports[name] = keep;
   built.metafile.kernelBridgesCut[name] = unreached;
   built.metafile.jpegKernelExports[name] = jpegKeep;
-  const result = await esbuild.build({...common, define, metafile: true, sourcemap: 'external', plugins: [moduleFiles, shaders, probesOut, bridges(unreached), kernels({kernels: keep, jpeg: jpegKeep}), ...plugins],
+  const result = await esbuild.build({...common, define, metafile: true, sourcemap: 'external', plugins: [moduleFiles, shaders, ...plugins, probesOut, bridges(unreached), kernels({kernels: keep, jpeg: jpegKeep})],
     entryPoints: [join(from, file)], outfile: join(dist, name + '.mjs')});
   const {metafile} = result;
   const mapPath = join(dist, name + '.mjs.map');

@@ -90,7 +90,7 @@ function* effortSteps(data, width, height, quality, colorSpace, effort, photo = 
   const captured = screenish || typeof colorSpace !== 'object' && shape.palette
     ? yield {capture: {data, width, height, colorSpace, effort: Math.max(effort, 3), tools: deep?.capture}} : null;
   if (screenish && captured instanceof Uint8Array && captured.length <= PROBE * stream.length) {
-    if (effort < 6) return captured;
+    if ((typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) || effort < 6) return captured;
     try {
       const bytes = yield* losslessCapture(data, width, height, colorSpace, losslessLevel(effort, ...(yield* rankingOf(data, width, height, shape, colorSpace))));
       if (bytes && bytes.length < captured.length) return bytes;
@@ -107,12 +107,14 @@ function* effortSteps(data, width, height, quality, colorSpace, effort, photo = 
   const direct = shape.palette ? {...shape, palette: null} : shape;
   if (effort >= 4 || screen) {
     const searches = alone ? [] : [() => searchSteps(data, width, height, direct, colorSpace, 3, analysis, screen ? best.length : Infinity)];
-    if (effort >= 4 && shape.palette) searches.push(() => deep.localSteps(data, width, height, shape, colorSpace, 4, true, best.length));
-    if (effort >= 6 && shape.palette) searches.push(() => deep.localSteps(data, width, height, shape, colorSpace, 6, true, best.length));
-    if (effort >= 4 && !alone) searches.push(() => deep.rctSearchSteps(data, width, height, shape, colorSpace));
+    if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true)) {
+      if (effort >= 4 && shape.palette) searches.push(() => deep.localSteps(data, width, height, shape, colorSpace, 4, true, best.length));
+      if (effort >= 6 && shape.palette) searches.push(() => deep.localSteps(data, width, height, shape, colorSpace, 6, true, best.length));
+      if (effort >= 4 && !alone) searches.push(() => deep.rctSearchSteps(data, width, height, shape, colorSpace));
+    }
     const level = losslessLevel(effort, ...(yield* rankingOf(data, width, height, shape, colorSpace)));
     searches.unshift(() => losslessCapture(data, width, height, colorSpace, level));
-    const older = deep?.screenSteps;
+    const older = !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && deep?.screenSteps;
     if (older && screen) searches.unshift(() => older(data, width, height, shape, colorSpace, {fastFloor: effort === 3 ? best.length : 0, effort, deep: deep.screen}));
     if (older && effort >= 4 && !screen && losslessScreenCandidate(data, width, height, shape, 3))
       searches.unshift(() => older(data, width, height, shape, colorSpace, {fastFloor: best.length, effort: 3, deep: deep.screen}));
@@ -178,8 +180,9 @@ const PRECISE = Object.freeze([5, 3, 6, 1, 2, 4, 7, 8, 9, 10, 11, 12, 13, 0]);
 const BROAD = Object.freeze([5, 3, 6, 1, 2, 4, 13, 0]);
 const SMALL_FAST = Object.freeze({referenceKinds: Object.freeze([]), properties: Object.freeze([15, 9, 10, 11, 12, 13, 14])});
 export function losslessSets(effort, ranked = [6, 6]) {
-  const [first, second] = ranked, small = effort >= 6 ? Object.freeze({charge: 0, predictors: PRECISE, bins: 255, nodes: 255, clustered: false}) : SMALL_FAST;
+  const [first, second] = ranked, small = !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && effort >= 6 ? Object.freeze({charge: 0, predictors: PRECISE, bins: 255, nodes: 255, clustered: false}) : SMALL_FAST;
   const set = (rcts, learn) => Object.freeze({rcts: [...new Set(rcts)], learn: Object.freeze({...learn, leaf: true, small})});
+  if (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) return [set([first], {samples: 4096, nodes: 31})];
   const five = {samples: 32768, nodes: 127}, six = {samples: 65536, nodes: 169}, seven = {samples: 131072, nodes: 255, bins: 128, predictors: BROAD};
   const eight = {samples: 131072, nodes: 575, predictors: PRECISE, bins: 128, charge: 8, clustered: true}, nine = {...eight, samples: 262144, nodes: 1663, bins: 192};
   if (effort >= 9) return [set([first, second], nine), set([first, second], eight), set([first], seven)];
@@ -196,7 +199,7 @@ function smallSets(effort, ranked, pixels) {
 }
 const NOISE = Object.freeze({rcts: Object.freeze([0]), learn: Object.freeze({leaf: true, whole: true, least: Infinity})});
 export const losslessLevel = (effort, ranked, estimate, pixels = Infinity) => Object.freeze({...LOSSLESS, estimate, gate: effort >= 6 ? 2 : 1.5,
-  learnSets: estimate * 8 >= 16 * pixels ? [...losslessSets(Math.min(effort, 3), ranked), ...effort >= 7 ? [NOISE] : []] : pixels <= 65536 ? smallSets(effort, ranked, pixels) : losslessSets(effort, ranked)});
+  learnSets: estimate * 8 >= 16 * pixels ? [...losslessSets(Math.min(effort, 3), ranked), ...!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && effort >= 7 ? [NOISE] : []] : pixels <= 65536 ? smallSets(effort, ranked, pixels) : losslessSets(effort, ranked)});
 function* rankingOf(data, width, height, shape, colorSpace) {
   if (typeof colorSpace === 'object') return [[6, 6], undefined, width * height];
   if (!journaling() || shape.colour !== 3) return ranking(data, width, height, shape);

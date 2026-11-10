@@ -26,7 +26,11 @@
 		heading.append(title, info);
 		bar.append(heading, shut);
 		const body = make('div', 'rapier-jxl-view__body');
-		const note = make('p', 'rapier-jxl-view__note', 'Runs locally on your device - no uploads. Free and open source. Rapier is a single HTML file that works offline. Press X in the top right to go back to the Markdown editor.');
+		const localNote = () => {
+			const node = make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center');
+			node.append(document.createTextNode(C.LOCAL_NOTE[0]), document.createElement('br'), document.createTextNode(C.LOCAL_NOTE[1]));
+			return node;
+		};
 		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input');
 		pick.append(C.pickLabel(make('span')), input);
 		input.type = 'file'; input.accept = 'image/*,video/*,.jxl'; input.multiple = true;
@@ -56,11 +60,12 @@
 		track.setAttribute('aria-hidden', 'true'); head.setAttribute('class', 'rapier-draw-seek-head'); head.setAttribute('viewBox', '0 0 24 24'); head.setAttribute('aria-hidden', 'true');
 		for (const [name, value] of [['cx', '12'], ['cy', '12'], ['r', '10']]) ring.setAttribute(name, value);
 		head.append(ring); seek.append(track, head, level, slider);
-		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), seek, make('span', 'rapier-jxl-view__end', 'Smallest file'));
+		effortRow.classList.add('rapier-jxl-view__effort--range');
+		effortRow.append(make('span', 'rapier-jxl-view__end', 'Fast'), seek, make('span', 'rapier-jxl-view__end', 'Small'));
 		const quality = make('div', 'rapier-jxl-view__part'), effort = make('div', 'rapier-jxl-view__part');
-		quality.append(make('p', 'rapier-jxl-view__label', 'Quality'), group);
+		quality.append(make('p', 'rapier-jxl-view__label', 'Quality:'), group);
 		quality.classList.add('rapier-jxl-view__full'); effort.classList.add('rapier-jxl-view__full');
-		const effortLabel = make('p', 'rapier-jxl-view__label', 'Effort');
+		const effortLabel = make('p', 'rapier-jxl-view__label', 'Effort:');
 		effort.append(effortLabel, effortRow);
 		C.liftToLabel(seek, level, effortLabel);
 		const status = make('div', 'rapier-jxl-view__status'), line = make('div', 'rapier-progress__bar rapier-jxl-view__line'), cancel = make('button', 'settings-action-btn', 'Cancel');
@@ -73,7 +78,7 @@
 		const files = make('div', 'rapier-jxl-view__files');
 		files.append(line, summary, help, list, all);
 		const fold = make('div', 'rapier-jxl-view__fold');
-		fold.append(note, pick, files, quick, quality, effort, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false));
+		fold.append(pick, files, quick, quality, effort, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false, C.LINKS.slice(2)));
 		const more = make('section', 'rapier-jxl-view__more'), moreTitle = make('h2', 'rapier-jxl-view__title', C.COMPARE.title), facts = make('ul', 'rapier-jxl-view__facts');
 		moreTitle.id = 'rapier-jxl-compare'; more.setAttribute('aria-labelledby', moreTitle.id);
 		for (const fact of C.COMPARE.lines) facts.append(make('li', 'rapier-jxl-view__note', fact));
@@ -81,11 +86,12 @@
 		const scene = make('section', 'rapier-jxl-view__more'), sceneTitle = make('h2', 'rapier-jxl-view__title', C.SCENE.title), stage = make('div', 'rapier-jxl-scene__stage');
 		sceneTitle.id = 'rapier-jxl-scene'; scene.setAttribute('aria-labelledby', sceneTitle.id);
 		scene.append(sceneTitle, make('p', 'rapier-jxl-view__note', C.SCENE.note), stage);
-		const example = make('section', 'rapier-jxl-view__more'), exampleTitle = make('h2', 'rapier-jxl-view__title', C.EXAMPLE.title), exampleSlot = make('div', 'rapier-jxl-view__example');
+		const example = make('section', 'rapier-jxl-view__more'), exampleTitle = make('h2', 'rapier-jxl-view__title', C.EXAMPLE.title), exampleSlot = make('div', 'rapier-jxl-view__example rapier-jxl-view__example--full');
 		const exampleNote = make('p', 'rapier-jxl-view__note');
 		exampleTitle.id = 'rapier-jxl-example'; example.setAttribute('aria-labelledby', exampleTitle.id);
-		example.append(exampleTitle, exampleSlot, exampleNote, make('p', 'rapier-jxl-view__note', C.EXAMPLE.credit));
-		_rapierJxlMakerPart.tabs(body, [fold, more, example, scene, _rapierToolAlso('/jxl')]);
+		exampleNote.classList.add('rapier-jxl-view__note--center');
+		example.append(exampleTitle, exampleSlot, exampleNote, localNote(), make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center', C.EXAMPLE.credit));
+		_rapierJxlMakerPart.tabs(body, [fold, example, more, scene, _rapierToolAlso('/jxl')]);
 		root.append(bar, body);
 		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, example, exampleSlot, exampleNote, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
 	}
@@ -373,10 +379,14 @@
 			RapierParts.check('jxlexample').catch(() => {}).then(() => RapierParts.need('jxlexample')).then(() => {
 				if (view !== self || self.exampleShown) return;
 				const E = globalThis.RapierJxlExample, bytes = Uint8Array.from(atob(E.JXL), c => c.charCodeAt(0));
-				self.exampleShown = C.showMade(new Blob([bytes], {type: 'image/jxl'}), 'rapier-jxl-view__media', 'A galloping horse, animated JPEG XL');
+				self.exampleShown = C.showMade(new Blob([bytes], {type: 'image/jxl'}), 'rapier-jxl-view__media', 'Earth from the International Space Station, animated JPEG XL');
 				self.exampleSlot.replaceChildren(self.exampleShown.node);
 				self.exampleNote.textContent = 'GIF ' + size(E.GIF_BYTES) + ' → JPEG XL ' + size(bytes.length) + ' · ' + percent({size: bytes.length, before: E.GIF_BYTES});
-			}, () => { if (view === self) self.exampleSlot.replaceChildren(make('p', 'rapier-jxl-view__note', C.EXAMPLE.missing)); });
+			}, error => {
+				if (view !== self) return;
+				if (error?.cause?.code === 'part_not_carried') self.example.hidden = true;
+				else self.exampleSlot.replaceChildren(make('p', 'rapier-jxl-view__note', C.EXAMPLE.missing));
+			});
 		}, {root: self.example.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
 		near.observe(self.example);
 		self.exampleNear = near;

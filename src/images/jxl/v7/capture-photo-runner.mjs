@@ -28,10 +28,10 @@ export function capturePhotoRunner(tools, {device = null, answerer = null}, runP
       ? captureSmallReading(intent, data, width, rect, offGrid, colorSpace)
       : lowCaptureReading(intent, data, width, rect, offGrid, colorSpace);
     const effort = options.effort ?? 3;
-    if (effort >= LOOK_FROM) {
-      coding.wholeQuality = coding.regionQuality;
-      coding.regionQuality = lookingReader(intent, coding.regionQuality);
-    }
+    if (effort >= LOOK_FROM) coding.wholeQuality = coding.regionQuality;
+    if (effort >= 1) coding.regionQuality = lookingReader(intent, coding.regionQuality, {
+      measureLarge: effort >= LOOK_FROM, measureSmall: effort < 6,
+    });
     return runPhoto ? runPhoto({input, options, hooks, coding, photo, exact})
       : runCaptureUsing(input, options, hooks, coding, photo);
   };

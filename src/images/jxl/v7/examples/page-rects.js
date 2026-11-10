@@ -1,7 +1,7 @@
 
 export function measure(element, { edges = false, keep } = {}) {
   const clip = clipper(element, keep);
-  return { box: elementBox(element), text: textParts(element, clip), photos: photoParts(element, clip), ...(edges && { edges: edgeParts(element, clip) }) };
+  return { box: elementBox(element), text: textParts(element, clip), photos: photoParts(element, clip), textComplete: true, ...(edges && { edges: edgeParts(element, clip) }) };
 }
 
 export function pageRects(page, canvas, { area = {}, edges = false } = {}) {
@@ -19,7 +19,7 @@ export function pageRects(page, canvas, { area = {}, edges = false } = {}) {
   const exactRects = [];
   for (const { r, grow, solidText } of shot.text) { const b = place(r, grow); if (b) exactRects.push(solidText ? { ...b, solidText } : b); }
   if (edges) exactRects.push(...(shot.edges ? shot.edges.map(r => place(r, r.soft ? 1 : 0)).filter(Boolean).map(b => ({ ...b, edge: true })) : [{ ...whole, edge: true }]));
-  return { exactRects, photoRects };
+  return { exactRects, photoRects, ...(shot.textComplete === true && { textComplete: true }) };
 }
 
 function elementBox(element) {

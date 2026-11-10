@@ -35,15 +35,16 @@ export function gradient(picture, {stride = picture.width, origin = 0} = {}) {
 }
 export function gradientRows(acc, data, width, height, from, to, {table = null, float = false, stride = width, origin = 0, row0 = 0} = {}) {
   const rowStride = stride * 4;
-  let {sum, n} = acc;
+  let {sum, n, chroma = 0} = acc;
   for (let y = from + ((1 - from) % 4 + 4) % 4; y < Math.min(to, height - 1); y += 4) {
     let i = (origin + (y - row0) * stride) * 4, here = luma(data, i, table, float);
     for (let x = 0; x < width - 1; x++, i += 4) {
       const right = luma(data, i + 4, table, float);
       sum += Math.abs(right - here) + Math.abs(luma(data, i + rowStride, table, float) - here); here = right; n++;
+      if (!table) chroma += Math.abs(data[i] - data[i + 1]) + Math.abs(data[i + 2] - data[i + 1]);
     }
   }
-  acc.sum = sum; acc.n = n;
+  acc.sum = sum; acc.n = n; acc.chroma = chroma;
 }
 
 function line(at, g) {

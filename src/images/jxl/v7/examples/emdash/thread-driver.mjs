@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+import {createRequire} from 'node:module';
+import {pathToFileURL} from 'node:url';
 import * as resumable from 'rapier-jxl/resumable';
 import {digest} from './digest.mjs';
 
@@ -25,10 +27,17 @@ async function readInput(input, store, signal) {
   return bytes;
 }
 
+export function threadWorkerURL(moduleUrl = import.meta.url) {
+  try {
+    const root = createRequire(moduleUrl).resolve('rapier-jxl/package.json');
+    return new URL('./examples/emdash/thread-worker.mjs', pathToFileURL(root));
+  } catch { return new URL('./thread-worker.mjs', moduleUrl); }
+}
+
 function run(job, progress) {
   const {Worker} = threads();
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./thread-worker.mjs', import.meta.url), {workerData: job, transferList: [job.bytes.buffer]});
+    const worker = new Worker(threadWorkerURL(), {workerData: job, transferList: [job.bytes.buffer]});
     worker.on('message', value => {
       if (typeof value?.progress === 'number') { progress(value.progress); return; }
       if (value?.error) reject(Object.assign(new Error(value.error.message), value.error));

@@ -7,9 +7,7 @@ import {lowWholePhoto} from '../photo-low.mjs';
 import {smoothPhoto} from './low-photo.mjs';
 import {wholeRebuildMeasure} from '../photo-whole-rebuild.mjs';
 import {memoryPlan} from '../memory-plan.mjs';
-import {browserMargin} from '../photo-browser-margin.mjs';
-import {S2_MARGIN, SMALL_REBUILD_MARGIN} from '../photo-whole-policy.mjs';
-import {smallPicture} from '../photo-v6-settings.mjs';
+import {explicitShownMargin} from '../photo-whole-policy.mjs';
 import {measuredFileSearch} from './measured-search.mjs';
 import {effortJob} from '../effort-job.mjs';
 import {EXACT_LADDER} from '../exact-ladder.mjs';
@@ -35,7 +33,7 @@ async function lowScoreTarget(data, width, height, effort, target, hooks) {
     if (!picture) throw fail('JXL_INTERNAL', 'The low photo writer did not expose its selected image.');
     let scores = metric.measure(picture, {ssimulacra2: true, butteraugli: false});
     if (typeof scores?.next === 'function') scores = await drain(scores, {signal: hooks.signal});
-    const margin = browserMargin(scores.ssimulacra2) + S2_MARGIN + (smallPicture(width, height) ? SMALL_REBUILD_MARGIN : 0);
+    const margin = explicitShownMargin(scores.ssimulacra2, width, height);
     return {quality, bytes, scores: {ssimulacra2: scores.ssimulacra2 - margin}};
   };
   try {
@@ -51,7 +49,8 @@ export async function scoreTarget(data, width, height, source, settings, target,
   target = photoTarget(target);
   if (settings.effort <= 5 && Object.keys(target).length === 1 && target.ssimulacra2 !== undefined)
     return lowScoreTarget(data, width, height, settings.effort, target, hooks);
-  const answer = await drain(encodeToScoreSteps(data, width, height, {target, effort: settings.effort, signal: hooks.signal, preview: hooks.preview}), hooks);
+  const answer = await drain(encodeToScoreSteps(data, width, height, {target, effort: settings.effort, signal: hooks.signal, preview: hooks.preview,
+    shownBound: target.ssimulacra2 !== undefined}), hooks);
   return {bytes: answer.bytes, facts: answer.quality === 100 ? {kept: 'pixels', measurements: []}
     : {kept: 'lossy', measurements: photoOutputMeasurements(target, answer, 'encoder-reconstruction')}};
 }

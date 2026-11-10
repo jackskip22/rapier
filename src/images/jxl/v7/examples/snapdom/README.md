@@ -50,15 +50,19 @@ In 8.3.1 the declaration accepts `backgroundColor: null`, matching the existing 
 | Module and name | Arguments | Return fields used |
 | --- | --- | --- |
 | `rapier-jxl/codec/<module>`: `createCodec` | `{module, maxPixels: 268435456, helpers?}`, from the door of the configured module (`capture-complete`, `capture` or `upload`), so a bundler ships only those modules' workers. | An encoder with `prepare('capture'): Promise<void>` and `capture(input, options): Promise<ImageResult>`. Preparation is a warm-up; its failure is handled by the capture. |
-| Encoder: `capture` | The drawn canvas; `{fidelity, effort?, webgpu?, signal?, onProgress?, onEncoded, exactRects?, photoRects?}` | `fits: boolean`, `bytes: Uint8Array` on success; `reason: {code, message}` on a miss. A miss rejects the export with that code and message. The Blob contains only the returned byte view. |
-| `rapier-jxl/page-rects`: `measure` | The captured element; `{edges, keep}`: edges except for the upload module, and `keep`, the nodes SnapDOM cloned. | A measurement with `box: {left, top, width, height}`, `text`, `photos`, and optional `edges`. The example reads `box.width` and `box.height` and passes the measurement to `pageRects`. |
-| `rapier-jxl/page-rects`: `pageRects` | The measurement, `{width, height}` canvas, and `{area: {x?, y?, width?, height?}, edges}`. Area is in CSS pixels; defaults cover the measured element. | `{exactRects, photoRects}` arrays in whole canvas pixels. Rectangles have `{x, y, width, height}`; exact rectangles may also have `solidText` or `edge`. |
+| Encoder: `capture` | The drawn canvas; `{fidelity, effort?, webgpu?, signal?, onProgress?, onEncoded, exactRects?, photoRects?, textComplete?}` | `fits: boolean`, `bytes: Uint8Array` on success; `reason: {code, message}` on a miss. A miss rejects the export with that code and message. The Blob contains only the returned byte view. |
+| `rapier-jxl/page-rects`: `measure` | The captured element; `{edges, keep}`: edges except for the upload module, and `keep`, the nodes SnapDOM cloned. | A measurement with `box: {left, top, width, height}`, `text`, `photos`, `textComplete: true`, and optional `edges`. The example reads `box.width` and `box.height` and passes the measurement to `pageRects`. |
+| `rapier-jxl/page-rects`: `pageRects` | The measurement, `{width, height}` canvas, and `{area: {x?, y?, width?, height?}, edges}`. Area is in CSS pixels; defaults cover the measured element. | `{exactRects, photoRects}` arrays in whole canvas pixels, plus `textComplete: true` when carried by the measurement. Rectangles have `{x, y, width, height}`; exact rectangles may also have `solidText` or `edge`. |
 | Display decoder: `rapier-jxl/codec/decode`'s `createCodec` | `{module: 'rapier-jxl/decode', maxPixels: 268435456}`; created only if a lossy file cannot display natively. | A decoder with `decode(blob, options): Promise<DecodedImage>`. |
 | Decoder: `decode` | The JXL Blob; `{format: 'uint8', colorSpace: 'srgb', maxPixels: 268435456, signal?}` | `{data, width, height}`; `data.buffer`, `data.byteOffset`, and `data.byteLength` build the RGBA canvas view. |
 
 Measurements are taken in `afterClone`, before the page can change. The export maps them through the capture's viewBox,
 clip and scale. Below 1:1, text boxes round outward; when photos remain, the smaller of photographic and whole-exact
 capture wins. Without a measurement, the whole capture stays exact.
+
+The plug-in carries measurement completion automatically. Custom integrations forward the whole `pageRects` result,
+including `textComplete` and an empty `exactRects` array. The marker comes from `measure`; a hand-built or partial
+measurement leaves it absent. A solid-text box over a region coded as a photo stays exact in full, including its background.
 
 Efforts 6–9 need no JPEG XL decoder: with text and photo rectangles, rapier-jxl measures photos on the encoder's own
 reconstruction.

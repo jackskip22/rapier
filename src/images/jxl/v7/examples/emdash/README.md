@@ -103,7 +103,7 @@ The server run supports **Pause**, **Resume**, and **Cancel**. Pause lets the cu
 
 When **Keep original JPEG files** is off on an eligible host, JPEG originals are archived separately using lossless JPEG recompression. Otherwise the uploaded JPEG stays in place. **Same look** and **Size limit** also produce a delivery candidate using the selected goal; **Exact** can use a reversible JPEG XL result directly. Delivery chooses the smallest eligible candidate that satisfies the current selection. An archive or retained JPEG preserves the exact original when the delivery representation misses a size limit; an oversized archive is not selected for delivery. An unmet size target reports a miss and leaves original delivery available.
 
-**Effort** is 1 to 9; higher makes smaller files and takes longer. The default is 3. **Sizes** controls responsive widths. The defaults are 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200 and 3840 pixels. Copies do not upscale the source. A Size limit applies to each responsive copy.
+**Effort** is 1 to 9; higher makes smaller files and takes longer. The default is 7. **Sizes** controls responsive widths. The defaults are 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200 and 3840 pixels. Copies do not upscale the source. A Size limit applies to each responsive copy.
 
 Settings load before work starts. Saves are serialized; a failed change returns to the confirmed value. An invalid Size limit stays a draft and prevents new work until a valid limit is saved or another mode is chosen. Accepted server jobs keep their captured settings. The server independently checks browser results before publication.
 

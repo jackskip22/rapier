@@ -10,10 +10,13 @@ export const ANS_CONFIGS = [...CONFIGS, uintConfig(3, 1, 0), uintConfig(4, 0, 1)
 const PHOTO_ANS_CONFIGS = [...ANS_CONFIGS, uintConfig(1, 1, 0), uintConfig(1, 0, 1), uintConfig(2, 1, 1), uintConfig(2, 2, 0),
   uintConfig(2, 0, 2), uintConfig(3, 1, 2), uintConfig(3, 2, 1), uintConfig(3, 3, 0), uintConfig(3, 0, 3), uintConfig(4, 0, 2), uintConfig(5), uintConfig(5, 0, 1)];
 const CLUSTER_CONFIG = uintConfig(4, 1, 1);
-const MORE_CONFIGS = [], MORE_TOKENS = new Uint32Array(2048);
-for (let split = 0; split <= 7; split++) for (let msb = 0; msb <= split; msb++) for (let lsb = 0; msb + lsb <= split; lsb++) {
-  if (!ANS_CONFIGS.some(c => c.split === split && c.msb === msb && c.lsb === lsb)) MORE_CONFIGS.push(uintConfig(split, msb, lsb));
-}
+const MORE_TOKENS = /* @__PURE__ */ new Uint32Array(2048);
+const MORE_CONFIGS = /* @__PURE__ */ (() => {
+  const out = [];
+  for (let split = 0; split <= 7; split++) for (let msb = 0; msb <= split; msb++) for (let lsb = 0; msb + lsb <= split; lsb++)
+    if (!ANS_CONFIGS.some(c => c.split === split && c.msb === msb && c.lsb === lsb)) out.push(uintConfig(split, msb, lsb));
+  return out;
+})();
 
 function histogramKey(tokens, length, raw) {
   let a = raw >>> 0, b = length;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-function _rapierToolFooter(path, npmPackage, repository = 'rapier', also = true) {
+function _rapierToolFooter(path, npmPackage, repository = 'rapier', also = true, extras = []) {
 	const pages = [['/jxl', 'JPEG XL converter'], ['/convert', 'Document converter'], ['/diff', 'Compare'], ['/math', 'Math'], ['/diagrams', 'Diagrams']];
 	const link = (label, href, away) => {
 		const node = document.createElement('a');
@@ -11,7 +11,7 @@ function _rapierToolFooter(path, npmPackage, repository = 'rapier', also = true)
 	const joined = links => links.flatMap((node, at) => at ? [' · ', node] : [node]);
 	const footer = document.createElement('div');
 	footer.className = 'rapier-tool-footer';
-	footer.append(line(...joined([link((repository === 'rapier' ? 'Rapier' : repository) + ' on GitHub', 'https://github.com/jackskip22/' + repository, true), link(npmPackage + ' on npm', 'https://www.npmjs.com/package/' + npmPackage, true)])));
+	footer.append(line(...joined([link((repository === 'rapier' ? 'Rapier' : repository) + ' on GitHub', 'https://github.com/jackskip22/' + repository, true), link(npmPackage + ' on npm', 'https://www.npmjs.com/package/' + npmPackage, true), ...extras.map(([label, address]) => link(label, address, true))])));
 	if (also) footer.append(line('Also: ', ...joined(pages.filter(([at]) => at !== path).map(([at, label]) => link(label, 'https://rapier.website' + at)))));
 	return footer;
 }

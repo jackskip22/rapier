@@ -101,7 +101,7 @@ export function deployment(env, {authentication = env.ACCESS_PROFILE === true ? 
   }
   for (const [name, local] of [['UI_ORIGIN', true], ['FILE_DOWNLOAD_ORIGINS', false], ['ALLOWED_ORIGINS', true], ['RETURN_ORIGIN', true]]) {
     for (const value of String(env[name] || '').split(',').map(part => part.trim()).filter(Boolean)) {
-      try { configuredOrigin(value, name, local); } catch (error) { invalid.push(name); break; }
+      try { if (name !== 'FILE_DOWNLOAD_ORIGINS' || !FILE_ORIGIN_PATTERN.test(value)) configuredOrigin(value, name, local); } catch (error) { invalid.push(name); break; }
     }
   }
   return { ready: !missing.length && !invalid.length && !development, development, missing, invalid, documents: !missing.includes('DOCUMENTS'), assets: !missing.includes('ASSETS'), budget, editorKey: secret.usable, editorSecret: secret.usable ? secret.form : null, unmeteredCreate: development };
@@ -707,8 +707,8 @@ async function resource(request, env, uri) {
   if (!env.ASSETS?.fetch) throw failure('UI_NOT_BUILT', 'Build the Rapier MCP App and bind its static assets before opening the editor.');
   const endpoint = new URL(request.url).origin;
   const domain = configuredOrigin(env.UI_ORIGIN || endpoint, 'UI_ORIGIN', true);
-  const fileOrigins = [...new Set((env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS')))];
-  const connectDomains = [...new Set([endpoint, endpoint.replace(/^http/, 'ws'), 'https://cdn.jsdelivr.net', ...fileOrigins])];
+  const fileOrigins = configuredFileOrigins(env);
+  const connectDomains = [...new Set([endpoint, endpoint.replace(/^http/, 'ws'), 'https://cdn.jsdelivr.net', ...fileOrigins.map(fileConnectDomain)])];
   const prepared = uiPages.get(env.ASSETS) || new Map(), preparedKey = JSON.stringify([endpoint, fileOrigins]);
   uiPages.set(env.ASSETS, prepared);
   let html = prepared.get(preparedKey);
@@ -734,6 +734,13 @@ async function resource(request, env, uri) {
     'openai/widgetCSP': { connect_domains: csp.connectDomains, resource_domains: csp.resourceDomains },
     'openai/widgetDescription': 'Rapier is the shared editor for this document. Edit its text and drawings, review attributed changes, and export an independent Markdown file or offline editor.' } }] };
 }
+
+const FILE_ORIGIN_PATTERN = /^https:\/\/([a-z0-9]{3,40})\*\.((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})$/;
+function configuredFileOrigins(env) {
+  return [...new Set((env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)
+    .map(value => FILE_ORIGIN_PATTERN.test(value) ? value : configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS')))];
+}
+const fileConnectDomain = entry => entry.replace(FILE_ORIGIN_PATTERN, 'https://*.$2');
 
 function configuredOrigin(value, name, local = false) {
   let url;
@@ -2128,7 +2135,7 @@ async function pairedPage(request, env, page) {
     const parts = await pairedPageParts(env, request);
     if (!parts) return unavailable();
     const admitted = (await pageAdmission(env, page)).admitted === true;
-    const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
+    const fileOrigins = configuredFileOrigins(env);
     const flags = pageFlagText({id: page.id, editorKey: admitted ? env.ACCESS_PROFILE === true ? page.access.principalId : await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}) : '', fileOrigins});
     const middle = encoder.encode("globalThis.RAPIER_APPS_HOST = !(window.parent === window && new URLSearchParams(location.hash.slice(1)).has('live') && new URLSearchParams(location.hash.slice(1)).has('key')); "
       + flags + ' globalThis.RAPIER_ASSET_BASE = ' + JSON.stringify(new URL('/editor-assets/', request.url).href) + ';');
@@ -2150,7 +2157,7 @@ async function editorAdmission(request, env, id, browser) {
   if (!page) return json({admitted: false}, 404, headers);
   try {
     if ((await pageAdmission(env, page)).admitted !== true) return json({admitted: false}, 200, headers);
-    const fileOrigins = (env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS'));
+    const fileOrigins = configuredFileOrigins(env);
     return json({admitted: true, editorKey: env.ACCESS_PROFILE === true ? page.access.principalId : await mintEditorKey(editorSecret(env), Date.now(), {workspace: page.address, connection: page.authority.ownerKey || ''}), fileOrigins}, 200, headers);
   } catch { return json({admitted: false}, 503, headers); }
 }

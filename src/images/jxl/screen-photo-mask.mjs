@@ -66,11 +66,14 @@ export function photoMasks(data, width, height, regions, exactRects = []) {
       bordered ||= touches;
       if (c > most) { most = c; fill = runs[q + 2]; }
     }
-    const runAt = new Uint8Array(n);
-    for (let q = 0; q < runs.length; q += 3) for (let k = runs[q]; k < runs[q] + runs[q + 1]; k++) runAt[pixels[k]] = 1;
+    let runAt = null;
     for (const e of exactRects) {
       const x0 = Math.max(0, e.x - r.x), y0 = Math.max(0, e.y - r.y), x1 = Math.min(w, e.x + e.width - r.x), y1 = Math.min(h, e.y + e.height - r.y);
       if (x1 <= x0 || y1 <= y0) continue;
+      if (e.solidText === true && !runAt) {
+        runAt = new Uint8Array(n);
+        for (let q = 0; q < runs.length; q += 3) for (let k = runs[q]; k < runs[q] + runs[q + 1]; k++) runAt[pixels[k]] = 1;
+      }
       const keep = e.solidText === true ? solidText(px, runAt, w, x0, y0, x1, y1) : null, bw = x1 - x0;
       for (let y = y0; y < y1; y++) for (let x = x0, i = y * w + x0, k = (y - y0) * bw; x < x1; x++, i++, k++) if ((!keep || keep[k]) && !exact[i]) { exact[i] = 1; list.push(i); }
     }

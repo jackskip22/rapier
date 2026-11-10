@@ -198,7 +198,7 @@ function _rapierExecuteVendorSource(name, source, mountInterface) {
 try {
   let theme = null;
   try { if (globalThis.RapierBenchRoute !== true && globalThis.RapierBenchSession?.active !== true) theme = JSON.parse(localStorage.getItem('rapier:preference:theme')); } catch (_) {}
-  if (theme === 'light' || (theme !== 'dark' && matchMedia('(prefers-color-scheme: light)').matches)) {
+  if (theme === 'light' || (theme !== 'dark' && !/^\/jxl\/?$/.test(location.pathname) && matchMedia('(prefers-color-scheme: light)').matches)) {
     document.documentElement.classList.add('rapier-boot-light');
     if (document.body) document.body.classList.add('light');
   }
