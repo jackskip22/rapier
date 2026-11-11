@@ -32,21 +32,23 @@ function _rapierPortableRequiredPlugins(source, options = {}) {
   return required;
 }
 
+async function _rapierVendorEnvelope(spans) {
+  const stream = new Blob(spans.map(span => span.value)).stream().pipeThrough(new CompressionStream('gzip'));
+  let offset = 0, group = '/* RAPIER_VENDOR_GROUP bytes=' + spans.reduce((sum, span) => sum + span.bytes, 0) + ' stored=gzip+base124 */\n' +
+    _rapierBase124.encodeBase124(new Uint8Array(await new Response(stream).arrayBuffer())) + '\n/* RAPIER_VENDOR_GROUP_END */\n';
+  for (const span of spans) {
+    group += '/* RAPIER_VENDOR_SPAN ' + span.name + ' offset=' + offset + ' bytes=' + span.bytes + ' */\n';
+    offset += span.bytes;
+  }
+  return group + '/* RAPIER_VENDOR_SPANS_END */\n';
+}
+
 async function _rapierPackPortablePlugins(groups) {
   const out = {groups: [], bodies: new Map()};
   for (const group of groups) {
     const element = 'rapier-plugin-' + group.id, files = group.files.map(({value, ...file}) => file);
     const bytes = files.reduce((sum, file) => sum + file.bytes, 0);
-    const stream = new Blob(group.files.map(file => file.value)).stream().pipeThrough(new CompressionStream('gzip'));
-    const stored = _rapierBase124.encodeBase124(new Uint8Array(await new Response(stream).arrayBuffer()));
-    let payload = '<script type="application/rapier-runtime" id="' + element + '">\n' +
-      '/* RAPIER_VENDOR_GROUP bytes=' + bytes + ' stored=gzip+base124 */\n' + stored + '\n/* RAPIER_VENDOR_GROUP_END */\n';
-    let offset = 0;
-    for (const file of files) {
-      payload += '/* RAPIER_VENDOR_SPAN ' + file.name + ' offset=' + offset + ' bytes=' + file.bytes + ' */\n';
-      offset += file.bytes;
-    }
-    payload += '/* RAPIER_VENDOR_SPANS_END */\n</script>\n';
+    const payload = '<script type="application/rapier-runtime" id="' + element + '">\n' + await _rapierVendorEnvelope(group.files) + '</script>\n';
     out.bodies.set(group.id, payload);
     out.groups.push({id: group.id, delivery: 'built-in', kind: group.kind, element, bytes, packedBytes: new TextEncoder().encode(payload).length, files});
   }
@@ -58,16 +60,7 @@ async function _rapierPackPlainGroups(html) {
   const groups = new Map();
   for (const [, , id, text] of html.matchAll(plain)) groups.set(id, await _rapierInflateVendor(id, text));
   if (!groups.size) return html;
-  const pack = async spans => {
-    const stream = new Blob(spans.map(span => span.bytes)).stream().pipeThrough(new CompressionStream('gzip'));
-    let offset = 0, group = '/* RAPIER_VENDOR_GROUP bytes=' + spans.reduce((sum, span) => sum + span.bytes.length, 0) + ' stored=gzip+base124 */\n' +
-      _rapierBase124.encodeBase124(new Uint8Array(await new Response(stream).arrayBuffer())) + '\n/* RAPIER_VENDOR_GROUP_END */\n';
-    for (const span of spans) {
-      group += '/* RAPIER_VENDOR_SPAN ' + span.name + ' offset=' + offset + ' bytes=' + span.bytes.length + ' */\n';
-      offset += span.bytes.length;
-    }
-    return group + '/* RAPIER_VENDOR_SPANS_END */\n';
-  };
+  const pack = spans => _rapierVendorEnvelope(spans.map(span => ({name: span.name, bytes: span.bytes.length, value: span.bytes})));
   const pin = ({file, bytes, sri}) => 'file:' + JSON.stringify(file) + ',bytes:' + bytes + ',sri:' + JSON.stringify(sri);
   const packed = new Map(), pins = [];
   for (const [id, spans] of groups) {

@@ -63,7 +63,7 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std:
         .member("Response")?
         .path(handle.as_str())?
         .build();
-    let mut responses = zbus::blocking::MessageIterator::for_match_rule(rule, &connection, Some(1))?;
+    let responses = zbus::blocking::MessageIterator::for_match_rule(rule, &connection, Some(1))?;
     let mut options: HashMap<&str, Value> = HashMap::new();
     options.insert("handle_token", Value::from(token.as_str()));
     options.insert("modal", Value::from(true));
@@ -89,39 +89,7 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std:
         if save { "SaveFile" } else { "OpenFile" },
         &(parent, title, options),
     )?;
-    let (answer, answered) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = answer.send(responses.next());
-    });
-    let message = loop {
-        match answered.recv_timeout(std::time::Duration::from_secs(2)) {
-            Ok(Some(Ok(message))) => break message,
-            Ok(_) => return Ok(String::new()),
-            Err(_) => {
-                // The person may browse for minutes; but a Request the portal no longer has (its backend died or showed
-                // nothing) never answers, and that is told, never left silent.
-                // A portal that does not answer at all (hung, or restarting) is as gone as a Request it no longer has.
-                let (asked, replied) = std::sync::mpsc::channel();
-                let (peer, path) = (connection.clone(), request.to_string());
-                std::thread::spawn(move || {
-                    let _ = asked.send(Proxy::new(&peer, "org.freedesktop.portal.Desktop", path.as_str(), "org.freedesktop.DBus.Introspectable")
-                        .and_then(|p| p.call::<_, _, String>("Introspect", &()))
-                        .is_ok());
-                });
-                let alive = replied.recv_timeout(std::time::Duration::from_secs(3)).unwrap_or(false);
-                if !alive {
-                    match answered.recv_timeout(std::time::Duration::from_millis(500)) {
-                        Ok(Some(Ok(message))) => break message,
-                        _ => {
-                            let _ = connection.clone().close();
-                            return Err(zbus::Error::Failure("the file chooser went away".into()));
-                        },
-                    }
-                }
-            }
-        }
-    };
-    let (code, results): (u32, HashMap<String, OwnedValue>) = message.body().deserialize()?;
+    let (code, results) = wait_response(connection, responses, request, "org.freedesktop.portal.Desktop", None)?;
     if code != 0 {
         return Ok(String::new());
     }
@@ -134,6 +102,131 @@ fn pick_inner(save: bool, name: &str, title: &str, directory: bool, start: &std:
         .and_then(|uri| uri.strip_prefix("file://"))
         .map(percent_decode)
         .unwrap_or_default())
+}
+
+// The subscribed request owns its wait. Closing a renderer aborts its chooser, not another window's.
+fn wait_response(connection: Connection, responses: zbus::blocking::MessageIterator, request: OwnedObjectPath,
+    peer: &str, cancelled: Option<&std::sync::atomic::AtomicBool>) -> zbus::Result<(u32, HashMap<String, OwnedValue>)> {
+    use std::pin::Pin;
+    use std::task::{Context, Poll, Wake, Waker};
+    use std::time::{Duration, Instant};
+    use zbus::export::futures_core::Stream;
+    struct ResponseWake(std::thread::Thread);
+    impl Wake for ResponseWake {
+        fn wake(self: std::sync::Arc<Self>) { self.0.unpark(); }
+    }
+    let waker = Waker::from(std::sync::Arc::new(ResponseWake(std::thread::current())));
+    let mut context = Context::from_waker(&waker);
+    let mut responses = responses.into_inner();
+    let interval = if cancelled.is_some() { Duration::from_millis(100) } else { Duration::from_secs(2) };
+    let mut checked = Instant::now();
+    let message = loop {
+        // Poll the subscription itself: no auxiliary reader thread can have consumed a
+        // delivered response without yet publishing it to this owner.
+        match Pin::new(&mut responses).poll_next(&mut context) {
+            Poll::Ready(Some(message)) => break message?,
+            Poll::Ready(None) => return Err(zbus::Error::Failure("the portal closed without an answer".into())),
+            Poll::Pending => (),
+        }
+        if cancelled.is_some_and(|v| v.load(std::sync::atomic::Ordering::Acquire)) {
+            let closed = Proxy::new(&connection, peer, request.as_str(), "org.freedesktop.portal.Request")
+                .and_then(|proxy| proxy.call::<_, _, ()>("Close", &()));
+            // The pinned zbus 5.19 socket reader queues earlier signals before completing
+            // a later method reply. Poll BEFORE closing our connection: successful Close
+            // alone is not enough if delivery already emitted a queued Response(0).
+            let queued = Pin::new(&mut responses).poll_next(&mut context);
+            let _ = connection.clone().close();
+            match queued {
+                Poll::Ready(Some(message)) => break message?,
+                Poll::Pending if closed.is_ok() => return Ok((1, HashMap::new())),
+                _ => return Err(zbus::Error::Failure("the attachment chooser cancellation was not confirmed".into())),
+            }
+        }
+        // The stream's waker unparks this owner as soon as a response arrives. The timeout
+        // also checks renderer retirement, without blocking the D-Bus socket reader.
+        std::thread::park_timeout(interval);
+        if checked.elapsed() < Duration::from_secs(2) { continue; }
+        // The chooser can stay open for minutes; its request must still exist and answer.
+        let (asked, replied) = std::sync::mpsc::channel();
+        let (probe, path, destination) = (connection.clone(), request.to_string(), peer.to_owned());
+        std::thread::spawn(move || {
+            let _ = asked.send(Proxy::new(&probe, destination.as_str(), path.as_str(), "org.freedesktop.DBus.Introspectable")
+                .and_then(|p| p.call::<_, _, String>("Introspect", &())).is_ok());
+        });
+        let alive = replied.recv_timeout(Duration::from_secs(3)).unwrap_or(false);
+        checked = Instant::now();
+        if !alive {
+            match Pin::new(&mut responses).poll_next(&mut context) {
+                Poll::Ready(Some(message)) => break message?,
+                _ => {
+                    let _ = connection.clone().close();
+                    return Err(zbus::Error::Failure("the file chooser went away".into()));
+                }
+            }
+        }
+    };
+    message.body().deserialize()
+}
+
+pub fn attachment_open_available() -> bool {
+    (|| -> zbus::Result<bool> {
+        let connection = zbus::blocking::connection::Builder::session()?
+            .method_timeout(std::time::Duration::from_secs(2)).build()?;
+        let portal = Proxy::new(&connection, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", "org.freedesktop.portal.OpenURI")?;
+        Ok(portal.get_property::<u32>("version")? >= 3)
+    })().unwrap_or(false)
+}
+
+/// The UI result and the lifetime fact are independent after a native dispatch.
+#[derive(Debug, PartialEq)]
+pub struct AttachmentOutcome {
+    pub result: Result<bool, String>,
+    pub retain: bool,
+}
+
+/// Open a verified private copy in the person's chosen application, outside Rapier's origin.
+pub fn open_attachment(file: &std::fs::File, parent: &str, cancelled: &std::sync::atomic::AtomicBool) -> AttachmentOutcome {
+    let mut retain = false;
+    let result = (|| -> zbus::Result<bool> {
+        let stopped = || cancelled.load(std::sync::atomic::Ordering::Acquire);
+        if stopped() { return Ok(false); }
+        let connection = zbus::blocking::connection::Builder::session()?
+            .method_timeout(std::time::Duration::from_secs(2)).build()?;
+        let bus = Proxy::new(&connection, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus")?;
+        let peer: String = bus.call("GetNameOwner", &("org.freedesktop.portal.Desktop",))?;
+        let portal = Proxy::new(&connection, peer.as_str(), "/org/freedesktop/portal/desktop", "org.freedesktop.portal.OpenURI")?;
+        if portal.get_property::<u32>("version")? < 3 { return Err(zbus::Error::Failure("the attachment app chooser is unavailable".into())); }
+        let sender = connection.unique_name().map(|n| n.trim_start_matches(':').replace('.', "_")).unwrap_or_default();
+        let token = format!("rapier{}", crate::random_hex(16));
+        let handle = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
+        let rule = zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).sender(peer.as_str())?
+            .interface("org.freedesktop.portal.Request")?.member("Response")?.path(handle.as_str())?.build();
+        let responses = zbus::blocking::MessageIterator::for_match_rule(rule, &connection, Some(1))?;
+        let mut options: HashMap<&str, Value> = HashMap::new();
+        options.insert("handle_token", Value::from(token.as_str()));
+        options.insert("ask", Value::from(true));
+        options.insert("writable", Value::from(false));
+        if stopped() { return Ok(false); }
+        // From this boundary a lost method reply or transport error cannot prove that the
+        // external application did not receive the FD. Only an authoritative terminal
+        // cancellation/refusal can make the copy eligible for removal again.
+        retain = true;
+        let request: OwnedObjectPath = portal.call("OpenFile", &(parent, zbus::zvariant::Fd::from(file), options))?;
+        if request.as_str() != handle {
+            if let Ok(proxy) = Proxy::new(&connection, peer.as_str(), request.as_str(), "org.freedesktop.portal.Request") {
+                let _ = proxy.call::<_, _, ()>("Close", &());
+            }
+            let _ = connection.clone().close();
+            return Err(zbus::Error::Failure("the attachment chooser changed its request".into()));
+        }
+        match wait_response(connection, responses, request, &peer, Some(cancelled))?.0 {
+            0 => Ok(true),
+            1 => { retain = false; Ok(false) },
+            2 => { retain = false; Err(zbus::Error::Failure("the attachment app chooser failed".into())) },
+            _ => Err(zbus::Error::Failure("the attachment app chooser returned an unknown response".into())),
+        }
+    })().map_err(|e| e.to_string());
+    AttachmentOutcome { result, retain }
 }
 
 /// Tell the person something when no terminal shows stderr (a launcher start): a desktop notification

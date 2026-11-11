@@ -382,6 +382,7 @@ export async function main(args = process.argv.slice(2)) {
   const work = await mkdtemp(join(out, 'work-')), frozen = join(work, 'frozen');
   try {
     await copyTree(ROOT, frozen);
+    await cp(join(ROOT, '../docs'), join(work, 'docs'), {recursive: true});
     const toolchain = JSON.parse(await readFile(join(frozen, 'tools/toolchain.json'), 'utf8'));
     const profiles = [];
     for (const profile of opts.profiles) profiles.push(await measureProfile(frozen, work, profile, opts.packing, logs));

@@ -512,65 +512,78 @@ static ROWS_INLINE int metric_scale_rows(int w, int h, int mask, const void *ref
   const void *distorted, int distorted_kind, const float *linear, const float *g,
   float *cache0, float *cache1, float *cache2, int cached_mask, float *scratch,
   double *terms, double *edge_terms, double *sums, int32_t *color_keys, float *color_values,
-  int first, int end, int input_y, int input_h, int made) {
+  int first, int end, int input_y, int input_h, int made,
+  const void *distorted1, int distorted1_kind, float *scratch1, double *sums1) {
 #ifdef S2_FUSED
   // g + 44 holds a madd probe (a, b, c and the fused result, four lanes each); g + 60 receives 1 if it fails.
   if (!wasm_i32x4_all_true(wasm_i32x4_eq(wasm_f32x4_relaxed_madd(wasm_v128_load(g + 44), wasm_v128_load(g + 48),
       wasm_v128_load(g + 52)), wasm_v128_load(g + 56)))) { *(int32_t *)(g + 60) = 1; return made; }
 #endif
-  const int ring = RING * w, pixels = w * h, make_reference = (mask & ~cached_mask) != 0;
+  // `distorted1` (s2MetricBand2, every channel, no cache or map): a second output of the same reference with its own
+  // scratch and sums. The reference's rows and its mu1 and sigma11 lines are made once, in the first scratch, and the
+  // second output reads them there (the second scratch's reference parts are not written); its own lines, rings and
+  // ordered sums are as a call of its own makes them.
+  const int ring = RING * w, pixels = w * h, make_reference = (mask & ~cached_mask) != 0, outputs = distorted1 ? 2 : 1;
   float *cache[3]; cache[0] = cache0; cache[1] = cache1; cache[2] = cache2;
-  float *p1[3], *p2[3], *across[3][5], *state[3][5], *down[3][5];
-  float *cursor = scratch;
-  for (int c = 0; c < 3; ++c) { p1[c] = make_reference ? cursor : 0; if (make_reference) cursor += ring; }
-  for (int c = 0; c < 3; ++c) { p2[c] = cursor; cursor += ring; }
-  float *lanes_in = cursor; cursor += 4 * w;
-  float *lanes_out = cursor; cursor += 4 * w;
-  for (int c = 0; c < 3; ++c) for (int k = 0; k < 5; ++k) {
-    const int active = (mask & (1 << c)) && (!(cached_mask & (1 << c)) || (k != 0 && k != 2));
-    across[c][k] = active ? cursor : 0;
-    if (active) {
-      cursor += ring; state[c][k] = cursor; cursor += 6 * w; down[c][k] = cursor; cursor += w;
-      if (first == -4) for (int x = 0; x < 6 * w; ++x) state[c][k][x] = 0;
+  float *p1[3], *p2[2][3], *across[2][3][5], *state[2][3][5], *down[2][3][5], *lanes_in[2], *lanes_out[2];
+  const void *const pictures[2] = {distorted, distorted1};
+  const int kinds[2] = {distorted_kind, distorted1_kind};
+  double *const all_sums[2] = {sums, sums1};
+  for (int o = 0; o < outputs; ++o) {
+    float *cursor = o ? scratch1 : scratch;
+    for (int c = 0; c < 3; ++c) { if (!o) p1[c] = make_reference ? cursor : 0; if (make_reference) cursor += ring; }
+    for (int c = 0; c < 3; ++c) { p2[o][c] = cursor; cursor += ring; }
+    lanes_in[o] = cursor; cursor += 4 * w;
+    lanes_out[o] = cursor; cursor += 4 * w;
+    for (int c = 0; c < 3; ++c) for (int k = 0; k < 5; ++k) {
+      const int active = (mask & (1 << c)) && (!(cached_mask & (1 << c)) || (k != 0 && k != 2));
+      across[o][c][k] = active ? cursor : 0;
+      if (active) {
+        cursor += ring; state[o][c][k] = cursor; cursor += 6 * w; down[o][c][k] = cursor; cursor += w;
+        if (first == -4 && (!o || (k != 0 && k != 2))) for (int x = 0; x < 6 * w; ++x) state[o][c][k][x] = 0;
+      }
     }
+    if (first == -4) for (int i = 0; i < 18; ++i) all_sums[o][i] = 0;
   }
-  if (first == -4) for (int i = 0; i < 18; ++i) sums[i] = 0;
   for (int y = first; y < end; ++y) {
     while (made < h && made <= y + 4) {
       const int rows = h - made < 4 ? h - made : 4;
       for (int r = 0; r < rows; ++r) {
         const int at = ((made + r) % RING) * w;
-        for (int side = make_reference ? 0 : 1; side < 2; ++side)
-          positive_row(side ? distorted : reference, side ? distorted_kind : reference_kind, made + r - input_y, w, input_h, side ? p2 : p1, at,
-            linear, color_keys, color_values);
+        if (make_reference) positive_row(reference, reference_kind, made + r - input_y, w, input_h, p1, at, linear, color_keys, color_values);
+        for (int o = 0; o < outputs; ++o)
+          positive_row(pictures[o], kinds[o], made + r - input_y, w, input_h, p2[o], at, linear, color_keys, color_values);
       }
-      for (int c = 0; c < 3; ++c) if (mask & (1 << c)) {
+      for (int c = 0; c < 3; ++c) if (mask & (1 << c)) for (int o = 0; o < outputs; ++o) {
         const int held = cached_mask & (1 << c);
-        const float *a[4], *b[4]; float *o[4];
+        const float *a[4], *b[4]; float *out[4];
         for (int r = 0; r < rows; ++r) {
           const int at = ((made + r) % RING) * w;
-          a[r] = held ? cache[c] + (made + r) * w : p1[c] + at; b[r] = p2[c] + at;
+          a[r] = held ? cache[c] + (made + r) * w : p1[c] + at; b[r] = p2[o][c] + at;
         }
-        if (!held && cache[c]) for (int r = 0; r < rows; ++r) for (int x = 0; x < w; ++x) cache[c][(made + r) * w + x] = a[r][x];
-        // The five lines: mu1 (a), mu2 (b), sigma11 (a*a), sigma22 (b*b), sigma12 (a*b); a held channel has mu1, sigma11.
-        for (int k = 0; k < 5; ++k) if (across[c][k]) {
-          for (int r = 0; r < rows; ++r) o[r] = across[c][k] + ((made + r) % RING) * w;
-          blur_rows(k == 1 || k == 3 ? b : a, k == 4 ? b : 0, k == 2 || k == 3, o, rows, w, lanes_in, lanes_out, g);
+        if (!o && !held && cache[c]) for (int r = 0; r < rows; ++r) for (int x = 0; x < w; ++x) cache[c][(made + r) * w + x] = a[r][x];
+        // The five lines: mu1 (a), mu2 (b), sigma11 (a*a), sigma22 (b*b), sigma12 (a*b); a held channel has mu1, sigma11,
+        // and so has the second output (the first output's).
+        for (int k = 0; k < 5; ++k) if (across[o][c][k] && (!o || (k != 0 && k != 2))) {
+          for (int r = 0; r < rows; ++r) out[r] = across[o][c][k] + ((made + r) % RING) * w;
+          blur_rows(k == 1 || k == 3 ? b : a, k == 4 ? b : 0, k == 2 || k == 3, out, rows, w, lanes_in[o], lanes_out[o], g);
         }
       }
       made += rows;
     }
     const int left = y - 6, right = y + 4;
     const int lo = left >= 0 ? (left % RING) * w : -1, ro = right < h ? (right % RING) * w : -1;
-    for (int c = 0; c < 3; ++c) if (mask & (1 << c)) {
-      for (int k = 0; k < 5; ++k) if (across[c][k]) vertical_row(across[c][k], state[c][k], down[c][k], w, lo, ro, y >= 0, g);
+    for (int c = 0; c < 3; ++c) if (mask & (1 << c)) for (int o = 0; o < outputs; ++o) {
+      for (int k = 0; k < 5; ++k) if (across[o][c][k] && (!o || (k != 0 && k != 2)))
+        vertical_row(across[o][c][k], state[o][c][k], down[o][c][k], w, lo, ro, y >= 0, g);
       if (y < 0) continue;
       const int held = cached_mask & (1 << c), at = (y % RING) * w;
-      if (!held && cache[c]) for (int x = 0; x < w; ++x) {
-        cache[c][pixels + y * w + x] = down[c][0][x]; cache[c][2 * pixels + y * w + x] = down[c][2][x];
+      if (!o && !held && cache[c]) for (int x = 0; x < w; ++x) {
+        cache[c][pixels + y * w + x] = down[0][c][0][x]; cache[c][2 * pixels + y * w + x] = down[0][c][2][x];
       }
-      row_sums(held ? cache[c] + y * w : p1[c] + at, p2[c] + at, down[c], held ? cache[c] : 0,
-        y, w, h, sums + 6 * c, terms, edge_terms);
+      float *lines[5] = {down[0][c][0], down[o][c][1], down[0][c][2], down[o][c][3], down[o][c][4]};
+      row_sums(held ? cache[c] + y * w : p1[c] + at, p2[o][c] + at, lines, held ? cache[c] : 0,
+        y, w, h, all_sums[o] + 6 * c, terms, edge_terms);
     }
   }
   return made;
@@ -581,7 +594,7 @@ EXPORT("s2MetricScale") void s2_metric_scale(int w, int h, int mask, const void 
   float *cache0, float *cache1, float *cache2, int cached_mask, float *scratch,
   double *terms, double *edge_terms, double *sums, int32_t *color_keys, float *color_values) {
   metric_scale_rows(w, h, mask, reference, reference_kind, distorted, distorted_kind, linear, g,
-    cache0, cache1, cache2, cached_mask, scratch, terms, edge_terms, sums, color_keys, color_values, -4, h, 0, h, 0);
+    cache0, cache1, cache2, cached_mask, scratch, terms, edge_terms, sums, color_keys, color_values, -4, h, 0, h, 0, 0, 0, 0, 0);
 }
 
 // A resumed score keeps no whole-plane cache or error map: only the row rings, recurrence state and ordered sums.
@@ -590,5 +603,14 @@ EXPORT("s2MetricBand") int s2_metric_band(int w, int h, int first, int end, int 
   const void *reference, int reference_kind, const void *distorted, int distorted_kind,
   const float *linear, const float *g, float *scratch, double *sums, int32_t *color_keys, float *color_values) {
   return metric_scale_rows(w, h, 7, reference, reference_kind, distorted, distorted_kind, linear, g,
-    0, 0, 0, 0, scratch, 0, 0, sums, color_keys, color_values, first, end, input_y, input_h, input_y);
+    0, 0, 0, 0, scratch, 0, 0, sums, color_keys, color_values, first, end, input_y, input_h, input_y, 0, 0, 0, 0);
+}
+// Two outputs of one reference, as two s2MetricBand calls make them (metric_scale_rows `distorted1`).
+EXPORT("s2MetricBand2") int s2_metric_band2(int w, int h, int first, int end, int input_y, int input_h,
+  const void *reference, int reference_kind, const void *distorted, int distorted_kind,
+  const void *distorted1, int distorted1_kind, const float *linear, const float *g, float *scratch, double *sums,
+  float *scratch1, double *sums1, int32_t *color_keys, float *color_values) {
+  return metric_scale_rows(w, h, 7, reference, reference_kind, distorted, distorted_kind, linear, g,
+    0, 0, 0, 0, scratch, 0, 0, sums, color_keys, color_values, first, end, input_y, input_h, input_y,
+    distorted1, distorted1_kind, scratch1, sums1);
 }

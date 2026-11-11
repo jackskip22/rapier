@@ -4,7 +4,8 @@ import {PREFERENCE_DEFINITIONS} from '../shell/preferences.mjs';
 export const EDITOR_LIMITS = Object.freeze({textChars: 4096, preferenceChars: 256, receipts: 32, contextBytes: 4096, cardMs: 300000,
   previewHead: 360, previewTail: 120});
 export const EDITOR_TOOL_ACTIONS = Object.freeze({'editor.read_aloud': 'read_aloud', 'editor.copy': 'copy',
-  'editor.open_file': 'open_file', 'editor.install_plugin': 'install_plugin'});
+  'editor.open_file': 'open_file', 'editor.install_plugin': 'install_plugin',
+  'editor.record_audio': 'record_audio', 'editor.add_attachment': 'add_attachment'});
 export const EDITOR_ACTIONS = Object.freeze([...Object.values(EDITOR_TOOL_ACTIONS), 'playback']);
 export const EDITOR_PLUGINS = Object.freeze(['math', 'mermaid', 'pdf', 'ocr', 'letters-field', 'letters-relief', 'letters-leaf', 'letters-arabesque',
   'letters-silhouette', 'letters-gothic', 'letters-sugar', 'letters-illuminated-1490', 'letters-tuscan-1845', 'letters-renaissance-alphabet']);
@@ -25,7 +26,7 @@ export function editorPreview(text) {
   return {head: points.slice(0, head).join(''), omitted: points.length - head - tail, tail: points.slice(-tail).join('')};
 }
 export const editorNeedsTap = request => request?.operation === 'document.device_action' &&
-  (request.action === 'open_file' || request.action === 'install_plugin' && request.plugin === 'ocr');
+  (['open_file', 'record_audio', 'add_attachment'].includes(request.action) || request.action === 'install_plugin' && request.plugin === 'ocr');
 export const editorFailure = reason => ({outcome: 'refused', reason, receipt: {status: 'unavailable', reason},
   ...(reason === 'editor_unavailable' ? {hint: 'Open this document in Rapier, then ask the editor again.'} : {})});
 

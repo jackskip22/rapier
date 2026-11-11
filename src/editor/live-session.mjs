@@ -381,6 +381,23 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       ...(row.undoTargets ? {undoTargets: row.undoTargets.map(move)} : {})}));
     state.redo = state.redo.map(move); state.nextSeq++; staleRefusals = null; canonical = null;
   };
+  const rejoin = async () => {
+    const old = state.client, seqs = new Map(state.pending.map((row, index) => [row.seq, index + 1]));
+    const move = target => {
+      if (target?.client !== old) return target;
+      if (!seqs.has(target.seq)) throw new Error('live_resume_committed');
+      return {client: old, seq: seqs.get(target.seq)};
+    };
+    state.pending = state.pending.map(({sent: _sent, ciphertext: _ciphertext, ...row}) => ({...row,
+      seq: seqs.get(row.seq), ...(row.undoTarget ? {undoTarget: move(row.undoTarget)} : {}),
+      ...(row.undoTargets ? {undoTargets: row.undoTargets.map(move)} : {})}));
+    state.redo = state.redo.map(move);
+    state.rejoin = old; state.token = null; state.nextSeq = state.pending.length + 1;
+    inFlight = null; sentCopies.clear(); cancelTimer(retry); retry = 0;
+    await save();
+    packet({type: 'hello', gen: state.gen, name: descriptor.name});
+    status();
+  };
   const accepted = entry => {
     staleAccepted(entry);
     if (!Number.isSafeInteger(entry?.gen) || !Array.isArray(entry.splices) || entry.actId !== entry.act?.id)
@@ -389,6 +406,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     if (entry.gen !== state.gen + 1) throw new Error('live_generation_gap');
     let pending = state.pending, move = null;
     const sameAct = pending.findIndex(row => row.actId === entry.actId);
+    if (state.rejoin && sameAct >= 0 && entry.client !== state.client) throw new Error('live_resume_committed');
     if (sameAct >= 0 && (pending[sameAct].client !== entry.client || pending[sameAct].seq !== entry.seq)) {
       const head = pending[0];
       if (sameAct !== 0 || entry.client === state.client || pending.slice(1).some(row => row.sent) ||
@@ -547,7 +565,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       view = state.text; corrections = []; pendingActs = [];
       privateFresh = false;
     }
-    delete state.expected;
+    delete state.expected; delete state.rejoin;
     ready = true; replaying = false;
     await save();
     if (!greeted) {
@@ -643,7 +661,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     if (message.type === 'hello') {
       if (typeof message.source !== 'string' || !Number.isSafeInteger(message.gen) || typeof message.client !== 'string')
         throw new Error('live_hello_invalid');
-      if (state.client && state.client !== message.client) throw new Error('live_identity_changed');
+      if (state.client && !state.rejoin && state.client !== message.client) throw new Error('live_identity_changed');
       if (state.documentId && state.documentId !== message.documentId || descriptor.requestedId && descriptor.requestedId !== message.documentId)
         throw new Error('live_document_identity_changed');
       descriptor.documentId = message.documentId;
@@ -651,9 +669,26 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       descriptor.docKind = message.docKind;
       state.documentId = message.documentId;
       state.filename = message.filename;
-      if (!state.client) {
+      if (!state.client || state.rejoin) {
+        const old = state.rejoin;
         state.client = message.client; state.token = message.token;
-        if (state.initial) {
+        if (old) {
+          const bind = id => id === old || id == null ? state.client : id, target = row => ({...row, client: bind(row.client)});
+          state.pending = state.pending.map(row => ({...row, client: bind(row.client), act: {...row.act, author: {...message.author}},
+            ...(row.undoTarget ? {undoTarget: target(row.undoTarget)} : {}),
+            ...(row.undoTargets ? {undoTargets: row.undoTargets.map(target)} : {})}));
+          corrections = corrections.map(row => ({...row, client: bind(row.client), ...(row.act ? {act: {...row.act, client: bind(row.act.client)}} : {})}));
+          state.redo = state.redo.map(target);
+          for (const row of state.pending) if (row.references) {
+            const history = [...state.log, ...state.pending], found = row.references.map(id => history.find(entry => entry.actId === id));
+            if (found.some(entry => !entry)) throw new Error('live_undo_history_unavailable');
+            if (found.length === 1) row.undoTarget = {client: found[0].client, seq: found[0].seq};
+            else row.undoTargets = found.map(entry => ({client: entry.client, seq: entry.seq}));
+            delete row.references;
+          }
+          state.expected = {source: message.source, gen: message.gen};
+          for (const entry of message.records || []) accepted(entry);
+        } else if (state.initial) {
           state.pending = state.pending.map(row => ({...row, client: state.client,
             ...(row.undoTarget ? {undoTarget: {...row.undoTarget, client: row.undoTarget.client || state.client}} : {}),
             ...(row.undoTargets ? {undoTargets: row.undoTargets.map(target => ({...target, client: target.client || state.client}))} : {})}));
@@ -713,6 +748,9 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     if (message.type === 'context') { emit({type: 'door-context', sequence: message.sequence, isError: message.isError === true,
       structuredContent: message.structuredContent}); return; }
     if (message.type === 'error' && message.reason === 'workspace_unacknowledged') { ready = false; status(); return; }
+    if (message.type === 'error' && message.reason === 'invalid_resume' && !descriptor.private && state.client && !state.rejoin) {
+      await rejoin(); return;
+    }
     if (message.type === 'error' && message.reason === 'edit_conflict' && staleRefusals?.socket === ws && staleRefusals.seq === message.seq) {
       if (!--staleRefusals.left) { staleRefusals = null; await send(); }
       return;
@@ -730,8 +768,8 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
     opening.onopen = () => run(() => {
       if (ws !== opening || stopped) return;
       connected = true;
-      packet({type: 'hello', ...(state.client ? {client: state.client, token: state.token, gen: state.gen}
-        : state.initial || descriptor.private ? {gen: state.gen} : {}), ...(descriptor.private ? {} : {name: descriptor.name})});
+      packet({type: 'hello', ...(state.client && !state.rejoin ? {client: state.client, token: state.token, gen: state.gen}
+        : state.initial || state.rejoin || descriptor.private ? {gen: state.gen} : {}), ...(descriptor.private ? {} : {name: descriptor.name})});
       status();
     });
     opening.onmessage = event => run(async () => {
@@ -801,8 +839,10 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
         await save();
       }
       if (state.documentId && descriptor.requestedId && state.documentId !== descriptor.requestedId) throw new Error('live_store_document_mismatch');
-      if (state.client || state.initial) {
-        recoverAcknowledgements();
+      if (state.client || state.initial || state.rejoin) {
+        if (state.rejoin && state.pending.some(row => state.log.some(entry => entry.actId === row.actId)))
+          throw new Error('live_resume_committed');
+        if (!state.rejoin) recoverAcknowledgements();
         state.text = state.pending.reduce((text, row) => applySplices(text, row.splices), state.base);
         view = state.ui?.source ?? state.text; corrections = state.corrections || [];
         if (corrections.reduce((text, row) => applySplices(text, row.splices), view) !== state.text)
@@ -820,7 +860,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       connect();
     }); },
     local(value) { return run(async () => {
-      if (!state?.client && !state?.initial) throw new Error('live_not_joined');
+      if (!state?.client && !state?.initial && !state?.rejoin) throw new Error('live_not_joined');
       if (value.serial !== localSerial + 1) throw new Error('live_local_generation_gap');
       enqueue(value); localSerial = value.serial;
       await save(); project(); await sendPresence(); await send();
@@ -889,7 +929,7 @@ export function createLiveClient({post, socket: Socket, store, clock, timer, can
       status();
     }); },
     undo(value = {}) { return run(async () => {
-      if (!state?.client && !state?.initial) return emit({type: 'undo', id: value.id, changed: false});
+      if (!state?.client && !state?.initial && !state?.rejoin) return emit({type: 'undo', id: value.id, changed: false});
       let target = value.redo ? state.redo.at(-1) : value.target;
       if (target?.actId) {
         const found = state.log.find(row => row.actId === target.actId);

@@ -33,7 +33,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 const S2_EXACT_C = 'ssimulacra2-simd';
 const METRICS = [
-  ['ssimulacra2-arithmetic', ['s2MetricInit', 's2MetricDown', 's2MetricScale', 's2MetricBand'], 'BSD-3-Clause', S2_EXACT_C],
+  ['ssimulacra2-arithmetic', ['s2MetricInit', 's2MetricDown', 's2MetricScale', 's2MetricBand', 's2MetricBand2'], 'BSD-3-Clause', S2_EXACT_C],
   ['butteraugli-arithmetic', ['baMetricBands', 'baMetricMask', 'baMetricDiff', 'baMetricDown', 'baMetricMix'], 'BSD-3-Clause AND MIT'],
 ];
 const CLANG_VERSION = '23.1.0-wasi-sdk';
@@ -171,7 +171,7 @@ const fusedSource = await metricSource('ssimulacra2-fused', 'BSD-3-Clause', {c: 
 {
   const functions = forms(fusedSource).filter(form => form.startsWith('(func '));
   const exported = forms(fusedSource).filter(form => /^\(export\s/.test(form)).map(form => /^\(export\s+"([^"]+)"\s+\(func\s+(\S+?)\)\)/.exec(form));
-  if (exported.map(e => e[1]).sort().join() !== 's2MetricBand,s2MetricScale') throw new Error('The fused metric must export only s2MetricScale and s2MetricBand');
+  if (exported.map(e => e[1]).sort().join() !== 's2MetricBand,s2MetricBand2,s2MetricScale') throw new Error('The fused metric must export only s2MetricScale, s2MetricBand and s2MetricBand2');
   const named = name => functions.find(form => form.startsWith(`(func ${name} `) || form.startsWith(`(func ${name}\n`));
   const firstCall = form => form && /\bcall (\$\S+)/.exec(form.replace(/call \$__wasm_call_\w+/g, ''))?.[1];
   const chains = exported.map(([, , name]) => {
@@ -182,9 +182,9 @@ const fusedSource = await metricSource('ssimulacra2-fused', 'BSD-3-Clause', {c: 
   });
   const targets = chains.map(chain => chain.at(-1)), wrappers = new Set(chains.flatMap(chain => chain.slice(0, -1)));
   for (const form of functions) if (/relaxed/.test(form) && !targets.some(target => form.startsWith(`(func ${target} `) || form.startsWith(`(func ${target}\n`)))
-    throw new Error('A relaxed SIMD instruction is outside the probed s2MetricScale and s2MetricBand');
+    throw new Error('A relaxed SIMD instruction is outside the probed s2MetricScale, s2MetricBand and s2MetricBand2');
   for (const form of functions) for (const target of targets) if (new RegExp('\\bcall \\' + target + '\\b').test(form) && ![...wrappers].some(w => form.startsWith(`(func ${w} `) || form.startsWith(`(func ${w}\n`)))
-    throw new Error('The probed metric ' + target + ' is called from outside s2MetricScale and s2MetricBand');
+    throw new Error('The probed metric ' + target + ' is called from outside s2MetricScale, s2MetricBand and s2MetricBand2');
 }
 const outputs = [
   ['kernels-bytes.mjs', '// Generated from the canonical kernel sources by build-jxl-kernels.mjs. MIT and BSD-3-Clause; see source notices and v7/THIRD_PARTY_NOTICES. Do not edit.\n', [['kernels', 'KERNELS'], ['kernels-probe', 'SIMD_PROBE']], 'latin1'],

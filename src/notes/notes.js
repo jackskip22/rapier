@@ -8178,6 +8178,7 @@ globalThis.rapierNotesStart = function rapierNotesStart(kind, captureToken = nul
 globalThis.rapierNotesUnlocked = function rapierNotesUnlocked(token) {
 	if (!_rapierNotes.captureToken || token !== _rapierNotes.captureToken) return false;
 	_rapierNotes.captureToken = null; _rapierNotes.capturePreparing = false;
+	if (typeof _rapierRecorderOfferRecovery === 'function') _rapierRecorderOfferRecovery();
 	return true;
 };
 globalThis.rapierNotesWidgetOpen = function rapierNotesWidgetOpen(file, id = null) {
@@ -8273,6 +8274,7 @@ async function _rapierNotesStartCapture(kind, capture, captured = false) {
 	try { await _rapierNotesOpen(capture); } catch (error) { console.warn('[rapier] notes', error); return; }
 	const state = _rapierNotes;
 	if (!state.open || !state.index) return;
+	if (kind === 'voice') { _rapierRecorderOpen(true, true); return !!_rapierRecorder.dialog?.open; }
 	if (kind !== 'note' && kind !== 'draw') {
 		const M = _rapierNotesModel(), name = String(kind || '');
 		if (!M.isNoteFile(name) || !Object.hasOwn(state.index.notes, name)) return;

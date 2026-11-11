@@ -1,5 +1,5 @@
 {
-  "release": "1.2.61",
+  "release": "1.2.62",
   "core": [
     {
       "name": "open",
@@ -496,6 +496,8 @@
               "preferences",
               "plugin",
               "file",
+              "record",
+              "attachment",
               "return",
               "note",
               "ask",
@@ -596,6 +598,8 @@
               "dim",
               "lineFit",
               "showPlayButton",
+              "focus",
+              "typewriter",
               "highlights",
               "highlightColor",
               "headings",
@@ -604,7 +608,8 @@
               "startIn",
               "notesSort",
               "notesLayout",
-              "notesColour"
+              "notesColour",
+              "audioSpeed"
             ]
           },
           "value": {
@@ -1435,6 +1440,8 @@
               "preferences",
               "plugin",
               "file",
+              "record",
+              "attachment",
               "return",
               "note",
               "ask",
@@ -1535,6 +1542,8 @@
               "dim",
               "lineFit",
               "showPlayButton",
+              "focus",
+              "typewriter",
               "highlights",
               "highlightColor",
               "headings",
@@ -1543,7 +1552,8 @@
               "startIn",
               "notesSort",
               "notesLayout",
-              "notesColour"
+              "notesColour",
+              "audioSpeed"
             ]
           },
           "value": {

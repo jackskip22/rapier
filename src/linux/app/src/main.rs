@@ -10,8 +10,10 @@
 //   rapier-linux --install     add rapier to the app launcher and open Markdown and .rapier.html files with it
 //   rapier-linux --uninstall   remove what --install added, and the unpacked cache
 mod files;
+mod attachment_open;
 mod folder;
 mod host;
+mod note_shortcuts;
 mod payload;
 mod portal;
 mod profile;
@@ -37,6 +39,11 @@ pub const VIEWS: [&str; 4] = ["notes", "draw", "paint", "jxl"];
 /// The view a path names, if it is one.
 pub fn view_of(path: &str) -> Option<&str> {
     path.strip_prefix(VIEW).filter(|view| VIEWS.contains(view))
+}
+pub const NOTE: &str = "rapier:note:";
+pub fn launch_fragment(path: &str) -> Option<String> {
+    if let Some(view) = view_of(path) { return Some(format!("v/{view}")); }
+    path.strip_prefix(NOTE).filter(|id| note_shortcuts::valid_id(id)).map(|id| format!("n/{id}"))
 }
 /// Omarchy's theme-set and font-set hooks (payload::install) send this to a running rapier.
 pub const THEME_CHANGED: &str = "rapier:theme";
@@ -64,8 +71,10 @@ pub enum Event {
     Open(String),
     /// A file chooser answered (host.rs start_pick): the result of that pick, or why none could be shown.
     Picked(u64, Result<String, String>),
-    /// Ctrl+Q: every window has been asked to keep its work; the browser closes now (host.rs quit_all).
-    Quit,
+    AttachmentOpened(String, Option<i64>, String, String, Result<bool, String>),
+    AttachmentAvailability(bool),
+    /// Ctrl+Q: all windows confirmed this checkpoint; recheck it before closing.
+    Quit(u64),
     Exit,
 }
 
@@ -318,7 +327,7 @@ fn instance_address() -> SocketAddr {
 /// Why a path given to open cannot be: a folder, a path through a file, or one that cannot be read. A file that does not
 /// exist yet opens empty (its folders are made by the first save), so it is not refused here.
 fn unopenable(path: &str) -> Option<String> {
-    if path == NEW_DOCUMENT || path.starts_with(STDIN_DOCUMENT) || view_of(path).is_some() {
+    if path == NEW_DOCUMENT || path.starts_with(STDIN_DOCUMENT) || launch_fragment(path).is_some() {
         return None;
     }
     let target = Path::new(path);
@@ -482,7 +491,7 @@ fn main() {
     for arg in &args {
         if arg == "--" {
             options = false;
-        } else if options && arg.starts_with('-') && arg != "-" && !["--online", "--new", "--notes", "--draw", "--paint", "--jxl"].contains(&arg.as_str()) {
+        } else if options && arg.starts_with('-') && arg != "-" && !["--online", "--new", "--notes", "--draw", "--paint", "--jxl"].contains(&arg.as_str()) && !arg.strip_prefix("--note=").is_some_and(note_shortcuts::valid_id) {
             eprintln!("Rapier: unknown option {arg}\n{USAGE}\nrapier-linux --help lists every option.");
             std::process::exit(2);
         }
@@ -500,6 +509,7 @@ fn main() {
         .filter(|(option, a)| !(*option && (a.as_str() == "--online" || a.as_str() == "--")))
         .filter_map(|(option, a)| match a.as_str() {
             _ if !option => Some(absolute(a)),
+            _ if a.starts_with("--note=") => Some(format!("{NOTE}{}", &a[7..])),
             "--new" => Some(NEW_DOCUMENT.to_string()),
             "--notes" | "--draw" | "--paint" | "--jxl" => Some(format!("{VIEW}{}", &a[2..])),
             "-" => stdin_document(),
@@ -546,5 +556,8 @@ mod tests {
         }
         assert_eq!(super::view_of("rapier:view:settings"), None);
         assert_eq!(super::view_of("notes"), None);
+        assert_eq!(super::launch_fragment("rapier:note:abc:123"), Some("n/abc:123".into()));
+        assert_eq!(super::launch_fragment("rapier:note:../escape"), None);
+        assert_eq!(super::launch_fragment("rapier:view:notes"), Some("v/notes".into()));
     }
 }

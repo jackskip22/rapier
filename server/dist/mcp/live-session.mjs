@@ -22,6 +22,20 @@ const secret = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
 const refused = (reason, nonMutating = false) => Object.assign(new Error(reason), {liveReason: reason, nonMutating});
 const label = value => typeof value === 'string' && value.length > 0 && [...value].length <= 80 && !/[\u0000-\u001f\u007f]/.test(value);
 
+export const LIVE_SESSION_PRUNE = 256;
+export function liveRetireBound(env) {
+  const value = env?.LIVE_RETIRE_SESSIONS;
+  if (value === 'on') return LIVE_SESSION_PRUNE;
+  return /^[0-9]{1,3}$/.test(value ?? '') && +value >= 2 && +value <= LIVE_SESSION_PRUNE ? +value : 0;
+}
+export function retiredSessions(state, connected, bound = LIVE_SESSION_PRUNE) {
+  const sessions = state.live.sessions;
+  if (sessions.length < bound) return sessions;
+  const keep = new Set(connected.filter(Boolean));
+  for (const row of state.journal) if (row.live?.client) keep.add(row.live.client);
+  return sessions.filter(row => keep.has(row.client));
+}
+
 function compactRequest(request, row) {
   return {...request, splices: request.splices.map(splice => {
     if (!splice.insert) return {...splice};
@@ -531,8 +545,11 @@ export class LiveSessions {
     } else {
       token = secret();
       const client = 'peer_' + crypto.randomUUID().replaceAll('-', '');
-      session = {client, tokenHash: sha256(token), author: {id: client, name: message.name || 'Person ' + (state.live.sessions.length + 1), kind: 'human'}};
-      state = {...state, live: {...state.live, sessions: [...state.live.sessions, session]}};
+      const retiring = liveRetireBound(this.owner.env);
+      const ordinal = (retiring && integer(state.live.joined) ? state.live.joined : state.live.sessions.length) + 1;
+      session = {client, tokenHash: sha256(token), author: {id: client, name: message.name || 'Person ' + ordinal, kind: 'human'}};
+      const sessions = retiring ? retiredSessions(state, this.sockets().map(socket => this.attachment(socket)?.client), retiring) : state.live.sessions;
+      state = {...state, live: {...state.live, sessions: [...sessions, session], ...(retiring ? {joined: ordinal} : {})}};
       changed = true;
     }
     const joined = {...attached, client: session.client, sentGen: doc.gen};

@@ -5566,6 +5566,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (target === 'preferences') return askEditor('editor.set_preferences', {preference: input.preference, value: input.value}, who, context);
     if (target === 'plugin') return askEditor('document.device_action', {action: 'install_plugin', plugin: input.name}, who, context);
     if (target === 'file') return askEditor('document.device_action', {action: 'open_file'}, who, context);
+    if (target === 'record') return askEditor('document.device_action', {action: 'record_audio'}, who, context);
+    if (target === 'attachment') return askEditor('document.device_action', {action: 'add_attachment'}, who, context);
     if (target === 'playback') {
       const {projection, targets} = publicSurface(), given = givenRevision(input.revision, surfaceRevision(projection));
       if (given.outcome) return given;
@@ -5668,6 +5670,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       case 'editor.read_aloud':
       case 'editor.copy':
       case 'editor.open_file':
+      case 'editor.record_audio':
+      case 'editor.add_attachment':
       case 'editor.install_plugin':
         result = askEditor('document.device_action', {...input, action: EDITOR_TOOL_ACTIONS[name]}, who, context); break;
       case 'document.read': result = await readDocument(input, who, context); break;

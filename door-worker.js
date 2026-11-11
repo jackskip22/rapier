@@ -38,16 +38,16 @@ const saved = 'Yes. Press Done to download it as JPEG XL, PNG or layers (OpenRas
 export const DOORS = Object.freeze({
 	'/privacy': Object.freeze({name: 'Privacy and terms', title: 'Rapier privacy and terms',
 		description: 'Rapier privacy and terms: local editing, optional services, data storage and deletion.',
-		image: 'og-privacy.png', imageSize: [1200, 630], imageAlt: 'Rapier: privacy and terms'}),
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo'}),
 	'/commercial': Object.freeze({name: 'Commercial license', title: 'Rapier commercial license',
 		description: 'Commercial licenses for embedding Rapier in proprietary products. The editor is free under AGPL-3.0-only.',
-		image: 'og-commercial.png', imageSize: [1200, 630], imageAlt: 'Rapier: commercial license'}),
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo'}),
 	// The editor views a search engine may show as sitelinks under the home result: each opens that view
 	// (the engine reads the address), and each is a page of its own for a reader that runs nothing.
 	// `image` is the card shown when the address is shared: a PNG at the site root, `imageSize` pixels wide and high.
 	'/notes': Object.freeze({name: 'Notes', title: 'Private notes app, free and offline | Rapier Notes',
 		description: 'Private Markdown notes with colors, pins, checklists, pictures, voice recordings and history. Import from Google Keep and 15+ apps. No account.',
-		image: 'og-notes.png', imageSize: [1200, 630], imageAlt: 'Rapier Notes: Markdown notes on your phone',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Private notes app', view: 'notes', related: ['/', '/draw'],
 		lead: 'Rapier Notes keeps your notes on your device, as plain Markdown files shown as cards. Pin and color them, add checklists, pictures and voice notes, and go back to any earlier version. Import brings in Google Keep, Apple Notes, Evernote, Notion, Obsidian and more. There is no account. The Android app adds reminders and a home-screen widget.',
 		faq: Object.freeze([
@@ -134,7 +134,7 @@ export const DOORS = Object.freeze({
 	// (editor/diff-view.js) and Compare's (agent/diff.mjs). /markdown-diff, the earlier Markdown-only page, answers with a 301 here (_redirects).
 	'/diff': Object.freeze({name: 'Compare documents', title: 'Compare text, Word and PDF files online, free | Rapier',
 		description: 'A free diff checker: compare two texts, Word documents or PDFs and see every change, word by word. Moved paragraphs show as moves. Nothing uploaded.',
-		image: 'og-diff.png', imageSize: [1200, 630], imageAlt: 'Rapier: compare text and documents',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Compare text and documents', view: 'diff', encoder: Object.freeze({name: 'rapier-diff', repository: 'https://github.com/jackskip22/rapier-diff', package: 'https://www.npmjs.com/package/rapier-diff'}), related: ['/word-to-markdown', '/pdf-to-markdown', '/'],
 		features: Object.freeze(['Compare pasted text, Markdown, code, Word (.docx) and PDF', 'Word by word, not just line by line', 'A moved paragraph shows as a move', 'Word documents compared as formatted pages, pictures included', 'Documents side by side on a computer, one column on a phone', 'Runs offline on your device: nothing uploaded', 'Open either side in Rapier to edit it']),
 		lead: 'Paste two texts, or choose two files, and see what changed, word by word. Word documents and PDFs are read on your device, not uploaded. A paragraph that moved shows as one move, with any words changed inside it, not as a deletion and an insertion. Free, with no account or limits.',
@@ -159,7 +159,7 @@ export const DOORS = Object.freeze({
 	// first. Each claim is the editor's own import (interchange/browser.js) or export (_rapierBuildEditorExport).
 	'/convert': Object.freeze({name: 'Document converter', title: 'Markdown converter: PDF, Word and HTML to Markdown, free | Rapier',
 		description: 'Convert PDF, Word and HTML to Markdown ready for AI, pictures kept, or Markdown to Word, PDF and HTML. Free, offline, nothing uploaded.',
-		image: 'og-convert.png', imageSize: [1200, 630], imageAlt: 'Rapier: Markdown converter',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Markdown converter', view: 'convert',
 		related: ['/word-to-markdown', '/pdf-to-markdown', '/markdown-to-word', '/markdown-to-pdf', '/jxl'],
 		features: Object.freeze(['PDF to Markdown', 'Word (.docx) to Markdown', 'HTML to Markdown', 'Markdown to Word (.docx)', 'Markdown to PDF', 'Markdown to HTML', 'Pictures kept inside the Markdown file', 'Many files at once', 'Runs offline on your device']),
@@ -180,7 +180,7 @@ export const DOORS = Object.freeze({
 	// is the view's (editor/math-view.js) or Rapier Math's (math/README.md).
 	'/math': Object.freeze({name: 'LaTeX equation editor', title: 'LaTeX equation editor online: SVG, PNG and Word | Rapier',
 		description: 'Type LaTeX and see the equation as you type. Copy it into Word or Google Docs, or save it as SVG or PNG. Free, offline, nothing uploaded.',
-		image: 'og-math.png', imageSize: [1200, 630], imageAlt: 'Rapier: LaTeX equation editor',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'LaTeX equation editor', view: 'math', encoder: Object.freeze({name: 'rapier-math', repository: 'https://github.com/jackskip22/rapier-math', package: 'https://www.npmjs.com/package/rapier-math'}), related: ['/diff', '/jxl', '/markdown-to-word', '/'],
 		features: Object.freeze(['LaTeX drawn as you type', 'Copy into Word as an editable equation', 'Copy as a picture for Google Docs and Slides', 'SVG and PNG with a transparent background', 'MathML and Markdown', 'Math keys on a phone', 'Runs offline on your device']),
 		lead: 'Type LaTeX and see the equation as you type. Copy it into Word as an editable equation, paste it into Google Docs as a picture, or save it as SVG or PNG. It is drawn on your device: nothing is uploaded, and it works offline.',
@@ -203,7 +203,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/markdown-to-pdf': Object.freeze({name: 'Markdown to PDF', title: 'Markdown to PDF: free online converter | Rapier',
 		description: 'Convert Markdown files to PDF with searchable text: tables, code, math and pictures. Free, in your browser, nothing uploaded.',
-		image: 'og-markdown-to-pdf.png', imageSize: [1200, 630], imageAlt: 'Rapier: Markdown to PDF',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Markdown to PDF', view: 'convert', related: ['/markdown-to-word', '/convert'],
 		lead: 'Drop .md files and download each one as a PDF. Rapier writes the PDF on your device: nothing is uploaded. The text stays searchable, and the Markdown travels inside the PDF, so Rapier can open it again as the same Markdown.',
 		howTo: Object.freeze(['How to convert Markdown to PDF', Object.freeze(['Choose or drop .md files. Convert to is on PDF.', 'Download each PDF, or tap Edit to change the Markdown in Rapier first.', 'The PDF has searchable text and the Markdown inside it.'])]),
@@ -215,7 +215,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/markdown-to-word': Object.freeze({name: 'Markdown to Word', title: 'Markdown to Word (.docx): free online converter | Rapier',
 		description: 'Convert Markdown files to editable Word documents: headings, lists, tables, code and pictures. Free, in your browser, no upload or account.',
-		image: 'og-markdown-to-word.png', imageSize: [1200, 630], imageAlt: 'Rapier: Markdown to Word',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Markdown to Word', view: 'convert', related: ['/word-to-markdown', '/markdown-to-pdf', '/convert'],
 		lead: 'Drop .md files and download each one as an editable Word document, with headings, lists, tables, code and pictures. Rapier writes the .docx on your device: nothing is uploaded.',
 		howTo: Object.freeze(['How to convert Markdown to Word', Object.freeze(['Choose or drop .md files. Convert to is on Word.', 'Download each .docx file, or tap Edit to change the Markdown in Rapier first.', 'The .docx opens in Word as an editable document.'])]),
@@ -226,7 +226,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/word-to-markdown': Object.freeze({name: 'Word to Markdown', title: 'Word to Markdown: convert .docx to .md online | Rapier',
 		description: 'Convert Word documents to Markdown, pictures included. Download the .md file. Free, in your browser, nothing uploaded.',
-		image: 'og-word-to-markdown.png', imageSize: [1200, 630], imageAlt: 'Rapier: Word to Markdown',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Word to Markdown', view: 'convert', related: ['/markdown-to-word', '/pdf-to-markdown', '/convert', '/diff'],
 		lead: 'Convert Word documents to Markdown ready for AI tools and LLMs: headings, lists, tables, links and pictures, the pictures inside the .md file. Rapier reads the Word document on your device, offline: nothing is uploaded.',
 		howTo: Object.freeze(['How to convert Word to Markdown', Object.freeze(['Choose or drop .docx files. Convert to is on Markdown.', 'Download each .md file, with the pictures inside it.', 'Or tap Edit to open it in Rapier as an editable Markdown page.'])]),
@@ -238,7 +238,7 @@ export const DOORS = Object.freeze({
 		])}),
 	'/pdf-to-markdown': Object.freeze({name: 'PDF to Markdown', title: 'PDF to Markdown: convert PDF to .md online | Rapier',
 		description: 'Convert PDF to Markdown for AI and LLMs, text and pictures included. Free, in your browser, offline. Nothing is uploaded.',
-		image: 'og-pdf-to-markdown.png', imageSize: [1200, 630], imageAlt: 'Rapier: PDF to Markdown',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'PDF to Markdown', view: 'convert', related: ['/word-to-markdown', '/markdown-to-pdf', '/convert', '/diff'],
 		lead: 'Convert PDF files to Markdown ready for AI tools and LLMs, with their pictures. Rapier reads the PDF on your device, offline: nothing is uploaded, so a private PDF never reaches a server. Check the reading order, or tap Edit to fix it in Rapier.',
 		howTo: Object.freeze(['How to convert PDF to Markdown', Object.freeze(['Choose or drop .pdf files. Convert to is on Markdown.', 'The first time, Rapier downloads its free PDF reader once.', 'Download each .md file, or tap Edit to check the reading order in Rapier.'])]),
@@ -252,7 +252,7 @@ export const DOORS = Object.freeze({
 	// (diagrams/view.js) over the editor; /mermaid-editor answers 301 here.
 	'/diagrams': Object.freeze({name: 'Diagrams', title: 'Mermaid live editor and free diagram maker online | Rapier',
 		description: 'Write Mermaid and see it drawn: flowcharts, sequence, class, state, ER and Gantt diagrams. Export SVG or PNG. Free, offline, no sign-up, nothing uploaded.',
-		image: 'og-diagrams.png', imageSize: [1200, 630], imageAlt: 'Rapier: free diagram maker and Mermaid editor',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Free diagram maker', view: 'diagrams', related: ['/draw', '/jxl', '/diff', '/'],
 		features: Object.freeze(['Mermaid live editor: the diagram is drawn as you type', 'Flowchart, sequence, class, state, ER, Gantt, pie, mind map, timeline, journey, Git, quadrant, XY chart, Sankey and Kanban', 'Export SVG or PNG', 'Copy as a Markdown mermaid block, or open it in the editor', 'Draw diagrams by hand with arrows that stay attached', 'Runs offline on your device; nothing uploaded, no sign-up']),
 		lead: 'Write Mermaid and the diagram is drawn as you type: flowcharts, sequence, class, state and ER diagrams, Gantt charts, mind maps and more. Save it as SVG or PNG, copy it as Markdown, or open it in the editor and export the document as PDF or Word. Rather move boxes by hand? Draw makes diagrams with arrows that stay attached. It all runs on your device: nothing is uploaded, and there is no sign-up.',
@@ -281,7 +281,7 @@ export const DOORS = Object.freeze({
 export const GUIDES = Object.freeze({
 	'/agents': Object.freeze({name: 'Rapier for agents', file: 'agents.md', title: 'Rapier for AI agents: MCP server, tools and skills',
 		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.',
-		image: 'og-agents.png', imageSize: [1200, 630], imageAlt: 'Rapier for agents'}),
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo'}),
 });
 // Every page the site serves from a door file, with its head.
 export const PAGES = Object.freeze({...DOORS, ...GUIDES});
@@ -290,7 +290,7 @@ export const PAGES = Object.freeze({...DOORS, ...GUIDES});
 export const STANDALONE = Object.freeze({
 	'/gallery': Object.freeze({name: 'Gallery', file: 'gallery.html', title: 'Free vintage ornaments, borders and decorative letters | Rapier Gallery',
 		description: 'Thousands of free ornaments, page borders and decorative capital letters, traced from old books. Open any piece in Rapier or download it as SVG.',
-		image: 'og-gallery.png', imageSize: [1200, 630], imageAlt: 'Rapier Gallery: ornaments, borders and decorative letters',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Gallery', lead: 'Borders, ornaments and decorative letters, free in Rapier: page borders and title frames; corners, dividers, flourishes, cartouches, rosettes and vignettes; illuminated, Gothic, Renaissance, Baroque and Art Nouveau initials. Every piece is public domain SVG, traced from old books.'}),
 });
 // Every page of the site but home, for the links and the site's data.
@@ -533,11 +533,11 @@ async function release(response) {
 }
 
 export default {
-	async fetch(request, env) {
+	async fetch(request, env, ctx) {
 		const url = new URL(request.url);
 		if (env && env.DOOR_TRACE) console.log('door-worker ' + url.pathname);
 		const plain = () => env.ASSETS.fetch(request);
-		if (url.pathname === '/api/feedback') return receiveFeedback(request,env);
+		if (url.pathname === '/api/feedback') return receiveFeedback(request,env,ctx);
 		try {
 			const method = request.method.toUpperCase();
 			if (method !== 'GET' && method !== 'HEAD') return plain();

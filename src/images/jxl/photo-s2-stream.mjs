@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {scaleBand, bandState, downsample, referenceArena, useReferenceArena, releaseReferenceArena} from './ssimulacra2-arithmetic.mjs';
+import {scaleBand, scaleBandPair, pairState, bandState, downsample, referenceArena, useReferenceArena, releaseReferenceArena} from './ssimulacra2-arithmetic.mjs';
 import {GAUSS32, scaleNorm, scoreNorms} from './ssimulacra2.mjs';
 import {SCALES} from './ssimulacra2-reference.mjs';
 
@@ -38,7 +38,10 @@ export function s2Stream(reference, width, height, outputs, resumable = false) {
     if (end > sc.first) {
       const again = sc.state[0]?.states !== undefined, next = Math.ceil((sc.first + 4) / 4) * 4, inputY = again ? Math.max(0, next - AGAIN) : Math.min(h, next);
       const inputEnd = Math.min(h, Math.ceil((end + 4) / 4) * 4), a = rowsOf(sc.ref, inputY, inputEnd - inputY, w);
-      for (let k = 0; k < outputs; k++) sc.state[k] = scaleBand(a, rowsOf(sc.out[k], inputY, inputEnd - inputY, w), w, h, GAUSS32, sc.first, end, sc.state[k], again ? inputY : null);
+      const pair = outputs === 2 ? scaleBandPair(a, rowsOf(sc.out[0], inputY, inputEnd - inputY, w), rowsOf(sc.out[1], inputY, inputEnd - inputY, w),
+        w, h, GAUSS32, sc.first, end, sc.state[0], sc.state[1], again ? inputY : null) : null;
+      if (pair) sc.state = pair;
+      else for (let k = 0; k < outputs; k++) sc.state[k] = scaleBand(a, rowsOf(sc.out[k], inputY, inputEnd - inputY, w), w, h, GAUSS32, sc.first, end, sc.state[k], again ? inputY : null);
       sc.first = end;
     }
     if (s + 1 >= scales.length) return;
@@ -78,7 +81,9 @@ export function s2Stream(reference, width, height, outputs, resumable = false) {
           const per = held.rgba ? w * 4 : w, cut = a => a.slice(drop * per, held.rows * per);
           return held.rgba ? {y: held.y + drop, rows: held.rows - drop, rgba: cut(held.rgba)} : {y: held.y + drop, rows: held.rows - drop, planes: held.planes.map(cut)};
         };
-        return {have, ref: trim(ref), out: out.map(trim), first, state: state.map(s => s && (s.states ? s : bandState(s, w))), odd};
+        const places = state.map(s => s && (s.states ? s : bandState(s, w)));
+        if (state[1]?.pair) places[1] = pairState(places[0], places[1], w);
+        return {have, ref: trim(ref), out: out.map(trim), first, state: places, odd};
       });
     },
     restore(saved) {

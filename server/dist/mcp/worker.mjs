@@ -2993,7 +2993,7 @@ export class RapierDocument {
       if (input.operation === 'show' && input.args.target === 'ask') return await this.waitForReturn(input, lifetime.signal);
       if (input.operation === 'read' && input.args.as === 'image') return await this.inspectVisual(input, lifetime.signal);
       if (input.operation === 'export' && ['docx', 'pdf', 'page'].includes(input.args.format)) return await this.exportDocument(input, lifetime.signal);
-      if (input.operation === 'show' && ['view', 'preferences', 'file', 'read_aloud', 'plugin', 'playback'].includes(input.args.target) || input.operation === 'export' && input.args.to === 'clipboard') return await this.requestEditor(input, lifetime.signal);
+      if (input.operation === 'show' && ['view', 'preferences', 'file', 'record', 'attachment', 'read_aloud', 'plugin', 'playback'].includes(input.args.target) || input.operation === 'export' && input.args.to === 'clipboard') return await this.requestEditor(input, lifetime.signal);
       if (['edit', 'undo'].includes(input.operation) ||
           input.operation === 'document.read' && input.args.paintSample) return await this.requestMaterials(input, lifetime.signal);
       return await this.exclusive(operate, input.operation === 'read');

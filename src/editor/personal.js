@@ -76,7 +76,6 @@ const _rapierPersonal = globalThis.__rapierServerRenderHost === true ? null : ((
 	ready.catch(report);
 	return Object.freeze({...owner, ready,
 		declinePlugin: plugins.decline,
-		async restore(entry) { await ready; await owner.restore(entry); },
 		async snapshot() { await ready; return owner.snapshot(); },
 		fonts() { return Object.values(owner.values('font/')).filter(Boolean); },
 		async addFont(font) { await ready; await owner.putAsset('font/' + font.id, font); },

@@ -1,10 +1,10 @@
 {
   "name": "rapier-jxl",
-  "description": "JPEG XL encoding and decoding in pure JavaScript. Separate entries for image uploads, photography tools and single-file apps.",
+  "description": "JPEG XL encoder and decoder in WebAssembly for browsers, Node and Cloudflare Workers, with no native dependencies. Page captures with exact text, fast uploads, animation, lossless JPEG recompression.",
   "license": "MIT",
   "type": "module",
   "repository": {"type": "git", "url": "git+https://github.com/jackskip22/rapier-jxl.git"},
   "homepage": "https://github.com/jackskip22/rapier-jxl#readme",
   "bugs": {"url": "https://github.com/jackskip22/rapier-jxl/issues"},
-  "keywords": ["jpeg-xl", "jxl", "jpegxl", "encoder", "image-compression", "lossless", "lossy", "jpeg", "hdr", "webassembly", "browser"]
+  "keywords": ["jpeg-xl", "jxl", "jpegxl", "encoder", "decoder", "image-compression", "image-optimization", "lossless", "lossy", "jpeg", "gif", "animation", "hdr", "webassembly", "wasm", "browser", "cloudflare-workers", "screenshot", "capture", "upload", "image", "images", "performance", "optimization", "withastro", "astro", "snapdom", "emdash"]
 }

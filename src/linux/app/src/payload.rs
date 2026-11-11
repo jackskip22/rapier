@@ -222,6 +222,7 @@ pub fn uninstall() {
     for path in places(&data) {
         let _ = fs::remove_file(path);
     }
+    crate::note_shortcuts::uninstall(&data);
     let _ = fs::remove_dir_all(cache_root());
     refresh_desktop(&data);
     defaults(false);

@@ -342,7 +342,7 @@ const sideEffects = ['./dist/polyfill.mjs', ...WORKER_FILES.map(name => `./dist/
 const PEERS = {emdash: '>=1.4.0', '@emdash-cms/cloudflare': '>=1.4.0', '@cloudflare/kumo': '>=2.6.0', astro: '>=6.0.0', react: '>=18.0.0'};
 const {repository, homepage, bugs, keywords} = JSON.parse(await readFile(join(codec, 'package.json'), 'utf8'));
 await writeFile(join(out, 'package.json'), JSON.stringify({name: 'rapier-jxl', version, type: 'module', license: 'MIT',
-  description: 'JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.', repository, homepage, bugs, keywords, bin: {'rapier-jxl': 'dist/cli.mjs'}, exports, browser, types: './types/index.d.mts',
+  description: 'JPEG XL encoder and decoder in WebAssembly for browsers, Node and Cloudflare Workers, with no native dependencies. Page captures with exact text, fast uploads, animation, lossless JPEG recompression.', repository, homepage, bugs, keywords, bin: {'rapier-jxl': 'dist/cli.mjs'}, exports, browser, types: './types/index.d.mts',
   sideEffects, peerDependencies: PEERS, peerDependenciesMeta: Object.fromEntries(Object.keys(PEERS).map(name => [name, {optional: true}])),
   files: ['dist', 'types', 'examples', 'skills', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES'],
   engines: {node: '^20.16.0 || >=22.3.0'}}, null, 1) + '\n');

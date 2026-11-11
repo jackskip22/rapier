@@ -3,7 +3,7 @@ import {PageDoor, validHandover} from '../mcp/page-door.mjs';
 import {CUSTODY_PROTOCOL} from '../mcp/custody-wire.mjs';
 import {checkpointOf, createCheckpointSchedule} from '../agent/checkpoint.mjs';
 
-export function custodySocket(RealSocket, {store, key, rules, host = {}, events = {}, clock = () => Date.now(), tickMs = 60000, handbackBytes}) {
+export function custodySocket(RealSocket, {store, key, rules, host = {}, events = {}, clock = () => Date.now(), tickMs = 60000, handbackBytes, stranded = null}) {
   let storageRefused = false;
   return class CustodySocket {
     constructor(url, protocols) {
@@ -87,9 +87,13 @@ export function custodySocket(RealSocket, {store, key, rules, host = {}, events 
       let message;
       try { message = JSON.parse(event.data); } catch { return; }
       if (this.mode === 'claiming' && message.type === 'custody') {
-        if (validHandover(message.handover)) return this.attach(message.handover);
+        if (validHandover(message.handover)) {
+          if (this.held && this.held.state.text !== message.handover.state.text) await this.keepStranded(false);
+          return this.attach(message.handover);
+        }
         if (message.resumed === true && this.held) return this.attach(this.held);
         this.mode = 'plain';
+        if (this.held) void this.keepStranded(true);
         return this.open();
       }
       if (this.mode !== 'custody') return;
@@ -99,6 +103,15 @@ export function custodySocket(RealSocket, {store, key, rules, host = {}, events 
       } else if (message.type === 'recall') {
         await this.release();
       }
+    }
+
+    async keepStranded(clear) {
+      const copy = this.held;
+      this.held = null;
+      let kept = false;
+      try { kept = await stranded?.(copy) === true; } catch (_) {}
+      if (kept && clear) { try { await store.clear?.(); } catch (_) {} }
+      return kept;
     }
 
     async release() {

@@ -420,6 +420,10 @@
     if (request.action === 'playback') {const image = playbackImage(request); if (typeof image === 'string' || !image) return image || 'preview_unavailable';}
     if (request.action === 'read_aloud' && (!_rapierEmbedFeatureAllowed('readAloud') || !_rapierSpeechEngine())) return 'read_aloud_unavailable';
     if (request.action === 'open_file' && _rapierEmbed.active) return _rapierEmbed.fileOpen.refusal();
+    if (request.action === 'record_audio' || request.action === 'add_attachment') {
+      if (_rapierEmbed.active) return 'host_feature_refused';
+      if (!_rapierNotes.current || _rapierNotes.open || !_rapierNotes.mode) return 'note_not_open';
+    }
     if (request.action === 'install_plugin') {
       if (request.plugin.startsWith('letters-') && !_rapierEmbedFeatureAllowed('draw')) return 'host_feature_refused';
       const provider = request.plugin === 'pdf' ? globalThis.RapierPdfPlugin : _rapierProviders[request.plugin];
@@ -449,6 +453,8 @@
       const opened = await _rapierUiBeginOpenDocument(record.tap);
       return _rapierEmbed.active ? opened === true : true;
     }
+    if (request.action === 'record_audio') { _rapierRecorderOpen(false); return !!_rapierRecorder.dialog?.open; }
+    if (request.action === 'add_attachment') { await _rapierAttachmentsPick(); return true; }
     if (request.action === 'install_plugin') {
       const provider = request.plugin === 'pdf' ? globalThis.RapierPdfPlugin : _rapierProviders[request.plugin];
       if (request.plugin === 'pdf') return await _rapierInstallPdfImportPlugin() !== false && provider.state().installed === true;
@@ -489,9 +495,9 @@
 
   function editorShowCard(record) {
     const request = record.request;
-    const labels = {read_aloud: 'read aloud', copy: 'copy passage', open_file: 'open a file', install_plugin: 'install plug-in'};
+    const labels = {read_aloud: 'read aloud', copy: 'copy passage', open_file: 'open a file', record_audio: 'record audio', add_attachment: 'attach files', install_plugin: 'install plug-in'};
     const shown = request.text ? editorProtocol.editorPreview(request.text) : null;
-    const message = shown ? (shown.omitted ? shown.head + ' … ' + shown.omitted + ' more characters … ' + shown.tail : shown.head) : (request.plugin ? 'Install ' + request.plugin + ' on this device?' : 'Choose a file from this device to open in Rapier.');
+    const message = shown ? (shown.omitted ? shown.head + ' … ' + shown.omitted + ' more characters … ' + shown.tail : shown.head) : (request.plugin ? 'Install ' + request.plugin + ' on this device?' : request.action === 'record_audio' ? 'Record audio into this note?' : request.action === 'add_attachment' ? 'Choose files to attach to this note.' : 'Choose a file from this device to open in Rapier.');
     const answer = rapierConfirm({title: labels[request.action], message, confirmLabel: labels[request.action]});
     record.confirmId = _rapierUi.confirmId;
     editorCard = record;
@@ -1584,9 +1590,9 @@
     };
     const short = name => name.length > 64 ? name.slice(0, 30) + '…' + name.slice(-30) : name;
     const complete = async () => {
-      const status = RapierParts.status('jxlcomplete')?.status;
-      if (status === 'carried') { await RapierParts.need('jxlcomplete'); return; }
-      if (!['ready', 'stored'].includes(status)) throw Object.assign(new Error('Not converted: needs JPEG XL complete. Open the JPEG XL converter once to get it.'), {shown: true});
+      const partStatus = RapierParts.status('jxlcomplete')?.status;
+      if (partStatus === 'carried') { await RapierParts.need('jxlcomplete'); return; }
+      if (!['ready', 'stored'].includes(partStatus)) throw Object.assign(new Error('Not converted: needs JPEG XL complete. Open the JPEG XL converter once to get it.'), {shown: true});
     };
     const kept = r => r.back === 'jpeg' ? 'original JPEG, byte for byte' : r.back === 'png' ? 'PNG' : r.exact ? 'JPEG carried exactly; restores byte for byte'
       : r.frames ? (r.mode === 'lossless' ? 'animation, lossless' : 'animation, ' + r.mode) : r.mode === 'lossless' || r.fallback ? 'lossless' : r.mode + ' quality';

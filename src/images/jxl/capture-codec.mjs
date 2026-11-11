@@ -16,7 +16,7 @@ const SMALL_FLOOR = 1 << 16, NEAREST_LIMIT = 4096, DIM = 1024, PALETTE_LIMIT = 1
 const NEVER = 1 << 30;
 export const DEFAULT_EFFORT = 3;
 const L3 = {indexDepth: 24, lazyUnder: NEVER, nice: NEVER, tree: {split: 96, min: 128, nodes: 48}, prices: 4, weighted: 'sample',
-  palette: 'scan', routes: 'rare', alphaPlane: 'soft', patches: 'one', floor: false, oneFrame: true, smallGroups: true, needs: [], textDelta: true};
+  palette: 'scan', routes: 'rare', alphaPlane: 'soft', patches: 'one', floor: false, oneFrame: true, smallGroups: true, needs: [], textDelta: false};
 const L4 = {...L3, textDelta: false, rowCopies: true, indexRamp: true, patches: 'peel', indexDepth: 64, tree: {split: 96, min: 128, nodes: 96}, prices: 50, routes: 'all', alphaPlane: 'all', floor: true, smallGroups: false};
 const L5 = {...L4, weighted: 'both', palette: 'both', rcts: [6]};
 function deepLevels() {
@@ -770,9 +770,10 @@ function writeChannels(writer, models, trace, ansTools = (typeof __RAPIER_JXL_CA
   let pieces = 0;
   if (typeof __RAPIER_JXL_PROBES__ === 'undefined') for (const model of models) pieces += model.count;
   const histograms = [];
-  let larges = 0, copies = 0, [largeKeys, lengthKeys, copyDistances] = pieceKeys;
+  let larges = 0, copies = 0, copyMinimum = 0, [largeKeys, lengthKeys, copyDistances] = pieceKeys;
   for (const model of models) {
     model.base = histograms.length;
+    const copiesBefore = copies;
     const {counts, literals, others} = model.pieceCounts ?? capturePieceCounts(model, SMALL);
     largeKeys = keySpace(0, larges, others.length); lengthKeys = keySpace(1, copies, others.length); copyDistances = keySpace(2, copies, others.length);
     for (let c = 0; c < model.classes; c++) histograms.push({small: counts.subarray(c * SMALL, (c + 1) * SMALL), large: NO_COUNTS, lengths: NO_COUNTS, literals: literals[c], copies: 0});
@@ -780,6 +781,10 @@ function writeChannels(writer, models, trace, ansTools = (typeof __RAPIER_JXL_CA
       const k = others[i], h = model.base + model.pieceContext[k], target = histograms[h], value = model.pieceValue[k], d = model.pieceDistance[k];
       if (d) { lengthKeys[copies] = h * KEY + value; copyDistances[copies++] = d; target.copies++; }
       else { if (value < SMALL) target.small[value]++; else largeKeys[larges++] = h * KEY + value; target.literals++; }
+    }
+    if (copies > copiesBefore) {
+      if (copyMinimum && copyMinimum !== model.minimum) throw fault('JXL_INTERNAL', 'The planes of one stream copy with different minimum lengths.');
+      copyMinimum = model.minimum;
     }
   }
   countKeys(largeKeys.subarray(0, larges), histograms, 'large'); countKeys(lengthKeys.subarray(0, copies), histograms, 'lengths');
@@ -850,7 +855,7 @@ function writeChannels(writer, models, trace, ansTools = (typeof __RAPIER_JXL_CA
   });
   const offset = distance ? 1 : 0, contextMap = new Uint8Array(ordered.length + offset);
   for (const model of models) for (const node of model.leaves) contextMap[node.context] = index[model.base + node.local] + offset;
-  const lz77 = distance ? {minSymbol: minSymbol, minLength: (models.find(m => m.kind !== 'rows') ?? models[0]).minimum, lengthConfig: length.config} : null;
+  const lz77 = distance ? {minSymbol: minSymbol, minLength: copyMinimum, lengthConfig: length.config} : null;
   const copy = distance ? {lengthConfig: length.config, distanceConfig: distance.config, code: distance.code, minSymbol, spatial: distance.spatial, sCodes} : null;
   const prefixHeader = new BitWriter(1024);
   writeHistograms(prefixHeader, {lz77, contextMap,
@@ -866,10 +871,11 @@ function writeChannels(writer, models, trace, ansTools = (typeof __RAPIER_JXL_CA
       if (!h.literals) return configs[m].config;
       const literals = valueCounts(h.small, h.large);
       let best = null, bits = Infinity, largest = 0;
-      if (retry) for (const v of literals.values) if (v > largest) largest = v;
+      const room = Math.min(copy ? minSymbol : Infinity, retry ? 256 : Infinity);
+      if (room < Infinity) for (const v of literals.values) if (v > largest) largest = v;
       for (let at = 0; at < ANS_FIT.length; at += 64) {
         const some = ANS_FIT.slice(at, at + 64), prices = capturePrices(some, literals);
-        for (let c = 0; c < some.length; c++) if (prices[c * 2] < bits && !(retry && (hybridToken(some[c], largest, token), token[0] > 255))) { bits = prices[c * 2]; best = some[c]; }
+        for (let c = 0; c < some.length; c++) if (prices[c * 2] < bits && !(room < Infinity && (hybridToken(some[c], largest, token), token[0] >= room))) { bits = prices[c * 2]; best = some[c]; }
       }
       return best;
     });
@@ -1409,7 +1415,7 @@ function* frameSteps(pixels, width, height, shape, coding, frame, header, placem
       const [x, y, w, h] = groupRect(layout, width, height, g, dim);
       const plane = new Int16Array(w * h);
       for (let row = 0; row < h; row++) plane.set(frame.alpha.subarray((y + row) * width + x, (y + row) * width + x + w), row * w);
-      return timed('gradient', () => channelModel(plane, w, h, 'smooth', 1, 3, false, w, 0, true));
+      return timed('gradient', () => channelModel(plane, w, h, 'smooth', 1, indexModels[g].minimum, false, w, 0, true));
     }) : null;
     const palette = frame ? yield* unit('palette', () => frame.predicted === 'select'
       ? {...timed('palette', () => deltaPaletteModel(frame.deltas, frame.deltaCount, shape.channels, indexModels, shape, TEXT_DELTA_PREDICTOR)), models: indexModels}

@@ -551,3 +551,9 @@ body.rapier-notes-mode #editor-blocks[class*="rapier-notes-tint-"]{--color-focus
  .rapier-notes-filter-row--colours{grid-template-columns:repeat(auto-fit,minmax(48px,1fr))}
  .rapier-notes-recording-play{width:48px;height:48px}
 }
+.rapier-recording-voice{flex:1 1 auto;min-height:96px;max-height:min(40dvh,320px);margin-bottom:var(--space-3);overflow:auto;overscroll-behavior:contain;outline:0;caret-color:var(--color-text)}
+.rapier-recording-voice-line{position:relative;margin:0 0 var(--space-2);padding-left:3.4em;font:20px/1.4 var(--font-sans);letter-spacing:-.01em;overflow-wrap:anywhere;min-height:1.4em}
+.rapier-recording-voice-line[data-time]::before{content:attr(data-time);position:absolute;left:0;top:.35em;font:var(--text-sm) var(--font-mono);font-variant-numeric:tabular-nums;opacity:.62;pointer-events:none;-webkit-user-select:none;user-select:none}
+.rapier-recording-voice-line--partial{opacity:.62}
+.rapier-recording-options{display:flex;gap:var(--space-1);margin:0 calc(-1 * var(--space-3)) var(--space-2)}
+.rapier-recording-options .rapier-notes-btn[hidden]{display:none}

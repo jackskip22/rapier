@@ -26,8 +26,8 @@ export const PREFERENCE_DEFINITIONS = Object.freeze({
 	lineFit:        Object.freeze({ key: 'rapier:preference:line-fit', fallback: 'truncate', values: Object.freeze(['truncate', 'resize']) }),
 	readOnly:       Object.freeze({ key: 'rapier:preference:read-only', fallback: false, agent: false }),
 	showPlayButton: Object.freeze({ key: 'rapier:preference:show-play-button', fallback: false }),
-	focus:          Object.freeze({ key: 'rapier:preference:focus', fallback: false, agent: false }),
-	typewriter:     Object.freeze({ key: 'rapier:preference:typewriter', fallback: false, agent: false }),
+	focus:          Object.freeze({ key: 'rapier:preference:focus', fallback: false }),
+	typewriter:     Object.freeze({ key: 'rapier:preference:typewriter', fallback: false }),
 	highlights:     Object.freeze({ key: 'rapier:preference:highlights', fallback: 'standard', values: Object.freeze(['standard', 'accent']) }),
 	highlightColor: Object.freeze({ key: 'rapier:preference:highlight-color', fallback: 'default', values: Object.freeze(['default', 'green', 'red', 'blue', 'yellow', 'purple']) }),
 	headings:       Object.freeze({ key: 'rapier:preference:headings', fallback: 'expanded', values: Object.freeze(['off', 'collapsed', 'expanded']) }),
@@ -38,5 +38,5 @@ export const PREFERENCE_DEFINITIONS = Object.freeze({
 	notesSort:      Object.freeze({ key: 'rapier:preference:notes-sort', fallback: 'custom', values: Object.freeze(['custom', 'created', 'modified']) }),
 	notesLayout:    Object.freeze({ key: 'rapier:preference:notes-layout', fallback: 'half', values: Object.freeze(['half', 'full']) }),
 	notesColour:    Object.freeze({ key: 'rapier:preference:notes-colour', fallback: 'bar', values: Object.freeze(['bar', 'page']) }),
-	audioSpeed:     Object.freeze({ key: 'rapier:preference:audio-speed', fallback: '1', values: Object.freeze(['0.75', '1', '1.25', '1.5', '2']), agent: false }),
+	audioSpeed:     Object.freeze({ key: 'rapier:preference:audio-speed', fallback: '1', values: Object.freeze(['0.75', '1', '1.25', '1.5', '2']) }),
 });

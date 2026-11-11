@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {custodySocket} from './live-custody.mjs';
 
-export function createCustodyBridge({post, RealSocket, store, key, rules, host = {}, events = {}}) {
-  const Socket = custodySocket(RealSocket, {store, key, rules, host, events});
+export function createCustodyBridge({post, RealSocket, store, key, rules, host = {}, events = {}, stranded = null}) {
+  const Socket = custodySocket(RealSocket, {store, key, rules, host, events, stranded});
   const sockets = new Map();
   let active = null, parked = null;
   const bind = (id, socket) => {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {SSIMULACRA2_WEIGHTS, SRGB_TO_LINEAR, gaussianTaps, finalCurve} from './ssimulacra2.mjs';
 import {cbrtTables, IS_BIAS, BLACK} from './int-spec.mjs';
+import {kernelHooks} from './kernel-hooks.mjs';
 
 const R_HALF = Float64Array.from({length: 32}, (_, k) => k ? 2 ** (k - 1) : 0.5), R_INV = Float64Array.from({length: 32}, (_, k) => 2 ** -k);
 const R = (s, k) => Math.floor((s + R_HALF[k]) * R_INV[k]);
@@ -64,6 +65,7 @@ function plane(pic, n, c, out) {
 }
 
 function channelSums(P1, P2, w, h, sh, stride, acc1, acc4, span = null) {
+  if (kernelHooks.s2cChannel?.(P1, P2, w, h, sh, stride, acc1, acc4, span, S2C_TAPS)) return;
   const T = S2C_TAPS, T4 = T[N], ring = [0, 1, 2, 3, 4].map(() => new Int32Array(RB * w));
   const q11 = new Int32Array(w), q22 = new Int32Array(w), q12 = new Int32Array(w);
   const [r0, r1, r2, r3, r4] = ring;

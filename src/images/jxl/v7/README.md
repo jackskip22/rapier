@@ -1,6 +1,13 @@
 # rapier-jxl
 
+[![npm](https://img.shields.io/npm/v/rapier-jxl)](https://www.npmjs.com/package/rapier-jxl)
+[![downloads](https://img.shields.io/npm/dw/rapier-jxl)](https://www.npmjs.com/package/rapier-jxl)
+[![license](https://img.shields.io/npm/l/rapier-jxl)](https://github.com/jackskip22/rapier-jxl/blob/main/LICENSE)
+[![types](https://img.shields.io/npm/types/rapier-jxl)](https://www.npmjs.com/package/rapier-jxl)
+
 JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.
+
+Used by [SnapDOM's official JPEG XL plugin](https://snapdom.dev/plugins/jxl/) and the [EmDash image optimizer](https://plugins.emdashcms.com/plugins/@rapier.website/jxl). [Try it in your browser](https://rapier.website/jxl).
 
 - Uploads over 2x faster than libvips.
 - __CAPTURE_BROTLI_KB__ Brotli exact capture.
@@ -12,8 +19,6 @@ JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.
 - Browsers, workers, Node, Deno, Bun, Cloudflare Workers.
 - No dependencies.
 - MIT.
-
-[SnapDOM JPEG XL plugin](https://snapdom.dev/plugins/jxl/) · [EmDash image optimizer](https://plugins.emdashcms.com/plugins/@rapier.website/jxl)
 
 ```sh
 npm install rapier-jxl

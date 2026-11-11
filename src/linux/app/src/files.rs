@@ -314,6 +314,11 @@ mod tests {
 
     #[test]
     fn saves_keep_attributes_links_and_writable_files_in_read_only_folders() {
+        // Root ignores a folder's mode bits, so the read-only-folder path this test checks is never taken.
+        if fs::metadata("/proc/self").map(|m| m.uid() == 0).unwrap_or(false) {
+            eprintln!("skipped: running as root, which bypasses read-only folder modes");
+            return;
+        }
         let root = std::env::temp_dir().join(format!("rapier-save-cell-{}", crate::random_hex(8)));
         fs::create_dir(&root).unwrap();
         let folder = root.join("documents");

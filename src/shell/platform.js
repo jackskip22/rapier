@@ -1001,6 +1001,10 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			} catch (_) {}
 			return;
 		}
+		if (name === 'voice.event') {
+			try { window.dispatchEvent(new CustomEvent('rapier:platform-voice', { detail: detail || {} })); } catch (_) {}
+			return;
+		}
 		if (name === 'tts.event') {
 			try { window.dispatchEvent(new CustomEvent('rapier:platform-tts', { detail: detail || {} })); } catch (_) {}
 			return;
@@ -3535,6 +3539,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get noteOpened() { return method('noteOpened'); },
 			get noteGone() { return method('noteGone'); },
 			get mediaPlaying() { return method('mediaPlaying'); },
+			get voiceBegin() { return method('voiceBegin'); },
+			get voicePcm() { return method('voicePcm'); },
+			get voicePause() { return method('voicePause'); },
+			get voiceEnd() { return method('voiceEnd'); },
+			get voiceDialog() { return method('voiceDialog'); },
 			get openSync() { return method('openSync'); },
 			get scheduleReminder() { return method('scheduleReminder'); },
 			get reminderState() { return method('reminderState'); },
@@ -4207,6 +4216,21 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			},
 			get mediaPlaying() {
 				return _nativeCapability('mediaPlaying') && !_nativeCapability('nativeMedia') ? function (playing) { _nativeHostNotify('media.playing', {playing: playing === true}); } : null;
+			},
+			get voiceBegin() {
+				return _nativeCapability('voiceCapture') ? function (lang) { return _nativeHostCall('voice.begin', {lang: String(lang || '')}, 20000); } : null;
+			},
+			get voicePcm() {
+				return _nativeCapability('voiceCapture') ? function (base64) { _nativeHostNotify('voice.pcm', {data: String(base64)}); } : null;
+			},
+			get voicePause() {
+				return _nativeCapability('voiceCapture') ? function (paused) { _nativeHostNotify('voice.pause', {paused: paused === true}); } : null;
+			},
+			get voiceDialog() {
+				return _nativeCapability('voiceDialog') ? function (lang) { return _nativeHostCall('voice.dialog', {lang: String(lang || '')}, 120000); } : null;
+			},
+			get voiceEnd() {
+				return _nativeCapability('voiceCapture') ? function () { return _nativeHostCall('voice.end', {}, 20000); } : null;
 			},
 			get requestNotesRole() {
 				return _nativeCapability('notesRole') ? function () {

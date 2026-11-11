@@ -8,7 +8,7 @@ const photo = ['residual', 'tokens', 'dct', 'ycbcrTile', 'xybTile', 'quantTile',
   'rgbTile', 'rgbQuant'];
 const generalPhoto = [...photo, 'sampled', 'acTokens', 'ansFlush', 'ansFlush2', 'packLevels', 'wpTokens',
   'unpackGroup', 'nonzeroCounts', 'subtract', 'gab', 'sgFill', 'xybRows', 'fgXyb', 'gab32', 'gab32From', 'fgTiles',
-  'vbDct', 'vbQuant', 'gabTiles', 'gradEvents', 'hpCount', 'hpTokens', 'shape', 'wpDc', 'ctxIds', 'weighted'];
+  'vbDct', 'vbQuant', 'vbRow8', 'gabTiles', 'gradEvents', 'hpCount', 'hpTokens', 'shape', 'wpDc', 'ctxIds', 'weighted'];
 const sample = ['orientRGBA', 'sampleTable', 'sampleRead', 'sampleHorizontal', 'sampleAccumulate', 'sampleFinish'];
 const jpeg = ['residual', 'fill', 'sampled', 'acGroup', 'ansFlush', 'ansFlush2', 'packLevels', 'wpTokens', 'unpackGroup',
   'nonzeroCounts', 'subtract', 'gradEvents', 'hpCount', 'hpTokens', 'shape', 'wpDc', 'ctxIds', 'tokens', 'weighted',
@@ -23,7 +23,7 @@ const upload = ['residual', 'fill', 'screen', 'sampled', 'dct', 'ycbcrTile', 'xy
 export const KERNEL_EXPORTS = Object.freeze(Object.fromEntries(Object.entries({
   capture,
   resumable: ['scan', 'captureWeighted', 'smooth', 'weighted4', 'gradient4', 'runs', 'copies', 'copiesStep',
-    'tally', 'part', 'literals', 'pieces', 'prices', 'captureTokens', ...sample, 's2MetricInit', 's2MetricDown', 's2MetricScale', 's2MetricBand'],
+    'tally', 'part', 'literals', 'pieces', 'prices', 'captureTokens', ...sample, 's2MetricInit', 's2MetricDown', 's2MetricScale', 's2MetricBand', 's2MetricBand2'],
   'capture-complete': [...captureAll.filter(n => !['quantise', 'lowestInk', 'rowInk', 'colInk', 'denseTiles'].includes(n)), ...generalPhoto, 'treeWalk', 'tokAnsBack', 'tokAnsWrite', 'frameRows', 'idct8f32',
     's2MetricInit', 's2MetricDown', 's2MetricScale'],
   upload,

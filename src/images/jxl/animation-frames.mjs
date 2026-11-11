@@ -149,7 +149,10 @@ export function* animationSteps(a, shared = null) {
   for (const job of jobs) if (!job.part.still || job.bytes.length < job.part.bytes) Object.assign(job.part, {still: job.bytes, bytes: job.bytes.length, masked: job.masked});
   for (const part of parts) { part.file = part.still; part.still = readStill(part.still, frameRead); }
   const key = metadataKey(parts[0].still);
-  if (parts.some(({still}) => metadataKey(still) !== key)) throw fault('JXL_FRAMING', 'The frames of the animation need different image headers.');
+  if (parts.some(({still}) => metadataKey(still) !== key)) {
+    if (mode === 'modular' && quality < 100 && samples.native8 && a.photo !== true) return yield* animationSteps({...a, photo: true}, shared);
+    throw fault('JXL_FRAMING', 'The frames of the animation need different image headers.');
+  }
   const write = parts => {
     const out = new BitWriter(1 << 16);
     writeAnimatedImageHeader(out, parts[0].still, {width, height, ...timing, loops: a.loops}, parts.every(({still}) => still.image.modular16));

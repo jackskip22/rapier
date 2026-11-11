@@ -1,4 +1,3 @@
-import {DEFAULT_POLICY} from './retention.mjs';
 import {admitPreset} from '../presets/record.mjs';
 export {admitPreset};
 const hash = /^[a-f0-9]{64}$/, writer = /^[a-f0-9]{32}$/;
@@ -9,7 +8,6 @@ const assetKey = key => key.startsWith('font/') || key.startsWith('brush/') || k
 const encode = value => new TextEncoder().encode(JSON.stringify(value));
 const fail = message => { throw Object.assign(new Error(message), {code: 'personal_invalid'}); };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const DAY = 86400000;
 async function personalDigest(bytes) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join(''); }
 export function admitPersonal(input = {}, {local = false} = {}) {
 	if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length > 1024) fail('Personal settings are not a readable collection.');
@@ -26,45 +24,14 @@ export function admitPersonal(input = {}, {local = false} = {}) {
 	}
 	return out;
 }
-export function mergePersonal(...sources) {
-	const out = {};
-	for (const source of sources) for (const [key, row] of Object.entries(admitPersonal(source || {}, {local: true}))) {
-		const old = out[key];
-		if (!old || row.n > old.n || row.n === old.n && row.by > old.by) out[key] = row;
-		else if (row.n === old.n && row.by === old.by) {
-			if (assetKey(key) && row.value?.content === old.value?.content && row.value?.object && (!old.value?.object || row.value.object < old.value.object)) out[key] = row;
-			else if (!same(row.value, old.value) && !(assetKey(key) && row.value?.content === old.value?.content)) fail('A personal setting revision has conflicting values.');
-		}
-	}
-	return admitPersonal(out, {local: true});
-}
-export function personalAsset(key) { return assetKey(key); }
-const choiceOf = (key, value) => assetKey(key) && value ? value.content : value;
-function admitLedger(rows) {
-	if (!Array.isArray(rows)) fail('The kept earlier choices are not readable.');
-	for (const row of rows) if (!row || typeof row !== 'object' || !keyShape.test(row.key) || !writer.test(row.by) || !Number.isSafeInteger(row.n) || row.n < 1 ||
-		!Number.isSafeInteger(row.at) || row.at < 0 || !row.over || !writer.test(row.over.by) || !Number.isSafeInteger(row.over.n) ||
-		(assetKey(row.key) ? row.value !== null && !(row.value && hash.test(row.value.content)) : row.value !== null && !['string', 'boolean', 'number'].includes(typeof row.value)))
-		fail('A kept earlier choice is not readable.');
-	return rows.filter(row => !DEVICE_KEYS.has(row.key));
-}
-function keepLedger(rows, at) {
-	const kept = [], days = new Set();
-	for (const row of rows.slice().sort((a, b) => b.at - a.at)) {
-		const day = row.key + '\n' + Math.floor(row.at / DAY);
-		if (at - row.at < DEFAULT_POLICY.allDays * DAY || !days.has(day)) kept.push(row);
-		days.add(day);
-	}
-	return kept.reverse();
-}
 export function createPersonalOwner({storage, apply = () => {}, validateAsset = () => {}, now = Date.now}) {
 	let state = null, tail = Promise.resolve();
-	const fresh = () => ({writer: crypto.randomUUID().replaceAll('-', ''), records: {}, blobs: {}, ledger: []});
+	const fresh = () => ({writer: crypto.randomUUID().replaceAll('-', ''), records: {}, blobs: {}});
 	const check = value => {
 		value ??= fresh();
 		if (!writer.test(value.writer)) fail('Personal settings have no local writer.');
-		if (!value.records || !value.blobs || typeof value.blobs !== 'object' || Array.isArray(value.blobs) || !Array.isArray(value.ledger)) fail('Personal settings have no complete local record.');
-		value.records = admitPersonal(value.records, {local: true}); value.ledger = admitLedger(value.ledger);
+		if (!value.records || !value.blobs || typeof value.blobs !== 'object' || Array.isArray(value.blobs)) fail('Personal settings have no complete local record.');
+		value.records = admitPersonal(value.records, {local: true});
 		return value;
 	};
 	const schedule = work => { const job = tail.then(work); tail = job.catch(() => {}); return job; };
@@ -83,38 +50,6 @@ export function createPersonalOwner({storage, apply = () => {}, validateAsset = 
 			validateAsset(key, value); const content = await personalDigest(encode(value));
 			state = check(await storage.update(raw => { const next = check(raw); assertActive(next); next.blobs[content] = value; if (next.records[key]?.value?.content !== content) next.records[key] = {by: next.writer, n: tick(clock(next)), value: {content, object: null}}; next.records = admitPersonal(next.records, {local: true}); return next; }));
 		}); },
-		snapshot() { return schedule(async () => { await read(); return {records: structuredClone(state.records), blobs: {...state.blobs}}; }); },
-		writer() { return schedule(async () => (await read()).writer); },
-		ledger() { return schedule(async () => structuredClone((await read()).ledger)); },
-		restore(entry) { return schedule(async () => {
-			state = check(await storage.update(raw => {
-				const next = check(raw), at = next.ledger.findIndex(row => same(row, entry));
-				if (at < 0) fail('That earlier choice is no longer kept here.');
-				const row = next.ledger[at];
-				if (assetKey(row.key) && row.value && !next.blobs[row.value.content]) fail('That earlier choice has no kept body.');
-				next.records[row.key] = {by: next.writer, n: tick(clock(next)), value: assetKey(row.key) && row.value ? {content: row.value.content, object: row.value.object ?? null} : row.value};
-				next.records = admitPersonal(next.records, {local: true}); next.ledger.splice(at, 1);
-				return next;
-			}));
-			await apply(state);
-		}); },
-		commit(incoming, baseline, assertActive = () => {}) { return schedule(async () => {
-			const records = admitPersonal(incoming.records), blobs = {...incoming.blobs};
-			for (const [key, row] of Object.entries(records)) if (assetKey(key) && row.value) {
-				const value = blobs[row.value.content];
-				if (!value || await personalDigest(encode(value)) !== row.value.content) fail('A personal asset is incomplete.');
-				validateAsset(key, value);
-			}
-			state = check(await storage.update(raw => {
-				assertActive(); const current = check(raw), merged = mergePersonal(current.records, records), at = Math.floor(now());
-				let n = Math.max(clock(current), ...Object.values(merged).map(row => row.n));
-				for (const [key, row] of Object.entries(current.records)) if (!same(row, baseline?.records?.[key]) && !same(row.value, merged[key]?.value)) merged[key] = {...row, by: current.writer, n: n = Math.max(n + 1, at)};
-				for (const [key, row] of Object.entries(records)) if (assetKey(key) && row.value && merged[key]?.value?.content === row.value.content) merged[key].value = {...merged[key].value, object: row.value.object};
-				const replaced = Object.entries(current.records).filter(([key, row]) => row.by === current.writer && merged[key] && !same(choiceOf(key, row.value), choiceOf(key, merged[key].value)))
-					.map(([key, row]) => ({key, value: row.value, n: row.n, by: row.by, at, over: {by: merged[key].by, n: merged[key].n}}));
-				return {...current, records: merged, blobs: {...current.blobs, ...blobs}, ledger: keepLedger([...current.ledger, ...replaced], at)};
-			}));
-			assertActive(); await apply(state);
-		}); }
+		snapshot() { return schedule(async () => { await read(); return {records: structuredClone(state.records), blobs: {...state.blobs}}; }); }
 	});
 }

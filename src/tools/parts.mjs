@@ -40,7 +40,7 @@ export const PARTS = Object.freeze([
       FrontMatter: 'frontmatter', Links: 'links', Search: 'search', SearchCache: 'search-cache', ImportMarkdown: 'import-markdown', ImportEnex: 'import-enex',
       ImportHtml: 'import-html', Trash: 'trash', History: 'history', Integrity: 'integrity', Backup: 'backup',
       BackupWorker: 'backup-worker', OPFSWorker: 'opfs-worker', OPFS: 'opfs', IdbStore: 'idb-store', WorkspaceStore: 'workspace-store', Folder: 'folder', Todo: 'todo',
-      Audio: 'audio', Attachments: 'attachments', HostWords: 'host-words', SyncSession: 'sync-api'})
+      Audio: 'audio', Voice: 'voice', Attachments: 'attachments', HostWords: 'host-words', SyncSession: 'sync-api'})
       .map(([name, file]) => ['RapierNotes' + name, 'notes/' + file + '.mjs'])
         .concat([['RapierOriginalFolderCore', 'notes/original-folder/index.mjs']]))},
 ]);

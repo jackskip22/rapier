@@ -5,7 +5,7 @@ const headers = {'content-type':'application/json; charset=utf-8','cache-control
 const answer = (body,status=200) => new Response(JSON.stringify(body),{status,headers});
 const text = (value,length) => typeof value === 'string' && value.length <= length ? value : null;
 
-export async function receiveFeedback(request,env) {
+export async function receiveFeedback(request,env,ctx) {
   if (request.method !== 'POST') return answer({error:'method not allowed'},405);
   const origin = request.headers.get('origin');
   if (origin !== 'https://rapier.website') return answer({error:'origin denied'},403);
@@ -55,20 +55,36 @@ export async function receiveFeedback(request,env) {
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     const bytes = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(bucket+'|'+ip));
     const identity = Array.from(new Uint8Array(bytes),v=>v.toString(16).padStart(2,'0')).join('');
-    const rate = await env.FEEDBACK_DB.prepare(
-      'INSERT INTO feedback_rate(bucket,identity,count) VALUES(?,?,1) '+
-      'ON CONFLICT(bucket,identity) DO UPDATE SET count=count+1 WHERE count < 4 RETURNING count'
-    ).bind(bucket,identity).first();
-    if (!rate) return answer({error:'rate limited'},429);
-    const written = await env.FEEDBACK_DB.prepare(
-      'INSERT OR IGNORE INTO feedback(id,kind,message,version,source) VALUES(?,?,?,?,?)'
-    ).bind(receipt,data.kind,message,version,source).run();
-    if (written?.meta?.changes !== 1) {
-      const stored = await read();
-      if (!stored) throw Error('feedback insert not confirmed');
-      if (!matches(stored)) return answer({error:'report id already used'},409);
-    }
-    await env.FEEDBACK_DB.prepare('DELETE FROM feedback_rate WHERE bucket < ?').bind(bucket - 6).run().catch(()=>{});
+    const admissionSql = `INSERT INTO feedback_rate(bucket,identity,count)
+      SELECT ?,?,1 WHERE NOT EXISTS (SELECT 1 FROM feedback WHERE id = ?)
+      ON CONFLICT(bucket,identity) DO UPDATE SET count=count+1`;
+    const writeSql = `INSERT INTO feedback(id,kind,message,version,source)
+      SELECT ?,?,?,?,? WHERE EXISTS (
+        SELECT 1 FROM feedback_rate
+        WHERE bucket=? AND identity=? AND count BETWEEN 1 AND 4
+      ) AND NOT EXISTS (SELECT 1 FROM feedback WHERE id=?)
+      ON CONFLICT(id) DO NOTHING`;
+    const refundSql = `UPDATE feedback_rate SET count=count-1
+      WHERE bucket=? AND identity=? AND count>4
+      AND NOT EXISTS (SELECT 1 FROM feedback WHERE id=?)`;
+    const lookupSql = `SELECT id,kind,message,version,source FROM feedback WHERE id=?`;
+    const [admission, write, refund, lookup] = await env.FEEDBACK_DB.batch([
+      env.FEEDBACK_DB.prepare(admissionSql).bind(bucket,identity,receipt),
+      env.FEEDBACK_DB.prepare(writeSql).bind(
+        receipt,data.kind,message,version,source,bucket,identity,receipt),
+      env.FEEDBACK_DB.prepare(refundSql).bind(bucket,identity,receipt),
+      env.FEEDBACK_DB.prepare(lookupSql).bind(receipt)
+    ]);
+    if (!admission?.success || !write?.success || !refund?.success ||
+        !lookup?.success) throw Error('feedback batch not confirmed');
+    const stored = lookup.results?.[0];
+    if (!stored) return answer({error:'rate limited'},429);
+    if (!matches(stored)) return answer({error:'report id already used'},409);
+    try {
+      ctx?.waitUntil?.(Promise.resolve()
+        .then(() => env.FEEDBACK_DB.prepare('DELETE FROM feedback_rate WHERE bucket < ?').bind(bucket - 6).run())
+        .catch(() => {}));
+    } catch (_) {  }
     return answer({received:true,id:receipt});
   } catch (_) {
     return answer({error:'feedback unavailable'},503);

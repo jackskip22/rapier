@@ -36,9 +36,38 @@ const CAPABILITIES: [&str; 15] = [
     "recents",
 ];
 
+// The prepared attachment port stays unavailable until the current native app and portal are qualified.
+const ATTACHMENT_OPEN_QUALIFIED: bool = false;
+
 /// The recent files list (Settings' recent files, as Windows and Android keep theirs): the newest first, 24 at most, in
 /// Rapier's own data folder so every display shares it. Only the document a window holds enters it; only a listed path reopens.
 const RECENTS_CAP: usize = 24;
+
+#[derive(Default)]
+struct QuitCheckpoints {
+    sequence: u64,
+    pending: Option<HashMap<String, i64>>,
+}
+impl QuitCheckpoints {
+    fn begin(&mut self, owners: HashMap<String, i64>) -> u64 {
+        self.sequence = self.sequence % 9_007_199_254_740_991 + 1;
+        self.pending = Some(owners);
+        self.sequence
+    }
+    fn cancel(&mut self) { self.pending = None; }
+    fn ready(&self, sequence: u64) -> bool {
+        sequence == self.sequence && self.pending.as_ref().is_some_and(HashMap::is_empty)
+    }
+    fn complete(&mut self, sequence: u64, session: &str, context: Option<i64>, kept: bool) -> bool {
+        if sequence != self.sequence { return false; }
+        let Some(pending) = &mut self.pending else { return false; };
+        if pending.get(session).copied().is_none() || pending.get(session).copied() != context { return false; }
+        if !kept { self.cancel(); return false; }
+        pending.remove(session);
+        pending.is_empty()
+    }
+}
+
 fn recents_file() -> PathBuf {
     crate::data_dir().join("rapier").join("recents.json")
 }
@@ -113,15 +142,6 @@ const ADAPTER: &str = r#"(() => {
     if (document.title !== named + added) document.title = named + added;
   };
   new MutationObserver(label).observe(document, { childList: true, subtree: true, characterData: true });
-  // Ctrl+Q: every owner in this window keeps its work (the page's checkpoint, waited for), then the host is told.
-  Object.defineProperty(window, '__rapierLinuxQuit', { configurable: false, value: () => {
-    const kept = [];
-    try {
-      window.dispatchEvent(new CustomEvent('rapier:checkpoint-requested', { detail: { checkpoint: 0,
-        waitUntil: completion => { kept.push(Promise.resolve(completion).then(value => value === true, () => false)); } } }));
-    } catch (_) {}
-    Promise.all(kept).catch(() => {}).finally(() => host.postMessage(JSON.stringify({ id: 'quit-kept', operation: 'app.quitKept', arguments: {} })));
-  } });
   Object.defineProperty(window, '__rapierLinuxFolder', { configurable: false, value: (value, shown, real) => { folder = String(value || ''); shownName = String(shown || ''); realName = String(real || ''); label(); } });
   addEventListener('DOMContentLoaded', () => { titled.disconnect(); if (searchTitle !== null && document.title === searchTitle) document.title = 'Rapier'; }, { once: true });
   // The host keeps every window inside the screen's work area (fit_window, cascade): the page tells it the area and
@@ -249,6 +269,17 @@ impl Folder {
     }
 }
 
+// The renderer owns this cancellation handle through sealing, the portal request and completion.
+struct AttachmentOpening {
+    id: String,
+    generation: String,
+    completion: String,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+impl Drop for AttachmentOpening {
+    fn drop(&mut self) { self.cancelled.store(true, std::sync::atomic::Ordering::Release); }
+}
+
 /// One window's own state. The Host's fields of the same names belong to the window being served; the others wait
 /// here and are swapped in when a DevTools message names their session (swap_to). Each window holds one document.
 #[derive(Default)]
@@ -264,6 +295,8 @@ struct Win {
     candidate: Option<Candidate>,
     current: Option<Bound>,
     transfer: Option<Transfer>,
+    attachment: Option<crate::attachment_open::Pending>,
+    attachment_opening: Option<AttachmentOpening>,
     folder: Option<Folder>,
     receipts: Vec<((String, String), Value)>,
     theme_script: Option<String>,
@@ -282,6 +315,7 @@ pub struct Host {
     app: PathBuf,
     /// Started with --online: the page may reach the network, so it shows what needs it (the `network` capability).
     online: bool,
+    attachment_available: bool,
     out: File,
     next_id: u64,
     session: Option<String>,
@@ -294,7 +328,7 @@ pub struct Host {
     intake: Option<Intake>,
     candidate: Option<Candidate>,
     intake_id: u64,
-    quit_waiting: usize,
+    quit: QuitCheckpoints,
     desktop_dark: Option<bool>,
     dark_emulated: bool,
     high_contrast: bool,
@@ -302,6 +336,8 @@ pub struct Host {
     delivery: u64,
     current: Option<Bound>,
     transfer: Option<Transfer>,
+    attachment: Option<crate::attachment_open::Pending>,
+    attachment_opening: Option<AttachmentOpening>,
     folder: Option<Folder>,
     receipts: Vec<((String, String), Value)>,
     theme: Option<(Option<theme::Palette>, String)>,
@@ -449,7 +485,7 @@ impl Host {
         rest.retain(|path| !Path::new(path).is_absolute() || requested.insert(path.clone()));
         let first = rest.pop_front();
         // A view is no document: the first window opens on it, and no file is handed in.
-        let first_view = first.as_deref().and_then(crate::view_of).map(str::to_string);
+        let first_view = first.as_deref().and_then(crate::launch_fragment);
         let first = first.filter(|_| first_view.is_none());
         let slot = starting_slot(first.as_deref(), &unsaved);
         rest.retain(|p| !unsaved.iter().any(|(_, held)| held == p));
@@ -521,6 +557,7 @@ impl Host {
         std::thread::spawn(move || read_browser(reader, sender));
         Ok(Host {
             app,
+            attachment_available: false,
             out: unsafe { File::from_raw_fd(out) },
             next_id: 0,
             session: None,
@@ -533,7 +570,7 @@ impl Host {
             intake: None,
             candidate: None,
             intake_id: 0,
-            quit_waiting: 0,
+            quit: QuitCheckpoints::default(),
             desktop_dark: None,
             dark_emulated: false,
             high_contrast: false,
@@ -541,6 +578,8 @@ impl Host {
             delivery: 0,
             current: None,
             transfer: None,
+            attachment: None,
+            attachment_opening: None,
             folder: None,
             receipts: Vec::new(),
             theme: None,
@@ -589,6 +628,8 @@ impl Host {
         std::mem::swap(&mut self.candidate, &mut w.candidate);
         std::mem::swap(&mut self.current, &mut w.current);
         std::mem::swap(&mut self.transfer, &mut w.transfer);
+        std::mem::swap(&mut self.attachment, &mut w.attachment);
+        std::mem::swap(&mut self.attachment_opening, &mut w.attachment_opening);
         std::mem::swap(&mut self.folder, &mut w.folder);
         std::mem::swap(&mut self.receipts, &mut w.receipts);
         std::mem::swap(&mut self.theme_script, &mut w.theme_script);
@@ -603,30 +644,24 @@ impl Host {
         std::mem::swap(&mut self.untitled, &mut w.untitled);
     }
 
-    /// Ctrl+Q: each window keeps its work (the page's checkpoint, the one it makes as it leaves), then the browser closes after a
-    /// moment (Event::Quit). Unsaved words stay kept and are offered at the next start, as when a window is closed.
+    /// Every window must confirm its current checkpoint before the browser can close.
     fn quit_all(&mut self) {
+        if self.quit.pending.is_some() { return; }
         let mut sessions: Vec<String> = self.session.iter().cloned().collect();
         sessions.extend(self.others.iter().filter_map(|w| w.session.clone()));
-        self.quit_waiting = 0;
-        for session in sessions {
-            if self.swap_to(&session) {
-                if let Some(context) = self.context {
-                    // The window answers when every owner in it has kept its work (a big document takes longer than any fixed wait).
-                    self.cdp("Runtime.evaluate", json!({"expression": "globalThis.__rapierLinuxQuit && __rapierLinuxQuit()", "contextId": context}), true);
-                    self.quit_waiting += 1;
-                }
+        let mut owners = HashMap::new();
+        for session in &sessions {
+            if !self.swap_to(session) || !self.page_ready || self.context.is_none() {
+                return;
             }
+            owners.insert(session.clone(), self.context.unwrap());
         }
-        if self.quit_waiting == 0 {
-            let _ = self.events.send(Event::Quit);
-            return;
+        if owners.is_empty() { return; }
+        let checkpoint = self.quit.begin(owners);
+        for session in sessions {
+            self.swap_to(&session);
+            self.event("window.checkpointRequested", json!({"checkpoint": checkpoint}));
         }
-        let events = self.events.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(4));
-            let _ = events.send(Event::Quit);
-        });
     }
 
     /// Make the window with this DevTools session the one served; false when no window has it.
@@ -659,7 +694,7 @@ impl Host {
     /// brings its window to the front; otherwise the next-document rule (`goes_to`) picks this window or one of its own.
     fn open_path(&mut self, path: String) {
         // A view (the launcher's Notes, Draw, Paint, JPEG XL converter) always opens a window of its own on it.
-        if crate::view_of(&path).is_some() {
+        if crate::launch_fragment(&path).is_some() {
             self.waiting_paths.push_back(path);
             self.spawn_window();
         } else if let Some(target) = self.window_holding(&path) {
@@ -716,15 +751,21 @@ impl Host {
         self.prepare_window(receiver)?;
         self.cascade(receiver, previous);
         self.newest = self.window_id;
-        let view = next.as_deref().and_then(crate::view_of).map(str::to_string);
+        let view = next.as_deref().and_then(crate::launch_fragment);
         if !next.as_deref().is_some_and(|p| p.starts_with(crate::SLOT)) && view.is_none() {
             self.pending_paths.extend(next);
         }
         self.show_page(receiver, view.as_deref())
     }
 
+    fn close_attachments(&mut self) {
+        self.attachment = None;
+        self.attachment_opening = None;
+    }
+
     /// A window closed: its state goes, and another window is served.
     fn forget_window(&mut self, session: &str) {
+        self.quit.cancel();
         if !self.swap_to(session) {
             return;
         }
@@ -949,6 +990,10 @@ impl Host {
         self.restore_binding();
         self.prepare_window(receiver)?;
         let sender = self.events.clone();
+        let attachment_events = self.events.clone();
+        std::thread::spawn(move || {
+            let _ = attachment_events.send(Event::AttachmentAvailability(portal::attachment_open_available()));
+        });
         let dark = self.events.clone();
         portal::watch_desktop(move |setting| { let _ = dark.send(Event::Desktop(setting)); });
         // On Omarchy the theme-set and font-set hooks tell rapier (payload::install); elsewhere the files are watched.
@@ -986,7 +1031,7 @@ impl Host {
         let url = match view {
             Some(view) => {
                 self.view_jumps.push(self.target.clone());
-                format!("{PAGE}#v/{view}")
+                format!("{PAGE}#{view}")
             }
             None => PAGE.to_string(),
         };
@@ -1018,7 +1063,8 @@ impl Host {
             };
             match event {
                 Event::Exit => return Ok(()),
-                Event::Quit => {
+                Event::Quit(checkpoint) => {
+                    if !self.quit.ready(checkpoint) { continue; }
                     // Gracefully, so the browser finishes what the windows wrote; a browser that does not go in four seconds is stopped.
                     self.cdp("Browser.close", json!({}), false);
                     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
@@ -1038,8 +1084,28 @@ impl Host {
                 Event::Open(path) if path == crate::FOCUS => {
                     self.cdp("Target.activateTarget", json!({"targetId": self.target}), false);
                 }
-                Event::Open(path) => self.open_path(path),
+                Event::Open(path) => { self.quit.cancel(); self.open_path(path); }
                 Event::Picked(id, result) => self.on_picked(id, result),
+                Event::AttachmentAvailability(available) => {
+                    let available = available && ATTACHMENT_OPEN_QUALIFIED;
+                    self.attachment_available = available;
+                    let sessions: Vec<String> = self.session.iter().cloned()
+                        .chain(self.others.iter().filter_map(|w| w.session.clone())).collect();
+                    for session in sessions {
+                        if self.swap_to(&session) && self.context.is_some() {
+                            self.event("capabilities.changed", json!({"notesAttachmentOpen": available, "notesAttachmentBytes": available}));
+                        }
+                    }
+                }
+                Event::AttachmentOpened(session, context, completion, ident, result) => {
+                    if !self.swap_to(&session) || self.context != context ||
+                        !self.attachment_opening.as_ref().is_some_and(|p| p.completion == completion) { continue; }
+                    self.attachment_opening = None;
+                    match result {
+                        Ok(opened) => self.ok(&ident, json!({"opened": opened, "cancelled": !opened})),
+                        Err(error) => self.respond(&ident, false, Value::Null, &error),
+                    }
+                },
             }
             while let Some(target) = self.new_windows.pop_front() {
                 if let Err(error) = self.adopt(&receiver, target) {
@@ -1080,10 +1146,12 @@ impl Host {
         match method.as_str() {
             "Fetch.requestPaused" => self.serve(&params),
             "Inspector.targetCrashed" if !self.recovering => {
+                self.quit.cancel();
                 self.recovering = true;
                 self.page_ready = false;
                 self.intake_ready = false;
                 self.context = None;
+                self.close_attachments();
                 self.close_folder();
                 // A transfer not yet ended has written no file. The page's
                 // durable recovery precedes every save transfer.
@@ -1122,7 +1190,7 @@ impl Host {
                 // A committed load names its fragment apart from its url (urlFragment); a jump within the page has it in the url.
                 let url = format!("{}{}", frame.get("url").and_then(Value::as_str).unwrap_or(""), frame.get("urlFragment").and_then(Value::as_str).unwrap_or(""));
                 let at = self.view_jumps.iter().position(|t| *t == self.target);
-                if frame.get("id").or(frame.get("frameId")) == Some(&json!(self.target)) && url.starts_with(&format!("{PAGE}#v/")) {
+                if frame.get("id").or(frame.get("frameId")) == Some(&json!(self.target)) && (url.starts_with(&format!("{PAGE}#v/")) || url.starts_with(&format!("{PAGE}#n/"))) {
                     if let Some(at) = at {
                         self.view_jumps.swap_remove(at);
                         if method == "Page.navigatedWithinDocument" {
@@ -1137,13 +1205,17 @@ impl Host {
                     && context.pointer("/auxData/frameId") == Some(&json!(self.target))
                     && context.get("origin") == Some(&json!(ORIGIN))
                 {
+                    if self.context != context["id"].as_i64() { self.close_attachments(); }
+                    self.quit.cancel();
                     self.context = context["id"].as_i64();
                     self.page_ready = false;
                     self.intake_ready = false;
                 }
             }
             "Runtime.executionContextsCleared" => {
+                self.quit.cancel();
                 self.context = None;
+                self.close_attachments();
                 self.close_folder();
             }
             "Runtime.bindingCalled" => {
@@ -1510,6 +1582,10 @@ impl Host {
         match op {
             "platform.state" => {
                 let mut capabilities = CAPABILITIES.iter().map(|c| (c.to_string(), json!(true))).collect::<Map<_, _>>();
+                if self.attachment_available {
+                    capabilities.insert("notesAttachmentOpen".into(), json!(true));
+                    capabilities.insert("notesAttachmentBytes".into(), json!(true));
+                }
                 // Offline (the default), the page hides what needs the network: Share's live document, Notes' Sync.
                 if self.online {
                     capabilities.insert("network".to_string(), json!(true));
@@ -1540,6 +1616,9 @@ impl Host {
                     self.post("host", message);
                 }
                 self.pump();
+            }
+            "notes.pinShortcut" | "notes.opened" | "notes.gone" => {
+                self.ok(ident, crate::note_shortcuts::call(op, args)?);
             }
             "save.choose" => {
                 if self.holding().opening { return Err("a document is still opening".into()); }
@@ -1679,6 +1758,41 @@ impl Host {
                 self.receipts.retain(|(k, _)| *k != key);
                 self.ok(ident, json!({"acknowledged": true}));
             }
+            "notes.attachment.begin" => {
+                if !self.attachment_available { return Err("the attachment app chooser is unavailable".into()); }
+                if self.attachment.is_some() || self.attachment_opening.is_some() { return Err("another attachment is being opened".into()); }
+                let pending = crate::attachment_open::Pending::begin(&crate::data_dir().join("rapier/attachment-open"),
+                    &str_of(args, "requestId"), &str_of(args, "generation"), &str_of(args, "name"),
+                    args.get("payloadLength").and_then(Value::as_u64).ok_or("invalid attachment length")?, &str_of(args, "payloadDigest"))?;
+                let result = json!({"generation": pending.generation, "chunkBytes": crate::attachment_open::CHUNK});
+                self.attachment = Some(pending); self.ok(ident, result);
+            }
+            "notes.attachment.cancel" => {
+                let (id, generation) = (str_of(args, "requestId"), str_of(args, "generation"));
+                if self.attachment.as_ref().is_some_and(|p| p.id == id && p.generation == generation) { self.attachment = None; }
+                if self.attachment_opening.as_ref().is_some_and(|p| p.id == id && p.generation == generation) { self.attachment_opening = None; }
+                self.ok(ident, json!({"cancelled": true}));
+            }
+            "notes.attachment.open" => {
+                if !self.attachment.as_ref().is_some_and(|p| p.id == str_of(args, "requestId") && p.generation == str_of(args, "generation")) { return Err("attachment transfer does not match".into()); }
+                let mut pending = self.attachment.take().unwrap();
+                let (events, session, context, ident) = (self.events.clone(), self.session.clone().unwrap_or_default(), self.context, ident.to_owned());
+                let parent = if self.x11 { portal::x11_parent(self.browser.id()) } else { String::new() };
+                let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let completion = crate::random_hex(16);
+                self.attachment_opening = Some(AttachmentOpening {id: pending.id.clone(), generation: pending.generation.clone(), completion: completion.clone(), cancelled: cancelled.clone()});
+                std::thread::spawn(move || {
+                    let result = pending.seal().and_then(|file| {
+                        let outcome = portal::open_attachment(&file, &parent, &cancelled);
+                        if outcome.retain {
+                            if outcome.result == Ok(true) { pending.retain(); }
+                            else { pending.preserve(); }
+                        }
+                        outcome.result
+                    });
+                    let _ = events.send(Event::AttachmentOpened(session, context, completion, ident, result));
+                });
+            }
             "transfer.begin" => {
                 let result = self.begin_transfer(args)?;
                 self.ok(ident, result);
@@ -1734,6 +1848,11 @@ impl Host {
                 self.ok(ident, json!({}));
             }
             "document.dirty" => {
+                // A pending owner checks its mutation stamp when its flush finishes. A window that already
+                // confirmed must invalidate the whole quit if it changes again while another window is keeping work.
+                if self.quit.pending.as_ref().is_some_and(|pending| !pending.contains_key(self.session.as_deref().unwrap_or(""))) {
+                    self.quit.cancel();
+                }
                 let dirty = args.get("dirty") == Some(&json!(true));
                 if dirty != self.dirty {
                     self.dirty = dirty;
@@ -1745,15 +1864,16 @@ impl Host {
                 self.ok(ident, json!({}));
                 self.quit_all();
             }
-            "app.quitKept" => {
-                if self.quit_waiting > 0 {
-                    self.quit_waiting -= 1;
-                    if self.quit_waiting == 0 {
-                        let _ = self.events.send(Event::Quit);
-                    }
+            "window.checkpointCompleted" => {
+                let checkpoint = args.get("checkpoint").and_then(Value::as_u64).unwrap_or(0);
+                if self.quit.complete(checkpoint, self.session.as_deref().unwrap_or(""), self.context,
+                                      args.get("kept") == Some(&json!(true))) {
+                    let _ = self.events.send(Event::Quit(checkpoint));
                 }
+                self.ok(ident, json!({}));
             }
             "window.new" => {
+                self.quit.cancel();
                 // New from the page (Ctrl+N): a window of its own unless this one is untouched and empty, where the page
                 // starts it itself.
                 // The host names every new document, here too, so no two windows share a name.
@@ -1816,6 +1936,22 @@ impl Host {
                 "The native frame was refused: version",
                 "version",
             );
+        }
+        if frame.get("op") == Some(&json!("notes.attachment.chunk")) {
+            if !self.attachment.as_ref().is_some_and(|p| frame.get("generation") == Some(&json!(p.generation)) && str_of(&meta, "requestId") == p.id) {
+                return answer(self, false, Value::Null, "attachment generation changed", "generation");
+            }
+            let result = (|| {
+                let encoded = str_of(frame, "bytes");
+                if encoded.len() > crate::attachment_open::CHUNK.div_ceil(3) * 4 { return Err("attachment chunk is too large".into()); }
+                let data = B64.decode(encoded).map_err(|_| "invalid attachment bytes".to_string())?;
+                self.attachment.as_mut().unwrap().append(&str_of(&meta, "requestId"),
+                    meta.get("sequence").and_then(Value::as_u64).ok_or("invalid attachment sequence")?, &data)
+            })();
+            return match result {
+                Ok(received) => answer(self, true, json!({"sequence": meta["sequence"], "received": received}), "", ""),
+                Err(error) => { self.attachment = None; answer(self, false, Value::Null, &error, "malformed"); },
+            };
         }
         if frame.get("op") != Some(&json!("transfer.chunk")) {
             return answer(self, false, Value::Null, "unsupported operation", "");
@@ -2553,6 +2689,32 @@ fn next_slot(path: Option<&str>, open: &[u32], kept: impl Fn(u32) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quit_requires_each_current_renderer_and_retries_a_refusal() {
+        let owners = || HashMap::from([("one".into(), 11), ("two".into(), 22)]);
+        let mut quit = QuitCheckpoints::default();
+        let refused = quit.begin(owners());
+        assert!(!quit.complete(refused, "one", Some(11), true));
+        assert!(!quit.ready(refused));
+        assert!(!quit.complete(refused, "one", Some(11), true));
+        assert!(!quit.complete(refused, "two", Some(22), false));
+        assert!(!quit.complete(refused, "two", Some(22), true));
+        assert!(!quit.ready(refused));
+
+        let retry = quit.begin(owners());
+        assert!(!quit.complete(refused, "two", Some(22), true));
+        assert!(!quit.complete(retry, "two", Some(21), true));
+        assert!(!quit.complete(retry, "unknown", Some(22), true));
+        assert!(!quit.complete(retry, "one", Some(11), true));
+        assert!(!quit.complete(retry, "one", Some(11), true));
+        assert!(!quit.ready(retry));
+        assert!(quit.complete(retry, "two", Some(22), true));
+        assert!(quit.ready(retry));
+        // A renderer or document changing before the queued Quit runs revokes permission to close.
+        quit.cancel();
+        assert!(!quit.ready(retry));
+    }
 
     #[test]
     fn first_launch_keeps_another_documents_draft_slot() {

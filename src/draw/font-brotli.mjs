@@ -22,38 +22,42 @@ class Bits {
 	end() { this.align(); if (this.count || this.at !== this.bytes.length) invalid('trailing data'); }
 }
 
+const reversed = new Uint16Array(32768);
+for (let value = 1; value < 32768; value++) reversed[value] = (reversed[value >> 1] >> 1) | ((value & 1) << 14);
 function prefix(lengths, allowSingle = false) {
 	const counts = new Uint16Array(16); let symbols = 0, lone = -1, space = 32768;
 	for (let i = 0; i < lengths.length; i++) if (lengths[i]) { const n = lengths[i]; if (n > 15) invalid('prefix length'); counts[n]++; symbols++; lone = i; space -= 32768 >> n; }
 	if (symbols === 1 && allowSingle) return {read: () => lone};
 	if (symbols < 2 || space) invalid('incomplete prefix tree');
-	const next = new Uint16Array(16); let code = 0;
+	const offsets = new Uint16Array(16), sorted = new Uint16Array(symbols);
+	for (let n = 1; n < 16; n++) offsets[n] = offsets[n - 1] + counts[n - 1];
+	for (let symbol = 0; symbol < lengths.length; symbol++) if (lengths[symbol]) sorted[offsets[lengths[symbol]]++] = symbol;
+	const fast = new Int32Array(256), next = new Uint16Array(16); let code = 0, index = 0;
 	for (let n = 1; n < 16; n++) { code = (code + counts[n - 1]) * 2; next[n] = code; }
-	const left = new Int32Array(symbols * 2), right = new Int32Array(symbols * 2); left.fill(-2147483648); right.fill(-2147483648);
-	let nodes = 1;
 	for (let symbol = 0; symbol < lengths.length; symbol++) {
-		const length = lengths[symbol]; if (!length) continue;
-		const code = next[length]++; let node = 0;
-		for (let n = length - 1; n >= 0; n--) {
-			const edges = (code >> n) & 1 ? right : left;
-			if (!n) edges[node] = ~symbol;
-			else { if (edges[node] === -2147483648) edges[node] = nodes++; if (edges[node] < 0) invalid('overlapping prefix tree'); node = edges[node]; }
-		}
+		const n = lengths[symbol]; if (!n || n > 8) continue;
+		const value = reversed[next[n]++] >> (15 - n);
+		for (let fill = value; fill < 256; fill += 1 << n) fast[fill] = (n << 16) | (symbol + 1);
 	}
-	const fast = new Int32Array(256);
-	for (let value = 0; value < 256; value++) {
-		let node = 0, n = 0;
-		while (node >= 0 && n < 8) node = (value >> n++) & 1 ? right[node] : left[node];
-		if (node === -2147483648) invalid('missing prefix branch');
-		fast[value] = node < 0 ? (n << 16) | (~node + 1) : -(node + 1);
-	}
+	let first = 0;
+	for (let n = 1; n <= 8; n++) { index += counts[n]; first = (first + counts[n]) * 2; }
+	const firstLong = first, indexLong = index;
 	return {read(bits) {
 		const entry = fast[bits.peek(8)];
 		if (entry > 0) { bits.drop(entry >>> 16); return (entry & 65535) - 1; }
-		bits.drop(8); let node = -entry - 1;
-		while (node >= 0) node = bits.read(1) ? right[node] : left[node];
-		if (node === -2147483648) invalid('missing prefix branch');
-		return ~node;
+		if (bits.count < 8) invalid('truncated prefix code');
+		const value = reversed[bits.peek(15)];
+		let start = firstLong, at = indexLong;
+		for (let n = 9; n < 16; n++) {
+			const code = value >> (15 - n), count = counts[n];
+			if (code - start < count) {
+				if (bits.count < n) invalid('truncated bits');
+				bits.word >>>= n; bits.count -= n;
+				return sorted[at + code - start];
+			}
+			at += count; start = (start + count) * 2;
+		}
+		invalid('missing prefix branch');
 	}};
 }
 function readPrefix(bits, alphabet) {
@@ -98,7 +102,7 @@ const blockBases = bases(blockBits, 1);
 function blockState(bits) {
 	const count = count256(bits), typeTree = count > 1 ? readPrefix(bits, count + 2) : null, lengthTree = count > 1 ? readPrefix(bits, 26) : null;
 	const length = () => { const symbol = lengthTree.read(bits); return blockBases[symbol] + bits.read(blockBits[symbol]); };
-	let remaining = count > 1 ? length() : Infinity, current = 0, previous = 1;
+	let remaining = count > 1 ? length() : 0x7fffffff, current = 0, previous = 1;
 	return {count, next() {
 		if (!remaining) {
 			const symbol = typeTree.read(bits), type = symbol === 0 ? previous : symbol === 1 ? (current + 1) % count : symbol - 2;
@@ -126,14 +130,11 @@ function contextMap(bits, size) {
 }
 
 const utf8 = [0,0,0,0,0,0,0,0,0,4,4,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,12,16,12,12,20,12,16,24,28,12,12,32,12,36,12,44,44,44,44,44,44,44,44,44,44,32,32,24,40,28,12,12,48,52,52,52,48,52,52,52,48,52,52,52,52,52,48,52,52,52,52,52,48,52,52,52,52,52,24,12,28,12,12,12,56,60,60,60,56,60,60,60,56,60,60,60,60,60,56,60,60,60,60,60,56,60,60,60,60,60,24,12,28,12,0];
-function signed(value) { return !value ? 0 : value < 16 ? 1 : value < 64 ? 2 : value < 128 ? 3 : value < 192 ? 4 : value < 240 ? 5 : value < 255 ? 6 : 7; }
-function context(mode, a, b) {
-	if (mode === 0) return a & 63;
-	if (mode === 1) return a >> 2;
-	if (mode === 3) return signed(a) * 8 + signed(b);
-	const first = a < 128 ? utf8[a] : (a < 192 ? 0 : 2) | (a & 1);
-	const second = b >= 224 ? 2 : b < 33 || b >= 127 ? 0 : b >= 97 && b <= 122 ? 3 : b >= 65 && b <= 90 || b >= 48 && b <= 57 ? 2 : 1;
-	return first | second;
+const signed = new Uint8Array(256), first = new Uint8Array(256), second = new Uint8Array(256);
+for (let value = 0; value < 256; value++) {
+	signed[value] = !value ? 0 : value < 16 ? 1 : value < 64 ? 2 : value < 128 ? 3 : value < 192 ? 4 : value < 240 ? 5 : value < 255 ? 6 : 7;
+	first[value] = value < 128 ? utf8[value] : (value < 192 ? 0 : 2) | (value & 1);
+	second[value] = value >= 224 ? 2 : value < 33 || value >= 127 ? 0 : value >= 97 && value <= 122 ? 3 : value >= 65 && value <= 90 || value >= 48 && value <= 57 ? 2 : 1;
 }
 const insertBits = [0,0,0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,7,8,9,10,12,14,24], insertBases = bases(insertBits, 0);
 const copyBits = [0,0,0,0,0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,7,8,9,10,24], copyBases = bases(copyBits, 2);
@@ -143,7 +144,7 @@ export function decodeBrotli(bytes, limit, {dictionary = true} = {}) {
 	if (!(bytes instanceof Uint8Array) || !Number.isSafeInteger(limit) || limit < 0 || limit > 128 * 1024 * 1024) invalid('output limit');
 	const bits = new Bits(bytes); let windowBits = 16;
 	if (bits.read(1)) { const value = bits.read(3); if (value) windowBits = 17 + value; else { const value = bits.read(3); if (value === 1) invalid('window size'); windowBits = value ? 8 + value : 17; } }
-	const window = 2 ** windowBits - 16, out = new Uint8Array(limit), distances = [4, 11, 15, 16];
+	const window = 2 ** windowBits - 16, out = new Uint8Array(limit), distances = new Int32Array([4, 11, 15, 16]);
 	let at = 0, last = false, commands = 0;
 	while (!last) {
 		last = !!bits.read(1); if (last && bits.read(1)) break;
@@ -161,12 +162,17 @@ export function decodeBrotli(bytes, limit, {dictionary = true} = {}) {
 		const literals = blockState(bits), lengths = blockState(bits), matches = blockState(bits), postfix = bits.read(2), direct = bits.read(4) * 2 ** postfix;
 		const modes = Array.from({length: literals.count}, () => bits.read(2)), literalMap = contextMap(bits, literals.count * 64), distanceMap = contextMap(bits, matches.count * 4);
 		const literalTrees = Array.from({length: literalMap.count}, () => readPrefix(bits, 256)), lengthTrees = Array.from({length: lengths.count}, () => readPrefix(bits, 704)), distanceTrees = Array.from({length: distanceMap.count}, () => readPrefix(bits, 16 + direct + 48 * 2 ** postfix));
+		const contextTrees = Array.from(literalMap.map, tree => literalTrees[tree]);
 		while (at < end) {
 			if (++commands > Math.max(1048576, limit * 2)) invalid('excessive command count');
 			const command = lengthTrees[lengths.next()].read(bits), range = command >> 6, insertCode = insertRange[range] + ((command >> 3) & 7), copyCode = copyRange[range] + (command & 7);
 			const insert = insertBases[insertCode] + bits.read(insertBits[insertCode]), copy = copyBases[copyCode] + bits.read(copyBits[copyCode]);
 			if (at > end - insert) invalid('literal count exceeds the meta-block');
-			for (let n = 0; n < insert; n++) { const block = literals.next(), id = context(modes[block], out[at - 1] || 0, out[at - 2] || 0); out[at++] = literalTrees[literalMap.map[block * 64 + id]].read(bits); }
+			for (let n = 0; n < insert; n++) {
+				const block = literals.next(), mode = modes[block], a = at > 0 ? out[at - 1] : 0, b = at > 1 ? out[at - 2] : 0;
+				const id = mode === 0 ? a & 63 : mode === 1 ? a >> 2 : mode === 3 ? signed[a] * 8 + signed[b] : first[a] | second[b];
+				out[at++] = contextTrees[block * 64 + id].read(bits);
+			}
 			if (at === end) break;
 			let code = 0, distance = distances[0];
 			if (command >= 128) {
@@ -175,8 +181,8 @@ export function decodeBrotli(bytes, limit, {dictionary = true} = {}) {
 				else if (code < 16) { const pair = code < 10 ? code - 4 : code - 10; distance = distances[code < 10 ? 0 : 1] + (pair & 1 ? 1 : -1) * (1 + (pair >> 1)); }
 				else if (code < 16 + direct) distance = code - 15;
 				else {
-					const value = code - direct - 16, high = value >> postfix, low = value & (2 ** postfix - 1), width = 1 + (high >> 1), offset = (2 + (high & 1)) * 2 ** width - 4;
-					distance = (offset + bits.read(width)) * 2 ** postfix + low + direct + 1;
+					const value = code - direct - 16, high = value >> postfix, low = value & ((1 << postfix) - 1), width = 1 + (high >> 1), offset = ((2 + (high & 1)) << width) - 4;
+					distance = ((offset + bits.read(width)) << postfix) + low + direct + 1;
 				}
 			}
 			if (distance <= 0) invalid('nonpositive distance');
@@ -188,8 +194,9 @@ export function decodeBrotli(bytes, limit, {dictionary = true} = {}) {
 				out.set(word, at); at += word.length;
 			} else {
 				if (at > end - copy) invalid('copy exceeds the meta-block');
-				if (code) { distances.pop(); distances.unshift(distance); }
-				for (let n = 0; n < copy; n++) { out[at] = out[at - distance]; at++; }
+				if (code) { distances[3] = distances[2]; distances[2] = distances[1]; distances[1] = distances[0]; distances[0] = distance; }
+				if (copy > 32 && distance >= copy) { out.copyWithin(at, at - distance, at - distance + copy); at += copy; }
+				else for (let from = at - distance, stop = at + copy; at < stop;) out[at++] = out[from++];
 			}
 		}
 	}

@@ -8,7 +8,7 @@ import {portable, presentation, applyPresentation, insertPassage, preparePreset}
 import {applyMarkdownSpec} from '../agent/markdown-spec.mjs';
 import {installMarkdownImages} from '../spec/md-assets.mjs';
 import {layoutTargets} from '../layout/markdown.mjs';
-import {createPersonalOwner, admitPersonal, mergePersonal} from '../notes/personal.mjs';
+import {createPersonalOwner, admitPersonal} from '../notes/personal.mjs';
 const context = vm.createContext({atob, btoa});
 for (const name of ['markdown-it-15.0.3.es2022.umd', 'markdown-it-task-lists-2.1.1.min', 'markdown-it-footnote-4.0.0.min', 'markdown-it-mark-4.0.0.min', 'markdown-it-sup-2.0.0.min', 'markdown-it-emoji-3.1.0-light.min', 'markdown-it-abbr-2.0.0.min', 'markdown-it-ins-4.0.0.min', 'markdown-it-deflist-4.0.0.min'])
   vm.runInContext(readFileSync(new URL('../shell/vendor/' + name + '.js', import.meta.url), 'utf8'), context);
@@ -90,7 +90,6 @@ test('personal storage persists, isolates input, keeps failed writes and recheck
   await assert.rejects(first.putAsset('preset/' + record.id, record, () => { throw new Error('stale or Pro revoked'); }), /stale/);
   assert.deepEqual(await disk.read(), before);
   await cold.set('preset/' + record.id, null); await first.snapshot(); assert.deepEqual(first.values('preset/'), {});
-  assert.deepEqual(mergePersonal(before.records, (await disk.read()).records), (await disk.read()).records);
   assert.throws(() => admitPersonal({'preset/bad': {by: 'a'.repeat(32), n: 1, value: null}}));
 });
 test('a missing named font refuses before a preset can be stored or applied', async () => {

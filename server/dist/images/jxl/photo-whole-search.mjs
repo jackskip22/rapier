@@ -406,8 +406,22 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
     };
     const first = measureOutput ? WANT_S2 : {...WANT_S2, doubt: true};
     const exactAt = (at, q) => function* () { return (yield* scoreFile(null, yield* at(q), WANT_S2)).ssimulacra2; };
+    const writtenNow = function* (imageAt, found, effort) {
+      if (!(found.scores.ssimulacra2 >= requested.ssimulacra2) || found.output?.bytes && sameWriteEffort(found.output.effort, effort)) return found;
+      const bytes = yield* stage('whole-keep', function* () {
+        const image = yield* resolve(yield* imageAt(found.quality));
+        return shown(yield* provider.write(image, effort, {pass: true}), image);
+      });
+      return {...found, output: {bytes, effort, unannounced: true}};
+    };
     const keep = function* (imageAt, found, effort) {
       if (!(found.scores.ssimulacra2 >= requested.ssimulacra2)) return found;
+      if (found.output?.unannounced) {
+        const {unannounced: _u, ...output} = found.output;
+        found = {...found, output};
+        written = {imageAt, quality: found.quality, effort: output.effort, bytes: output.bytes};
+        announce?.(output.bytes, found.scores.ssimulacra2);
+      }
       if (!found.output?.bytes || !sameWriteEffort(found.output.effort, effort)) {
         const same = written?.imageAt === imageAt && written.quality === found.quality && sameWriteEffort(written.effort, effort);
         let bytes = same ? written.bytes : null;
@@ -539,7 +553,7 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
     if (lean) {
       writerEffort = leanWrite;
       yield 0.05;
-      const plain = yield* probe(imageAt, leanStart(quality), LEAN_PROBES);
+      const plain = yield* writtenNow(imageAt, yield* probe(imageAt, leanStart(quality), LEAN_PROBES, null, leanOnly ? null : seen), leanWrite);
       yield 0.3;
       imageAt.clear();
       let searched = yield* shapes(plain.quality, blockOptions());

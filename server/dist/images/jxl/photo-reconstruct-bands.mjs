@@ -79,7 +79,7 @@ export function bandedOutputs(image, rows, native, sink = null, from = 0, to = i
     const bandPack = sink ? bandScratch(Uint8ClampedArray, 'band-package', count * 4) : pack, bandOwn = sink ? bandScratch(Uint8ClampedArray, 'band-native', count * 4) : own;
     const at = sink ? 0 : y0 * width;
     if (decoded) {
-      const made = rebuildPicture(sub, {rgba: true, linear: true});
+      const made = rebuildPicture(sub, {rgba: true, linear: true, views: true});
       bandPack.set(made.rgba.subarray(from * 4, (from + count) * 4), at * 4);
       native(made.linear, from, count, bandOwn, at, y0);
     } else {

@@ -441,6 +441,7 @@ const _rapierLive = (() => {
     const rules = binding.custodyKey ? custodyRules() : null;
     const bridge = custodyBridge = rules ? globalThis.RapierCustodyBridge.createCustodyBridge({
       post: value => { try { joinedWorker.postMessage(value); } catch (_) {} }, RealSocket: WebSocket, key: binding.custodyKey, rules, events: window,
+      stranded: _rapierKeepStrandedCustody,
       store: globalThis.RapierCustodyBridge.custodyStore(indexedDB, scope + ':custody', slot)}) : null;
     const joinedWorker = worker;
     worker.onmessage = event => { if (event.data?.type === 'socket') { bridge?.handle(event.data); return; } void receive(event.data, currentEpoch); };
@@ -835,7 +836,8 @@ const _rapierLive = (() => {
     end.addEventListener('click', async () => {end.disabled = true; if (state.canStop) { if (!await stop()) end.disabled = false; } else await leave();});
     const refresh = () => {
       names.replaceChildren(privacy);
-      if (state.state === 'stopped') names.append(make('p', 'rapier-live-problem', 'Your changes are kept on this device. ' + (state.error || 'The live session is paused.')));
+      if (state.state === 'stopped') names.append(make('p', 'rapier-live-problem', 'Your changes are kept on this device. ' +
+        (state.error === 'sharing_stopped' ? 'Sharing stopped.' : 'Reload to rejoin.')));
       for (const author of [state.author, ...peers.filter(peer => peer.client !== state.client).map(peer => peer.author)].filter(Boolean)) {
         const row = make('div', 'rapier-live-person', author.name || 'Person'); row.style.setProperty('--live-color', color(author)); names.append(row);
       }

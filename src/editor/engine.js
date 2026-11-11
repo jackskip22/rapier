@@ -7666,6 +7666,7 @@ function _rapierHandleEditInput(editDiv, event) {
 	}
 	if (_rapierEditingRuntime.pasteJob?.committed) { editDiv._rapierCheckpointFresh = false; editDiv._rapierPasteHeldInput = true; return; }
 	const { block, wrapper } = context;
+	if (/^delete/.test(event?.inputType || '') && wrapper.classList.contains('block-wrapper--source-edit')) _rapierMoveLeadingComments(editDiv, block, String(block.raw || ''));
 	const pending = editDiv._rapierTypedLinesPending;
 	editDiv._rapierTypedLinesPending = null;
 	if (!rapier.composition.block && (event?.inputType === 'insertText' || event?.inputType === 'insertReplacementText')) {
@@ -15645,6 +15646,8 @@ function _toggleActiveListItemTask(checked = false) {
 		if (checked) { checkbox.checked = true; checkbox.setAttribute('checked', ''); }
 		li.classList.add('task-list-item', 'enabled');
 		li.insertBefore(checkbox, li.firstChild);
+		if (!/^[ \u00a0]/.test(checkbox.nextSibling?.textContent || '') || checkbox.nextSibling.nodeType !== Node.TEXT_NODE)
+			li.insertBefore(document.createTextNode('\u00a0'), checkbox.nextSibling);
 	}
 	list.classList.toggle('contains-task-list', !!list.querySelector('.task-list-item'));
 	editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'format' }));
@@ -17937,8 +17940,21 @@ function _rapierCutInBlock(range, wrapper) {
 		const cell = wrapper.classList.contains('block-wrapper--table') && start && start.closest('td, th');
 		return cell && !cell.contains(range.endContainer) && globalThis.RapierTables?.cut() || refuse();
 	}
+	const before = String(editDiv.textContent || '');
 	range.deleteContents();
+	_rapierMoveLeadingComments(editDiv, _rapierBoundBlock(wrapper), before);
 	editDiv.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteByCut' }));
+	return true;
+}
+
+function _rapierMoveLeadingComments(editDiv, block, before) {
+	const after = String(editDiv.textContent || ''), led = _rapierLeadingComments(after);
+	if (block?.type !== 'paragraph' || !led || !after.slice(led.length).trim() || _rapierLeadingComments(before) ||
+			globalThis.RapierMarkdownSpec?.scanInkMarkers?.(led)?.length > 0 ||
+			editDiv.childNodes.length !== 1 || editDiv.firstChild.nodeType !== Node.TEXT_NODE) return false;
+	editDiv.firstChild.data = _rapierCommentsAtParagraphEnd(after.slice(led.length), led);
+	const caret = document.createRange(); caret.setStart(editDiv.firstChild, 0); caret.collapse(true);
+	const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(caret);
 	return true;
 }
 
@@ -26794,6 +26810,24 @@ async function _rapierRetireSetAsideCopies(text) {
 	if (offered && rest.length && !document.querySelector('#toast-root .toast[data-rapier-held-offer]')) _rapierOfferHeldRecovery(rest[0], rest.slice(1));
 }
 
+async function _rapierKeepStrandedCustody(copy) {
+	const text = copy?.state?.text;
+	if (typeof text !== 'string' || text.length > RapierTextCodec.maxDocumentBytes) return false;
+	const filename = String(copy.state.filename || 'untitled.md'), documentAuthority = 'live:' + String(copy.state.documentId || '');
+	const root = RapierLedger.textRoot(text);
+	let record = null;
+	try {
+		const ledger = RapierLedger.exportLedger({text, metadata: {filename, docKind: 'markdown'}, records: [], documentAuthority,
+			revision: 0, root, complete: false});
+		record = await _rapierParkHeldRecovery({text, filename, docKind: 'markdown', carriedLedger: ledger, documentAuthority,
+			documentRevision: 0, sourceRootId: root, historyComplete: false}, {setAside: true});
+	} catch (_) { return false; }
+	if (!record) return false;
+	if (_rapierSetAsideCopyOf(record, _rapierGetCanonicalText())) { await _rapierClearHeldRecovery(record); return true; }
+	_rapierOfferHeldRecovery(record);
+	return true;
+}
+
 async function _rapierOfferHeldAtBoot(context) {
 	if (_rapierEmbed.active || _rapierEmbed.refused || window.RapierPlatform && window.RapierPlatform.recovery.ownsStore === true ||
 			context.recoveryUnread || RAPIER_STORAGE_FORBIDDEN === true) return;
@@ -30660,11 +30694,11 @@ function _clipboardReadRange(range, clipboardData) {
 	return { html, markdown, plain };
 }
 
-function _rapierExactBlockCut(wrapper, block, point) {
+function _rapierExactBlockCut(wrapper, block, point, side = null) {
 	const settled = !block.dirty || (wrapper.classList.contains('block-wrapper--editing') && _liveBlockEl(wrapper)?._rapierCheckpointFresh === true);
 	const span = settled && point ? _rapierExcerptCanonicalBlockSpans(new Set([block.id])).get(Number(block.id)) : null;
 	if (!span) return null;
-	const at = _rapierRenderedBoundaryToCanonical(wrapper, {...block, dirty: false}, point.node, point.offset, span, false);
+	const at = _rapierRenderedBoundaryToCanonical(wrapper, {...block, dirty: false}, point.node, point.offset, span, false, side);
 	return Number.isSafeInteger(at) && at >= span.start && at <= span.end ? at - span.start : null;
 }
 
@@ -30696,7 +30730,7 @@ function _rapierKeepTaskMarkers(live, node, half) {
 	}
 }
 
-function _rapierBlockHalfRaw(wrapper, block, range, atEnd, { given = null } = {}) {
+function _rapierBlockHalfRaw(wrapper, block, range, atEnd, { given = null, comments: keepComments = false } = {}) {
 	const live = _liveBlockEl(wrapper);
 	const point = live && _rapierPointForTextOffset(live, _rapierRangePointOffset(wrapper, range, atEnd));
 	if (!point) return '';
@@ -30705,12 +30739,23 @@ function _rapierBlockHalfRaw(wrapper, block, range, atEnd, { given = null } = {}
 	const read = (given && half.querySelector('pre') ? written : _markdownWithVisibleEdgeWhitespace(written, given && half.querySelector('ul,ol')
 		? { textContent: atEnd ? half.textContent.replace(/^[\r\n]+/, '') : half.textContent.replace(/[\r\n]+$/, '') } : half, !atEnd))
 		.split(_RAPIER_SPACE_RUN_MARK).join(' ');
-	const exact = String(half.textContent || '').trim() ? _rapierExactBlockCut(wrapper, block, point) : null;
+	const side = keepComments ? (atEnd ? 'before' : 'after') : null;
+	const exact = String(half.textContent || '').trim() ? _rapierExactBlockCut(wrapper, block, point, side) : null;
 	const at = exact != null && _rapierCutSplitsTypography(block, exact) ? null : exact;
 	if (at == null) return read;
 	const raw = String(block.raw || ''), cut = atEnd ? raw.slice(at) : raw.slice(0, at);
 	const kind = value => md.parse(value, _rapierMarkdownEnvironment()).filter(token => token.nesting).map(token => token.tag + token.nesting).join();
-	return kind(cut) === kind(read) ? cut : read;
+	const comments = keepComments && atEnd ? _rapierLeadingComments(cut) : '';
+	return kind(cut.slice(comments.length)) === kind(read) ? cut : read;
+}
+
+function _rapierCommentsAtParagraphEnd(raw, comments) {
+	const words = raw.replace(/^[ \t]+/, ''), tail = /(?:[ \t]*<!--md-layout:v1 [^>\n]*-->)?\s*$/.exec(words)[0];
+	return words.slice(0, words.length - tail.length) + comments + tail;
+}
+
+function _rapierLeadingComments(raw) {
+	return /^(?:<!--[\s\S]*?-->)+/.exec(String(raw || ''))?.[0] || '';
 }
 
 function _rapierCapturePasteContext(range) {
@@ -31408,8 +31453,8 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true, fieldScop
 	const tablePrefix = startBlock.type === 'table' && _nodeInside(startEl, range.startContainer)
 		? _rapierTableBoundary(startBlock, range.startContainer, range.startOffset, 'prefix') : null;
 	if (tablePrefix) tablePrefix.cell = cellPoint(range.startContainer, range.startOffset) || tablePrefix.cell;
-	const prefixRaw  = keepAtom ? startBlock.raw : keepNextAtom && range.startContainer === host ? '' : tablePrefix ? tablePrefix.raw : !_nodeInside(startEl, range.startContainer) ||
-		_rapierCaretAtSurfaceEdge(startEl, prefixPoint, 'backward') ? '' : _rapierBlockHalfRaw(startWrapper, startBlock, range, false, { given: prefixDiv });
+	let prefixRaw  = keepAtom ? startBlock.raw : keepNextAtom && range.startContainer === host ? '' : tablePrefix ? tablePrefix.raw : !_nodeInside(startEl, range.startContainer) ||
+		_rapierCaretAtSurfaceEdge(startEl, prefixPoint, 'backward') ? '' : _rapierBlockHalfRaw(startWrapper, startBlock, range, false, { given: prefixDiv, comments: true });
 
 	const endEl     = _liveBlockEl(endWrapper);
 	const suffixDiv = _nodeInside(endEl, range.endContainer)
@@ -31426,7 +31471,17 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true, fieldScop
 		if (point) tableSuffix.cell = { ...point, charOffset: 0 };
 	}
 	let suffixRaw = keepNextAtom ? endBlock.raw : keepAtom && _rapierRawIsBlank(endBlock.raw) ? '' : tableSuffix ? tableSuffix.raw : !_nodeInside(endEl, range.endContainer) ||
-		_rapierCaretAtSurfaceEdge(endEl, suffixPoint, 'forward') ? '' : _rapierBlockHalfRaw(endWrapper, endBlock, range, true, { given: suffixDiv });
+		_rapierCaretAtSurfaceEdge(endEl, suffixPoint, 'forward') ? '' : _rapierBlockHalfRaw(endWrapper, endBlock, range, true, { given: suffixDiv, comments: true });
+	let ledComments = !keepAtom && !keepNextAtom && !tableSuffix ? _rapierLeadingComments(suffixRaw) : '';
+	if (ledComments && suffixRaw.length > ledComments.length) {
+		suffixRaw = suffixRaw.slice(ledComments.length);
+		const ink = globalThis.RapierMarkdownSpec?.scanInkMarkers?.(ledComments)?.length > 0;
+		if (insertParagraph || ink || !['paragraph', 'heading'].includes(endBlock.type)) {
+			if (prefixRaw && !keepAtom && !tablePrefix) prefixRaw += ledComments;
+			else suffixRaw = ledComments + suffixRaw;
+			ledComments = '';
+		}
+	} else ledComments = '';
 	const blocksBefore = rapier.document.blocks
 		.slice(windowStart, windowEnd)
 		.map(_rapierHistoryBlock);
@@ -31558,6 +31613,7 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true, fieldScop
 		caretTarget = paragraphPlan.caret;
 		caretCell = paragraphPlan.tableCell || null;
 	} else if (!prefixRaw) {
+		if (ledComments) suffixRaw = _rapierCommentsAtParagraphEnd(suffixRaw, ledComments);
 		const b = { id: endBlock.id, raw: suffixRaw, rendered: renderBlock(suffixRaw), dirty: false, type: endBlock.type, order: endBlock.order, leading: startBlock.leading };
 		newBlocks       = [b];
 		caretBlockId    = b.id;
@@ -31570,7 +31626,7 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true, fieldScop
 		caretCharOffset = prefixDiv.textContent.length;
 		caretCell       = tablePrefix && tablePrefix.cell;
 	} else if (joinsWords) {
-		const mergedRaw = _joinInlineMarkdownParts(prefixRaw, joinsWords.head);
+		const mergedRaw = _joinInlineMarkdownParts(prefixRaw + (joinsWords.head.startsWith(ledComments) ? '' : ledComments), joinsWords.head);
 		const b = { id: startBlock.id, raw: mergedRaw, rendered: renderBlock(mergedRaw), dirty: false, type: startBlock.type, order: startBlock.order, leading: startBlock.leading };
 		newBlocks       = [b];
 		if (joinsWords.rest.trim()) newBlocks.push({ id: endBlock.id, raw: joinsWords.rest, rendered: renderBlock(joinsWords.rest), dirty: false,
@@ -31578,13 +31634,14 @@ function _crossBlockDelete(range, clipboardData, { pushHistory = true, fieldScop
 		caretBlockId    = b.id;
 		caretCharOffset = prefixDiv.textContent.length;
 	} else if (prefixSafe && suffixSafe) {
-		const mergedRaw = _joinInlineMarkdownParts(prefixRaw, suffixRaw);
+		const mergedRaw = _joinInlineMarkdownParts(prefixRaw + ledComments, suffixRaw);
 		const b = { id: startBlock.id, raw: mergedRaw, rendered: renderBlock(mergedRaw), dirty: false, type: startBlock.type, order: startBlock.order, leading: startBlock.leading };
 		newBlocks       = [b];
 		caretBlockId    = b.id;
 		caretCharOffset = prefixDiv.textContent.length;
 	} else {
 		const bp = { id: startBlock.id, raw: prefixRaw, rendered: renderBlock(prefixRaw), dirty: false, type: startBlock.type, order: startBlock.order, leading: startBlock.leading };
+		if (ledComments) suffixRaw = _rapierCommentsAtParagraphEnd(suffixRaw, ledComments);
 		const bs = { id: endBlock.id,   raw: suffixRaw, rendered: renderBlock(suffixRaw), dirty: false, type: endBlock.type, order: endBlock.order };
 		newBlocks       = [bp, bs];
 		const seatAfter = keepAtom || _rapierIsRuleBlock(bp) || (!!tablePrefix && !tablePrefix.touched);
@@ -39336,7 +39393,7 @@ function _continueRenderedListItem(editDiv, wrapper, block, range, li) {
 	const isTask = !!li.querySelector(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]');
 	const newLi = document.createElement('li');
 	if (li.classList.contains('task-list-item')) newLi.className = li.className;
-	if (isTask) newLi.appendChild(_taskCheckboxForEdit(false));
+	if (isTask) { newLi.appendChild(_taskCheckboxForEdit(false)); newLi.appendChild(document.createTextNode('\u00a0')); }
 
 	const suffixRange = document.createRange();
 	try {
@@ -39364,7 +39421,7 @@ function _continueRenderedListItem(editDiv, wrapper, block, range, li) {
 	const nested = Array.from(newLi.childNodes).find(n => n.nodeType === Node.ELEMENT_NODE && /^(UL|OL)$/.test(n.tagName));
 	const ownText = Array.from(newLi.childNodes).some(n => n.nodeType === Node.TEXT_NODE && n.textContent.replace(/\u00A0/g, '').trim() && (!nested || n.compareDocumentPosition(nested) & Node.DOCUMENT_POSITION_FOLLOWING));
 	if (nested && !ownText) newLi.insertBefore(document.createElement('br'), nested);
-	if (!newLi.textContent.replace(/\u00A0/g, '').trim() && !nested) newLi.appendChild(document.createElement('br'));
+	if (!newLi.textContent.replace(/\u00A0/g, '').trim() && !nested && !isTask) newLi.appendChild(document.createElement('br'));
 
 	const gap = document.createTextNode('\n');
 	li.parentNode.insertBefore(gap, li.nextSibling);
@@ -39376,7 +39433,7 @@ function _continueRenderedListItem(editDiv, wrapper, block, range, li) {
 			textNode = document.createTextNode('');
 			newLi.insertBefore(textNode, newLi.querySelector(':scope > br') || nested || null);
 		}
-		caret.setStart(textNode, 0);
+		caret.setStart(textNode, isTask && textNode.previousSibling?.nodeName === 'INPUT' && /^[ \u00a0]/.test(textNode.data) ? 1 : 0);
 	} else {
 		caret.selectNodeContents(newLi);
 		caret.collapse(true);
@@ -40085,7 +40142,7 @@ function _rapierHandleBlockBoundaryDelete(direction) {
 			_rapierCheckpointEdit(editDiv);
 			const at = { node: range.startContainer, offset: range.startOffset };
 			const separator = checkbox.nextSibling;
-			if (separator?.nodeType === Node.TEXT_NODE && separator.data[0] === ' ' &&
+			if (separator?.nodeType === Node.TEXT_NODE && /^[ \u00a0]/.test(separator.data) &&
 				checkbox.classList.contains('task-list-item-checkbox')) separator.deleteData(0, 1);
 			const head = checkbox.parentElement;
 			checkbox.remove();
@@ -40118,12 +40175,15 @@ function _rapierHandleBlockBoundaryDelete(direction) {
 	if (neighbour && _rapierNotesPart && !_rapierNotesPart.fields.admits(block.id, neighbour.id)) return true;
 
 	if (_rapierEditBlockIsEmpty(editDiv, wrapper)) {
-		if (backward) { _rapierHandleEmptyBlockBackspace(); return true; }
-		if (!neighbour) return true;
+		if (backward && blockIndex > 0) { _rapierHandleEmptyBlockBackspace(); return true; }
+		const following = backward ? blocks[blockIndex + 1] || null : neighbour;
+		if (!following) return true;
+		if (following !== neighbour && _rapierNotesPart && !_rapierNotesPart.fields.admits(block.id, following.id)) return true;
 		editDiv._rapierSkipBlurCommit = true;
 		hideFormatToolbar();
 		const snapshot = _removeBlockById(block.id);
 		if (_rapierPushDeletedBlock(snapshot)) {
+			const neighbour = following;
 			const nextWrapper = document.querySelector('[data-block-id="' + neighbour.id + '"]');
 			if ((_rapierWholeBlock(neighbour) || _rapierIsRuleBlock(neighbour)) && nextWrapper) {
 				_rapierFocusEditingHost(_editorHostEl());
@@ -40507,6 +40567,12 @@ function _splitBlockAtCaret(editDiv, wrapper, block, range, opts) {
 		const idx = Array.prototype.indexOf.call(parent.childNodes, emptyLi);
 		prefixDiv = _cloneRangeTo(editDiv, parent, idx);
 		suffixDiv = _cloneRangeFrom(editDiv, parent, idx + 1);
+		const rest = suffixDiv.firstElementChild;
+		if (parent.nodeName === 'OL' && parent.parentNode === editDiv && rest?.nodeName === 'OL' && suffixDiv.children.length === 1) {
+			const first = parseInt(parent.getAttribute('start'), 10);
+			const own = Array.prototype.filter.call(parent.children, child => child.nodeName === 'LI');
+			rest.setAttribute('start', String((Number.isFinite(first) ? first : 1) + own.indexOf(emptyLi) + 1));
+		}
 	} else {
 		prefixDiv = _cloneRangeTo(editDiv, range.startContainer, range.startOffset);
 		suffixDiv = _cloneRangeFrom(editDiv, range.endContainer, range.endOffset);
@@ -40822,10 +40888,33 @@ function _rapierSelectionIsWholeEditor(sel, range) {
 	return range.compareBoundaryPoints(Range.START_TO_START, whole) <= 0 && range.compareBoundaryPoints(Range.END_TO_END, whole) >= 0;
 }
 
+function _rapierSettleCompositionForCut(sel) {
+	const open = _activeBlockEditContext(), range = sel.getRangeAt(0);
+	const ends = [sel.anchorNode, sel.anchorOffset, sel.focusNode, sel.focusOffset], text = range.toString();
+	let objects = -1;
+	try { objects = range.cloneContents().querySelectorAll('img, br, hr, input, iframe, svg, video, audio, canvas').length; } catch (_) {}
+	const start = _charOffsetForRangePoint(open.editDiv, range.startContainer, range.startOffset);
+	const end = _charOffsetForRangePoint(open.editDiv, range.endContainer, range.endOffset);
+	if (!_rapierSettleInput({place: false}) || rapier.composition.block || rapier.composition.source) return false;
+	const now = _activeBlockEditContext();
+	if (!now || now.block.id !== open.block.id) return false;
+	try {
+		if (ends[0]?.isConnected && ends[2]?.isConnected && _nodeInside(now.editDiv, ends[0]) && _nodeInside(now.editDiv, ends[2])) sel.setBaseAndExtent(...ends);
+		else if (objects !== 0 || !_rapierSetSelectionCharOffsets(now.editDiv, start, end)) return false;
+	} catch (_) { return false; }
+	return !!sel.rangeCount && !sel.isCollapsed && sel.getRangeAt(0).toString() === text;
+}
+
 document.addEventListener('cut', function _rapierCutDocumentSelection(e) {
 	if (!e.clipboardData || e.defaultPrevented || _rapierClipboardOutsideDocument(e)) return;
 	const sel = window.getSelection();
 	if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+	const open = rapier.composition.block && !rapier.access.readOnly && _activeBlockEditContext(), chosen = sel.getRangeAt(0);
+	if (open && _nodeInside(open.editDiv, chosen.startContainer) && _nodeInside(open.editDiv, chosen.endContainer)) {
+		e.preventDefault();
+		_clipboardReadRange(_rapierReadingRange(chosen), e.clipboardData);
+		if (!_rapierSettleCompositionForCut(sel)) { showToast('Copied, not cut. Cut a smaller part.', 'info'); return; }
+	}
 	const range        = _rapierReadingRange(sel.getRangeAt(0));
 	if (!_rangeIntersectsEditor(range)) return;
 	if (rapier.access.readOnly) {
@@ -44197,7 +44286,7 @@ function _rapierRenderedBoundaryHasSourceTransform(node, live, allowMarks) {
 	return false;
 }
 
-function _rapierRenderedBoundaryToCanonical(wrapper, block, node, offset, span, allowMarks) {
+function _rapierRenderedBoundaryToCanonical(wrapper, block, node, offset, span, allowMarks, side = null) {
 	const live = wrapper && _liveBlockEl(wrapper);
 	if (!live || !block || !span || span.end - span.start !== String(block.raw || '').length) return null;
 	const editing = wrapper.classList.contains('block-wrapper--editing');
@@ -44208,8 +44297,8 @@ function _rapierRenderedBoundaryToCanonical(wrapper, block, node, offset, span, 
 	if (projected === null || (projected?.transformed === true && !allowMarks)) return null;
 	if (projected !== undefined) { node = projected.node; offset = projected.offset; }
 	if (!node || (projected === undefined && !_nodeInside(live, node))) return null;
-	if (_blockUsesRawEditor(block.raw)) {
-		if (!wrapper.classList.contains('block-wrapper--editing') || String(live.textContent || '') !== String(block.raw || '')) return null;
+	if (_blockUsesRawEditor(block.raw) && (editing || !side)) {
+		if (!editing || String(live.textContent || '') !== String(block.raw || '')) return null;
 		const point = _charOffsetForRangePoint(live, node, Number(offset) || 0);
 		return point >= 0 && point <= String(block.raw || '').length ? span.start + point : null;
 	}
@@ -44245,6 +44334,10 @@ function _rapierRenderedBoundaryToCanonical(wrapper, block, node, offset, span, 
 		found = text ? visibleFrom(0) : -1;
 		if (found >= 0 && !/^[ \t]*$/.test(raw.slice(0, found).replace(/^ {0,3}#{1,6}(?=[ \t])/, '').replace(/<span(?=[\s>])[^>]*>/gi, ''))) found = -1;
 	}
+	if (found < 0 && side && hidden.length && !lead) {
+		const at = _rapierPointAcrossComments(raw, hidden, text, point, side);
+		return at == null ? null : span.start + at;
+	}
 	if (found < 0) return null;
 	if (visibleFrom(found + 1) >= 0) {
 		if (!allowMarks || projected !== undefined) return null;
@@ -44276,6 +44369,23 @@ function _rapierRenderedBoundaryToCanonical(wrapper, block, node, offset, span, 
 	if (slashes % 2 === 1) return null;
 	if (raw.charAt(found) === '&' && /^&(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]+);/i.test(raw.slice(found))) return null;
 	return span.start + found + point;
+}
+
+function _rapierPointAcrossComments(raw, hidden, text, point, side) {
+	let words = '', cursor = 0;
+	const at = [];
+	for (const [start, stop] of [...hidden, [raw.length, raw.length]]) {
+		for (let i = cursor; i < start; i++) at.push(i);
+		words += raw.slice(cursor, start); cursor = stop;
+	}
+	const found = words.indexOf(text);
+	if (found < 0 || words.indexOf(text, found + 1) >= 0) return null;
+	let slashes = 0;
+	for (let i = at[found] - 1; i >= 0 && raw.charAt(i) === '\\'; i--) slashes++;
+	if (slashes % 2 === 1 || raw.charAt(at[found]) === '&') return null;
+	const p = found + point;
+	const before = p > found ? at[p - 1] + 1 : at[found], after = p < at.length ? at[p] : raw.length;
+	return side === 'before' ? before : after;
 }
 
 function _rapierResolvePoint(offset, last, blockIds = null) {
