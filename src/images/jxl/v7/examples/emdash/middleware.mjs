@@ -69,9 +69,14 @@ export async function announceUpload(hooks, response, id = 'rapier-media') {
     await hook.handler({media}, hooks.getContext(id));
 }
 
+const activation = new WeakMap();
 export async function onRequest(context, next) {
   const emdash = context.locals.emdash, storage = emdash?.storage, request = context.request;
-  const enabled = emdash?.getPublicPluginRouteMeta?.('rapier-media', 'available')?.public === true;
+  const owned = !!storage && typeof storage === 'object';
+  if (owned && typeof emdash?.getPublicPluginRouteMeta === 'function') activation.set(storage, emdash.getPublicPluginRouteMeta);
+  const meta = typeof emdash?.getPublicPluginRouteMeta === 'function' ? emdash.getPublicPluginRouteMeta
+    : owned ? activation.get(storage) : undefined;
+  const enabled = typeof meta === 'function' && meta('rapier-media', 'available')?.public === true;
   const rendition = enabled ? await serveMedia({request, storage}) ?? await serveWidth({request, storage}) : null;
   if (rendition) return rendition;
   const response = await next(), url = new URL(request.url);

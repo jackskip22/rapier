@@ -699,6 +699,91 @@
  (br_if $blocks (i32.lt_u (local.get $block) (local.get $count))))
 )
 
+;; idct8f32(coeff, count, basis, out, stride, blocksX, tmp): reconstruct-dct8.mjs's two inverse passes over `count`
+;; fixed 8x8 blocks. Coefficients are binary64 in order v*8+u, one block every 64 values, in row-major block order
+;; (`blocksX` blocks per row). Each value is divided by 2040 in binary64 and rounded to binary32 before the horizontal
+;; sum; that sum is binary64, rounded to binary32, then the vertical sum is binary64 and stored as binary32 at `out`
+;; (byte stride `stride`). Pairs of x are independent lanes. No fused multiply-add. tmp is 544 bytes.
+;; The encoders' fixed-DCT8 inverse (dct8-band.mjs): capture's photo look and reconstruct-planes.mjs's direct frames.
+(func $idct8f32 (export "idct8f32")
+  (param $coeff i32) (param $count i32) (param $b i32) (param $out i32) (param $stride i32) (param $blocksX i32) (param $tmp i32)
+  (local $i i32) (local $bx i32) (local $by i32) (local $origin i32) (local $coeffi i32)
+  (local $u i32) (local $v i32) (local $y i32)
+  (local $cu f32) (local $cv v128) (local $bu i32)
+  (local $r0 v128) (local $r1 v128) (local $r2 v128) (local $r3 v128)
+  (local $t v128) (local $o i32) (local $s i32) (local $d i32) (local $scratch i32) (local $live i32)
+  (local.set $scratch (i32.add (local.get $tmp) (i32.const 512)))
+  (local.set $i (i32.const 0))
+  (block $done (loop $blocks
+    (br_if $done (i32.ge_u (local.get $i) (local.get $count)))
+    (local.set $bx (i32.rem_u (local.get $i) (local.get $blocksX)))
+    (local.set $by (i32.div_u (local.get $i) (local.get $blocksX)))
+    (local.set $origin (i32.add (local.get $out)
+      (i32.add (i32.mul (i32.mul (local.get $by) (i32.const 8)) (local.get $stride)) (i32.shl (local.get $bx) (i32.const 5)))))
+    (local.set $coeffi (i32.add (local.get $coeff) (i32.shl (local.get $i) (i32.const 9))))
+    (memory.fill (local.get $tmp) (i32.const 0) (i32.const 512))
+    (local.set $v (i32.const 0))
+    (loop $vloop
+      (local.set $r0 (f64x2.splat (f64.const 0)))
+      (local.set $r1 (f64x2.splat (f64.const 0)))
+      (local.set $r2 (f64x2.splat (f64.const 0)))
+      (local.set $r3 (f64x2.splat (f64.const 0)))
+      (local.set $u (i32.const 0))
+      (loop $uloop
+        (local.set $cu (f32.demote_f64 (f64.div
+          (f64.load (i32.add (local.get $coeffi) (i32.shl (i32.add (i32.shl (local.get $v) (i32.const 3)) (local.get $u)) (i32.const 3))))
+          (f64.const 2040))))
+        (if (f32.ne (local.get $cu) (f32.const 0))
+          (then
+            (local.set $cv (f64x2.splat (f64.promote_f32 (local.get $cu))))
+            (local.set $bu (i32.add (local.get $b) (i32.shl (local.get $u) (i32.const 6))))
+            (local.set $r0 (f64x2.add (local.get $r0) (f64x2.mul (local.get $cv) (v128.load offset=0 (local.get $bu)))))
+            (local.set $r1 (f64x2.add (local.get $r1) (f64x2.mul (local.get $cv) (v128.load offset=16 (local.get $bu)))))
+            (local.set $r2 (f64x2.add (local.get $r2) (f64x2.mul (local.get $cv) (v128.load offset=32 (local.get $bu)))))
+            (local.set $r3 (f64x2.add (local.get $r3) (f64x2.mul (local.get $cv) (v128.load offset=48 (local.get $bu)))))))
+        (local.set $u (i32.add (local.get $u) (i32.const 1)))
+        (br_if $uloop (i32.lt_u (local.get $u) (i32.const 8))))
+      (v128.store64_lane offset=0 0 (local.get $scratch) (f32x4.demote_f64x2_zero (local.get $r0)))
+      (v128.store64_lane offset=8 0 (local.get $scratch) (f32x4.demote_f64x2_zero (local.get $r1)))
+      (v128.store64_lane offset=16 0 (local.get $scratch) (f32x4.demote_f64x2_zero (local.get $r2)))
+      (v128.store64_lane offset=24 0 (local.get $scratch) (f32x4.demote_f64x2_zero (local.get $r3)))
+      (local.set $r0 (f64x2.promote_low_f32x4 (v128.load64_zero offset=0 (local.get $scratch))))
+      (local.set $r1 (f64x2.promote_low_f32x4 (v128.load64_zero offset=8 (local.get $scratch))))
+      (local.set $r2 (f64x2.promote_low_f32x4 (v128.load64_zero offset=16 (local.get $scratch))))
+      (local.set $r3 (f64x2.promote_low_f32x4 (v128.load64_zero offset=24 (local.get $scratch))))
+      (local.set $live (i32.or (i32.or
+        (v128.any_true (f64x2.ne (local.get $r0) (f64x2.splat (f64.const 0))))
+        (v128.any_true (f64x2.ne (local.get $r1) (f64x2.splat (f64.const 0)))))
+        (i32.or
+          (v128.any_true (f64x2.ne (local.get $r2) (f64x2.splat (f64.const 0))))
+          (v128.any_true (f64x2.ne (local.get $r3) (f64x2.splat (f64.const 0)))))))
+      (if (local.get $live)
+        (then
+          (local.set $y (i32.const 0))
+          (loop $yloop
+            (local.set $t (f64x2.splat (f64.load (i32.add (local.get $b) (i32.shl (i32.add (i32.shl (local.get $v) (i32.const 3)) (local.get $y)) (i32.const 3))))))
+            (local.set $o (i32.add (local.get $tmp) (i32.shl (local.get $y) (i32.const 6))))
+            (v128.store offset=0 (local.get $o) (f64x2.add (v128.load offset=0 (local.get $o)) (f64x2.mul (local.get $r0) (local.get $t))))
+            (v128.store offset=16 (local.get $o) (f64x2.add (v128.load offset=16 (local.get $o)) (f64x2.mul (local.get $r1) (local.get $t))))
+            (v128.store offset=32 (local.get $o) (f64x2.add (v128.load offset=32 (local.get $o)) (f64x2.mul (local.get $r2) (local.get $t))))
+            (v128.store offset=48 (local.get $o) (f64x2.add (v128.load offset=48 (local.get $o)) (f64x2.mul (local.get $r3) (local.get $t))))
+            (local.set $y (i32.add (local.get $y) (i32.const 1)))
+            (br_if $yloop (i32.lt_u (local.get $y) (i32.const 8))))))
+      (local.set $v (i32.add (local.get $v) (i32.const 1)))
+      (br_if $vloop (i32.lt_u (local.get $v) (i32.const 8))))
+    (local.set $y (i32.const 0))
+    (loop $store
+      (local.set $s (i32.add (local.get $tmp) (i32.shl (local.get $y) (i32.const 6))))
+      (local.set $d (i32.add (local.get $origin) (i32.mul (local.get $y) (local.get $stride))))
+      (v128.store64_lane offset=0 0 (local.get $d) (f32x4.demote_f64x2_zero (v128.load offset=0 (local.get $s))))
+      (v128.store64_lane offset=8 0 (local.get $d) (f32x4.demote_f64x2_zero (v128.load offset=16 (local.get $s))))
+      (v128.store64_lane offset=16 0 (local.get $d) (f32x4.demote_f64x2_zero (v128.load offset=32 (local.get $s))))
+      (v128.store64_lane offset=24 0 (local.get $d) (f32x4.demote_f64x2_zero (v128.load offset=48 (local.get $s))))
+      (local.set $y (i32.add (local.get $y) (i32.const 1)))
+      (br_if $store (i32.lt_u (local.get $y) (i32.const 8))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1)))
+    (br $blocks))))
+
 ;; The RGB page frame's DCT8 (rgbTile; photo-dct.mjs dct8Butterfly is the same operations in JavaScript): even and odd
 ;; butterflies, 24 products a line instead of $dct's 64, the basis read from $basis; the vertical pass in place (two
 ;; columns a lane), then the horizontal (two rows a lane). The page frame's arithmetic is this one (WA1 fold point 4b).

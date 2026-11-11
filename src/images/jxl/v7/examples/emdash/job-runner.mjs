@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import * as resumable from 'rapier-jxl/resumable';
 import {verify} from 'rapier-jxl/verify';
-import {createEmDashJobStore, createEmDashCallCounter} from './job-store.mjs';
+import {createEmDashJobStore, createEmDashCallCounter, storeFailure, acquireEmDashAdvance} from './job-store.mjs';
 import {createWorkQueue} from './work-queue.mjs';
 import {resourceFailure, canRetireJpeg} from './host-policy.mjs';
 import {nodeEstimate} from './node-admission.mjs';
@@ -52,12 +52,34 @@ async function jpegPixels(media, command, signal, call) {
   return value;
 }
 
-export function verificationAdmission(host, result) {
-  if (host?.platform === 'node' && host.cpuLimitMs === null) {
+export function verificationPixelLimit(host, configured) {
+  if (!Number.isSafeInteger(configured) || configured < 1 || host?.platform !== 'node' || host.cpuLimitMs !== null) return null;
+  if (host.memoryBytes === undefined && host.memoryLimitBytes === null) return configured;
+  const memory = host.memoryBytes ?? host.memoryLimitBytes;
+  if (!Number.isSafeInteger(memory) || memory < 1) return null;
+  const fits = pixels => {
+    const estimate = nodeEstimate({operation: 'verify', options: {effort: 1}}, pixels);
+    return Number.isSafeInteger(estimate) && estimate > 0 && Math.ceil(estimate * 1.1) <= memory;
+  };
+  if (!fits(1)) return null;
+  let low = 1, high = configured;
+  while (low < high) {
+    const middle = low + Math.ceil((high - low) / 2);
+    if (fits(middle)) low = middle; else high = middle - 1;
+  }
+  return low;
+}
+
+export function verificationAdmission(host, result, maxPixels) {
+  const outputPixels = result?.width * result?.height;
+  if (host?.platform === 'node' && host.cpuLimitMs === null &&
+      Number.isSafeInteger(result?.width) && result.width > 0 &&
+      Number.isSafeInteger(result?.height) && result.height > 0 &&
+      Number.isSafeInteger(outputPixels) && Number.isSafeInteger(maxPixels) && maxPixels > 0 && outputPixels <= maxPixels) {
     if (host.memoryBytes === undefined && host.memoryLimitBytes === null) return null;
     const memory = host.memoryBytes ?? host.memoryLimitBytes;
-    if (Number.isSafeInteger(memory) && Number.isSafeInteger(result?.width) && Number.isSafeInteger(result?.height) &&
-        Math.ceil(nodeEstimate({operation: 'verify', options: {effort: 1}}, result.width * result.height) * 1.1) <= memory) return null;
+    if (Number.isSafeInteger(memory) &&
+        Math.ceil(nodeEstimate({operation: 'verify', options: {effort: 1}}, maxPixels) * 1.1) <= memory) return null;
   }
   return {code: 'JXL_UNSUPPORTED', operation: 'verify', reason: 'verification_resource_bound_missing',
     missing: [host?.cpuLimitMs !== null && 'unitCpu', (host?.memoryLimitBytes !== null || host?.memoryBytes !== undefined) && 'memory'].filter(Boolean),
@@ -141,7 +163,8 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
       if (JSON.stringify(current.value.command) !== JSON.stringify(command)) throw fail('JXL_INPUT', 'This job ID belongs to another request.');
       return current;
     }
-    const refused = command.candidate && verificationAdmission(media.host, command.candidate?.result);
+    const refused = command.candidate && verificationAdmission(media.host, command.candidate?.result,
+      verificationPixelLimit(media.host, media.maxPixels));
     const saved = await save(command.id, current, {command, checkpoint: command.archive ? {status: 'done'} : null,
       archive: command.archive ?? null, archiveState: command.archive ? {phase: 'prepared', error: null} : null,
       stage: command.candidate ? 'candidate' : command.operation === 'recompress' ? 'original' : 'delivery', originalPublication: null,
@@ -161,6 +184,7 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
     publishing: !current.value.canceled && !current.value.error && current.value.execution?.location !== 'browser' && current.value.result === null &&
       current.value.archiveState?.phase !== 'blocked' && current.value.candidateState?.phase !== 'blocked' && current.value.checkpoint?.status === 'done',
     result: current.value.result, publication: current.value.publication, error: current.value.error,
+    ...(current.value.command.candidate?.kind === 'variant' && {width: current.value.command.candidate.width}),
     ...(current.value.result === null && Number.isFinite(current.value.checkpoint?.progress) && current.value.checkpoint.status !== 'done' &&
       {progress: current.value.checkpoint.progress}),
     ...(current.value.retry && {retry: current.value.retry}),
@@ -170,14 +194,29 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
       : current.value.archiveState?.error ?? current.value.candidateState?.error ?? null} : null;
 
   async function step(current, signal) {
-    const was = current?.value, ended = !!was && (was.result !== null || !!was.error || was.canceled || was.execution?.location === 'browser');
+    if (!current?.value) throw fail('JXL_INPUT', 'The image job is missing.');
+    signal?.throwIfAborted();
+    const id = current.value.command.id;
+    const release = await acquireEmDashAdvance(ctx, {owner: id, scope, ms, now, calls});
+    if (!release) return {...view(await read(id)), busy: true};
+    try { return await advanceClaimed(await read(id), signal); }
+    finally {
+      await release().catch(() => {});
+    }
+  }
+  async function advanceClaimed(current, signal) {
+    const was = current?.value, ended = !!was && !was.archive && !was.publication?.collect &&
+      (was.result !== null || !!was.error || was.canceled || was.execution?.location === 'browser');
     const shown = await advanceOnce(current, signal), command = was?.command;
     if (!command || ended || !(shown?.done || shown?.canceled) || shown.publication?.collect) return shown;
     try { await clearParts(command); } catch (error) { signal?.throwIfAborted(); return {...shown, cleanupPending: true}; }
     return shown;
   }
-  const clearParts = command => createEmDashJobStore(ctx, {calls, owner: command.id, now,
-    readSource: () => { throw fail('JXL_IO', 'No source is read here.'); }}).clear();
+  const clearParts = async command => {
+    await driver.discard?.(command.id);
+    return createEmDashJobStore(ctx, {calls, owner: command.id, now,
+      readSource: () => { throw fail('JXL_IO', 'No source is read here.'); }}).clear();
+  };
   async function advanceOnce(current, signal) {
     let job = current?.value;
     if (!job) throw fail('JXL_INPUT', 'The image job is missing.');
@@ -212,8 +251,13 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
       return view(await save(command.id, current, {...job, result: {fits: false, reason: {code: 'retirement_disabled'}},
         publication: {key: command.key, stored: null, reason: 'retirement_disabled'}}));
     const candidate = job.stage === 'candidate' ? command.candidate : null;
+    let verificationMaxPixels;
     if (candidate) {
-      const refused = verificationAdmission(media.host, command.candidate?.result);
+      const ceiling = verificationPixelLimit(media.host, media.maxPixels);
+      verificationMaxPixels = job.checkpoint ? job.verificationMaxPixels : ceiling;
+      const safe = Number.isSafeInteger(verificationMaxPixels) && verificationMaxPixels > 0 &&
+        ceiling !== null && verificationMaxPixels <= ceiling;
+      const refused = verificationAdmission(media.host, candidate.result, safe ? verificationMaxPixels : null);
       if (refused) {
         const candidateState = {phase: 'blocked', error: refused};
         return JSON.stringify(candidateState) === JSON.stringify(job.candidateState) ? view(current)
@@ -225,7 +269,7 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
     const selected = job.stage === 'delivery' && command.delivery ? command.delivery : command;
     const operation = candidate ? verify : operations[selected.operation];
     const options = candidate ? {result: candidate.result, parts: candidate.parts,
-      ...(media.maxPixels !== undefined && {maxPixels: media.maxPixels})} : selected.options;
+      maxPixels: verificationMaxPixels} : selected.options;
     let pixels = null;
     const store = createEmDashJobStore(ctx, {calls, owner: command.id, readSource: (offset, length) => pixels
       ? pixels.data.slice(offset, offset + length)
@@ -238,22 +282,29 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
           JPEG_KEY.test(command.key) && media.host?.platform === 'node')
         pixels = await pixelSource(media, command, signal, action => calls.call(action));
       const input = pixels?.input ?? command.input;
-      if (!job.checkpoint) checkpoint = await driver.start({operation, input, options, store, ...(!candidate && {verify})});
+      if (!job.checkpoint) checkpoint = await driver.start({owner: command.id, operation, input, options, store, ...(!candidate && {verify})});
       else if (!finishing)
-        ({checkpoint, released = []} = await driver.advance(job.checkpoint, {operation, input, store, ...(!candidate && {verify}), budget: {ms}, signal}));
+        ({checkpoint, released = []} = await driver.advance(job.checkpoint, {owner: command.id, operation, input, store, ...(!candidate && {verify}), budget: {ms}, signal}));
       else {
-        const finished = await driver.finish(job.checkpoint, {operation, input, store, signal});
+        const finished = await driver.finish(job.checkpoint, {owner: command.id, operation, input, store, signal});
         result = candidate ? await candidateResult(candidate, finished, command.input, store, signal) : finished;
       }
-    } catch (error) {
+    } catch (thrown) {
       signal?.throwIfAborted();
+      const error = storeFailure(thrown);
       const resource = resourceFailure(error);
       if (candidate) {
+        if (error?.code === 'JXL_DIMENSIONS' && verificationMaxPixels < media.maxPixels)
+          return view(await save(command.id, current, {...job, candidateState: {phase: 'blocked', error: {
+            code: error.code, message: String(error.message), operation: 'verify',
+            reason: 'verification_pixel_limit', maxPixels: verificationMaxPixels}}}));
         if (resource || error?.code === 'JXL_UNSUPPORTED') return view(await save(command.id, current, {...job,
           candidateState: {phase: 'blocked', error: {code: error.code, message: String(error.message), operation: 'verify',
             reason: resource ? 'verification_' + resource + '_limit' : 'verification_unsupported'}}}));
         if (PERMANENT.has(error?.code) || error?.code === 'JXL_TARGET') return view(await save(command.id, current, {...job,
           error: {code: error.code, message: String(error.message), ...(error.verification && {verification: error.verification})}}));
+        const latest = await read(command.id);
+        if (latest.revision !== current.revision) return view(latest);
         throw error;
       }
       if (resource && command.settings) return view(await save(command.id, current, {...job,
@@ -280,7 +331,7 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
     if (job.retry) job = {...job, retry: null};
     if (!finishing) {
       const saved = await save(command.id, current, {...job, checkpoint,
-        ...(candidate && {candidateState: {phase: 'verifying', error: null}})});
+        ...(candidate && {verificationMaxPixels, candidateState: {phase: 'verifying', error: null}})});
       const input = new Set((command.candidate?.parts ?? []).map(part => part.hash));
       const free = released.filter(ref => !input.has(ref.hash));
       if (free.length && saved.value?.checkpoint === checkpoint) await store.release(free);
@@ -364,9 +415,12 @@ export function createEmDashJobRunner(ctx, {operations, media, scope = '', ms = 
     },
     async cancel(id) {
       let current = await read(id);
+      let attempt = 0;
       while (current.value && current.value.result === null && !current.value.error && current.value.execution?.location !== 'browser' &&
-          current.value.checkpoint?.status !== 'done' && !current.value.canceled)
+          current.value.checkpoint?.status !== 'done' && !current.value.canceled) {
+        if (attempt++ === 8) throw fail('JXL_BUSY', 'The image job changed too often. Retry cancellation.');
         current = await save(id, current, {...current.value, canceled: true});
+      }
       return view(current);
     },
     async resume(value, {signal, cancel = false} = {}) {

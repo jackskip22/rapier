@@ -67,7 +67,7 @@ const captureAnsWrite = SAMPLE ? null : function captureAnsWrite(w, tags, extras
   w.acc = rest ? engine.u8[out + whole] & (1 << rest) - 1 : 0; w.pending = rest;
 };
 
-const initializeTables = SAMPLE ? null : i32 => { weightedTables(i32, DIV, WEIGHTS); i32.set(WEIGHTED_BUCKET, BUCKET >> 2); };
+const initializeTables = (SAMPLE || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) ? null : i32 => { weightedTables(i32, DIV, WEIGHTS); i32.set(WEIGHTED_BUCKET, BUCKET >> 2); };
 
 const orientBlock = JPEG ? null : function orientBlock(from, to, stride, outStride, x, y, width, height, ox, oy, pixelBytes, orientation) {
   if (active !== 'simd' || !engine.simd.orientRGBA) throw fault('JXL_WASM', 'The sample orientation kernel is unavailable.');
@@ -449,7 +449,7 @@ const flushParked = SAMPLE ? null : function flushParked(pair) {
   takeFlushed(pair.w, args, pair.out);
   return true;
 }
-const flushTokens = SAMPLE ? null : function flushTokens(w, model, values, ids, n) {
+const flushTokens = (SAMPLE || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) ? null : function flushTokens(w, model, values, ids, n) {
   acClean = false; zdLoaded = false; acBucketsZero = false; tileBand = null; acResident = null; retainEpoch++;
   const ans = ansTablesOf(model);
   const A_SMALL = AC_CODES, A_FREQS = A_SMALL + ans.ids * 256, A_STARTS = A_FREQS + ans.ids * 256, A_REVERSE = A_STARTS + ans.ids * 256;
@@ -475,7 +475,7 @@ const flushTokens = SAMPLE ? null : function flushTokens(w, model, values, ids, 
   engine.simd.ansFlush(args);
   takeFlushed(w, args, OUT);
 }
-const entropyKernels = SAMPLE ? null : () => jpegKernels(flushTokens);
+const entropyKernels = SAMPLE ? null : () => jpegKernels((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : flushTokens);
 const takeFlushed = SAMPLE ? null : function takeFlushed(w, args, out) {
   const i32 = new Int32Array(engine.memory.buffer), written = i32[(args >> 2) + 17];
   if (w.at + written + 8 >= w.bytes.length) w.grow(written + 8);
@@ -813,10 +813,15 @@ const shape = SAMPLE ? null : function shape(freqs, last, total, omit, tables, h
 const captureOpaque = SAMPLE || JPEG ? null : function captureOpaque(data, width, x, y, w, h) {
   if (active !== 'simd') throw fault('JXL_WASM', 'Photographic capture needs its SIMD kernels.');
   acClean = false; ansStamp = null; zdLoaded = false; acBucketsZero = false; tileBand = null; acResident = null; retainEpoch++;
-  for (let row = y; row < y + h; row++) {
-    const at = (row * width + x) * 4;
-    engine.u8.set(data.subarray(at, at + w * 4), P);
-    if (!engine.simd.opaque(P, w * 4)) return false;
+  const rowBytes = w * 4, rows = Math.max(1, Math.floor((R - P) / rowBytes));
+  for (let row = y; row < y + h; row += rows) {
+    const count = Math.min(rows, y + h - row), at = (row * width + x) * 4;
+    if (w === width) engine.u8.set(data.subarray(at, at + count * rowBytes), P);
+    else for (let r = 0; r < count; r++) {
+      const from = at + r * width * 4;
+      engine.u8.set(data.subarray(from, from + rowBytes), P + r * rowBytes);
+    }
+    if (!engine.simd.opaque(P, count * rowBytes)) return false;
   }
   return true;
 };
@@ -1525,9 +1530,9 @@ async function prepareKernels() {
   if (!(kernelsSupported())) return false;
   return compileKernels();
 }
-const arenaKernels = SAMPLE || UPLOAD ? null : capJpegKernels;
-const releaseArena = SAMPLE || UPLOAD ? null : releaseJpegKernels;
-if (!SAMPLE) kernelHooks.arena = {lend: () => capJpegKernels(ARENA_BYTES), release: releaseJpegKernels};
+const arenaKernels = (SAMPLE || UPLOAD || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) ? null : capJpegKernels;
+const releaseArena = (SAMPLE || UPLOAD || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) ? null : releaseJpegKernels;
+if (!SAMPLE && !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) kernelHooks.arena = {lend: () => capJpegKernels(ARENA_BYTES), release: releaseJpegKernels};
 kernelHooks.ensure = ensureKernels;
 if (!SAMPLE && !JPEG) kernelHooks.capturePhoto = {prepare: prepareKernels, ready: ensureKernels, opaque: captureOpaque};
 return {configureKernels, ensureKernels, kernelMode, kernelRequest, disableEntropyKernels, prepareKernels, arenaKernels, releaseArena, orientBlock, sampleTable, sampleFilter, sampleSum, sampleFinish, captureAnsWrite};

@@ -8,6 +8,157 @@
 ;; recent distances, then the match ends by distance: 64 distances, 64 starts, 64 ends); `heads` 262144 bytes (with a
 ;; chain); `chain` 4n bytes (with a chain); `contexts` may be `outCtx` (pieces never run ahead of the positions they are
 ;; read from), or 0 for none.
+  ;; Photo hints: six words per box, x/y/right/bottom, rescued, first input index. Sort by decreasing area so a
+  ;; containing photograph absorbs its tiny hints in one pass. The heap compares 64-bit areas, including ties.
+  (func $hintLess (param $a i32) (param $b i32) (result i32)
+    (local $aa i64) (local $ba i64)
+    (local.set $aa (i64.mul
+      (i64.extend_i32_u (i32.sub (i32.load offset=8 (local.get $a)) (i32.load (local.get $a))))
+      (i64.extend_i32_u (i32.sub (i32.load offset=12 (local.get $a)) (i32.load offset=4 (local.get $a))))))
+    (local.set $ba (i64.mul
+      (i64.extend_i32_u (i32.sub (i32.load offset=8 (local.get $b)) (i32.load (local.get $b))))
+      (i64.extend_i32_u (i32.sub (i32.load offset=12 (local.get $b)) (i32.load offset=4 (local.get $b))))))
+    (i32.or (i64.lt_u (local.get $aa) (local.get $ba))
+      (i32.and (i64.eq (local.get $aa) (local.get $ba))
+        (i32.gt_u (i32.load offset=20 (local.get $a)) (i32.load offset=20 (local.get $b))))))
+  (func $hintSwap (param $a i32) (param $b i32)
+    (local $box v128) (local $tail i64)
+    (local.set $box (v128.load (local.get $a)))
+    (local.set $tail (i64.load offset=16 (local.get $a)))
+    (v128.store (local.get $a) (v128.load (local.get $b)))
+    (i64.store offset=16 (local.get $a) (i64.load offset=16 (local.get $b)))
+    (v128.store (local.get $b) (local.get $box))
+    (i64.store offset=16 (local.get $b) (local.get $tail)))
+  (func $hintDown (param $boxes i32) (param $count i32) (param $root i32)
+    (local $child i32) (local $p i32) (local $q i32)
+    (block $done
+      (loop $down
+        (local.set $child (i32.add (i32.shl (local.get $root) (i32.const 1)) (i32.const 1)))
+        (br_if $done (i32.ge_u (local.get $child) (local.get $count)))
+        (local.set $q (i32.add (local.get $boxes) (i32.mul (local.get $child) (i32.const 24))))
+        (if (i32.lt_u (i32.add (local.get $child) (i32.const 1)) (local.get $count))
+          (then (if (call $hintLess (i32.add (local.get $q) (i32.const 24)) (local.get $q))
+            (then (local.set $child (i32.add (local.get $child) (i32.const 1)))
+              (local.set $q (i32.add (local.get $q) (i32.const 24)))))))
+        (local.set $p (i32.add (local.get $boxes) (i32.mul (local.get $root) (i32.const 24))))
+        (br_if $done (i32.eqz (call $hintLess (local.get $q) (local.get $p))))
+        (call $hintSwap (local.get $p) (local.get $q))
+        (local.set $root (local.get $child))
+        (br $down))))
+  ;; Every hint enters once. Merged components leave by swapping the last live slot, never shifting the tail.
+  ;; Revisit earlier components only if the bounding box grows: that can join a box in a previously empty corner.
+  ;; Touching edges do not meet. The caller emits components in their first input index order.
+  (func (export "mergePhotoHints") (param $boxes i32) (param $count i32) (param $out i32) (result i32)
+    (local $i i32) (local $j i32) (local $active i32) (local $at i32) (local $p i32)
+    (local $x i32) (local $y i32) (local $right i32) (local $bottom i32) (local $flags i32) (local $first i32)
+    (local $qx i32) (local $qy i32) (local $qr i32) (local $qb i32) (local $qfirst i32) (local $grew i32)
+    (if (i32.eqz (local.get $count)) (then (return (i32.const 0))))
+    ;; A supplied box containing the final envelope joins every hint. Remember each hint that contains the
+    ;; envelope so far, then compare its bounds to the final envelope: one pass, without sorting or area rounding.
+    (local.set $p (local.get $boxes))
+    (local.set $x (i32.load (local.get $boxes)))
+    (local.set $y (i32.load offset=4 (local.get $boxes)))
+    (local.set $right (i32.load offset=8 (local.get $boxes)))
+    (local.set $bottom (i32.load offset=12 (local.get $boxes)))
+    (local.set $flags (i32.load offset=16 (local.get $boxes)))
+    (local.set $first (i32.load offset=20 (local.get $boxes)))
+    (local.set $i (i32.const 1))
+    (block $envelope
+      (loop $bounds
+        (br_if $envelope (i32.ge_u (local.get $i) (local.get $count)))
+        (local.set $at (i32.add (local.get $boxes) (i32.mul (local.get $i) (i32.const 24))))
+        (local.set $qx (i32.load (local.get $at)))
+        (local.set $qy (i32.load offset=4 (local.get $at)))
+        (local.set $qr (i32.load offset=8 (local.get $at)))
+        (local.set $qb (i32.load offset=12 (local.get $at)))
+        (if (i32.and
+              (i32.and (i32.le_u (local.get $qx) (local.get $x)) (i32.le_u (local.get $qy) (local.get $y)))
+              (i32.and (i32.ge_u (local.get $qr) (local.get $right)) (i32.ge_u (local.get $qb) (local.get $bottom))))
+          (then (local.set $p (local.get $at))))
+        (local.set $x (select (local.get $qx) (local.get $x) (i32.lt_u (local.get $qx) (local.get $x))))
+        (local.set $y (select (local.get $qy) (local.get $y) (i32.lt_u (local.get $qy) (local.get $y))))
+        (local.set $right (select (local.get $qr) (local.get $right) (i32.gt_u (local.get $qr) (local.get $right))))
+        (local.set $bottom (select (local.get $qb) (local.get $bottom) (i32.gt_u (local.get $qb) (local.get $bottom))))
+        (local.set $flags (i32.or (local.get $flags) (i32.load offset=16 (local.get $at))))
+        (local.set $qfirst (i32.load offset=20 (local.get $at)))
+        (local.set $first (select (local.get $qfirst) (local.get $first) (i32.lt_u (local.get $qfirst) (local.get $first))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $bounds)))
+    (if (i32.and
+          (i32.and (i32.eq (i32.load (local.get $p)) (local.get $x)) (i32.eq (i32.load offset=4 (local.get $p)) (local.get $y)))
+          (i32.and (i32.eq (i32.load offset=8 (local.get $p)) (local.get $right)) (i32.eq (i32.load offset=12 (local.get $p)) (local.get $bottom))))
+      (then
+        (memory.copy (local.get $out) (local.get $p) (i32.const 24))
+        (i32.store offset=16 (local.get $out) (local.get $flags))
+        (i32.store offset=20 (local.get $out) (local.get $first))
+        (return (i32.const 1))))
+    (local.set $i (i32.shr_u (local.get $count) (i32.const 1)))
+    (block $heapBuilt
+      (loop $heap
+        (br_if $heapBuilt (i32.eqz (local.get $i)))
+        (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+        (call $hintDown (local.get $boxes) (local.get $count) (local.get $i))
+        (br $heap)))
+    (local.set $i (local.get $count))
+    (block $sorted
+      (loop $sort
+        (br_if $sorted (i32.le_u (local.get $i) (i32.const 1)))
+        (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+        (call $hintSwap (local.get $boxes) (i32.add (local.get $boxes) (i32.mul (local.get $i) (i32.const 24))))
+        (call $hintDown (local.get $boxes) (local.get $i) (i32.const 0))
+        (br $sort)))
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $hints
+        (br_if $done (i32.ge_u (local.get $i) (local.get $count)))
+        (local.set $at (i32.add (local.get $boxes) (i32.mul (local.get $i) (i32.const 24))))
+        (local.set $x (i32.load (local.get $at)))
+        (local.set $y (i32.load offset=4 (local.get $at)))
+        (local.set $right (i32.load offset=8 (local.get $at)))
+        (local.set $bottom (i32.load offset=12 (local.get $at)))
+        (local.set $flags (i32.load offset=16 (local.get $at)))
+        (local.set $first (i32.load offset=20 (local.get $at)))
+        (local.set $j (i32.const 0))
+        (block $joined
+          (loop $join
+            (br_if $joined (i32.ge_u (local.get $j) (local.get $active)))
+            (local.set $p (i32.add (local.get $out) (i32.mul (local.get $j) (i32.const 24))))
+            (local.set $qx (i32.load (local.get $p)))
+            (local.set $qy (i32.load offset=4 (local.get $p)))
+            (local.set $qr (i32.load offset=8 (local.get $p)))
+            (local.set $qb (i32.load offset=12 (local.get $p)))
+            (if (i32.and
+                  (i32.and (i32.lt_u (local.get $x) (local.get $qr)) (i32.lt_u (local.get $qx) (local.get $right)))
+                  (i32.and (i32.lt_u (local.get $y) (local.get $qb)) (i32.lt_u (local.get $qy) (local.get $bottom))))
+              (then
+                (local.set $grew (i32.or
+                  (i32.or (i32.lt_u (local.get $qx) (local.get $x)) (i32.lt_u (local.get $qy) (local.get $y)))
+                  (i32.or (i32.gt_u (local.get $qr) (local.get $right)) (i32.gt_u (local.get $qb) (local.get $bottom)))))
+                (local.set $x (select (local.get $qx) (local.get $x) (i32.lt_u (local.get $qx) (local.get $x))))
+                (local.set $y (select (local.get $qy) (local.get $y) (i32.lt_u (local.get $qy) (local.get $y))))
+                (local.set $right (select (local.get $qr) (local.get $right) (i32.gt_u (local.get $qr) (local.get $right))))
+                (local.set $bottom (select (local.get $qb) (local.get $bottom) (i32.gt_u (local.get $qb) (local.get $bottom))))
+                (local.set $flags (i32.or (local.get $flags) (i32.load offset=16 (local.get $p))))
+                (local.set $qfirst (i32.load offset=20 (local.get $p)))
+                (local.set $first (select (local.get $qfirst) (local.get $first) (i32.lt_u (local.get $qfirst) (local.get $first))))
+                (local.set $active (i32.sub (local.get $active) (i32.const 1)))
+                (memory.copy (local.get $p)
+                  (i32.add (local.get $out) (i32.mul (local.get $active) (i32.const 24))) (i32.const 24))
+                (if (local.get $grew) (then (local.set $j (i32.const 0)))))
+              (else (local.set $j (i32.add (local.get $j) (i32.const 1)))))
+            (br $join)))
+        (local.set $p (i32.add (local.get $out) (i32.mul (local.get $active) (i32.const 24))))
+        (i32.store (local.get $p) (local.get $x))
+        (i32.store offset=4 (local.get $p) (local.get $y))
+        (i32.store offset=8 (local.get $p) (local.get $right))
+        (i32.store offset=12 (local.get $p) (local.get $bottom))
+        (i32.store offset=16 (local.get $p) (local.get $flags))
+        (i32.store offset=20 (local.get $p) (local.get $first))
+        (local.set $active (i32.add (local.get $active) (i32.const 1)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $hints)))
+    (local.get $active))
+
   ;; A band of the column scan, in reverse row order, rows `stride` pixels apart: a column still open (its 4-byte flag at
   ;; `open` is -1) closes at its first pixel unlike `background`, which sets its row in `lowest`. Four pixels a comparison,
   ;; masked by the open flags. Returns how many columns stay open.
@@ -1797,3 +1948,176 @@
       (br_if $xs (i32.lt_u (local.get $x) (local.get $width))))
     (local.set $y (i32.add (local.get $y) (i32.const 1)))
     (br_if $ys (i32.lt_u (local.get $y) (local.get $height)))))
+
+;; Select-predictor residuals in RGBA lanes. Ties take north, as the decoder does.
+(func $textDeltaResidual (param $here i32) (param $west i32) (param $north i32) (param $corner i32) (result v128)
+  (local $H v128) (local $W v128) (local $N v128) (local $NW v128)
+  (local.set $H (i32x4.extend_low_i16x8_u (i16x8.extend_low_i8x16_u (i32x4.splat (local.get $here)))))
+  (local.set $W (i32x4.extend_low_i16x8_u (i16x8.extend_low_i8x16_u (i32x4.splat (local.get $west)))))
+  (local.set $N (i32x4.extend_low_i16x8_u (i16x8.extend_low_i8x16_u (i32x4.splat (local.get $north)))))
+  (local.set $NW (i32x4.extend_low_i16x8_u (i16x8.extend_low_i8x16_u (i32x4.splat (local.get $corner)))))
+  (i32x4.sub (local.get $H) (v128.bitselect (local.get $W) (local.get $N)
+    (i32x4.lt_s (i32x4.abs (i32x4.sub (local.get $N) (local.get $NW)))
+      (i32x4.abs (i32x4.sub (local.get $W) (local.get $NW)))))))
+
+;; A sparse sample rejects pages whose novel pixels cannot repay a delta trial. The full pass uses the same predictor.
+(func $textDeltaSample
+  (param $colours i32) (param $ncolours i32) (param $indices i32) (param $stride i32)
+  (param $width i32) (param $height i32) (param $origin i32) (result i32)
+  (local $x i32) (local $y i32) (local $ystep i32) (local $p i32) (local $index i32)
+  (local $here i32) (local $west i32) (local $north i32) (local $corner i32)
+  (local $seen i32) (local $novel i32) (local $l1 i32) (local $hits i32) (local $sum i32) (local $delta v128)
+  (local.set $ystep (i32.shr_u (local.get $height) (i32.const 5)))
+  (if (i32.eqz (local.get $ystep)) (then (local.set $ystep (i32.const 1))))
+  (loop $ys
+    (local.set $x (i32.const 0))
+    (loop $xs
+      (local.set $seen (i32.add (local.get $seen) (i32.const 1)))
+      (local.set $p (i32.add (local.get $origin) (i32.add (i32.mul (local.get $y) (local.get $stride)) (local.get $x))))
+      (block $sample
+        (local.set $index (i32.load16_u (i32.add (local.get $indices) (i32.shl (local.get $p) (i32.const 1)))))
+        (if (i32.ge_u (local.get $index) (local.get $ncolours)) (then (return (i32.const 0))))
+        (local.set $here (i32.load (i32.add (local.get $colours) (i32.shl (local.get $index) (i32.const 2)))))
+        (if (i32.eqz (local.get $x)) (then
+          (local.set $hits (i32.add (local.get $hits) (i32.const 1))) (br $sample)))
+        (local.set $index (i32.load16_u (i32.add (local.get $indices) (i32.shl (i32.sub (local.get $p) (i32.const 1)) (i32.const 1)))))
+        (if (i32.ge_u (local.get $index) (local.get $ncolours)) (then (return (i32.const 0))))
+        (local.set $west (i32.load (i32.add (local.get $colours) (i32.shl (local.get $index) (i32.const 2)))))
+        (if (i32.eqz (i32.and (i32.xor (local.get $here) (local.get $west)) (i32.const 0xffffff))) (then
+          (local.set $hits (i32.add (local.get $hits) (i32.const 1))) (br $sample)))
+        (local.set $north (local.get $west)) (local.set $corner (local.get $west))
+        (if (local.get $y) (then
+          (local.set $index (i32.load16_u (i32.add (local.get $indices) (i32.shl (i32.sub (local.get $p) (local.get $stride)) (i32.const 1)))))
+          (if (i32.ge_u (local.get $index) (local.get $ncolours)) (then (return (i32.const 0))))
+          (local.set $north (i32.load (i32.add (local.get $colours) (i32.shl (local.get $index) (i32.const 2)))))
+          (local.set $index (i32.load16_u (i32.add (local.get $indices) (i32.shl (i32.sub (i32.sub (local.get $p) (local.get $stride)) (i32.const 1)) (i32.const 1)))))
+          (if (i32.ge_u (local.get $index) (local.get $ncolours)) (then (return (i32.const 0))))
+          (local.set $corner (i32.load (i32.add (local.get $colours) (i32.shl (local.get $index) (i32.const 2)))))))
+        (local.set $delta (i32x4.abs (call $textDeltaResidual (local.get $here) (local.get $west) (local.get $north) (local.get $corner))))
+        (local.set $sum (i32.add (i32x4.extract_lane 0 (local.get $delta))
+          (i32.add (i32x4.extract_lane 1 (local.get $delta)) (i32x4.extract_lane 2 (local.get $delta)))))
+        (local.set $novel (i32.add (local.get $novel) (i32.const 1)))
+        (local.set $l1 (i32.add (local.get $l1) (local.get $sum)))
+        (local.set $hits (i32.add (local.get $hits) (i32.eqz (local.get $sum)))))
+      (local.set $x (i32.add (local.get $x) (i32.const 8)))
+      (br_if $xs (i32.lt_u (local.get $x) (local.get $width))))
+    (local.set $y (i32.add (local.get $y) (local.get $ystep)))
+    (br_if $ys (i32.lt_u (local.get $y) (local.get $height))))
+  (i32.or
+    (i32.and (i32.ge_u (i32.mul (local.get $hits) (i32.const 5)) (i32.mul (local.get $seen) (i32.const 4)))
+      (i32.and (i32.le_u (local.get $l1) (i32.mul (local.get $novel) (i32.const 40)))
+        (i32.ge_u (i32.mul (local.get $novel) (i32.const 100)) (i32.mul (local.get $seen) (i32.const 3)))))
+    (i32.and (i32.le_u (local.get $l1) (i32.mul (local.get $novel) (i32.const 10)))
+      (i32.ge_u (i32.mul (local.get $novel) (i32.const 5)) (i32.mul (local.get $seen) (i32.const 2))))))
+
+;; One id per select-predictor residual of red, green and blue (capture-codec's text delta). `slots` holds
+;; slotMask+1 pairs of (key, id), key 0 empty. `deltas` receives int16 dr, dg, db per id. `stats` receives
+;; count, novel (pixels whose red, green or blue differs from the left), the sum of absolute residuals on
+;; those pixels, and how many pixels the predictor hits. Returns the id count, or -1 past `limit` or a bad index.
+(func (export "textDelta")
+  (param $colours i32) (param $ncolours i32) (param $indices i32) (param $stride i32)
+  (param $width i32) (param $height i32) (param $origin i32)
+  (param $out i32) (param $slots i32) (param $slotMask i32) (param $deltas i32) (param $stats i32) (param $limit i32)
+  (result i32)
+  (local $y i32) (local $x i32) (local $p i32) (local $count i32)
+  (local $novel i32) (local $l1 i32) (local $hits i32)
+  (local $wp i32) (local $np i32) (local $nwp i32) (local $leftp i32) (local $topp i32)
+  (local $dr i32) (local $dg i32) (local $db i32) (local $key i32) (local $slot i32) (local $got i32) (local $id i32)
+  (local $here i32) (local $west i32) (local $north i32) (local $corner i32) (local $leftw i32)
+  (local $delta v128)
+  (if (i32.eqz (call $textDeltaSample (local.get $colours) (local.get $ncolours) (local.get $indices)
+    (local.get $stride) (local.get $width) (local.get $height) (local.get $origin))) (then (return (i32.const 0))))
+  (memory.fill (local.get $slots) (i32.const 0) (i32.shl (i32.add (local.get $slotMask) (i32.const 1)) (i32.const 3)))
+  ;; Id 0 is the zero residual, so flat pixels skip the hash.
+  (memory.fill (local.get $deltas) (i32.const 0) (i32.const 6))
+  (local.set $key (i32.or (i32.const 512) (i32.or (i32.shl (i32.const 512) (i32.const 10)) (i32.shl (i32.const 512) (i32.const 20)))))
+  (local.set $slot (i32.and (i32.mul (local.get $key) (i32.const 0x9e3779b1)) (local.get $slotMask)))
+  (local.set $id (i32.add (local.get $slots) (i32.shl (local.get $slot) (i32.const 3))))
+  (i32.store (local.get $id) (local.get $key))
+  (i32.store offset=4 (local.get $id) (i32.const 0))
+  (local.set $count (i32.const 1))
+  (local.set $y (i32.const 0))
+  (block $rows
+    (loop $ys
+      (br_if $rows (i32.ge_u (local.get $y) (local.get $height)))
+      (local.set $x (i32.const 0))
+      (loop $xs
+        (local.set $p (i32.add (local.get $origin) (i32.add (i32.mul (local.get $y) (local.get $stride)) (local.get $x))))
+        (if (i32.ge_u (i32.load16_u (i32.add (local.get $indices) (i32.shl (local.get $p) (i32.const 1)))) (local.get $ncolours))
+          (then (return (i32.const -1))))
+        (local.set $leftp (if (result i32) (local.get $x) (then (i32.sub (local.get $p) (i32.const 1))) (else (i32.const -1))))
+        (local.set $topp (if (result i32) (local.get $y) (then (i32.sub (local.get $p) (local.get $stride))) (else (i32.const -1))))
+        (local.set $wp (if (result i32) (i32.ge_s (local.get $leftp) (i32.const 0)) (then (local.get $leftp)) (else (local.get $topp))))
+        (local.set $np (if (result i32) (i32.ge_s (local.get $topp) (i32.const 0)) (then (local.get $topp)) (else (local.get $wp))))
+        (local.set $nwp (if (result i32) (i32.and (i32.eqz (i32.eqz (local.get $x))) (i32.eqz (i32.eqz (local.get $y))))
+          (then (i32.sub (local.get $topp) (i32.const 1))) (else (local.get $wp))))
+        (local.set $here (i32.load (i32.add (local.get $colours) (i32.shl (i32.load16_u (i32.add (local.get $indices) (i32.shl (local.get $p) (i32.const 1)))) (i32.const 2)))))
+        (local.set $west (if (result i32) (i32.lt_s (local.get $wp) (i32.const 0)) (then (i32.const 0))
+          (else (i32.load (i32.add (local.get $colours) (i32.shl (i32.load16_u (i32.add (local.get $indices) (i32.shl (local.get $wp) (i32.const 1)))) (i32.const 2)))))))
+        (local.set $north (if (result i32) (i32.lt_s (local.get $np) (i32.const 0)) (then (i32.const 0))
+          (else (i32.load (i32.add (local.get $colours) (i32.shl (i32.load16_u (i32.add (local.get $indices) (i32.shl (local.get $np) (i32.const 1)))) (i32.const 2)))))))
+        (local.set $corner (if (result i32) (i32.lt_s (local.get $nwp) (i32.const 0)) (then (i32.const 0))
+          (else (i32.load (i32.add (local.get $colours) (i32.shl (i32.load16_u (i32.add (local.get $indices) (i32.shl (local.get $nwp) (i32.const 1)))) (i32.const 2)))))))
+        (local.set $delta (call $textDeltaResidual (local.get $here) (local.get $west) (local.get $north) (local.get $corner)))
+        (local.set $dr (i32x4.extract_lane 0 (local.get $delta)))
+        (local.set $dg (i32x4.extract_lane 1 (local.get $delta)))
+        (local.set $db (i32x4.extract_lane 2 (local.get $delta)))
+        (local.set $leftw (if (result i32) (i32.lt_s (local.get $leftp) (i32.const 0)) (then (i32.const 0))
+          (else (i32.load (i32.add (local.get $colours) (i32.shl (i32.load16_u (i32.add (local.get $indices) (i32.shl (local.get $leftp) (i32.const 1)))) (i32.const 2)))))))
+        (if (i32.and (i32.eqz (i32.eqz (local.get $x)))
+              (i32.eqz (i32.eqz (i32.and (i32.xor (local.get $here) (local.get $leftw)) (i32.const 0x00ffffff)))))
+          (then
+            (local.set $novel (i32.add (local.get $novel) (i32.const 1)))
+            (local.set $l1 (i32.add (local.get $l1)
+              (i32.add
+                (select (i32.sub (i32.const 0) (local.get $dr)) (local.get $dr) (i32.lt_s (local.get $dr) (i32.const 0)))
+                (i32.add
+                  (select (i32.sub (i32.const 0) (local.get $dg)) (local.get $dg) (i32.lt_s (local.get $dg) (i32.const 0)))
+                  (select (i32.sub (i32.const 0) (local.get $db)) (local.get $db) (i32.lt_s (local.get $db) (i32.const 0)))))))))
+        (if (i32.eqz (i32.or (local.get $dr) (i32.or (local.get $dg) (local.get $db))))
+          (then
+            (local.set $hits (i32.add (local.get $hits) (i32.const 1)))
+            (local.set $id (i32.const 0))
+            (i32.store16 (i32.add (local.get $out) (i32.shl (i32.add (i32.mul (local.get $y) (local.get $width)) (local.get $x)) (i32.const 1))) (i32.const 0))
+            (local.set $x (i32.add (local.get $x) (i32.const 1)))
+            (br_if $xs (i32.lt_u (local.get $x) (local.get $width)))
+            (local.set $y (i32.add (local.get $y) (i32.const 1)))
+            (br $ys)))
+        (local.set $key (i32.or (i32.add (local.get $dr) (i32.const 512))
+          (i32.or (i32.shl (i32.add (local.get $dg) (i32.const 512)) (i32.const 10))
+            (i32.shl (i32.add (local.get $db) (i32.const 512)) (i32.const 20)))))
+        (local.set $slot (i32.and (i32.mul (local.get $key) (i32.const 0x9e3779b1)) (local.get $slotMask)))
+        (block $placed
+          (loop $probe
+            (local.set $got (i32.load (i32.add (local.get $slots) (i32.shl (local.get $slot) (i32.const 3)))))
+            (if (i32.eqz (local.get $got))
+              (then
+                (if (i32.ge_u (local.get $count) (local.get $limit)) (then (return (i32.const -1))))
+                (local.set $id (i32.add (local.get $slots) (i32.shl (local.get $slot) (i32.const 3))))
+                (i32.store (local.get $id) (local.get $key))
+                (i32.store offset=4 (local.get $id) (local.get $count))
+                (local.set $got (i32.add (local.get $deltas) (i32.mul (local.get $count) (i32.const 6))))
+                (i32.store16 (local.get $got) (local.get $dr))
+                (i32.store16 offset=2 (local.get $got) (local.get $dg))
+                (i32.store16 offset=4 (local.get $got) (local.get $db))
+                (local.set $id (local.get $count))
+                (local.set $count (i32.add (local.get $count) (i32.const 1)))
+                (br $placed))
+              (else
+                (if (i32.eq (local.get $got) (local.get $key))
+                  (then
+                    (local.set $id (i32.load offset=4 (i32.add (local.get $slots) (i32.shl (local.get $slot) (i32.const 3)))))
+                    (br $placed))
+                  (else
+                    (local.set $slot (i32.and (i32.add (local.get $slot) (i32.const 1)) (local.get $slotMask)))
+                    (br $probe)))))))
+        (i32.store16 (i32.add (local.get $out) (i32.shl (i32.add (i32.mul (local.get $y) (local.get $width)) (local.get $x)) (i32.const 1))) (local.get $id))
+        (local.set $x (i32.add (local.get $x) (i32.const 1)))
+        (br_if $xs (i32.lt_u (local.get $x) (local.get $width))))
+      (local.set $y (i32.add (local.get $y) (i32.const 1)))
+      (br $ys)))
+  (i32.store (local.get $stats) (local.get $count))
+  (i32.store offset=4 (local.get $stats) (local.get $novel))
+  (i32.store offset=8 (local.get $stats) (local.get $l1))
+  (i32.store offset=12 (local.get $stats) (local.get $hits))
+  (local.get $count))

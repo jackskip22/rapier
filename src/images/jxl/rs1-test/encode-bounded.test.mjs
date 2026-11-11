@@ -6,7 +6,7 @@ import {start, advance, finish} from '../v7/resumable.mjs';
 import {memoryStore, sourceRecord, sha256} from './durable-host.mjs';
 import {tiled} from './photo-fixture.mjs';
 
-for (const [effort, bound, idle] of [[2, 6.5, 1 / 2], [3, 8, 1 / 3]]) test(`a resumed effort ${effort} encode reads the original once whole to check it, then only the rows its steps use`, {timeout: 120000}, async () => {
+for (const [effort, bound] of [[2, 6.5], [3, 8]]) test(`a resumed effort ${effort} encode reads the original once whole to check it, then only the rows its steps use`, {timeout: 120000}, async () => {
   const picture = await tiled(1000, 1500), options = {effort, fidelity: {quality: 85}};
   const ordinary = await encode({...picture, data: picture.data.slice()}, options);
   const store = memoryStore(picture.data), read = store.readSource;
@@ -26,5 +26,6 @@ for (const [effort, bound, idle] of [[2, 6.5, 1 / 2], [3, 8, 1 / 3]]) test(`a re
   assert.equal(sha256(record.bytes), sha256(ordinary.bytes));
   const whole = picture.data.length, total = calls.reduce((a, b) => a + b, 0);
   assert.ok(total <= bound * whole, `${(total / whole).toFixed(2)} originals read: ${JSON.stringify(calls)}`);
-  assert.ok(calls.filter(n => n === 0).length >= calls.length * idle, `calls reading none of it: ${JSON.stringify(calls)}`);
+  const idle = calls.indexOf(0);
+  assert.ok(idle > 0 && calls.slice(idle).every(n => n === 0), `calls after the bands reading it: ${JSON.stringify(calls)}`);
 });

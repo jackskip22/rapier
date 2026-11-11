@@ -4,7 +4,7 @@
     {
       "name": "core",
       "version": "1.9.0-native-2",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.60/plugins/pele-1.9.0-native-2.js",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.61/plugins/pele-1.9.0-native-2.js",
       "file": "plugins/pele-1.9.0-native-2.js",
       "bytes": 722820,
       "sri": "vPm/+HAI9fOqGc1GFl8wFvzMcZjXMhIUXWSdd2qAAVW6fBqjmK6Np6MVprxE8DFK",
@@ -13,7 +13,7 @@
     {
       "name": "zenuml",
       "version": "4.5.0-svg-2",
-      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.60/plugins/rapier-zenuml-svg-4.5.0-2.js",
+      "url": "https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.61/plugins/rapier-zenuml-svg-4.5.0-2.js",
       "file": "plugins/rapier-zenuml-svg-4.5.0-2.js",
       "path": "shell/vendor/zenuml/rapier-zenuml-svg-4.5.0-2.js",
       "bytes": 421169,

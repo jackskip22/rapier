@@ -191,15 +191,18 @@ export function downsample(input,width,height,into = null) {
   for (let c = 0; c < 3; c++) planes[c].set(new Float32Array(memory.buffer,output + c * m * 4,m));
   return {planes,width:w,height:h};
 }
-export function scaleBand(a,b,w,h,g,first,end,previous = null) {
-  const inputY = Math.min(h,Math.ceil((first + 4) / 4) * 4);
+export function scaleBand(a,b,w,h,g,first,end,previous = null,from = null) {
+  const inputY = from ?? Math.min(h,Math.ceil((first + 4) / 4) * 4);
   const inputEnd = Math.min(h,Math.ceil((end + 4) / 4) * 4), inputH = inputEnd - inputY;
   const plan = ssimulacra2Layout(w,Math.max(1,inputH),{referenceRgba:!!a.rgba,distortedRgba:!!b.rgba,base});
   reserve(plan); copyGauss(g);
   new Int32Array(memory.buffer,KEYS,1 << 17).fill(-1);
   writeInput(a,plan.reference,w * inputH); writeInput(b,plan.distorted,w * inputH);
   if (previous) {
-    new Uint8Array(memory.buffer,plan.scratch,plan.rowBytes).set(previous.scratch);
+    if (previous.states) {
+      const scratch = new Float32Array(memory.buffer,plan.scratch,plan.rowBytes >> 2);
+      for (let i = 0; i < 15; i++) scratch.set(previous.states.subarray(i * 6 * w,(i + 1) * 6 * w),stateAt(i,w));
+    } else new Uint8Array(memory.buffer,plan.scratch,plan.rowBytes).set(previous.scratch);
     new Float64Array(memory.buffer,plan.sums,18).set(previous.sums);
   }
   const made = metricBand(w,h,first,end,inputY,inputH,plan.reference,a.rgba ? 0 : 1,
@@ -207,6 +210,12 @@ export function scaleBand(a,b,w,h,g,first,end,previous = null) {
   if (made !== inputEnd) throw fault('JXL_INTERNAL','SSIMULACRA2 row continuation did not consume its input.');
   return {scratch:new Uint8Array(memory.buffer,plan.scratch,plan.rowBytes).slice(),
     sums:new Float64Array(memory.buffer,plan.sums,18).slice()};
+}
+const BAND_RING = 16, stateAt = (i,w) => (6 * BAND_RING + 8 + i * (BAND_RING + 7) + BAND_RING) * w;
+export function bandState({scratch,sums},w) {
+  const all = new Float32Array(scratch.buffer,scratch.byteOffset,scratch.byteLength >> 2), states = new Float32Array(15 * 6 * w);
+  for (let i = 0; i < 15; i++) states.set(all.subarray(stateAt(i,w),stateAt(i,w) + 6 * w),i * 6 * w);
+  return {states,sums};
 }
 export function scaleSums(a,b,w,h,g,channels,keep,colors,channel = null,terms = null,scale = 0) {
   const mask = channel === null ? 7 : 1 << channel;

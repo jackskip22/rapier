@@ -13,6 +13,8 @@ JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.
 - No dependencies.
 - MIT.
 
+[SnapDOM JPEG XL plugin](https://snapdom.dev/plugins/jxl/) · [EmDash image optimizer](https://plugins.emdashcms.com/plugins/@rapier.website/jxl)
+
 ```sh
 npm install rapier-jxl
 ```

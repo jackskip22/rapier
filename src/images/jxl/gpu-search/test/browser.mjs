@@ -30,5 +30,8 @@ export async function openBrowser({chrome, flags = SOFTWARE_FLAGS, headless = tr
     const a = await navigator.gpu?.requestAdapter();
     return a ? {vendor: a.info.vendor, architecture: a.info.architecture, fallback: a.info.isFallbackAdapter} : null;
   });
+  if (!adapter || adapter.fallback || /swiftshader|llvmpipe|lavapipe|software/i.test(`${adapter.vendor} ${adapter.architecture}`))
+    console.error(`# webgpu: ${adapter ? 'software adapter (' + adapter.vendor + ' ' + adapter.architecture + ')' : 'no adapter'}: correctness only, ` +
+      'times are not representative; time WebGPU in Chrome with a hardware adapter or on the Colab GPU bed.');
   return {page, adapter, origin, close: async () => { await browser.close(); server.close(); }};
 }

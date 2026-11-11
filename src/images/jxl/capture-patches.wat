@@ -328,3 +328,332 @@
         (local.set $sy (i32.add (local.get $sy) (i32.const 1)))
         (br $rows)))
     (local.get $found))
+
+;; Hash slots retain insertion order separately; a zero count marks an empty slot.
+(func $peelSlot (param $key i32) (param $table i32) (param $mask i32) (param $shift i32) (result i32)
+  (local $slot i32) (local $at i32)
+  (local.set $slot (i32.mul (i32.xor (local.get $key) (i32.shr_u (local.get $key) (i32.const 16))) (i32.const -1640531535)))
+  (local.set $slot (i32.and (i32.xor (local.get $slot) (i32.shr_u (local.get $slot) (i32.const 15))) (local.get $mask)))
+  (loop $find
+    (local.set $at (i32.add (local.get $table) (i32.shl (local.get $slot) (local.get $shift))))
+    (if (i32.or (i32.eqz (i32.load offset=4 (local.get $at))) (i32.eq (i32.load (local.get $at)) (local.get $key)))
+      (then (return (local.get $at))))
+    (local.set $slot (i32.and (i32.add (local.get $slot) (i32.const 1)) (local.get $mask)))
+    (br $find))
+  (unreachable))
+
+;; Samples at global positions 0,61,...; the first inserted color wins a count tie.
+(func (export "peelBackground") (param $words i32) (param $n i32) (param $offset i32)
+  (param $table i32) (param $mask i32) (param $order i32) (param $state i32) (param $last i32) (result i32)
+  (local $i i32) (local $v i32) (local $at i32) (local $made i32) (local $count i32) (local $best i32) (local $most i32)
+  (local.set $made (i32.load (local.get $state)))
+  (local.set $i (i32.rem_u (i32.sub (i32.const 61) (i32.rem_u (local.get $offset) (i32.const 61))) (i32.const 61)))
+  (block $done (loop $sample
+    (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+    (local.set $v (i32.load (i32.add (local.get $words) (i32.shl (local.get $i) (i32.const 2)))))
+    (local.set $at (call $peelSlot (local.get $v) (local.get $table) (local.get $mask) (i32.const 3)))
+    (local.set $count (i32.load offset=4 (local.get $at)))
+    (if (i32.eqz (local.get $count)) (then
+      (i32.store (local.get $at) (local.get $v))
+      (i32.store (i32.add (local.get $order) (i32.shl (local.get $made) (i32.const 2))) (local.get $at))
+      (local.set $made (i32.add (local.get $made) (i32.const 1)))))
+    (i32.store offset=4 (local.get $at) (i32.add (local.get $count) (i32.const 1)))
+    (local.set $i (i32.add (local.get $i) (i32.const 61)))
+    (br $sample)))
+  (i32.store (local.get $state) (local.get $made))
+  (if (local.get $last) (then
+    (local.set $i (i32.const 0))
+    (block $chosen (loop $choose
+      (br_if $chosen (i32.ge_u (local.get $i) (local.get $made)))
+      (local.set $at (i32.load (i32.add (local.get $order) (i32.shl (local.get $i) (i32.const 2)))))
+      (local.set $count (i32.load offset=4 (local.get $at)))
+      (if (i32.gt_u (local.get $count) (local.get $most)) (then
+        (local.set $most (local.get $count)) (local.set $best (i32.load (local.get $at)))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $choose)))))
+  (local.get $best))
+
+(func $peelFill (param $out i32) (param $n i32) (param $value i32)
+  (local $i i32) (local $v v128)
+  (local.set $v (i32x4.splat (local.get $value)))
+  (block $tail (loop $quad
+    (br_if $tail (i32.gt_u (i32.add (local.get $i) (i32.const 4)) (local.get $n)))
+    (v128.store (i32.add (local.get $out) (i32.shl (local.get $i) (i32.const 2))) (local.get $v))
+    (local.set $i (i32.add (local.get $i) (i32.const 4))) (br $quad)))
+  (block $done (loop $one
+    (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+    (i32.store (i32.add (local.get $out) (i32.shl (local.get $i) (i32.const 2))) (local.get $value))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $one))))
+
+;; One mark's local rectangle and global run triples. Returns its ink count, or -1 when admission fails.
+(func (export "peelCellData") (param $raw i32) (param $w i32) (param $h i32) (param $x i32) (param $y i32)
+  (param $bg i32) (param $runs i32) (param $runCount i32) (param $out i32) (param $table i32) (result i32)
+  (local $i i32) (local $r i32) (local $p i32) (local $end i32) (local $v i32) (local $pixels i32) (local $colors i32)
+  (local $at i32) (local $mul i32) (local $id i32)
+  (local.set $mul (i32.eq (local.get $bg) (i32.const -1)))
+  (local.set $id (select (i32.const -1) (i32.const 0) (local.get $mul)))
+  (call $peelFill (local.get $out) (i32.mul (local.get $w) (local.get $h)) (local.get $id))
+  (block $counted (loop $count
+    (br_if $counted (i32.ge_u (local.get $i) (local.get $runCount)))
+    (local.set $r (i32.add (local.get $runs) (i32.mul (local.get $i) (i32.const 12))))
+    (local.set $pixels (i32.add (local.get $pixels) (i32.add (i32.sub (i32.load offset=8 (local.get $r)) (i32.load offset=4 (local.get $r))) (i32.const 1))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $count)))
+  (if (i32.ge_u (local.get $pixels) (i32.const 1024)) (then (memory.fill (local.get $table) (i32.const 0) (i32.const 262144))))
+  (local.set $i (i32.const 0))
+  (block $done (loop $run
+    (br_if $done (i32.ge_u (local.get $i) (local.get $runCount)))
+    (local.set $r (i32.add (local.get $runs) (i32.mul (local.get $i) (i32.const 12))))
+    (local.set $p (i32.add (i32.mul (i32.sub (i32.load (local.get $r)) (local.get $y)) (local.get $w)) (i32.sub (i32.load offset=4 (local.get $r)) (local.get $x))))
+    (local.set $end (i32.add (local.get $p) (i32.add (i32.sub (i32.load offset=8 (local.get $r)) (i32.load offset=4 (local.get $r))) (i32.const 1))))
+    (block $row (loop $pixel
+      (br_if $row (i32.ge_u (local.get $p) (local.get $end)))
+      (local.set $v (i32.load (i32.add (local.get $raw) (i32.shl (local.get $p) (i32.const 2)))))
+      (if (i32.eqz (local.get $mul)) (then
+        (if (i32.or
+          (i32.or (i32.lt_u (i32.and (local.get $v) (i32.const 255)) (i32.and (local.get $bg) (i32.const 255)))
+            (i32.lt_u (i32.and (i32.shr_u (local.get $v) (i32.const 8)) (i32.const 255)) (i32.and (i32.shr_u (local.get $bg) (i32.const 8)) (i32.const 255))))
+          (i32.or (i32.lt_u (i32.and (i32.shr_u (local.get $v) (i32.const 16)) (i32.const 255)) (i32.and (i32.shr_u (local.get $bg) (i32.const 16)) (i32.const 255)))
+            (i32.lt_u (i32.shr_u (local.get $v) (i32.const 24)) (i32.shr_u (local.get $bg) (i32.const 24)))))
+          (then (return (i32.const -1))))))
+      (if (i32.ge_u (local.get $pixels) (i32.const 1024)) (then
+        (local.set $at (call $peelSlot (local.get $v) (local.get $table) (i32.const 32767) (i32.const 3)))
+        (if (i32.eqz (i32.load offset=4 (local.get $at))) (then
+          (i32.store (local.get $at) (local.get $v)) (i32.store offset=4 (local.get $at) (i32.const 1))
+          (local.set $colors (i32.add (local.get $colors) (i32.const 1)))))))
+      (i32.store (i32.add (local.get $out) (i32.shl (local.get $p) (i32.const 2)))
+        (select (local.get $v) (i32.sub (local.get $v) (local.get $bg)) (local.get $mul)))
+      (local.set $p (i32.add (local.get $p) (i32.const 1))) (br $pixel)))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $run)))
+  (if (i32.and (i32.ge_u (local.get $colors) (i32.const 1024)) (i32.gt_u (i32.shl (local.get $colors) (i32.const 1)) (local.get $pixels)))
+    (then (return (i32.const -1))))
+  (local.get $pixels))
+
+(func $peelEqual (export "peelEqual") (param $a i32) (param $b i32) (param $n i32) (result i32)
+  (local $i i32)
+  (block $tail (loop $quad
+    (br_if $tail (i32.gt_u (i32.add (local.get $i) (i32.const 4)) (local.get $n)))
+    (if (i32.eqz (i32x4.all_true (i32x4.eq (v128.load (i32.add (local.get $a) (i32.shl (local.get $i) (i32.const 2))))
+      (v128.load (i32.add (local.get $b) (i32.shl (local.get $i) (i32.const 2))))))) (then (return (i32.const 0))))
+    (local.set $i (i32.add (local.get $i) (i32.const 4))) (br $quad)))
+  (block $done (loop $one
+    (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+    (if (i32.ne (i32.load (i32.add (local.get $a) (i32.shl (local.get $i) (i32.const 2))))
+      (i32.load (i32.add (local.get $b) (i32.shl (local.get $i) (i32.const 2))))) (then (return (i32.const 0))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $one)))
+  (i32.const 1))
+
+;; Hash every cell; optionally return nonidentity cells as reverse-order x,y,value triples.
+(func (export "peelGlyphs") (param $cells i32) (param $w i32) (param $h i32) (param $id i32)
+  (param $ink i32) (param $out i32) (result i32)
+  (local $n i32) (local $i i32) (local $v i32) (local $hash i32) (local $count i32) (local $p i32)
+  (local.set $n (i32.mul (local.get $w) (local.get $h)))
+  (local.set $hash (i32.xor (i32.mul (local.get $w) (i32.const -1640531535)) (local.get $h)))
+  (block $hashed (loop $hash
+    (br_if $hashed (i32.ge_u (local.get $i) (local.get $n)))
+    (local.set $v (i32.load (i32.add (local.get $cells) (i32.shl (local.get $i) (i32.const 2)))))
+    (local.set $hash (i32.mul (i32.xor (local.get $hash) (local.get $v)) (i32.const 16777619)))
+    (local.set $count (i32.add (local.get $count) (i32.ne (local.get $v) (local.get $id))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $hash)))
+  (i32.store (local.get $out) (local.get $hash))
+  (if (local.get $ink) (then
+    (local.set $p (local.get $ink))
+    (block $done (loop $reverse
+      (br_if $done (i32.eqz (local.get $i)))
+      (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+      (local.set $v (i32.load (i32.add (local.get $cells) (i32.shl (local.get $i) (i32.const 2)))))
+      (if (i32.ne (local.get $v) (local.get $id)) (then
+        (i32.store (local.get $p) (i32.rem_u (local.get $i) (local.get $w)))
+        (i32.store offset=4 (local.get $p) (i32.div_u (local.get $i) (local.get $w)))
+        (i32.store offset=8 (local.get $p) (local.get $v))
+        (local.set $p (i32.add (local.get $p) (i32.const 12)))))
+      (br $reverse)))))
+  (local.get $count))
+
+;; Template records: width,height,ink pointer,ink count,anchor x,y,value,next index + 1.
+(func (export "peelTemplates") (param $records i32) (param $count i32) (param $table i32) (param $mask i32)
+  (local $i i32) (local $r i32) (local $slot i32) (local $last i32)
+  (memory.fill (local.get $table) (i32.const 0) (i32.shl (i32.add (local.get $mask) (i32.const 1)) (i32.const 4)))
+  (block $done (loop $template
+    (br_if $done (i32.ge_u (local.get $i) (local.get $count)))
+    (local.set $r (i32.add (local.get $records) (i32.shl (local.get $i) (i32.const 5))))
+    (i32.store offset=28 (local.get $r) (i32.const 0))
+    (local.set $slot (call $peelSlot (i32.load offset=24 (local.get $r)) (local.get $table) (local.get $mask) (i32.const 4)))
+    (local.set $last (i32.load offset=12 (local.get $slot)))
+    (if (local.get $last) (then
+      (i32.store offset=28 (i32.add (local.get $records) (i32.shl (i32.sub (local.get $last) (i32.const 1)) (i32.const 5))) (i32.add (local.get $i) (i32.const 1))))
+      (else (i32.store (local.get $slot) (i32.load offset=24 (local.get $r)))
+        (i32.store offset=4 (local.get $slot) (i32.const 1))
+        (i32.store offset=8 (local.get $slot) (i32.add (local.get $i) (i32.const 1)))))
+    (i32.store offset=12 (local.get $slot) (i32.add (local.get $i) (i32.const 1)))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $template))))
+
+;; Erases disjoint template ink, reporting template index and origin, then the remainder bounds. State is pixel,
+;; next template + 1, match count. Zero finishes; a template + 1 asks the bridge to stage that ink and resume here.
+(func (export "peelFactor") (param $cells i32) (param $w i32) (param $h i32) (param $id i32)
+  (param $records i32) (param $table i32) (param $mask i32) (param $out i32) (param $bounds i32)
+  (param $state i32) (param $loaded i32) (param $staged i32) (result i32)
+  (local $i i32) (local $n i32) (local $v i32) (local $slot i32) (local $next i32) (local $r i32)
+  (local $ox i32) (local $oy i32) (local $ink i32) (local $count i32) (local $k i32) (local $p i32) (local $at i32)
+  (local $made i32) (local $x i32) (local $y i32) (local $x0 i32) (local $y0 i32) (local $x1 i32) (local $y1 i32)
+  (local.set $n (i32.mul (local.get $w) (local.get $h)))
+  (local.set $i (i32.load (local.get $state))) (local.set $next (i32.load offset=4 (local.get $state)))
+  (local.set $made (i32.load offset=8 (local.get $state)))
+  (block $done (loop $pixel
+    (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+    (if (i32.eqz (local.get $next)) (then
+      (local.set $v (i32.load (i32.add (local.get $cells) (i32.shl (local.get $i) (i32.const 2)))))
+      (if (i32.ne (local.get $v) (local.get $id)) (then
+      (local.set $slot (call $peelSlot (local.get $v) (local.get $table) (local.get $mask) (i32.const 4)))
+      (local.set $next (i32.load offset=8 (local.get $slot)))))))
+      (block $tried (loop $template
+        (br_if $tried (i32.eqz (local.get $next)))
+        (local.set $r (i32.add (local.get $records) (i32.shl (i32.sub (local.get $next) (i32.const 1)) (i32.const 5))))
+        (local.set $ox (i32.sub (i32.rem_u (local.get $i) (local.get $w)) (i32.load offset=16 (local.get $r))))
+        (local.set $oy (i32.sub (i32.div_u (local.get $i) (local.get $w)) (i32.load offset=20 (local.get $r))))
+        (block $skip
+          (br_if $skip (i32.or (i32.or (i32.lt_s (local.get $ox) (i32.const 0)) (i32.lt_s (local.get $oy) (i32.const 0)))
+            (i32.or (i32.gt_u (i32.add (local.get $ox) (i32.load (local.get $r))) (local.get $w))
+              (i32.gt_u (i32.add (local.get $oy) (i32.load offset=4 (local.get $r))) (local.get $h)))))
+          (local.set $ink (i32.load offset=8 (local.get $r))) (local.set $count (i32.load offset=12 (local.get $r)))
+          (if (i32.eqz (local.get $ink)) (then
+            (if (i32.ne (local.get $next) (local.get $loaded)) (then
+              (i32.store (local.get $state) (local.get $i)) (i32.store offset=4 (local.get $state) (local.get $next))
+              (i32.store offset=8 (local.get $state) (local.get $made)) (return (local.get $next))))
+            (local.set $ink (local.get $staged))))
+          (local.set $k (i32.const 0))
+          (block $matched (loop $test
+            (br_if $matched (i32.ge_u (local.get $k) (local.get $count)))
+            (local.set $p (i32.add (local.get $ink) (i32.mul (local.get $k) (i32.const 12))))
+            (local.set $at (i32.add (local.get $cells) (i32.shl (i32.add (i32.mul (i32.add (local.get $oy) (i32.load offset=4 (local.get $p))) (local.get $w))
+              (i32.add (local.get $ox) (i32.load (local.get $p)))) (i32.const 2))))
+            (br_if $skip (i32.ne (i32.load (local.get $at)) (i32.load offset=8 (local.get $p))))
+            (local.set $k (i32.add (local.get $k) (i32.const 1))) (br $test)))
+          (local.set $k (i32.const 0))
+          (block $erased (loop $erase
+            (br_if $erased (i32.ge_u (local.get $k) (local.get $count)))
+            (local.set $p (i32.add (local.get $ink) (i32.mul (local.get $k) (i32.const 12))))
+            (i32.store (i32.add (local.get $cells) (i32.shl (i32.add (i32.mul (i32.add (local.get $oy) (i32.load offset=4 (local.get $p))) (local.get $w))
+              (i32.add (local.get $ox) (i32.load (local.get $p)))) (i32.const 2))) (local.get $id))
+            (local.set $k (i32.add (local.get $k) (i32.const 1))) (br $erase)))
+          (local.set $at (i32.add (local.get $out) (i32.mul (local.get $made) (i32.const 12))))
+          (i32.store (local.get $at) (i32.sub (local.get $next) (i32.const 1)))
+          (i32.store offset=4 (local.get $at) (local.get $ox)) (i32.store offset=8 (local.get $at) (local.get $oy))
+          (local.set $made (i32.add (local.get $made) (i32.const 1))) (br $tried))
+        (local.set $next (i32.load offset=28 (local.get $r))) (br $template)))
+    (local.set $next (i32.const 0))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $pixel)))
+  (i32.store (local.get $state) (local.get $n)) (i32.store offset=4 (local.get $state) (i32.const 0))
+  (i32.store offset=8 (local.get $state) (local.get $made))
+  (local.set $x0 (local.get $w)) (local.set $y0 (local.get $h))
+  (local.set $x1 (i32.const -1)) (local.set $y1 (i32.const -1)) (local.set $i (i32.const 0))
+  (block $bounded (loop $bound
+    (br_if $bounded (i32.ge_u (local.get $i) (local.get $n)))
+    (if (i32.ne (i32.load (i32.add (local.get $cells) (i32.shl (local.get $i) (i32.const 2)))) (local.get $id)) (then
+      (local.set $x (i32.rem_u (local.get $i) (local.get $w))) (local.set $y (i32.div_u (local.get $i) (local.get $w)))
+      (if (i32.lt_s (local.get $x) (local.get $x0)) (then (local.set $x0 (local.get $x))))
+      (if (i32.gt_s (local.get $x) (local.get $x1)) (then (local.set $x1 (local.get $x))))
+      (if (i32.lt_s (local.get $y) (local.get $y0)) (then (local.set $y0 (local.get $y))))
+      (if (i32.gt_s (local.get $y) (local.get $y1)) (then (local.set $y1 (local.get $y))))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $bound)))
+  (i32.store (local.get $bounds) (local.get $x0)) (i32.store offset=4 (local.get $bounds) (local.get $y0))
+  (i32.store offset=8 (local.get $bounds) (local.get $x1)) (i32.store offset=12 (local.get $bounds) (local.get $y1))
+  (i32.const 0))
+
+(func $peelRectEqual (param $a i32) (param $aw i32) (param $ah i32) (param $b i32) (param $bw i32) (result i32)
+  (local $row i32)
+  (block $done (loop $each
+    (br_if $done (i32.ge_u (local.get $row) (local.get $ah)))
+    (if (i32.eqz (call $peelEqual (local.get $a) (local.get $b) (local.get $aw))) (then (return (i32.const 0))))
+    (local.set $a (i32.add (local.get $a) (i32.shl (local.get $aw) (i32.const 2))))
+    (local.set $b (i32.add (local.get $b) (i32.shl (local.get $bw) (i32.const 2))))
+    (local.set $row (i32.add (local.get $row) (i32.const 1))) (br $each)))
+  (i32.const 1))
+
+;; One contiguous band of groups, indexed by ink value in group/cell order. Records are width,height,cells,area.
+(func (export "peelContainIndex") (param $records i32) (param $count i32) (param $id i32)
+  (param $table i32) (param $mask i32) (param $nodes i32)
+  (local $g i32) (local $r i32) (local $cells i32) (local $n i32) (local $i i32) (local $v i32)
+  (local $slot i32) (local $last i32) (local $node i32) (local $made i32)
+  (memory.fill (local.get $table) (i32.const 0) (i32.shl (i32.add (local.get $mask) (i32.const 1)) (i32.const 4)))
+  (block $indexed (loop $group
+    (br_if $indexed (i32.ge_u (local.get $g) (local.get $count)))
+    (local.set $r (i32.add (local.get $records) (i32.shl (local.get $g) (i32.const 4))))
+    (local.set $cells (i32.load offset=8 (local.get $r))) (local.set $n (i32.load offset=12 (local.get $r)))
+    (local.set $i (i32.const 0))
+    (block $done (loop $pixel
+      (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+      (local.set $v (i32.load (i32.add (local.get $cells) (i32.shl (local.get $i) (i32.const 2)))))
+      (if (i32.ne (local.get $v) (local.get $id)) (then
+        (local.set $slot (call $peelSlot (local.get $v) (local.get $table) (local.get $mask) (i32.const 4)))
+        (local.set $node (i32.add (local.get $nodes) (i32.mul (local.get $made) (i32.const 12))))
+        (i32.store (local.get $node) (local.get $g)) (i32.store offset=4 (local.get $node) (local.get $i))
+        (i32.store offset=8 (local.get $node) (i32.const 0))
+        (local.set $last (i32.load offset=12 (local.get $slot)))
+        (if (local.get $last) (then
+          (i32.store offset=8 (i32.add (local.get $nodes) (i32.mul (i32.sub (local.get $last) (i32.const 1)) (i32.const 12))) (i32.add (local.get $made) (i32.const 1))))
+          (else (i32.store (local.get $slot) (local.get $v))
+            (i32.store offset=8 (local.get $slot) (i32.add (local.get $made) (i32.const 1)))))
+        (i32.store offset=4 (local.get $slot) (i32.add (i32.load offset=4 (local.get $slot)) (i32.const 1)))
+        (i32.store offset=12 (local.get $slot) (i32.add (local.get $made) (i32.const 1)))
+        (local.set $made (i32.add (local.get $made) (i32.const 1)))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $pixel)))
+    (local.set $g (i32.add (local.get $g) (i32.const 1))) (br $group)))
+)
+
+;; Find this target's first larger container in the band. Any absent ink value rejects the whole band; otherwise the
+;; rarest local ink enumerates candidates. Every anchor orders successful origins identically, in group/row order.
+(func (export "peelContain") (param $cells i32) (param $tw i32) (param $th i32) (param $id i32)
+  (param $records i32) (param $table i32) (param $mask i32) (param $nodes i32) (param $out i32) (result i32)
+  (local $n i32) (local $i i32) (local $v i32) (local $slot i32) (local $anchor i32) (local $fewest i32) (local $freq i32)
+  (local $tx i32) (local $ty i32) (local $next i32) (local $node i32) (local $g i32) (local $r i32)
+  (local $gw i32) (local $gh i32) (local $ox i32) (local $oy i32)
+  (local.set $n (i32.mul (local.get $tw) (local.get $th)))
+  (local.set $fewest (i32.const -1)) (local.set $anchor (i32.const -1))
+  (block $anchored (loop $anchor
+    (br_if $anchored (i32.ge_u (local.get $i) (local.get $n)))
+    (local.set $v (i32.load (i32.add (local.get $cells) (i32.shl (local.get $i) (i32.const 2)))))
+    (if (i32.ne (local.get $v) (local.get $id)) (then
+      (local.set $slot (call $peelSlot (local.get $v) (local.get $table) (local.get $mask) (i32.const 4)))
+      (local.set $freq (i32.load offset=4 (local.get $slot)))
+      (if (i32.eqz (local.get $freq)) (then (return (i32.const 0))))
+      (if (i32.lt_u (local.get $freq) (local.get $fewest)) (then
+        (local.set $fewest (local.get $freq)) (local.set $anchor (local.get $i))
+        (local.set $next (i32.load offset=8 (local.get $slot)))
+        (br_if $anchored (i32.eq (local.get $freq) (i32.const 1)))))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $anchor)))
+  (if (i32.lt_s (local.get $anchor) (i32.const 0)) (then (return (i32.const 0))))
+  (local.set $tx (i32.rem_u (local.get $anchor) (local.get $tw))) (local.set $ty (i32.div_u (local.get $anchor) (local.get $tw)))
+  (block $done (loop $candidate
+    (br_if $done (i32.eqz (local.get $next)))
+    (local.set $node (i32.add (local.get $nodes) (i32.mul (i32.sub (local.get $next) (i32.const 1)) (i32.const 12))))
+    (local.set $g (i32.load (local.get $node)))
+    (local.set $r (i32.add (local.get $records) (i32.shl (local.get $g) (i32.const 4))))
+    (block $skip
+      (br_if $skip (i32.le_u (i32.load offset=12 (local.get $r)) (local.get $n)))
+      (local.set $gw (i32.load (local.get $r))) (local.set $gh (i32.load offset=4 (local.get $r)))
+      (local.set $i (i32.load offset=4 (local.get $node)))
+      (local.set $ox (i32.sub (i32.rem_u (local.get $i) (local.get $gw)) (local.get $tx)))
+      (local.set $oy (i32.sub (i32.div_u (local.get $i) (local.get $gw)) (local.get $ty)))
+      (br_if $skip (i32.or (i32.or (i32.lt_s (local.get $ox) (i32.const 0)) (i32.lt_s (local.get $oy) (i32.const 0)))
+        (i32.or (i32.gt_u (i32.add (local.get $ox) (local.get $tw)) (local.get $gw)) (i32.gt_u (i32.add (local.get $oy) (local.get $th)) (local.get $gh)))))
+      (if (call $peelRectEqual (local.get $cells) (local.get $tw) (local.get $th)
+        (i32.add (i32.load offset=8 (local.get $r)) (i32.shl (i32.add (i32.mul (local.get $oy) (local.get $gw)) (local.get $ox)) (i32.const 2))) (local.get $gw)) (then
+        (i32.store (local.get $out) (i32.add (local.get $g) (i32.const 1)))
+        (i32.store offset=4 (local.get $out) (local.get $ox)) (i32.store offset=8 (local.get $out) (local.get $oy))
+        (return (i32.const 1)))))
+    (local.set $next (i32.load offset=8 (local.get $node))) (br $candidate)))
+  (i32.const 0))
+
+;; Fill approved run triples in a band of the body's pixels. Runs wholly outside the band are skipped.
+(func (export "peelBody") (param $words i32) (param $width i32) (param $y0 i32) (param $rows i32)
+  (param $runs i32) (param $count i32) (param $bg i32)
+  (local $i i32) (local $r i32) (local $y i32) (local $x i32)
+  (block $done (loop $run
+    (br_if $done (i32.ge_u (local.get $i) (local.get $count)))
+    (local.set $r (i32.add (local.get $runs) (i32.mul (local.get $i) (i32.const 12))))
+    (local.set $y (i32.sub (i32.load (local.get $r)) (local.get $y0)))
+    (if (i32.lt_u (local.get $y) (local.get $rows)) (then
+      (local.set $x (i32.load offset=4 (local.get $r)))
+      (call $peelFill (i32.add (local.get $words) (i32.shl (i32.add (i32.mul (local.get $y) (local.get $width)) (local.get $x)) (i32.const 2)))
+        (i32.add (i32.sub (i32.load offset=8 (local.get $r)) (local.get $x)) (i32.const 1)) (local.get $bg))))
+    (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $run))))

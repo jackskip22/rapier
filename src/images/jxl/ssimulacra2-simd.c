@@ -47,9 +47,12 @@
 #ifdef S2_FUSED
 #define FUSED_INLINE __attribute__((always_inline)) inline
 #define EXACT_EXPORT(name)
+// The fused build's two exports share one copy of the rows (the madd probe is its first step), not one inlined copy each.
+#define ROWS_INLINE __attribute__((noinline))
 #else
 #define FUSED_INLINE
 #define EXACT_EXPORT(name) EXPORT(name)
+#define ROWS_INLINE __attribute__((noinline))
 #endif
 
 EXACT_EXPORT("s2MetricFma") float s2_metric_fma(float a, float b, float c) { return metric_fma(a, b, c); }
@@ -505,7 +508,7 @@ static void row_sums(const float *p1, const float *p2, float **down, const float
 #define RING 16
 // Whole scores and checkpointed scores take the same rows in the same order. Input contains [input_y,input_y+input_h)
 // of the scale; scratch and sums are the continuation. The whole wrapper specializes these bounds at compile time.
-static __attribute__((always_inline)) inline int metric_scale_rows(int w, int h, int mask, const void *reference, int reference_kind,
+static ROWS_INLINE int metric_scale_rows(int w, int h, int mask, const void *reference, int reference_kind,
   const void *distorted, int distorted_kind, const float *linear, const float *g,
   float *cache0, float *cache1, float *cache2, int cached_mask, float *scratch,
   double *terms, double *edge_terms, double *sums, int32_t *color_keys, float *color_values,

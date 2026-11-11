@@ -7,7 +7,7 @@
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), geolocation=(), microphone=(self)
   Origin-Agent-Cluster: ?1
-  Origin-Trial: AtFuTRsj1SOJpqIO0IrTpfvZjWjm61v47tsWw+RpPlMP3J1ZpZr895WYl81B5uRkO6X9sjAtQN/yp0SrhKNZ9QkAAABheyJvcmlnaW4iOiJodHRwczovL3JhcGllci53ZWJzaXRlOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==
+  Origin-Trial: AqaoG8LlNjNVk0MZgZgvN01KEPHj+Yi74CiAlMxYFpsSZT4n1v6i3l7loSF27vMu5rtJW4PD9cOoXsd3q3dsIAwAAABheyJvcmlnaW4iOiJodHRwczovL3JhcGllci53ZWJzaXRlOjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE4MDYzNjQ4MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==
 
 # Google's Picker for plain files on Drive (notes/drive-picker.mjs): its own page and policy, never the editor's.
 /drive-picker.html

@@ -16,6 +16,7 @@ import {bundleKernelNeeds} from './jxl-kernel-reach.mjs';
 import {refuseDecoder, refuseBrowserVerifyDecoder, refuseSecondAnsWriter, refuseSecondRans, refuseSecondScorer, refuseOtherFormat} from './jxl-module-checks.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
 import {unsteppedSource} from './jxl-unstepped.mjs';
+import {foldReached} from './jxl-fold-reached.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..'), codec = join(repo, 'images/jxl'), v7 = join(codec, 'v7');
 const {GPU_FROM} = await import(pathToFileURL(join(codec, 'gpu-gate.mjs')).href);
@@ -37,12 +38,14 @@ const SAFE_COMPRESS = {defaults: false, dead_code: true, conditionals: true, boo
   evaluate: true, unused: true, comparisons: true, side_effects: true, directives: true, loops: true, properties: true, switches: true, typeofs: true,
   reduce_vars: true, collapse_vars: true, hoist_funs: true};
 const CAPTURE_COMPRESS = {...SAFE_COMPRESS, inline: 1, passes: 2, pure_new: true, lhs_constants: true};
-const CAPTURE_COMPRESSED = /^capture-complete(\.worker)?\.mjs$/;
-const COMPRESSED = /^(capture(-complete)?(\.worker)?|capture-complete\.(groups\.worker|helper)|upload(\.(worker|helper))?|helpers|index|still\.worker|codec|jpeg(\.(node|worker))?|metadata|polyfill|serve(\.node)?|cli|resumable|verify(\.node)?)\.mjs$/;
+const CAPTURE_COMPRESSED = /^(capture-complete(\.(worker|groups\.worker|helper))?|still\.(worker|helper)|index|codec|polyfill|resumable(\.node)?)\.mjs$/;
+const PACKED_COMPRESS = {...CAPTURE_COMPRESS, passes: 3, inline: 3, reduce_funcs: true};
+const PACKED = /^((animation|format)(\.(worker|helper))?|cli|wasm(-modules)?)\.mjs$/;
+const COMPRESSED = /^(capture(-complete)?(\.worker)?|capture-complete\.(groups\.worker|helper)|upload(\.(worker|helper))?|helpers|index|still\.(worker|helper)|codec|jpeg(\.(node|worker))?|metadata|polyfill|serve(\.node)?|cli|resumable(\.node)?|verify(\.node)?)\.mjs$/;
 const terserRoot = process.env.TERSER ? resolve(process.env.TERSER) : dirname(createRequire(import.meta.url).resolve('terser/package.json'));
 const terser = createRequire(import.meta.url)(terserRoot), terserVersion = JSON.parse(await readFile(join(terserRoot, 'package.json'), 'utf8')).version;
 if (terserVersion !== TERSER_VERSION) throw new Error('rapier-jxl 7.0 builds with terser ' + TERSER_VERSION + ', not ' + terserVersion + '.');
-const version = '8.3.2';
+const version = '8.3.3';
 
 export const ONE_FILE = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'codec-upload', 'codec-capture', 'codec-capture-complete', 'codec-animation', 'codec-format', 'codec-decode', 'codec-jpeg', 'polyfill', 'serve', 'verify', 'storage', 'resumable'];
 export const WASM_MODULES = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'verify', 'resumable'];
@@ -76,17 +79,22 @@ function untimed(text) {
   }
 }
 const probesOut = {name: 'probes-out', setup(build) {
+  build.onLoad({filter: /[\\/](exact-ladder|still|offload|webp-quality|photo-v6|photo-output|block-split|gpu-blocks16|gpu-core|jpeg-kernels|photo-whole-search|capture-trees|photo-split)\.mjs$/}, async ({path}) => {
+    const text = await readFile(path, 'utf8'), next = foldReached(path, text);
+    return next === text ? undefined : {contents: next, loader: 'js', resolveDir: dirname(path)};
+  });
   build.onLoad({filter: /[\\/]capture-codec\.mjs$/}, async ({path}) => ({contents: untimed(await readFile(path, 'utf8')), loader: 'js'}));
 }};
 const nativeDictionary = {name: 'native-dictionary', setup(build) {
   build.onResolve({filter: /(^|\/)brotli-dictionary\.mjs$/}, ({path, resolveDir}) =>
     resolve(resolveDir, path) === join(codec, 'brotli-dictionary.mjs') ? {path: join(codec, 'brotli-dictionary-native.mjs')} : undefined);
 }};
-const UNSTEPPED = /^(serve|metadata)(\.|$)|\.(worker|helper)$/;
+const UNSTEPPED = /^(serve|metadata|codec|decode)(\.|$)|\.(worker|helper)$/;
 const unstepped = {name: 'unstepped', setup(build) {
   build.onLoad({filter: /\.mjs$/}, async ({path}) => {
     if (!path.startsWith(codec + '/')) return undefined;
-    const text = await readFile(path, 'utf8'), timed = /[\\/]capture-codec\.mjs$/.test(path) ? untimed(text) : text, next = unsteppedSource(timed);
+    const text = await readFile(path, 'utf8'), timed = /[\\/]capture-codec\.mjs$/.test(path) ? untimed(text) : text;
+    const folded = foldReached(path, timed), next = unsteppedSource(folded);
     return next !== text ? {contents: next, loader: 'js', resolveDir: dirname(path)} : undefined;
   });
 }};
@@ -235,7 +243,7 @@ await oneFile('wasm-modules', 'wasm-modules.mjs', codec);
 for (const file of await readdir(dist)) {
   const path = join(dist, file), module = file.endsWith('.mjs');
   const command = file === 'cli.mjs', source = (await readFile(path, 'utf8')).replace(/^#![^\n]*\n/, '');
-  let {code} = await terser.minify(source, {module, ecma: 2020, compress: COMPRESSED.test(file) && (CAPTURE_COMPRESSED.test(file) ? CAPTURE_COMPRESS : SAFE_COMPRESS), mangle: true, format: {comments: /^!/}});
+  let {code} = await terser.minify(source, {module, ecma: 2020, compress: PACKED.test(file) ? PACKED_COMPRESS : COMPRESSED.test(file) && (CAPTURE_COMPRESSED.test(file) ? CAPTURE_COMPRESS : SAFE_COMPRESS), mangle: true, format: {comments: /^!/}});
   if (module) {
     const original = code, parse = text => acorn.parse(text, {ecmaVersion: 'latest', sourceType: 'module'}).body;
     const nodes = parse(original), functions = [], statements = [];

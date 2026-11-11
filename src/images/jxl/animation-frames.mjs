@@ -58,6 +58,7 @@ export function* animationSteps(a, shared = null) {
   let previous = null, source = null;
   const tolerance = mode === 'modular' ? null : toleranceOf(quality);
   for (let i = 0; i < frames.length; i++) {
+    if (i && i % 16 === 0) yield 0.01 * i / frames.length;
     const {data, duration} = frames[i];
     if (!duration && (i < frames.length - 1 || shown.length)) continue;
     const rects = !previous ? [[0, 0, width, height]] : tolerance ? lossyChanges(source, data, width, height, tolerance) : changes(previous, data, width, height);
@@ -68,7 +69,6 @@ export function* animationSteps(a, shared = null) {
       source ||= new Uint8Array(data.length);
       for (const [x, y, w, h] of rects) for (let row = y; row < y + h; row++) source.set(data.subarray((row * width + x) * 4, (row * width + x + w) * 4), (row * width + x) * 4);
     }
-    if (i % 16 === 15) yield 0.01 * (i + 1) / frames.length;
   }
   shown.at(-1).upTo = frames.length - 1;
   const timing = ticks(shown.map(frame => frame.duration));
@@ -85,11 +85,18 @@ export function* animationSteps(a, shared = null) {
     shown = split; timing.durations = durations;
   }
   const floor = {colour: 1, alpha: false};
-  if (mode !== 'xyb') for (const {data} of shown) {
+  if (mode !== 'xyb') for (let k = 0; k < shown.length; k++) {
+    if (k && k % 16 === 0) yield 0.01;
+    const {data} = shown[k];
     const shape = inspectPixels(data, width, height, {palette: false, samples: samples.native8 ? undefined : samples});
     if (shape.colour === 3) floor.colour = 3;
     if (shape.alpha) floor.alpha = true;
-  } else for (const {data} of shown) if (!floor.alpha) for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) { floor.alpha = true; break; }
+    if (floor.colour === 3 && floor.alpha) break;
+  } else for (let k = 0; k < shown.length && !floor.alpha; k++) {
+    if (k && k % 16 === 0) yield 0.01;
+    const {data} = shown[k];
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) { floor.alpha = true; break; }
+  }
 
   const parts = shown.flatMap((frame, k) => frame.rects.map((rect, r) => ({frame: k, data: frame.data, previous: k ? shown[k - 1].data : null, rect, shows: r === frame.rects.length - 1})));
   const maskable = mode === 'modular' && samples.native8 && !floor.alpha;
@@ -194,8 +201,12 @@ const frameEncodeSteps = (data, width, height, options) => job(effortJob(data, w
 function* frameMode(a, first, frames) {
   const {width, height, quality, samples, photo, colorSpace} = a;
   if (quality >= 100 || !samples.native8 || photo === false) return 'modular';
-  const rich = photo === true ? first
-    : frames.find(({data, duration}, i) => (duration > 0 || i === frames.length - 1) && !inspectPixels(data, width, height).palette)?.data;
+  let rich = photo === true ? first : undefined;
+  if (photo !== true) for (let i = 0; i < frames.length; i++) {
+    if (i && i % 16 === 0) yield 0;
+    const {data, duration} = frames[i];
+    if ((duration > 0 || i === frames.length - 1) && !inspectPixels(data, width, height).palette) { rich = data; break; }
+  }
   const dct = colorSpace === 'srgb' && preferXYB(rich ?? first, width, height) ? 'xyb' : 'ycbcr';
   if (rich) return dct;
   let alpha = false;

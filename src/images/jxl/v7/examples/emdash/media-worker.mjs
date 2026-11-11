@@ -11,6 +11,12 @@ function copyOptions(site) {
     ...(site.maxKilobytes && {maxBytes: site.maxKilobytes * 1024})};
 }
 
+async function jpegReference(input, original) {
+  const kept = original ?? await recompress(input, {effort: 1});
+  const {decode} = await import('rapier-jxl/decode');
+  return decode(kept.bytes);
+}
+
 async function browserVerified(file, result, progress) {
   const [{verify, configureDecoder}, {decode}, {restore}] = await Promise.all([
     import('rapier-jxl/verify'), import('rapier-jxl/decode'), import('rapier-jxl/jpeg')]);
@@ -24,7 +30,8 @@ async function browserVerified(file, result, progress) {
 
 export async function makeWidths(file, selected, main, progress = () => {}, {deliveryOnly = false} = {}) {
   const site = settings(selected), input = new Uint8Array(await file.arrayBuffer()), source = await digest(input);
-  let copies = await deliveryCopies(file, main, site.widths, browserTools(site.effort),
+  const reference = file.type === 'image/jpeg' && !deliveryOnly ? await jpegReference(input) : file;
+  let copies = await deliveryCopies(reference, main, site.widths, browserTools(site.effort),
     {...copyOptions(site), onProgress: progress});
   if (deliveryOnly) {
     copies = copies.filter(copy => site.widths.includes(copy.width) && copy.width < main.width);
@@ -42,7 +49,9 @@ export async function make(file, selected, progress = () => {}, {deliveryOnly = 
   const input = new Uint8Array(await file.arrayBuffer()), source = await digest(input);
   const original = jpeg ? await recompress(input, {effort: site.effort}) : null;
   const archive = archiveOriginals && !deliveryOnly ? original : null;
-  const made = operation === 'recompress' ? original : await ({encode, fit}[operation])(file, options);
+  let decoded;
+  const reference = () => jpeg && !deliveryOnly ? (decoded ??= jpegReference(input, original)) : file;
+  const made = operation === 'recompress' ? original : await ({encode, fit}[operation])(await reference(), options);
   const limit = site.maxKilobytes ? site.maxKilobytes * 1024 : Infinity;
   const eligible = result => result?.fits === true && result.bytes instanceof Uint8Array && result.bytes.length <= limit;
   let result = eligible(original) && (!eligible(made) || original.bytes.length <= made.bytes.length) ? original : made;
@@ -63,7 +72,7 @@ export async function make(file, selected, progress = () => {}, {deliveryOnly = 
     progress(1);
     return {kind, over, original: archive, archiveIsDelivery, result, source, bytes: input.byteLength, copies: []};
   }
-  const copies = await deliveryCopies(file, result, site.widths, browserTools(site.effort),
+  const copies = await deliveryCopies(await reference(), result, site.widths, browserTools(site.effort),
     {...copyOptions(site), onProgress: f => progress(0.5 + f / 2)});
   return {kind, over: false, original: archive, archiveIsDelivery, result, source, bytes: input.byteLength, copies};
 }
