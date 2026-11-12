@@ -36581,10 +36581,16 @@ async function rapierEmbedClose() {
 	if (!_rapierEmbed.connected) { _rapierEmbedFailure('The host connection is unavailable.', null, 'connection'); return false; }
 	const requestId = _rapierEmbedRequestId();
 	_rapierEmbed.pendingCloseId = requestId;
-	const admitted = await _rapierWithSettledExternalDocument(() => ({
-		dirty: _rapierIsDirty(),
-		stamp: Object.freeze(_rapierMutationStamp()),
-	}), { quiet: true });
+	let admitted;
+	try {
+		admitted = await _rapierWithSettledExternalDocument(() => ({
+			dirty: _rapierIsDirty(),
+			stamp: Object.freeze(_rapierMutationStamp()),
+		}), { quiet: true });
+	} catch (error) {
+		console.warn('[rapier-embed] close settle failed', error);
+		admitted = { settled: false, value: null };
+	}
 	if (_rapierEmbed.pendingCloseId !== requestId) return false;
 	if (!admitted.settled) {
 		_rapierEmbed.pendingCloseId = null;
@@ -38285,7 +38291,7 @@ function _rapierDeleteWholeLine() {
 	if (count === 1) {
 		editDiv._rapierSkipBlurCommit = true;
 		hideFormatToolbar();
-		if (!_rapierPushDeletedBlock(_removeBlockById(block.id))) return false;
+		if (!_rapierPushDeletedBlock(_removeBlockById(block.id))) { editDiv._rapierSkipBlurCommit = false; return false; }
 	} else {
 		const raw = _rapierRawWithoutLastLine(block.raw, item ? 'item' : 'quote', count);
 		if (raw == null || !_replaceOneBlockWithRawSet(block, [raw], 0, 0, { caretBefore, edit: false })) return false;
@@ -39633,7 +39639,7 @@ function _rapierHandleEmptyBlockBackspace() {
 	context.editDiv._rapierSkipBlurCommit = true;
 	hideFormatToolbar();
 	const snapshot = _removeBlockById(context.block.id);
-	if (!snapshot) return false;
+	if (!snapshot) { context.editDiv._rapierSkipBlurCommit = false; return false; }
 
 	_rapierPushDeletedBlock(snapshot);
 	if (_rapierWholeBlock(previousBlock) || _rapierIsRuleBlock(previousBlock)) {
@@ -40208,7 +40214,7 @@ function _rapierHandleBlockBoundaryDelete(direction) {
 				caret.setStartBefore(nextWrapper); caret.collapse(true);
 				sel.removeAllRanges(); sel.addRange(caret);
 			} else placeTaskStart(_enterBlockEditAtOffset(neighbour.id, 0));
-		}
+		} else editDiv._rapierSkipBlurCommit = false;
 		return true;
 	}
 
@@ -40540,7 +40546,10 @@ function _rapierLeaveCodeAtEnd(editDiv, wrapper, block, codeEl, range) {
 	const index = rapier.document.blocks.indexOf(block);
 	editDiv._rapierSkipBlurCommit = true;
 	const written = String(block.raw || '').includes('\r\n') ? raw.replace(/\n/g, '\r\n') : raw;
-	if (index < 0 || !_replaceOneBlockWithRawSet(block, [written], 0, 0, { edit: false, preserveRaw: true })) return false;
+	if (index < 0 || !_replaceOneBlockWithRawSet(block, [written], 0, 0, { edit: false, preserveRaw: true })) {
+		editDiv._rapierSkipBlurCommit = false;
+		return false;
+	}
 	return _rapierMakeEdgeParagraph(rapier.document.blocks[index], true);
 }
 

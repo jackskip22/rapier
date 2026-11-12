@@ -180,12 +180,15 @@ function ownedPicture(bytes) {
   copy.set(bytes);
   return copy;
 }
-function externalImage(raw, asset, url) {
+function externalImage(raw, asset, url, base) {
   if (!url) return raw;
   const token = '[' + asset.label + ']', at = raw.lastIndexOf(token);
   if (at < 0) throw refusal('asset_reference_invalid');
   const title = asset.title ? ' "' + String(asset.title).replace(/&/g, '&amp;').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]/g, ' ') + '"' : '';
-  return raw.slice(0, at) + '(<' + assetURL(url).replace(/&/g, '&amp;') + '>' + title + ')' + raw.slice(at + token.length);
+  let address = assetURL(url);
+  const folder = base ? new URL('.', base).href : '';
+  if (folder && address.startsWith(folder) && address.length > folder.length && !/[?#]/.test(address)) address = address.slice(folder.length);
+  return raw.slice(0, at) + '(<' + address.replace(/&/g, '&amp;') + '>' + title + ')' + raw.slice(at + token.length);
 }
 
 function createAssetBroker({current, send}) {
@@ -266,12 +269,12 @@ function pictureBase(value) {
     const text = String(src || '').trim();
     if (!text || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(text)) return null;
     try { const url = new URL(text, base); if (url.origin !== base.origin) return null; vouched.add(url.href); return url.href; } catch (_) { return null; }
-  }, {vouched});
+  }, {vouched, base: base.href});
 }
 return {FEATURES, LIMITS, ASSET_TYPES, refusal, coded, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase};
 })();
 const BUILDS = Object.freeze({full: 'https://rapier.website/embed/rapier.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
-const PACKAGE_VERSION = '1.2.64';
+const PACKAGE_VERSION = '1.2.65';
 const OPTIONS = ['build', 'src', 'plugins', 'approvePlugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
   'onState', 'compare', 'onClose', 'settings', 'style', 'title', 'onError', 'timeout'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];

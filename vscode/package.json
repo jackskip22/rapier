@@ -1,6 +1,6 @@
 {
-  "name": "rapier-markdown",
-  "displayName": "Rapier - Markdown Editor & Art",
+  "name": "rapier",
+  "displayName": "Rapier",
   "description": "Write Markdown in Rapier inside VS Code: formatted or source view, find and replace, compare, comments, diagrams, math and tables. Saves the file exactly as written.",
   "version": "0.1.0",
   "publisher": "rapier",

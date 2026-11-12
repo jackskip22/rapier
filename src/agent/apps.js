@@ -6,7 +6,7 @@
   const STRANDED_DRAFT_LIMIT = 8;
   const pending = new Map(), listeners = new AbortController();
   const nonce = crypto.randomUUID();
-  let nextId = 0, origin = null, initialized = false, closed = false, closing = false;
+  let nextId = 0, origin = null, initialized = false, closed = false, closing = false, teardownFlight = null;
   let host, capabilities = {}, context = {}, token = '', base = null, incoming = null;
   let version = 0, incomingVersion = 0, presentationBlocked = false;
   let dirty = false, flight = null, switching = false;
@@ -2621,8 +2621,41 @@
     });
   }
 
+  function resumeAfterRefusedClose(reply, message, resubscribe = false) {
+    closing = false;
+    if (resubscribe && boundFile) void request('resources/subscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
+    contextChanged();
+    resumeOpen();
+    schedule(0);
+    reply({error: {code: -32000, message}});
+  }
+
   async function teardown(id) {
+    if (closed) { post({id, result: {}}); return; }
+    if (teardownFlight) {
+      if (teardownFlight.ids.has(id)) return;
+      teardownFlight.ids.add(id);
+      post({id, ...await teardownFlight.answer});
+      return;
+    }
+    let settle;
+    const answer = new Promise(resolve => { settle = resolve; });
+    const unsaved = {error: {code: -32000, message: 'The document could not finish saving.'}};
+    teardownFlight = {ids: new Set([id]), answer};
+    const reply = value => { settle(value); post({id, ...value}); };
     closing = true;
+    let unsubscribed = false;
+    try { await closeView(reply, () => { unsubscribed = true; }); }
+    catch (error) {
+      if (!closed) resumeAfterRefusedClose(reply, unsaved.error.message, unsubscribed);
+      throw error;
+    } finally {
+      settle(unsaved);
+      teardownFlight = null;
+    }
+  }
+
+  async function closeView(reply, unsubscribing) {
     cancelEditorRequests('editor_unavailable', {waitingOnly: true});
     cancelMaterial('editor_unavailable');
     cancelExport('editor_unavailable');
@@ -2632,34 +2665,27 @@
     const local = base ? await host.snapshot() : null;
     if ((!saved && (dirty || flight)) || strandedDrafts.length > 0 ||
         (local && !filePreserved(local)) || switching || uploadRunning || importRunning || fileHydrations.size) {
-      closing = false;
-      contextChanged();
-      resumeOpen();
-      post({id, error: {code: -32000, message: 'Unsent draft remains. Resolve or download it before closing.'}});
+      resumeAfterRefusedClose(reply, 'Unsent draft remains. Resolve or download it before closing.');
       return;
     }
     await publishHumanContext(true);
     clearTimeout(contextTimer);
     clearTimeout(contextExpiryTimer);
     if (boundFile) {
+      unsubscribing();
       await request('resources/unsubscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
     }
     const latest = base ? await host.snapshot() : null;
     if ((latest && (!acknowledged(latest) || !filePreserved(latest))) || dirty || flight ||
         globalThis.RapierCommentsUI?.keepDraft() === false) {
-      closing = false;
-      if (boundFile) void request('resources/subscribe', {uri: boundFile.store.file.resourceUri}).catch(() => {});
-      contextChanged();
-      resumeOpen();
-      schedule(0);
-      post({id, error: {code: -32000, message: 'Unsent draft remains. Resolve or download it before closing.'}});
+      resumeAfterRefusedClose(reply, 'Unsent draft remains. Resolve or download it before closing.', true);
       return;
     }
     boundFile?.store.dispose();
     cancelEditorRequests('editor_unavailable', {forget: true});
     cancelMaterial('editor_unavailable', {forget: true});
     cancelExport('editor_unavailable');
-    post({id, result: {}});
+    reply({result: {}});
     closed = true;
     void globalThis.RapierAgentBrowser?.refresh?.();
     exportFlight = null;
@@ -2688,11 +2714,7 @@
     if (!initialized || typeof value.method !== 'string') return;
     if (Object.hasOwn(value, 'id')) {
       if (value.method === 'ping') post({id: value.id, result: {}});
-      else if (value.method === 'ui/resource-teardown') { finishHostWork(); void teardown(value.id).catch(error => {
-        closing = false;
-        post({id: value.id, error: {code: -32000, message: 'The document could not finish saving.'}});
-        failed(error);
-      }); }
+      else if (value.method === 'ui/resource-teardown') { finishHostWork(); void teardown(value.id).catch(failed); }
       else post({id: value.id, error: {code: -32601, message: 'Method not supported'}});
       return;
     }
