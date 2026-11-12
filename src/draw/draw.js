@@ -1473,8 +1473,25 @@ function _rapierDrawSettledRecipe() {
 	if (!state.open || !state.recipe) return null;
 	const before = state.gesture?.before || state.textEdit?.before ||
 		((state.settingEdit?.changed || state.colourEdit || state.fadeEdit) && state.sweepBase);
-	if (before) return _rapierDrawRestoreRecipe(before);
-	return _rapierDrawHistoryCopy(state.replay ? { ...state.replay.recipe, shapes: state.replay.targetShapes } : state.recipe);
+	if (before) return _rapierDrawKeptRecipe(_rapierDrawRestoreRecipe(before));
+	return _rapierDrawKeptRecipe(_rapierDrawHistoryCopy(state.replay ? { ...state.replay.recipe, shapes: state.replay.targetShapes } : state.recipe));
+}
+function _rapierDrawKeptRecipe(recipe) {
+	const core = globalThis.RapierDrawCore, state = _rapierDrawState;
+	if (typeof core?._rapierDrawKeepShape !== 'function' || !Array.isArray(recipe?.shapes)) return recipe;
+	const held = state.keptShapes?.session === state.session ? state.keptShapes.byId : null, next = new Map(), seen = new Set();
+	for (const shape of recipe.shapes) if (shape && typeof shape.id === 'string') { if (seen.has(shape.id)) next.set(shape.id, null); seen.add(shape.id); }
+	recipe.shapes = recipe.shapes.map(shape => {
+		if (!shape || typeof shape !== 'object' || shape.recognized === 'paint' || shape.effect !== undefined || typeof shape.id !== 'string' || next.get(shape.id) === null) return shape;
+		const before = held?.get(shape.id);
+		const kept = before && core._rapierDrawSameShapeData(before, shape) ? before : core._rapierDrawKeepShape(shape);
+		if (!kept) return shape;
+		next.set(shape.id, kept);
+		return kept;
+	});
+	for (const [id, kept] of next) if (kept === null) next.delete(id);
+	state.keptShapes = {session: state.session, byId: next};
+	return recipe;
 }
 function _rapierDrawContext() {
 	const state = _rapierDrawState;
@@ -3515,7 +3532,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.65/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.66/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -6427,7 +6444,7 @@ async function _rapierDrawClose({ recover = false, landed = false } = {}) {
 	focus?.focus({preventScroll: true});
 	globalThis.RapierDrawAgentPaint?.forgetWaterSession?.(globalThis.RapierDrawAgentPaint.waterSession(state.session));
 	state.paintFastSources?.clear(); state.finishHandoff = null; state.shapeMarkupCache = null;
-	state.open = false; state.painter = false; state.pencil = false; state.session = (state.session || 0) + 1; state.editing = null; state.insertTarget = null; state.notes = null; state.openSnapshot = null;
+	state.open = false; state.painter = false; state.pencil = false; state.session = (state.session || 0) + 1; state.keptShapes = null; state.editing = null; state.insertTarget = null; state.notes = null; state.openSnapshot = null;
 	if(typeof _rapierPaintTrimHistory==='function')_rapierPaintTrimHistory();
 	_rapierDrawLiquidStop(); _rapierDrawCopierStop();
 	setTimeout(() => void _rapierDrawLiquidResume(), 0);
@@ -6684,7 +6701,7 @@ async function _rapierDrawBackupRemove(store, files, owner, { quiet = false } = 
 	return ok;
 }
 function _rapierDrawBackupText(record) {
-	const pointsText = globalThis.RapierDrawCore?._rapierDrawPointsText;
+	const pointsText = globalThis.RapierDrawCore?._rapierDrawPointsText, shapeText = globalThis.RapierDrawCore?._rapierDrawShapeText;
 	if (typeof pointsText !== 'function' || 'toJSON' in Object.prototype || 'toJSON' in Array.prototype) return null;
 	const data = (holder, key) => { const slot = Object.getOwnPropertyDescriptor(holder, key); return slot && 'value' in slot ? slot : null; };
 	const plain = value => value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype && !Object.hasOwn(value, 'toJSON');
@@ -6710,9 +6727,21 @@ function _rapierDrawBackupText(record) {
 		}
 		return '[' + out.join(',') + ']';
 	};
+	const shapes = list => {
+		if (!Array.isArray(list) || Object.getPrototypeOf(list) !== Array.prototype || Object.hasOwn(list, 'toJSON')) throw null;
+		const out = new Array(list.length);
+		for (let i = 0; i < list.length; i++) {
+			const slot = data(list, i);
+			if (!slot) throw null;
+			const text = shapeText?.(slot.value) ?? value(i, slot.value);
+			if (text === undefined) throw null;
+			out[i] = text;
+		}
+		return '[' + out.join(',') + ']';
+	};
 	try {
 		if (!plain(record) || !plain(record.recipe)) return null;
-		return object(record, (key, item) => key === 'recipe' ? object(item, (key, item) => key === 'strokes' ? strokes(item) : value(key, item)) : value(key, item));
+		return object(record, (key, item) => key === 'recipe' ? object(item, (key, item) => key === 'strokes' ? strokes(item) : key === 'shapes' ? shapes(item) : value(key, item)) : value(key, item));
 	} catch (_) { return null; }
 }
 async function _rapierDrawBackupWrite(closing = false, sealed = false) {
@@ -6747,7 +6776,7 @@ async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 		if (!closing && !stroking && (state.gesture || state.textEdit || state.settingEdit || state.replay)) { _rapierDrawBackupTouch(); return; }
 		if (stroking) carried = true;
 		state.backupDirty = carried;
-		const recipe = _rapierDrawHistoryCopy({ ...state.recipe, fonts: undefined });
+		const recipe = _rapierDrawKeptRecipe(_rapierDrawHistoryCopy({ ...state.recipe, fonts: undefined }));
 		recipe.tool = state.tool;
 		let live = !carried && typeof _rapierPaintLayerSnapshot === 'function' ? _rapierPaintLayerSnapshot(!urgent) : null;
 		if (live?.then) live = await live;

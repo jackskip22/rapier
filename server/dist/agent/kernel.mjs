@@ -3,7 +3,7 @@ import {htmlFence, htmlRemoved, retiredPosterSplices} from '../spec/html-blocks.
 import {sha256, sha256Parts} from '../kit/ledger/hash.mjs';
 import {sourceFacts as textFacts} from '../kit/ledger/source.mjs';
 import {dataOmissions} from '../spec/md-assets.mjs';
-import {jsonText, jsonValueParts, admitOwnedJson, isOwnedJson} from './json-value.mjs';
+import {jsonText, jsonValueParts, admitOwnedJson, isOwnedJson, sameJsonData, keptJsonData} from './json-value.mjs';
 import {readBase} from '../kit/ledger/carried.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
 import {transportInterval, transportTouchedInterval} from '../kit/ledger/merge.mjs';
@@ -806,6 +806,14 @@ function inspectPaintRecord(paint) {
     ...(paint.actions ? {actions: {kept: true, count: paint.actions.length}} : {}),
     ...(paint.replay ? {replay: {kept: true, entries: paint.replay.entries.length}} : {})} : paint;
 }
+const keptSizes = [];
+function disclosedRecipeText(recipe) {
+  const known = rememberedFor(keptSizes, recipe);
+  if (known) return {bytes: known.bytes};
+  const size = bytes(jsonText(Array.isArray(recipe?.shapes) ? disclosedRecipe(recipe) : recipe));
+  remember(keptSizes, {recipe: keptJsonData(recipe), bytes: size});
+  return {bytes: size};
+}
 export function disclosedRecipe(recipe) {
   const {renditions, ...source} = recipe;
   return {...source, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
@@ -822,10 +830,26 @@ export async function primeRecipeDigest(recipe, digestText) {
   if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest)) return false;
   recipeTextDigests.delete(text); recipeTextDigests.set(text, digest);
   while (recipeTextDigests.size > 2) recipeTextDigests.delete(recipeTextDigests.keys().next().value);
+  if (!rememberedFor(keptDigests, admitted)) remember(keptDigests, {recipe: keptJsonData(admitted), digest});
   return true;
 }
 const drawingRecipeDigests = [];
+const keptDigests = [];
+function rememberedFor(rows, recipe) {
+  const at = rows.findIndex(row => sameJsonData(recipe, row.recipe));
+  if (at < 0) return null;
+  const [row] = rows.splice(at, 1); rows.unshift(row);
+  return row;
+}
+function remember(rows, row) { rows.unshift(row); rows.length = Math.min(rows.length, 4); }
 function admittedDrawingRecipeDigest(recipe) {
+  const known = rememberedFor(keptDigests, recipe);
+  if (known) return known.digest;
+  const digest = drawingRecipeDigestOf(recipe);
+  remember(keptDigests, {recipe: keptJsonData(recipe), digest});
+  return digest;
+}
+function drawingRecipeDigestOf(recipe) {
   const rasters = [], keepRaster = value => { rasters.push(value); return null; };
   const metadata = canonicalJson({...recipe, shapes: recipe.shapes.map(shape => shape.recognized !== 'paint' ? shape : {...shape,
     raster: keepRaster(shape.raster), ...(shape.paint?.replay ? {paint: {...shape.paint, replay: {...shape.paint.replay,
@@ -836,7 +860,7 @@ function admittedDrawingRecipeDigest(recipe) {
     const [row] = drawingRecipeDigests.splice(at, 1); drawingRecipeDigests.push(row);
     return row.digest;
   }
-  const text = canonicalJson(recipe), digest = recipeTextDigests.get(text) ?? sha256(text), chars = metadata.length + rasters.reduce((total, value) => total + (value?.length || 0), 0);
+  const text = rasters.length ? canonicalJson(recipe) : metadata, digest = recipeTextDigests.get(text) ?? sha256(text), chars = metadata.length + rasters.reduce((total, value) => total + (value?.length || 0), 0);
   if (chars <= 32 * 1024 * 1024) {
     drawingRecipeDigests.push({metadata, rasters, digest, chars});
     while (drawingRecipeDigests.length > 4 || drawingRecipeDigests.reduce((total, row) => total + row.chars, 0) > 32 * 1024 * 1024)
@@ -1149,13 +1173,13 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (typeof value.recipeUnavailable === 'string') result.recipeUnavailable = clip(value.recipeUnavailable, 128);
     if (value.recipe != null) {
       let text;
-      try { text = JSON.stringify(Array.isArray(value.recipe?.shapes) ? disclosedRecipe(value.recipe) : value.recipe); } catch (_) { return false; }
+      try { text = disclosedRecipeText(value.recipe); } catch (_) { return false; }
       const recipe = _rapierDrawAdmitRecipe(value.recipe);
       if (!recipe) return false;
       const recipeDigest = admittedDrawingRecipeDigest(recipe);
       if (result.recipeDigest && result.recipeDigest !== recipeDigest) return false;
       result.recipeDigest = recipeDigest;
-      if (bytes(text) > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
+      if (text.bytes > LIMITS.authorityBytes) result.recipeUnavailable = 'target_over_edit_budget';
       else result.recipe = recipe;
     }
     if (Array.isArray(value.receipts)) result.receipts = normalizeDrawingReceipts(value.receipts);

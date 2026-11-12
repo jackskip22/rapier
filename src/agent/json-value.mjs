@@ -59,10 +59,67 @@ export function* jsonStringParts(value) {
   yield JSON.stringify(value);
 }
 
-export function* jsonValueParts(value, canonical = false, unescaped = false) {
+const FROZEN_JSON = [new WeakMap(), new WeakMap()], NOT_KEPT = new WeakSet(), IMMUTABLE = new WeakSet();
+function immutableData(value, active = new Set()) {
+  if (IMMUTABLE.has(value)) return true;
+  const asked = active.size === 0;
+  if (NOT_KEPT.has(value) || !value || typeof value !== 'object' || !Object.isFrozen(value) || active.has(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (Array.isArray(value) ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) { NOT_KEPT.add(value); return false; }
+  const own = Object.getOwnPropertyDescriptors(value);
+  if (own.toJSON) { NOT_KEPT.add(value); return false; }
+  if (Array.isArray(value)) for (let i = 0; i < value.length; i++) if (!own[i]) { NOT_KEPT.add(value); return false; }
+  active.add(value);
+  for (const slot of Object.values(own)) {
+    if (!('value' in slot)) { active.delete(value); NOT_KEPT.add(value); return false; }
+    const item = slot.value, type = typeof item;
+    if (item === null || type === 'string' || type === 'number' || type === 'boolean') continue;
+    if (type !== 'object' || !immutableData(item, active)) { active.delete(value); NOT_KEPT.add(value); return false; }
+  }
+  active.delete(value);
+  if (asked) IMMUTABLE.add(value);
+  return true;
+}
+function frozenText(value, canonical) {
+  if (!immutableData(value)) return null;
+  const kept = FROZEN_JSON[canonical ? 1 : 0];
+  let text = kept.get(value);
+  if (text === undefined) {
+    text = [...jsonValueParts(value, canonical, false, false)].join('');
+    text = JSON.parse(JSON.stringify(text));
+    kept.set(value, text);
+    const numbers = item => typeof item === 'number';
+    if (Array.isArray(value) && value.every(item => numbers(item) || Array.isArray(item) && item.every(numbers))) FROZEN_JSON[canonical ? 0 : 1].set(value, text);
+  }
+  return text;
+}
+export function sameJsonData(a, b) {
+  if (a === b) return typeof a !== 'number' || Number.isFinite(a);
+  if (typeof a !== typeof b || !a || !b || typeof a !== 'object') return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!(i in a) || !(i in b) || !sameJsonData(a[i], b[i])) return false;
+    return true;
+  }
+  const plain = value => { const prototype = Object.getPrototypeOf(value); return (prototype === Object.prototype || prototype === null) && typeof value.toJSON !== 'function'; };
+  if (Array.isArray(b) || !plain(a) || !plain(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) if (!Object.hasOwn(b, key) || !sameJsonData(a[key], b[key])) return false;
+  return true;
+}
+export function keptJsonData(value) {
+  if (!value || typeof value !== 'object' || immutableData(value)) return value;
+  if (Array.isArray(value)) return value.map(keptJsonData);
+  const copy = {};
+  for (const key of Object.keys(value)) copy[key] = keptJsonData(value[key]);
+  return copy;
+}
+export function* jsonValueParts(value, canonical = false, unescaped = false, frozen = true) {
   const prepare = (value, key) => !canonical && value && typeof value.toJSON === 'function' ? value.toJSON(key) : value;
   const missing = value => value === undefined || typeof value === 'function' || typeof value === 'symbol';
   const frames = [{value: prepare(value, ''), index: -1}], active = new Set();
+  const plainPrototypes = !('toJSON' in Object.prototype) && !('toJSON' in Array.prototype);
   let chunk = '';
   while (frames.length) {
     const frame = frames[frames.length - 1];
@@ -147,6 +204,16 @@ export function* jsonValueParts(value, canonical = false, unescaped = false) {
         if (chunk.length >= 4096) { yield chunk; chunk = ''; }
       }
       continue;
+    } else if (frozen && !unescaped && plainPrototypes && child && typeof child === 'object' && Object.isFrozen(child) && frozenText(child, canonical) !== null) {
+      const encoded = frozenText(child, canonical);
+      if (encoded.length >= LONG_STRING) {
+        if (chunk) { yield chunk; chunk = ''; }
+        yield encoded;
+      } else {
+        chunk += encoded;
+        if (chunk.length >= 4096) { yield chunk; chunk = ''; }
+      }
+      continue;
     } else if (!canonical && !unescaped) {
       const owned = ownedJsonEntry(child);
       if (owned) {
@@ -167,5 +234,6 @@ export function* jsonValueParts(value, canonical = false, unescaped = false) {
 
 export function jsonText(value, canonical = false) {
   const parts = [...jsonValueParts(value, canonical)];
-  return parts.length === 1 && parts[0] === undefined ? undefined : parts.join('');
+  if (parts.length === 1 && parts[0] === undefined) return undefined;
+  return parts.join('');
 }

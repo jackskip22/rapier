@@ -17,7 +17,7 @@
   let kernel, previous, refreshing, registrationOwner, registrationExposure = '';
   let readyResolve, readyReject, readyDone = false, replacing = false, refreshAgain = false;
   let comparisonOwner = null, comparisonKernelId = null, comparisonGeneration = -1, remoteComparison = null;
-  let contextSequence = 0, humanSequence = 0, checkpointedSequence = -1, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
+  let personActs = 0, personPlace = null, committing = 0, contextSequence = 0, humanSequence = 0, checkpointedSequence = -1, contextQueued = false, contextTimer = 0, lastInputAt = 0, lastPointerAt = 0;
   let retainedPointer = null, projecting = 0, viewFlight = null;
   let pointerFrame = 0;
   let visualFlight = null, materialFlight = null;
@@ -70,6 +70,8 @@
       humanSequence !== checkpointedSequence && rapier.document.blocks.some(block => block.dirty))) ||
     Date.now() - lastInputAt < 900 ||
     globalThis.RapierImageFlow?.status().moving === true;
+  const personEditing = () => composing() || globalThis.RapierFlowchartEditor?.editing() === true ||
+    Date.now() - lastInputAt < 900 || globalThis.RapierImageFlow?.status().moving === true;
   const pointerCurrent = () => retainedPointer && retainedPointer.documentId === String(rapier.identity.authority) &&
     retainedPointer.revision === Number(rapier.revision.settled) &&
     retainedPointer.generation === Number(rapier.revision.generation);
@@ -193,7 +195,44 @@
     contextChanged('drawing_navigation');
   }
 
+  function placeVersion(inSource) { return inSource ? 'text:' + rapier.document.source?.contentId : rapier.document.blocks; }
+  function keptPlaceNow() {
+    try {
+      const pointer = livePointer(), selection = pointer.selection;
+      if (!selection || selection.objectId) return {kind: 'none'};
+      const ta = document.getElementById('source-textarea'), inSource = !!ta && document.activeElement === ta;
+      let direction = 'none';
+      if (inSource) direction = ta.selectionDirection === 'backward' ? 'backward' : selection.start === selection.end ? 'none' : 'forward';
+      else {
+        const s = getSelection();
+        if (s?.rangeCount && !s.isCollapsed) {
+          const r = s.getRangeAt(0);
+          direction = r.startContainer === s.focusNode && r.startOffset === s.focusOffset ? 'backward' : 'forward';
+        }
+      }
+      return {kind: 'caret', start: selection.start, end: selection.end, direction, source: inSource, version: placeVersion(inSource)};
+    } catch (_) { return {kind: 'none'}; }
+  }
+
+  let placeArmed = 0;
+  function takePersonPlace(atAct) {
+    if (!committing || !placeArmed || Date.now() - placeArmed > 1000) return;
+    let pointer;
+    try { pointer = livePointer(); } catch (_) { placeArmed = 0; return; }
+    if (pointer.selection && !pointer.selection.objectId) personPlace = keptPlaceNow();
+    else if (pointer.focus || pointer.selection?.objectId) personPlace = {kind: 'none'};
+    else if (atAct !== true) placeArmed = 0;
+  }
+  if (typeof document !== 'undefined') document.addEventListener?.('selectionchange', () => takePersonPlace(false));
   function humanActivity(event) {
+    if (event.isTrusted === true && ['pointerdown', 'pointerup', 'keydown', 'beforeinput', 'input', 'compositionstart', 'compositionend'].includes(event.type)) {
+      const inWords = event.target?.id === 'source-textarea' || document.getElementById('editor-blocks')?.contains(event.target);
+      if (inWords && event.type !== 'pointerup') personActs++;
+      if (committing) {
+        if (!inWords) { personPlace = {kind: 'none'}; placeArmed = 0; }
+        else { placeArmed = Date.now(); if (event.type !== 'pointerdown') takePersonPlace(true); }
+      }
+    }
     if (event.isTrusted !== true || projecting) return;
     if (['pointerdown', 'keydown', 'beforeinput', 'compositionstart'].includes(event.type)) drawingNavigationSequence++;
     const target = event.target;
@@ -612,7 +651,15 @@
     return {capture, blocks, scrollers, x: window.scrollX, y: window.scrollY,
       docKind: rapier.document.docKind, pointer,
       canonicalIntegrity: pointer.selection && _rapierTextIntegrity(_rapierSourceText().slice(pointer.selection.start, pointer.selection.end)),
-      pointerOwned: !!pointerCurrent(), editing: editing(), humanSequence, covered: covered()};
+      pointerOwned: !!pointerCurrent(), editing: editing(), humanSequence, covered: covered(), focused: editorFocused(), personActs,
+      version: [placeVersion(false), placeVersion(true)]};
+  }
+
+  function editorFocused() {
+    if (typeof document === 'undefined' || !document.hasFocus?.()) return false;
+    const active = document.activeElement;
+    return !!active && active !== document.body && active !== document.documentElement &&
+      !!active.closest?.('#editor-blocks, #source-textarea');
   }
 
   function followedSelection(place, splices) {
@@ -642,6 +689,45 @@
   }
 
   function restorePlace(place, splices) {
+    if (personActs !== place.personActs) { place.spliced ??= [placeVersion(false), placeVersion(true)]; place.gaveWay = true; return false; }
+    if (restorePlaceExact(place, splices)) return true;
+    if (place.editing || place.focused || !staleCaret(place)) return false;
+    if (personEditing() || editorFocused() || humanSequence !== place.humanSequence) return false;
+    const selection = typeof getSelection === 'function' ? getSelection() : null, host = document.getElementById('editor-blocks');
+    const anchor = selection?.anchorNode;
+    if (selection?.rangeCount && (!selection.isCollapsed || anchor?.isConnected && !(host && host.contains(anchor)))) return false;
+    try { selection?.removeAllRanges(); } catch (_) { return false; }
+    return true;
+  }
+
+  function returnPersonPlace(kept, place, splices) {
+    placeArmed = 0;
+    const clear = () => { try { getSelection()?.removeAllRanges(); } catch (_) {} };
+    if (!kept || kept.kind !== 'caret') return clear();
+    let start = kept.start, end = kept.end;
+    if (place.spliced?.includes(kept.version)) {
+      const back = splices.slice().reverse().map(row => ({pos: row.pos, removed: row.inserted, inserted: row.removed}));
+      start = movedPoint(kept.start, back, true); end = kept.start === kept.end ? start : movedPoint(kept.end, back, true);
+    } else if (![...place.version, placeVersion(false), placeVersion(true)].includes(kept.version)) return clear();
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > _rapierSourceText().length) return clear();
+    const ta = document.getElementById('source-textarea');
+    if (rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source') {
+      if (!ta) return clear();
+      ta.setSelectionRange(_rapierTaPos(start), _rapierTaPos(end), kept.direction === 'backward' ? 'backward' : kept.direction === 'forward' ? 'forward' : 'none');
+      ta.focus({preventScroll: true});
+      return;
+    }
+    if (!_rapierRestoreCanonicalSelection(start, end, {kind: 'wysiwyg', activeWasEdit: true, direction: kept.direction})) clear();
+  }
+
+  function staleCaret(place) {
+    const capture = place.capture;
+    return capture?.kind === 'wysiwyg' && capture.start?.blockId != null && capture.start.blockId === capture.end?.blockId &&
+      capture.selectedIntegrity?.chars === 0 &&
+      (!place.pointer?.selection || place.pointer.selection.start === place.pointer.selection.end);
+  }
+
+  function restorePlaceExact(place, splices) {
     if (place.covered) return true;
     const capture = place.capture;
     const followed = followedSelection(place, splices);
@@ -752,6 +838,7 @@
     const changeSet = _rapierChangeSetMetadata(ctx, drafts, request.label ?? request.operation,
       restoring ? 'undo' : 'change');
     let done = false, committed = null;
+    committing++; personPlace = null; placeArmed = 0;
     try {
       const result = await _rapierWithCompoundTransaction(ctx, async compound => {
         abort(request);
@@ -780,6 +867,7 @@
         if (!hidden && !restorePlace(place, request.splices)) throw Object.assign(new Error('selection_restore_failed'), {code: 'selection_restore_failed'});
         abort(request);
       }, {changeSet, sourceTransactionId: request.sourceTransactionId, sourceTransactionIds: request.sourceTransactionIds,
+        beforeRelease: failed => { if (failed && place.gaveWay) returnPersonPlace(personPlace, place, request.splices); },
         turnId: request.turnId, turnBaseRevision: request.turnBaseRevision,
         carriedLedger: request.carriedLedger, signal: request.signal});
       if (typeof _rapierDrawFollow === 'function') _rapierDrawFollow(request.splices);
@@ -809,6 +897,7 @@
       if (error?.name === 'AbortError' || request.signal?.aborted) return fail('cancelled');
       return fail(error?.code || 'commit_failed', 'conflict');
     } finally {
+      committing--;
       try { if (!done && !hidden) restorePlace(place, []); } catch (_) {}
       try { if (!committed) restoreViewport(place); } catch (_) {}
     }

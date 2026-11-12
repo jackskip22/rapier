@@ -3765,6 +3765,55 @@ export function _rapierDrawPointsText(pts) {
 	POINTS_TEXT.set(pts, text);
 	return text;
 }
+const KEPT_SHAPES = new WeakSet();
+function _rapierDrawKeptCopy(value, depth = 0) {
+	if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+	if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+	if (!value || typeof value !== 'object' || depth > 32) return undefined;
+	if (KEPT_POINTS.has(value) && _rapierDrawImmutableNumbers(value, false)) return value;
+	const prototype = Object.getPrototypeOf(value), own = Object.getOwnPropertyDescriptors(value);
+	if (own.toJSON) return undefined;
+	if (Array.isArray(value)) {
+		if (prototype !== Array.prototype) return undefined;
+		const copy = new Array(value.length);
+		for (let i = 0; i < value.length; i++) { const slot = own[i]; if (!slot || !('value' in slot)) return undefined; const item = _rapierDrawKeptCopy(slot.value, depth + 1); if (item === undefined) return undefined; copy[i] = item; }
+		return Object.freeze(copy);
+	}
+	if (prototype !== Object.prototype) return undefined;
+	const copy = {};
+	for (const key of Object.keys(value)) {
+		const slot = own[key];
+		if (!('value' in slot)) return undefined;
+		if (slot.value === undefined) continue;
+		const item = _rapierDrawKeptCopy(slot.value, depth + 1);
+		if (item === undefined) return undefined;
+		Object.defineProperty(copy, key, {value: item, enumerable: true, writable: true, configurable: true});
+	}
+	return Object.freeze(copy);
+}
+export function _rapierDrawKeepShape(shape) {
+	if (KEPT_SHAPES.has(shape)) return shape;
+	const kept = _rapierDrawKeptCopy(shape);
+	if (!kept || Array.isArray(kept) || typeof kept !== 'object') return null;
+	KEPT_SHAPES.add(kept);
+	return kept;
+}
+export function _rapierDrawKeptShape(value) { return KEPT_SHAPES.has(value); }
+const SHAPE_TEXT = new WeakMap();
+export function _rapierDrawShapeText(shape) {
+	if (!KEPT_SHAPES.has(shape)) return null;
+	let text = SHAPE_TEXT.get(shape);
+	if (text === undefined) { text = JSON.stringify(shape); SHAPE_TEXT.set(shape, text); }
+	return text;
+}
+function _rapierDrawSameOrderedData(a, b) {
+	if (a === b) return typeof a !== 'number' || Number.isFinite(a);
+	if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+	if (Array.isArray(a)) return a.length === b.length && a.every((item, i) => _rapierDrawSameOrderedData(item, b[i]));
+	const keys = Object.keys(a).filter(key => a[key] !== undefined), other = Object.keys(b).filter(key => b[key] !== undefined);
+	return keys.length === other.length && keys.every((key, i) => key === other[i] && _rapierDrawSameOrderedData(a[key], b[key]));
+}
+export function _rapierDrawSameShapeData(kept, live) { return KEPT_SHAPES.has(kept) && _rapierDrawSameOrderedData(kept, live); }
 function _rapierDrawTestBudget(name, fallback) {
 	const value = typeof globalThis !== 'undefined' ? globalThis[name] : null;
 	return Number.isInteger(value) && value > 0 ? value : fallback;
@@ -3996,6 +4045,10 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		const key = refractionRecipeKey(out), current = renditions.filter(row => row.key === key), scopes = requiredRefractionScopes(out);
 		if (current.some(row => !scopes.includes(row.scope))) return null;
 		if (hasRefraction(out) && current.length) out.renditions = current;
+	}
+	for (let i = 0; i < out.shapes.length; i++) {
+		const raw = input.shapes[i];
+		if (KEPT_SHAPES.has(raw) && _rapierDrawSameOrderedData(raw, out.shapes[i])) out.shapes[i] = raw;
 	}
 	return out;
 }

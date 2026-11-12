@@ -7,7 +7,7 @@ import {
   IMAGE_LIMITS, configureParser, normalizeLabel, assetTitle, installMarkdownImages, markdownParser,
   markdownBodyOffset, dataImage, imageOnlySourceBlock, parseAssets, documentAssets, blockwiseAssets, packAssetIndex, restoreAssetIndex, projectImageDefinitions, imageEnvironment,
   mayRetireImageDefinitions, retireDeletedImageDefinitions, assetOmissions, isAssetBlock,
-  escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs,
+  escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs, svgDataURL,
 } from '../spec/md-assets.mjs';
 
 export {inspectJPEGXL, inspectRaster, inspectHEIF};
@@ -25,7 +25,7 @@ export {
   IMAGE_LIMITS, configureParser, normalizeLabel, installMarkdownImages, markdownParser,
   markdownBodyOffset, dataImage, imageOnlySourceBlock, parseAssets, documentAssets, blockwiseAssets, packAssetIndex, restoreAssetIndex, projectImageDefinitions, imageEnvironment,
   mayRetireImageDefinitions, retireDeletedImageDefinitions, assetOmissions, isAssetBlock,
-  escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs,
+  escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs, svgDataURL,
 };
 
 function fail(reason) { throw new Error(reason); }
@@ -704,11 +704,6 @@ function base64(bytes) {
   return btoa(parts.join(''));
 }
 export {base64 as encodeBase64};
-export function svgDataURL(bytes) {
-  const text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
-  return 'data:image/svg+xml,' + encodeURI(text).replace(/[!'()*#&]/g,
-    character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
-}
 export async function createAsset(value, dimensions, options = {}) {
   let bytes = bytesOf(value);
   if (!bytes.length || bytes.length > IMAGE_LIMITS.bytes) return fail('image_byte_limit');

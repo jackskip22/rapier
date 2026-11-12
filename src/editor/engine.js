@@ -13614,6 +13614,9 @@ async function _rapierWithCompoundTransaction(context, action, options = null) {
 		for (const finish of [() => _rapierRestoreEditorViewport(viewport, compound.splices), _rapierApplyReadOnlyDom, _notifyHistoryState]) {
 			try { finish(); } catch (error) { try { console.warn('[rapier] transaction view update failed', error); } catch (_) {} }
 		}
+		if (typeof config.beforeRelease === 'function') {
+			try { config.beforeRelease(!outcome); } catch (error) { try { console.warn('[rapier] transaction release hook failed', error); } catch (_) {} }
+		}
 		const durable = rapier.autosave.deferredDurable, checkpoint = rapier.autosave.deferredSnapshot;
 		try { _rapierFinishMutationBarrier(); }
 		catch (_) {
@@ -24172,19 +24175,30 @@ async function _rapierWriteClipboardFormats(html, plain, markdown, work = null) 
 
 function _rapierPandocDialectExportText(source) { return globalThis.RapierExportDialect.createPandocDialect(md).exportText(source); }
 
+function _rapierSvgCarriesJxl(assets, url) {
+	try { return new TextDecoder().decode(assets.decodeDataImage(url)).includes('data:image/jxl;base64,'); } catch (_) { return false; }
+}
 async function _rapierPortableMarkdownForCopy(canonical, work = null) {
-	canonical = (await _rapierDocumentObjects.materialize(canonical, {signal: work?.signal})).source;
+	const notice = error => {
+		if (error?.code !== 'IMAGE_JXL_UNREADABLE' && error?.code !== 'IMAGE_DAMAGED') return false;
+		showToast('Copied. Pictures stay JPEG XL.', 'info', null, error);
+		return true;
+	};
+	try { canonical = (await _rapierDocumentObjects.materialize(canonical, {signal: work?.signal})).source; }
+	catch (error) { if (notice(error)) return canonical; throw error; }
 	const assets = globalThis.RapierImageAssets;
-	if (!assets || !/data:image\/jxl/i.test(canonical)) return canonical;
+	if (!assets || !/data:image\/(?:jxl|svg\+xml)/i.test(canonical)) return canonical;
 	try {
 		const substitutions = new Map();
 		const destinations = (work ? await _rapierRenderModule('render')._rapierDataImageDestinationsAsync(canonical, work)
 			: _rapierImageDestinations(canonical, url => !!assets.dataImage(url))).sort((a, b) => b.start - a.start);
 		const root = document.createElement('div');
 		for (const url of new Set(destinations.map(row => row.destination))) {
-			if (assets.dataImage(url)?.codec !== 'image/jxl') continue;
+			const codec = assets.dataImage(url)?.codec;
+			if (codec !== 'image/jxl' && !(codec === 'image/svg+xml' && _rapierSvgCarriesJxl(assets, url))) continue;
 			const image = document.createElement('img');
 			image.setAttribute('src', url);
+			if (codec === 'image/svg+xml') image.setAttribute('data-rapier-image-url', url);
 			root.appendChild(image);
 		}
 		if (!root.childElementCount) return canonical;
@@ -24198,7 +24212,7 @@ async function _rapierPortableMarkdownForCopy(canonical, work = null) {
 		return out;
 	} catch (error) {
 		if (error?.name === 'AbortError' || error?.code === 'cancelled') throw error;
-		if (error?.code === 'IMAGE_JXL_UNREADABLE' || error?.code === 'IMAGE_DAMAGED') showToast('Copied. Pictures stay JPEG XL.', 'info', null, error);
+		notice(error);
 		return canonical;
 	}
 }

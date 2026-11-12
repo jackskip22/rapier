@@ -433,7 +433,7 @@ const _rapierEmbeddedImages = (() => {
     if (!png && !row.animated && row.type === 'image/jxl') return smallestPortable(row);
     if (row.undisplayable) throw Object.assign(new Error(here() + ' can’t read JPEG XL. ' + jxlRemedy()), {code: 'IMAGE_JXL_UNREADABLE'});
     const nested = nestedJxl(row);
-    if (nested) return portableSvg(row, nested);
+    if (nested) return portableSvg(row, nested, {jpeg: !png});
     if (row.type === 'image/png' || !png && row.type !== 'image/jxl') return row;
     const image = await nativeImage(row.displayUrl || row.url);
     try {
@@ -447,11 +447,21 @@ const _rapierEmbeddedImages = (() => {
     try { text = new TextDecoder().decode(assets.decodeDataImage(row.url)); } catch (_) { return null; }
     return text.includes('data:image/jxl;base64,') ? text : null;
   }
-  async function portableSvg(row, text, {signal} = {}) {
+  async function portableSvg(row, text, {signal, jpeg = false} = {}) {
     const converted = new Map();
     for (const match of text.matchAll(NESTED_JXL_RE)) {
       const url = match[3];
       if (converted.has(url)) continue;
+      if (jpeg) {
+        const bytes = assets.decodeDataImage(url);
+        let restored = null;
+        if (carriesJpeg(bytes)) try { restored = await codec('restore', bytes, {}, {signal}); }
+        catch (error) {
+          signal?.throwIfAborted();
+          if (error?.name === 'AbortError' || error?.code === 'IMAGE_CANCELLED') throw error;
+        }
+        if (restored) { converted.set(url, 'data:image/jpeg;base64,' + RapierBundleIO.toBase64(restored)); continue; }
+      }
       let exact = null;
       try { exact = await globalThis.RapierImageInspection.portablePaintPNG(url, {signal}); }
       catch (error) {
@@ -465,6 +475,21 @@ const _rapierEmbeddedImages = (() => {
     }
     const out = text.replace(NESTED_JXL_RE, (whole, lead, quote, url) => lead + quote + (converted.get(url) || url) + quote);
     return {...row, url: 'data:image/svg+xml;base64,' + RapierBundleIO.toBase64(new TextEncoder().encode(out)), nested: converted.size};
+  }
+  function carriesJpeg(bytes) {
+    if (!(bytes?.length >= 12) || bytes[3] !== 12 || String.fromCharCode(...bytes.subarray(4, 8)) !== 'JXL ') return false;
+    for (let at = 0; at + 8 <= bytes.length;) {
+      let size = ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0, head = 8;
+      if (String.fromCharCode(...bytes.subarray(at + 4, at + 8)) === 'jbrd') return true;
+      if (size === 1) {
+        if (at + 16 > bytes.length) return false;
+        size = Number(new DataView(bytes.buffer, bytes.byteOffset + at + 8, 8).getBigUint64(0)); head = 16;
+      }
+      if (size === 0) return false;
+      if (size < head) return false;
+      at += size;
+    }
+    return false;
   }
   function rasterPortable(image, width, height, {png = false} = {}) {
     const canvas = document.createElement('canvas');
@@ -820,7 +845,7 @@ const _rapierEmbeddedImages = (() => {
     if (cached) { cached.used = ++clock; return cached.value; }
     let result = null;
     const nested = nestedJxl(row);
-    if (nested) result = await portableSvg(row, nested);
+    if (nested) result = await portableSvg(row, nested, {jpeg: true});
     else {
       if (row.type === 'image/jxl') {
         let restored = null;

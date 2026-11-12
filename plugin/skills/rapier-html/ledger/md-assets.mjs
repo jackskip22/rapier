@@ -663,4 +663,9 @@ export function appendAssetText(source, asset, lineEnding, {preserveLabel = fals
 }
 export async function appendAsset(source, asset) { return appendAssetText(source, asset); }
 
+export function svgDataURL(bytes) {
+  const text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
+  return 'data:image/svg+xml,' + encodeURI(text).replace(/[!'()*#&]/g,
+    character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
+}
 export const imageOnlySourceBlock = source => /^(?:!\[[^\]\n]*\]\(data:image\/(?:(?:png|jpeg|webp|gif|jxl|svg\+xml);base64,[A-Za-z0-9+\/=]+|svg\+xml,[A-Za-z0-9%\-._~:/?@+$,;=]+)(?: "[^"\n]*")?\)(?:[ \t]*<!--md-layout:v1 [^>\r\n]{1,180}-->)?\s*)+$/.test(source);
