@@ -3,8 +3,11 @@ name: windows
 # first-start.ps1 unchanged, the Store MSIX installed and started as a packaged app, a write-and-Undo
 # journey, and the five Store listing screenshots from the real window.
 # A product row that fails is a result (the summary and the files say so); the run fails only when the check breaks.
+# GitHub dispatches only workflows on the default branch, so a push to this branch is what starts a run.
 on:
   workflow_dispatch:
+  push:
+    branches: [ci/windows]
 permissions:
   contents: read
 concurrency:
