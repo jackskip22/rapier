@@ -167,7 +167,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.63.
+Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.64.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
