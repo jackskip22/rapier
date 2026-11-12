@@ -45,7 +45,7 @@ const COMPRESSED = /^(capture(-complete)?(\.worker)?|capture-complete\.(groups\.
 const terserRoot = process.env.TERSER ? resolve(process.env.TERSER) : dirname(createRequire(import.meta.url).resolve('terser/package.json'));
 const terser = createRequire(import.meta.url)(terserRoot), terserVersion = JSON.parse(await readFile(join(terserRoot, 'package.json'), 'utf8')).version;
 if (terserVersion !== TERSER_VERSION) throw new Error('rapier-jxl 7.0 builds with terser ' + TERSER_VERSION + ', not ' + terserVersion + '.');
-const version = '8.3.4';
+const version = '8.3.5';
 
 export const ONE_FILE = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'metadata', 'codec', 'codec-upload', 'codec-capture', 'codec-capture-complete', 'codec-animation', 'codec-format', 'codec-decode', 'codec-jpeg', 'polyfill', 'serve', 'verify', 'storage', 'resumable'];
 export const WASM_MODULES = ['index', 'upload', 'capture', 'capture-complete', 'animation', 'format', 'decode', 'jpeg', 'verify', 'resumable'];

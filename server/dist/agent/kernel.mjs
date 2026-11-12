@@ -46,7 +46,7 @@ import {journalOperations} from '../kit/ledger/journal-records.mjs';
 export { transformSplices };
 export { materialMatches, admitMaterialResult };
 
-export const showTarget = input => input.target || (input.view ? 'view' : input.question ? 'ask' : input.preference !== undefined ? 'preferences'
+export const showTarget = input => input === null || typeof input !== 'object' ? 'passage' : input.target || (input.view ? 'view' : input.question ? 'ask' : input.preference !== undefined ? 'preferences'
   : input.close || input.compare_id ? 'comparison' : input.code !== undefined ? 'pair' : input.note ? 'note' : input.words !== undefined ? 'pointer'
   : input.act || input.turn_id || input.name !== undefined && input.text !== undefined ? 'comparison' : 'passage');
 export const REVISION_FORMS = 'Pass revision as the integer read or open returned (a decimal string of it also works), or, while a drawing is live, the exact "n:hash" string read returned.';
@@ -4963,7 +4963,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         replace(at, at, sentinel); placed.push({...row, sentinel});
       }
       for (const block of fencedBlocks(inserted).filter(row => row.kind !== 'rapier-comment').reverse()) {
-        const kept = prepared.get(block.id), raw = block.kind === 'html' || !kept ? kept : kept.replace(/[ \t]*<!--md-layout:v1[^>]*-->$/, '') + (block.layout ? ' ' + block.layout : '');
+        const kept = block.kind === 'html' ? block.text.trimEnd() : prepared.get(block.id), raw = block.kind === 'html' || !kept ? kept : kept.replace(/[ \t]*<!--md-layout:v1[^>]*-->$/, '') + (block.layout ? ' ' + block.layout : '');
         const prior = previous.get(block.id), leading = prior?.leading || '';
         const from = leading && inserted.slice(block.start - leading.length, block.start) === leading ? block.start - leading.length : block.start;
         const eol = prior?.trailing ? '' : /(?:\r\n|\r|\n)$/.exec(block.text)?.[0] || '';

@@ -1,46 +1,86 @@
 {
   "schema": "rapier-linux/1",
-  "version": "1.2.39",
+  "version": "1.2.66",
   "file": "rapier-linux",
-  "bytes": 45185520,
-  "sha256": "0be24d4d755bb87038b4f6e7ef149d7f2eaa0a721b42069e5dbf8e21daaa4ce7",
-  "payload": "5c4a74bafb55aac0160bdfc1e3f115da9cd3a6216b15f2b7dfa2ddc2eb1ba552",
-  "pageCertificate": "999100a5ac4c92166aa4977ad95b426b38e25086d0292c0f55fced6e77c34f15",
+  "bytes": 48986224,
+  "sha256": "528305650a77dc1a266a5a8fe58b3e3768e90a89acaa8ea74f67497d59692812",
+  "payload": "57b30809b89354a54a5438d66ebb8469b859c8cec4e58aea537078422d958994",
+  "pageCertificate": "2f7e28d9237d32131116531e168c7acbce68966dbfff81e96a9a444593dec049",
   "page": [
     [
       "rapier.html",
-      1857950,
-      "d7e4ce8e0aba1391448f9ab6c3e28869b8f6a541e35c5bae9d8c5f8300f0276c"
+      2343406,
+      "40e54e34883ba5d7e959f1b64cf45d3e35f9d745245ef869deae9a5d96f3bdae"
     ],
     [
-      "parts/rapier-document-bfe8915f74aa23c4.txt",
-      903350,
-      "bfe8915f74aa23c48b95d37fb34e882f00401240387fcb95242f0e50582f07b6"
+      "parts/rapier-document-e2b98d5c33d13213.txt",
+      902426,
+      "e2b98d5c33d132138d3732f073b1f4c31a55e174dbb668c948e639dbaf067e8a"
     ],
     [
-      "parts/rapier-presets-70084511ea5ea18c.txt",
-      252215,
-      "70084511ea5ea18cfc7bd5bce1e747f692dcee74ef015142c463f28cffc2715f"
+      "parts/rapier-presets-2e691232a1998d65.txt",
+      252271,
+      "2e691232a1998d65218cc9df3dae238ceece7be7ca4927e4dde9ac350757dac7"
     ],
     [
-      "parts/rapier-drawing-22f6217100420782.txt",
-      395130,
-      "22f6217100420782b20f2e57e50f64049994e79f8148779f5d70a14e3147af94"
+      "parts/rapier-drawing-9513a202cec03fa2.txt",
+      810248,
+      "9513a202cec03fa2b4ccce855c42bb7aca181cfffca87cc1b022e2a2346887c3"
     ],
     [
-      "parts/rapier-jxl-935f2fcc8cc15a26.txt",
-      18850,
-      "935f2fcc8cc15a26d0ced85b7157dfdbbd9b74181aa2507181cfcab1841127c4"
+      "parts/rapier-jxl-557d0e9b07f86b33.txt",
+      34829,
+      "557d0e9b07f86b333900166aa9219a9adbbbff439c3b13bfd8b2c30ac1db2af8"
     ],
     [
-      "parts/rapier-jxlcomplete-e00d70cc1ad5511a.txt",
-      189906,
-      "e00d70cc1ad5511ad87a8e33598c3ade395693781877b7c63d49751ce2cd75a3"
+      "parts/rapier-convert-540b4c6df9933853.txt",
+      5779,
+      "540b4c6df99338532dfd20a67b4c520cb6a527d34cc3647f8e5c0f8c980aced7"
     ],
     [
-      "parts/rapier-notes-7bff2468211190ad.txt",
-      391106,
-      "7bff2468211190ad0d9713a7e4a0acc6d9ea88197de283d7f4119cad2124f603"
+      "parts/rapier-diagrams-28ed9d37c3e2290d.txt",
+      6020,
+      "28ed9d37c3e2290d78e46577bdc574ada8df7c4ea3dc7265c6de10a18718a71b"
+    ],
+    [
+      "parts/rapier-diagramtheme-31e471e2bc1f912d.txt",
+      7205,
+      "31e471e2bc1f912dd820feb86001f2c982dc3b72d5d2e47a694aec9a8a7508a8"
+    ],
+    [
+      "parts/rapier-jxlcomplete-604203119c934326.txt",
+      524457,
+      "604203119c93432687105f74220a6fb65edf80747487dbdef6bff79c8450bced"
+    ],
+    [
+      "parts/rapier-jxlscene-49ed99a6b4eac4bb.txt",
+      5355,
+      "49ed99a6b4eac4bb39e0d457fb2c115e5162b9c829ef9e250b0fa7692242102a"
+    ],
+    [
+      "parts/rapier-jxlexample-4f1027a3a4385b1a.txt",
+      2685973,
+      "4f1027a3a4385b1a628f06331166668e451bf3b975d0374bddd8f3fe1ff7c3c6"
+    ],
+    [
+      "parts/rapier-diff-25fb5879129a99f2.txt",
+      4985,
+      "25fb5879129a99f2458f6e8b2b533b9877bec038c4275de5e298cdf538adf222"
+    ],
+    [
+      "parts/rapier-mathview-ca78627b274b67ba.txt",
+      4864,
+      "ca78627b274b67babe8abad6a6c0036ac6dc230867e3e5dfb1e909a2c21e0c2c"
+    ],
+    [
+      "parts/rapier-fonts-cfbaa78787b5013b.txt",
+      11372,
+      "cfbaa78787b5013ba7b3952f674fee69dc267a8e6f54caaec229ec4d28992e84"
+    ],
+    [
+      "parts/rapier-notes-5a21e8b49e35ca9f.txt",
+      414991,
+      "5a21e8b49e35ca9f6582627055b21ee16a97dfc02a0d882b502d74a0f0d576fb"
     ]
   ],
   "resources": [
@@ -51,18 +91,18 @@
     ],
     [
       "plugins/rapier-mermaid-core",
-      677968,
-      "93a62d5c8a9562af512ca572bac99e05af63205a1395aa3541284ddd14475649"
+      722820,
+      "7d366fe3068048c388fabc1eb43b070718459ca9c2fe8fc940684bd7172046f9"
     ],
     [
       "plugins/rapier-mermaid-zenuml",
-      1888111,
-      "3a9f3291eac7a5186248092c5335a0ba959739bfa038d3d862a76ccb0b5cf3d8"
+      421169,
+      "95e0460dd5f9784e7e26628cd08a31db063216015a5eb8677a250e634b5e1093"
     ],
     [
       "plugins/rapier-font-subset",
-      1214779,
-      "78a39a26fb411fbe320f48ab2d876374a7c69e4dfba97a8705a7ffbb3516b2c2"
+      1207570,
+      "68e552cc54bb2cc83b9910647085d4e0a03f7a029d86fd3127e2e2cc94fe15ff"
     ],
     [
       "plugins/rapier-ocr-runtime",
@@ -101,18 +141,18 @@
     ],
     [
       "plugins/rapier-ocr-jxl",
-      36091,
-      "418c583da1f045926cf58fba58bb9ab323bde2552ce6a8e37b839c5c8b52434f"
+      27310,
+      "9174ef4f42d4d6e8cea149491723d23c0086f73a2579022494f8f8de7679a4a8"
     ],
     [
       "plugins/rapier-ocr-jxlWasm",
-      849240,
-      "165bde0f48f3bdc39c7806365db5bb3b777df67fefff48050841fb4430062433"
+      1009731,
+      "b94b745f2d8f95aafc18ee10e228df1866563c757690059939dfa51499b010e5"
     ],
     [
       "plugins/rapier-ocr-jxlLicence",
-      11343,
-      "8c3690b09c168f196446cf5904332023bbc15eb92b6a7cee470ac829e6a65d20"
+      15727,
+      "733320af069773723ef6f70669402a6666fa9b42f5056c89b91c9ec3a4a090c5"
     ],
     [
       "plugins/rapier-letters-field",
@@ -1916,11 +1956,11 @@
     ],
     [
       "plugins/rapier-pdf-rapier-pdf-reader.mjs",
-      53197,
-      "6befaf9c8e95c01da9b1062ab29da837154e493234df18527cf0c5a7c2f64dfa"
+      67528,
+      "9d85862b9e4a6121685c14a44defaed348c1e02c5f1097d1812d4178388c9093"
     ]
   ],
-  "sourceDigest": "8af72a69722ec07ffbf7f3516ffaa35d090475d757db6ce35c81df5dcfc33e32",
+  "sourceDigest": "71884632fbdddf956e9c1bb86f11f5c62d311dcdb77c84ec938bc22990031610",
   "sources": [
     [
       "linux/app/Cargo.lock",
@@ -1935,10 +1975,16 @@
       "f98183bfd48a66d484fe530193f3aafa5b03092cc9d38ed422c0587d28c6cf4c"
     ],
     [
+      "linux/app/src/attachment_open.rs",
+      420,
+      22781,
+      "01b4d799f67eeab895b03a985ebd96b2b238fb3e47ef49cdfc11748530c8414a"
+    ],
+    [
       "linux/app/src/files.rs",
       420,
-      9474,
-      "890b534c9ebe3b8a04b0767d9903499e77c61e598bf68e07b7c952600ceab434"
+      16711,
+      "c23160cf77043d5dee4ed3435ee125b8a7006fbdc12925eca1c3e5ddc5bdbe73"
     ],
     [
       "linux/app/src/folder.rs",
@@ -1949,26 +1995,38 @@
     [
       "linux/app/src/host.rs",
       420,
-      105069,
-      "a28cd0eed94af8b6b19385eaf3fff26c309bf0dfc17be36d96f5034a60dafe55"
+      132736,
+      "580b2cc7572bc5a90c86732369b0e493f0e9cdeec6383db98c2f75dbb8bcf33a"
     ],
     [
       "linux/app/src/main.rs",
       420,
-      22406,
-      "695a4a21bd0553787d2959167f636e6f5d919f0f6d98c35216c34d215fd7abac"
+      27046,
+      "363561817144e36600c5d86fb6c545f936c3d6d714e51194714e69048bd497b5"
+    ],
+    [
+      "linux/app/src/note_shortcuts.rs",
+      420,
+      6225,
+      "8cd9b88e3f1973f6f55d5fde812fc92f77f3e78671a34f31daf20ad1a0bce7c7"
     ],
     [
       "linux/app/src/payload.rs",
       420,
-      11583,
-      "87bd34116af5c4dd907fb237acb654f7207ffa75879ac337641de9bc102b146b"
+      11839,
+      "841bd1d09b9f57d19ffd7fa1aebffe0f62d8e49ed0ab9602a1c15f0d1ca83f24"
     ],
     [
       "linux/app/src/portal.rs",
       420,
-      9617,
-      "44400dd109f81445d7ba00b6357ed4d236ca4c18b0efd81a10684df7f10a3a34"
+      22914,
+      "8a76c9bf74c79a5772547a566a058ead759c58459868455d0d4168405d160411"
+    ],
+    [
+      "linux/app/src/profile.rs",
+      420,
+      6197,
+      "4c13d1da852344f2c1d3f6d471309e3abf2a3bb18633b0261c585c3065f3cb64"
     ],
     [
       "linux/app/src/theme.rs",
@@ -2003,8 +2061,8 @@
     [
       "tools/stage-linux.mjs",
       420,
-      19953,
-      "eb3e858222da4100b499c444023fb8799a3bdeb6a27da70451dcb5b22024061c"
+      20311,
+      "914275e5a4ece4df4fad787df4579b236c72de7677154154eb17b8e9f0675684"
     ]
   ],
   "runtime": {
@@ -2019,6 +2077,7 @@
   "toolchain": {
     "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
     "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)",
-    "node": "v22.23.3"
-  }
+    "node": "v22.23.4"
+  },
+  "source": "1ad0b55056faeea850373368e9d66c78d538b97a"
 }

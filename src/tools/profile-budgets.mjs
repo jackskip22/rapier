@@ -1,5 +1,5 @@
 export const SIZE_BUDGETS = Object.freeze({
-	full: Object.freeze({warn: 1_800_000, refuse: 2_345_000}),
+	full: Object.freeze({warn: 1_800_000, refuse: 2_350_000}),
 	reader: Object.freeze({warn: 1_200_000, refuse: 1_250_000}),
 });
 

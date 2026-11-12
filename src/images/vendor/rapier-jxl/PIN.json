@@ -1,8 +1,8 @@
 {
   "rebuild": "ESBUILD=<dir>/node_modules/esbuild TERSER=<dir>/node_modules/terser node tools/jxl-vendor.mjs --write",
-  "version": "8.3.4",
+  "version": "8.3.5",
   "source": {
-    "digest": "0aaa32f962cd729ae8435175e71a6d99906e397eda03b5d3e32794b5ebcda9a3",
+    "digest": "83cedb4723568d4a1f54e6796930debfdf14f27cf8f67e2cd1cac0a6c0a6048b",
     "files": 657
   },
   "tools": {
@@ -13,23 +13,23 @@
   "files": {
     "codec.mjs": {
       "bytes": 74311,
-      "sha256": "9fd50ce9868eb3d37790149d66b23762743ed1f90dbab731fb7c26a5e9b994aa"
+      "sha256": "c6ead1d2f4f12b84dde3a4e338023e8fbedf78d77747ae874ed701379ead72e6"
     },
     "still.worker.mjs": {
-      "bytes": 1226399,
-      "sha256": "74298a26e1caf2f8a84d3effbef18cd19997991857f5a45cf67ab552643357cf"
+      "bytes": 1228062,
+      "sha256": "465c5b4266573afc00f5676258a259f72a600c80233ce1b43bf5c51dcdf02d37"
     },
     "animation.worker.mjs": {
-      "bytes": 1239635,
-      "sha256": "95940c95d0175405bbc3ad7066e5cd523cd1f74d7cf121620fb9cb2ec49a2d58"
+      "bytes": 1240839,
+      "sha256": "f001ad3279902ba0d70f84732b8bf579d973c3e2e2d29aca09e845ed5f728f3c"
     },
     "decode.worker.mjs": {
       "bytes": 369271,
-      "sha256": "01aa76eee71f2fd12d74f18b86639f8adba6793994f1e60b9e32868c25208551"
+      "sha256": "50be90747a40482445db7dadcbf77d23d0b2b914a54a552bb979e53ba51bbe08"
     },
     "jpeg.worker.mjs": {
-      "bytes": 472033,
-      "sha256": "b2c1a3e7a415d814a2087284f2b8dd969f04a9e7ebbbab4ff2cb503453ff3ed4"
+      "bytes": 472084,
+      "sha256": "ff0ab831a814710975b95b9511087c5de9d929d719f9a40d651d20d302c17fba"
     }
   }
 }

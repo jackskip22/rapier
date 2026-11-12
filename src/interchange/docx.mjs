@@ -31,6 +31,7 @@ const NS = Object.freeze({
   wp: ['http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing', 'http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing'],
   pic: ['http://schemas.openxmlformats.org/drawingml/2006/picture', 'http://purl.oclc.org/ooxml/drawingml/picture'],
   svg: ['http://schemas.microsoft.com/office/drawing/2016/SVG/main'],
+  c: ['http://schemas.openxmlformats.org/drawingml/2006/chart', 'http://purl.oclc.org/ooxml/drawingml/chart'],
   rapier: ['https://rapier.website/ns/docx'],
   rel: ['http://schemas.openxmlformats.org/package/2006/relationships'],
   ct: ['http://schemas.openxmlformats.org/package/2006/content-types'],
@@ -541,6 +542,7 @@ function sourceToken(source, visible = source) {
   return '<span class="rapier-source-token" data-rapier-source="' + escape(encodeURIComponent(source)) +
     '" data-rapier-visible="' + escape(encodeURIComponent(visible)) + '">' + escape(visible) + '</span>';
 }
+function blockToken(html) { return sourceToken(html, html.replace(/[ \t\r\n]/g, '\u00a0')); }
 function importedText(text) {
   return String(text).split(/([\t\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff])/u)
     .map(part => /^[\t\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]$/u.test(part)
@@ -652,7 +654,7 @@ function mathTex(node, inEqArr = false) {
     return bit ? !['0', 'false', 'off'].includes(attr(bit, 'm', 'val')) : false;
   };
   const contents = (parent, eqArrCtx = inEqArr) => Array.from(parent?.children || []).filter(n =>
-    !(is(n, 'm') && n.localName.endsWith('Pr')) && !(is(n, 'w') && (n.localName === 'rPr' || MARKERS.includes(n.localName)))).map(n => mathTex(n, eqArrCtx)).join('');
+    !(is(n, 'm') && n.localName.endsWith('Pr')) && !(is(n, 'w') && (n.localName === 'rPr' || n.localName === 'lastRenderedPageBreak' || MARKERS.includes(n.localName)))).map(n => mathTex(n, eqArrCtx)).join('');
   const part = name => contents(child(node, 'm', name));
   if (is(node, 'm', 't') || is(node, 'w', 't')) return text(node.textContent);
   if (is(node, 'w', 'br') || is(node, 'w', 'cr') || is(node, 'm', 'brk')) return ' \\\\ ';
@@ -660,7 +662,15 @@ function mathTex(node, inEqArr = false) {
   if (is(node, 'w', 'r')) return contents(node);
   if (!is(node, 'm')) return fail('DOCX contains unsupported equation content: ' + node.localName, 'docx_math_unsupported');
   const name = node.localName;
-  if (['oMath', 'oMathPara', 'e', 'num', 'den', 'sub', 'sup', 'deg', 'lim', 'fName', 'box'].includes(name)) return contents(node);
+  if (name === 'oMath') {
+    const words = run => Array.from(run.children).some(n => is(n, 'm', 't') || is(n, 'w', 't'));
+    const breaks = run => is(run, 'm', 'r') && !words(run) && (Array.from(run.children).some(n => is(n, 'w', 'br') || is(n, 'w', 'cr')) ||
+      !!child(child(run, 'm', 'rPr'), 'm', 'brk'));
+    const kept = Array.from(node.children);
+    while (kept.length && (breaks(kept.at(-1)) || is(kept.at(-1), 'w') && MARKERS.includes(kept.at(-1).localName))) kept.pop();
+    return contents({children: kept});
+  }
+  if (['oMathPara', 'e', 'num', 'den', 'sub', 'sup', 'deg', 'lim', 'fName', 'box'].includes(name)) return contents(node);
   if (name === 'r') {
     const word = child(node, 'w', 'rPr');
     if (on(child(word, 'w', 'vanish'))) return '';
@@ -832,7 +842,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   try {
   work.check();
   const entries = new Map(files.entries.filter(entry => !entry.directory).map(entry => [entry.name, entry]));
-  const warnings = new Set(), xmlCache = new Map(), relationCache = new Map(), converted = new Map(), naturalWidths = new Map(), imageRequests = [], rawBlocks = [];
+  const warnings = new Set(), xmlCache = new Map(), relationCache = new Map(), converted = new Map(), naturalWidths = new Map(), readablePictures = new Map(), imageRequests = [], rawBlocks = [];
   const stats = {paragraphs: 0, images: 0, uniqueImages: 0, tables: 0, footnotes: 0, endnotes: 0, comments: 0};
   let xmlBytes = 0, elements = 0, outputBytes = 0;
   const warn = text => warnings.add(text);
@@ -1417,6 +1427,35 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const contentWidth = (width - left - right - gutter) * 635;
     return {width: contentWidth, sectionWidth: contentWidth, assumed: !size || !margins};
   };
+  const chartTable = async (chart, context) => {
+    warn('Charts became tables of their data.');
+    const relation = (await relationships(context.path)).get(attr(chart, 'r', 'id'));
+    if (relation?.kind !== 'chart' || relation.external || !entries.has(relation.path)) return {html: ''};
+    const space = await readXml(relation.path, 'c', 'chartSpace'), drawn = child(space, 'c', 'chart');
+    const points = node => {
+      const values = new Map(), source = child(node, 'c', 'strRef') || child(node, 'c', 'numRef') || child(node, 'c', 'multiLvlStrRef');
+      const cache = source ? child(source, 'c', 'strCache') || child(source, 'c', 'numCache') || child(source, 'c', 'multiLvlStrCache') : child(node, 'c', 'strLit') || child(node, 'c', 'numLit');
+      const level = cache && (child(cache, 'c', 'lvl') || cache);
+      for (const point of children(level, 'c', 'pt')) {
+        const index = integer(point.getAttribute('idx'), null, 0, 100000);
+        if (index !== null && !values.has(index)) values.set(index, child(point, 'c', 'v')?.textContent ?? '');
+      }
+      if (!source && !cache && child(node, 'c', 'v')) values.set(0, child(node, 'c', 'v').textContent);
+      return values;
+    };
+    const series = [...descendants(child(drawn, 'c', 'plotArea') || space, 'c', 'ser')].slice(0, DOCX_LIMITS.tableColumns - 1).map(row => ({
+      name: points(child(row, 'c', 'tx') || row).get(0) || '',
+      categories: points(child(row, 'c', 'cat') || child(row, 'c', 'xVal') || row), values: points(child(row, 'c', 'val') || child(row, 'c', 'yVal') || row)}));
+    const count = Math.min(10000, Math.max(0, ...series.flatMap(row => [...row.categories.keys(), ...row.values.keys()].map(index => index + 1))));
+    const title = [...descendants(child(child(drawn, 'c', 'title'), 'c', 'tx') || space, 'a', 't')].filter(() => child(drawn, 'c', 'title')).map(node => node.textContent).join('').trim();
+    if (!project) return {html: series.length ? 'x' : '', block: true, semantic: true};
+    if (!series.length) return {html: title ? account('<p>' + importedText(title) + '</p>') : '', block: true, semantic: true};
+    const categories = series.find(row => row.categories.size)?.categories || new Map();
+    const cell = (tag, text) => '<' + tag + '>' + importedText(text) + '</' + tag + '>';
+    const rows = Array.from({length: count}, (_, index) => '<tr>' + cell('td', categories.get(index) ?? '') + series.map(row => cell('td', row.values.get(index) ?? '')).join('') + '</tr>');
+    return {html: account((title ? '<p>' + importedText(title) + '</p>' : '') + '<table><thead><tr>' + cell('th', '') + series.map(row => cell('th', row.name)).join('') +
+      '</tr></thead><tbody>' + rows.join('') + '</tbody></table>'), block: true, semantic: true};
+  };
   const picture = async (node, context) => {
     const boxes = [...descendants(node, 'w', 'txbxContent')].filter(box => {
       for (let parent = box.parentNode; parent && parent !== node; parent = parent.parentNode)
@@ -1441,6 +1480,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         if (geom === 'line' || geom === 'straightConnector1') return {rule: true, semantic: true};
         if (!child(spPr, 'a', 'blipFill')) { warn('Decorative shapes without text were not imported.'); return {html: ''}; }
       }
+      const chart = !image && !wsp && child(data, 'c', 'chart');
+      if (drawing && chart) return chartTable(chart, context);
       if (!drawing || (!image && !wsp)) return fail('DOCX contains a drawing that is not an embedded raster picture.');
       const fill = image ? child(image, 'pic', 'blipFill') : child(child(wsp, 'wps', 'spPr'), 'a', 'blipFill');
       const blip = child(fill, 'a', 'blip'), crop = child(fill, 'a', 'srcRect');
@@ -1469,7 +1510,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const kept = original && (await relationships(context.path)).get(original);
       id = plain && attr(vectors[0], 'r', 'embed') || plain && kept?.kind === 'image' && !kept.external && entries.has(kept.path) && original || attr(blip, 'r', 'embed');
       if (!id && attr(blip, 'r', 'link')) { warn('Linked pictures were not imported; their files are not inside the document.'); return {html: ''}; }
-      if (!id || attr(blip, 'r', 'link')) return fail('DOCX contains a linked picture without self-contained image bytes.');
+      if (!id) return fail('DOCX contains a linked picture without self-contained image bytes.');
       const properties = child(drawing, 'wp', 'docPr'), nonVisual = image ? child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPr') : child(wsp, 'wps', 'cNvPr');
       alt = properties?.getAttribute('descr') ?? nonVisual?.getAttribute('descr') ?? properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
       title = properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
@@ -1547,6 +1588,16 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       return {html: ''};
     }
     if (!entries.get(path).size) return fail('DOCX contains an empty picture.');
+    if (contentType(path) !== 'image/svg+xml' && entries.get(path).size <= IMAGE_LIMITS.bytes) {
+      if (!readablePictures.has(path)) {
+        await work.checkpoint();
+        const bytes = await files.read(path);
+        let readable = true;
+        if (!isJxl(bytes)) try { inspectRaster(bytes); } catch (error) { if (error?.code === 'RASTER_SIGNATURE') readable = false; }
+        readablePictures.set(path, readable);
+      }
+      if (!readablePictures.get(path)) { warn('Pictures Rapier cannot read were not imported.'); return {html: ''}; }
+    }
     alt ??= name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
     let width = extent ? Math.max(0.01, Math.min(100, Math.round(extent / context.width * 10000) / 100)) : null;
     if (width !== null && !Object.values(transform.crop).some(Boolean)) {
@@ -1623,7 +1674,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     commentInfo.set(id, {id, node, parent: null, resolved: false, date: attr(node, 'w', 'date'), starts: [], ends: []});
   }
   stats.comments = commentInfo.size;
-  const extendedPath = await related(mainPath, 'commentsExtended');
+  const extendedPath = commentPart && await related(mainPath, 'commentsExtended');
   if (extendedPath) {
     const seen = new Set();
     for (const node of children(await readXml(extendedPath, 'w15', 'commentsEx'), 'w15', 'commentEx')) {
@@ -1635,7 +1686,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       seen.add(key); info.parent = parent ? commentByParagraph.get(parent) : null; info.resolved = ['1','true','on'].includes(done);
     }
   }
-  const commentIdsPath = await related(mainPath, 'commentsIds'), extensiblePath = await related(mainPath, 'commentsExtensible');
+  const commentIdsPath = commentPart && await related(mainPath, 'commentsIds'), extensiblePath = commentPart && await related(mainPath, 'commentsExtensible');
   if (commentIdsPath || extensiblePath) {
     const durable = new Map();
     if (commentIdsPath) for (const node of children(await readXml(commentIdsPath, 'w16cid', 'commentsIds'), 'w16cid', 'commentId')) {
@@ -2513,7 +2564,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     parts.push('</tbody></table>');
     const html = parts.join('');
     if (!complex || context.tableCell) return html;
-    const placeholder = '<p>' + sourceToken(html) + '</p>';
+    const placeholder = '<p>' + blockToken(html) + '</p>';
     rawBlocks.push({placeholder, html});
     return placeholder;
   };
@@ -2551,7 +2602,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         reference => sourceToken(reference));
       html = preserve(html);
       if (rejectedHtml !== null) rejectedHtml = preserve(rejectedHtml);
-      const placeholder = '<p>' + sourceToken(content) + '</p>';
+      const placeholder = '<p>' + blockToken(content) + '</p>';
       rawBlocks.push({placeholder, html: content});
       html += placeholder;
       if (rejectedHtml !== null) rejectedHtml += placeholder;
@@ -2617,7 +2668,16 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     paragraphs: Array.from(descendants(body)).filter(node => is(node, 'w', 'p')).map(wordParagraph)} : null;
   const wordTheme = await related(mainPath, 'theme');
   if (wordStyle && wordTheme) wordStyle.theme = await xmlText(await files.read(wordTheme), work);
-  if (wordStyle && numberingPath) wordStyle.numbering = await xmlText(await files.read(numberingPath), work);
+  if (wordStyle && numberingPath) {
+    wordStyle.numbering = await xmlText(await files.read(numberingPath), work);
+    if (/<(?:\w+:)?(?:numPicBullet|lvlPicBulletId)\b/.test(wordStyle.numbering)) {
+      const root = new DOMParser().parseFromString(wordStyle.numbering, 'application/xml').documentElement;
+      const pictures = [...descendants(root)].filter(node => is(node, 'w', 'numPicBullet') || is(node, 'w', 'lvlPicBulletId'));
+      if (pictures.some(node => node.localName === 'lvlPicBulletId')) warn('Picture bullets became the bullet characters Word gives with them.');
+      for (const node of pictures) node.remove();
+      wordStyle.numbering = wordXml(root);
+    }
+  }
   if (wordStyle) admitWordStyle(wordStyle);
   xmlCache.clear(); relationCache.clear(); styles.clear(); styleCache.clear();
   notes.clear(); noteParts.clear(); commentInfo.clear(); commentRoots.clear(); groupsById.clear();
@@ -2644,7 +2704,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const replaceRawBlocks = (value, asToken = true) => value.replace(/<p><span class="rapier-source-token" data-rapier-source="[^"]*" data-rapier-visible="[^"]*">[^<]*<\/span><\/p>/g,
       token => {
         const portable = portableBlocks.get(token);
-        return portable === undefined ? token : asToken ? '<p>' + sourceToken(portable) + '</p>' : portable;
+        return portable === undefined ? token : asToken ? '<p>' + blockToken(portable) + '</p>' : portable;
       });
     for (const block of rawBlocks) {
       await work.checkpoint();
@@ -2696,8 +2756,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   const pgW = integer(attr(pgSz, 'w', 'w'), 12240, 1, 31680), pgH = integer(attr(pgSz, 'w', 'h'), 15840, 1, 31680);
   const PAPERS = {letter: [12240, 15840], legal: [12240, 20160], tabloid: [15840, 24480], a3: [16838, 23811], a4: [11906, 16838], a5: [8391, 11906]};
   const papersize = Object.entries(PAPERS).find(([name, [w, h]]) => name !== 'letter' && Math.abs(pgW - w) <= 20 && Math.abs(pgH - h) <= 20)?.[0] ?? null;
-  const marTop = integer(attr(pgMar, 'w', 'top'), 1440, 0, 31680), marRight = integer(attr(pgMar, 'w', 'right'), 1440, 0, 31680),
-    marBottom = integer(attr(pgMar, 'w', 'bottom'), 1440, 0, 31680), marLeft = integer(attr(pgMar, 'w', 'left'), 1440, 0, 31680);
+  const marTop = Math.abs(integer(attr(pgMar, 'w', 'top'), 1440, -31680, 31680)), marRight = integer(attr(pgMar, 'w', 'right'), 1440, 0, 31680),
+    marBottom = Math.abs(integer(attr(pgMar, 'w', 'bottom'), 1440, -31680, 31680)), marLeft = integer(attr(pgMar, 'w', 'left'), 1440, 0, 31680);
   const geometry = (marTop !== 1440 || marRight !== 1440 || marBottom !== 1440 || marLeft !== 1440)
     ? (marTop === marRight && marRight === marBottom && marBottom === marLeft
       ? `margin=${+(marTop / 1440).toFixed(2)}in`
@@ -3681,7 +3741,8 @@ export function docxPortableHtml(html, imageUrls = new Map()) {
         return '<code>' + escape(tokens[0].content) + '</code>';
       }
       if (source === '\n' + shown && /^(\uFFFERapierWordMathFence\uFFFFx*)\d+\1$/.test(shown)) return '';
-      if (source !== shown) return fail('DOCX source token proof does not match.', 'docx_source_token');
+      if (source !== shown && !(source.startsWith('<') && shown === source.replace(/[ \t\r\n]/g, '\u00a0')))
+        return fail('DOCX source token proof does not match.', 'docx_source_token');
       return source;
     });
   html = html.replace(/<span data-md-color="(#[0-9a-f]{6})">/g, '<span style="color:$1">');
@@ -3770,7 +3831,7 @@ function mathRunFromDom(node, style, pointSize) {
   if (equation && typeof toMathML === 'function') {
     try {
       const {mathml, status, errors} = toMathML(equation.tex, {displayMode: display});
-      if (status === 'complete' || status === 'presentation-fallback' && errors?.every(error => ['semantic-overlay', 'semantic-table-spacing', 'semantic-chemistry-presentation'].includes(error.code)))
+      if (status === 'complete' || status === 'presentation-fallback' && errors?.every(error => ['semantic-overlay', 'semantic-table-spacing', 'semantic-chemistry-presentation', 'semantic-rich-operator'].includes(error.code)))
         return {...run, omml: nativeEquationXml(mathmlRecord(new DOMParser().parseFromString(mathml, 'application/xml').documentElement, style))};
     } catch (_) {}
   }

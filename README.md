@@ -21,9 +21,9 @@ Everything is plain Markdown. Pictures, drawings and paintings are embedded insi
 - **Web:** [rapier.website](https://rapier.website). Add it to your home screen and it works offline.
 - **One HTML file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) is the whole editor, and
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html) just reads. Open either in a browser.
-- **Windows (beta):** [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30). If SmartScreen warns,
+- **Windows (beta):** [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.66). If SmartScreen warns,
   choose **More info**, then **Run anyway**.
-- **Linux (beta, x86_64):** [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.39). Run
+- **Linux (beta, x86_64):** [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.66). Run
   `chmod +x rapier-linux && ./rapier-linux --install` once. [Requirements](src/linux/README.md).
 
 ## With AI agents

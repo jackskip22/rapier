@@ -2012,9 +2012,9 @@
         changed: (result.documentRevision ?? result.revision) > args.after_revision} : result;
     };
     const result = await (who.actor === 'agent' ? _rapierAgentInvocationTracked(name, args, run, who.requestId,
-      (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName) : run());
+      (typeof args?.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName) : run());
     if (name === 'edit' && ['applied', 'rebased'].includes(result.outcome)) {
-      try { if (who.actor === 'agent') agentCaret(result.act?.id, (typeof args.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName, undefined, undefined, result.act?.label); } catch (_) {}
+      try { if (who.actor === 'agent') agentCaret(result.act?.id, (typeof args?.agent === 'string' && args.agent.trim()) || who.hostAgent || doorName, undefined, undefined, result.act?.label); } catch (_) {}
     }
     if (who.actor === 'agent' && result?.reason === 'document_law' && Number.isSafeInteger(result.region)) {
       try { _rapierAgentWillKept(result.region); } catch (_) {}

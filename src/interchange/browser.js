@@ -86,7 +86,8 @@ async function _rapierInstallPdfImportPlugin() {
 async function _rapierReadImportedDocument(file, name = file?.name || '', {quiet = false, original = false, plain = false} = {}) {
   const kind = _rapierImportKind(name, file?.type);
   if (!kind) throw new Error('Choose a DOCX, PDF or TextPack document.');
-  if (!(file instanceof Blob) || !file.size || file.size > RapierImageArchive.ARCHIVE_LIMITS.bytes)
+  if (file instanceof Blob && !file.size) throw new Error('This document is empty.');
+  if (!(file instanceof Blob) || file.size > RapierImageArchive.ARCHIVE_LIMITS.bytes)
     throw new Error('Choose a document smaller than 25 MiB.');
   if (_rapierDocumentImport.active) throw new Error('Another document is still being imported.');
   const settled = await _rapierWithSettledExternalDocument(() => Object.freeze(_rapierMutationStamp()), {quiet: true});

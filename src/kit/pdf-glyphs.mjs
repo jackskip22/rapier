@@ -433,7 +433,7 @@ export async function collectPdfGlyphs(main, {width, check, faces = [], prepareF
     }
     const byElement = new Map();
     for (const row of pending) {const element = row.node.parentElement; if (!byElement.has(element)) byElement.set(element, []); byElement.get(element).push(row);}
-    let maskSequence = 0; const maskRules = [];
+    let maskSequence = 0; const maskRules = [], plans = [];
     for (const [element, rows] of byElement) {
       const all = rows.every(row => row.parts.every(part => part.font));
       const direct = Array.from(element.childNodes).filter(node => node.nodeType === 3 && node.data.trim());
@@ -461,18 +461,31 @@ export async function collectPdfGlyphs(main, {width, check, faces = [], prepareF
         const entry = fonts.get(part.font); entry.glyphs.add(part.glyph);
         for (const character of part.text) entry.codes.add(character.codePointAt(0));
       }
-      const names = [], style = styleOf(element);
-      for (const [font, {glyphs, codes}] of fonts) {
-        const name = 'rapier-pdf-mask-' + maskSequence++;
-        const bytes = await maskFont(font.bytes, [...glyphs]), weight = style.fontWeight, faceStyle = font.italic ? 'italic' : 'normal';
-        const primary = font.asset.family.toLowerCase() === familyName(style.fontFamily.split(',')[0]).toLowerCase();
-        const unicodeRange = primary ? 'U+0-10FFFF' : [...codes].map(code => 'U+' + code.toString(16)).join(',');
-        const face = new window.FontFace(name, bytes, {weight, style: faceStyle, unicodeRange});
-        await face.load(); document.fonts.add(face); restoreSteps.push(() => document.fonts.delete(face)); names.push('"' + name + '"');
-        let binary = ''; for (let at = 0; at < bytes.length; at += 16384) binary += String.fromCharCode(...bytes.subarray(at, at + 16384));
-        maskRules.push('@font-face{font-family:"' + name + '";font-weight:' + weight + ';font-style:' + faceStyle + ';unicode-range:' + unicodeRange + ';src:url(data:font/ttf;base64,' + btoa(binary) + ')}');
-      }
-      if (names.length) pin(element, 'font-family', names.join(',') + ',' + style.fontFamily);
+      plans.push({element, rows, style: styleOf(element), fonts, forbidden, masks: []});
+    }
+    const masks = [], meets = (a, b) => { for (const code of a) if (b.has(code)) return true; return false; };
+    for (const plan of plans) for (const [font, {glyphs, codes}] of plan.fonts) {
+      const weight = plan.style.fontWeight, faceStyle = font.italic ? 'italic' : 'normal';
+      const primary = font.asset.family.toLowerCase() === familyName(plan.style.fontFamily.split(',')[0]).toLowerCase();
+      let mask = masks.find(row => row.font === font && row.weight === weight && row.faceStyle === faceStyle && row.primary === primary &&
+        !meets(row.codes, plan.forbidden) && !meets(codes, row.forbidden));
+      if (!mask) masks.push(mask = {font, weight, faceStyle, primary, glyphs: new Set(), codes: new Set(), forbidden: new Set()});
+      for (const glyph of glyphs) mask.glyphs.add(glyph);
+      for (const code of codes) mask.codes.add(code);
+      for (const code of plan.forbidden) mask.forbidden.add(code);
+      if (!plan.masks.includes(mask)) plan.masks.push(mask);
+    }
+    for (const mask of masks) {
+      mask.name = 'rapier-pdf-mask-' + maskSequence++;
+      const bytes = await maskFont(mask.font.bytes, [...mask.glyphs]);
+      const unicodeRange = mask.primary ? 'U+0-10FFFF' : [...mask.codes].map(code => 'U+' + code.toString(16)).join(',');
+      const face = new window.FontFace(mask.name, bytes, {weight: mask.weight, style: mask.faceStyle, unicodeRange});
+      await face.load(); document.fonts.add(face); restoreSteps.push(() => document.fonts.delete(face));
+      let binary = ''; for (let at = 0; at < bytes.length; at += 16384) binary += String.fromCharCode(...bytes.subarray(at, at + 16384));
+      maskRules.push('@font-face{font-family:"' + mask.name + '";font-weight:' + mask.weight + ';font-style:' + mask.faceStyle + ';unicode-range:' + unicodeRange + ';src:url(data:font/ttf;base64,' + btoa(binary) + ')}');
+    }
+    for (const {element, rows, style, masks: used} of plans) {
+      if (used.length) pin(element, 'font-family', used.map(mask => '"' + mask.name + '"').join(',') + ',' + style.fontFamily);
       for (const {node, parts} of rows) nodes.set(node, parts);
     }
     sheet.textContent = [...maskRules, ...inheritedRules, ...markerRules].join('\n');

@@ -33,9 +33,9 @@ Everything is plain Markdown. Pictures, drawings and paintings are embedded insi
 - **Web:** [rapier.website](https://rapier.website). Add it to your home screen and it works offline.
 - **One HTML file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) is the whole editor, and
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html) just reads. Open either in a browser.
-- **Windows (beta):** [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.30). If SmartScreen warns,
+- **Windows (beta):** [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.66). If SmartScreen warns,
   choose **More info**, then **Run anyway**.
-- **Linux (beta, x86_64):** [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.39). Run
+- **Linux (beta, x86_64):** [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.66). Run
   `chmod +x rapier-linux && ./rapier-linux --install` once. [Requirements](src/linux/README.md).
 
 ## With AI agents
@@ -2904,7 +2904,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.66.
+Totals: the reader, 9.35 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.67.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -4360,7 +4360,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.66.
+Totals: the reader, 9.35 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.67.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import

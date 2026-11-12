@@ -325,7 +325,7 @@ export function mountHtmlBlocks(doc, options = {}) {
     const {bytes, codec} = assets.decodeDataImageBytes(url); return {...(codec === 'image/jxl' ? assets.inspectJPEGXL(bytes) : {}), ...assets.imageDimensions(bytes, codec)};});
   const heightOf = options.heightOf || objectHeight;
   const owned = new Map(), local = new Map(), reduced = win.matchMedia('(prefers-reduced-motion: reduce)');
-  let pending = 0, dead = false, sequence = 0, noticed = false, identity = options.identity?.();
+  let pending = 0, dead = false, sequence = 0, noticed = false, identity = options.identity?.(), refused = new WeakMap();
   const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
   const random = () => [...win.crypto.getRandomValues(new Uint8Array(16))].map(n => n.toString(16).padStart(2, '0')).join(''), prefix = random();
   const sheet = doc.createElement('style');
@@ -471,7 +471,7 @@ export function mountHtmlBlocks(doc, options = {}) {
     walk(template.content); return template.innerHTML;
   }
   function install(image) {
-    const key = keyOf(image); if (!key || key.length > 24 * 1024 * 1024) return;
+    const key = keyOf(image); if (!key || key.length > 24 * 1024 * 1024 || refused.get(image) === key) return;
     const existing = owned.get(image); if (existing?.key === key) return; if (existing) release(existing);
     if (owned.size >= 64 || [...owned.values()].reduce((sum, row) => sum + row.key.length, key.length) > 32 * 1024 * 1024) {
       if (!noticed) {noticed = true; options.notice?.(owned.size >= 64 ? 'Only 64 objects play at once; the rest show their box' : 'Objects past 32 MB show their box');}
@@ -480,10 +480,11 @@ export function mountHtmlBlocks(doc, options = {}) {
     const parent = image.closest('.block-read') || image.parentElement?.parentElement; if (!parent) return;
     const row = {image, key, parent, id: prefix + '-' + ++sequence, generation: 0, attrs: {}, visible: !visibility, paused: local.get(key) ?? reduced.matches};
     try {
-      if (image.hasAttribute('data-rapier-html') || /^data:image\/svg\+xml;/i.test(key)) {
-        if (!image.hasAttribute('data-rapier-html') && key.length > 1398200) return;
+      if (image.hasAttribute('data-rapier-html') || /^data:image\/svg\+xml[;,]/i.test(key)) {
+        const percent = !image.hasAttribute('data-rapier-html') && /^data:image\/svg\+xml,/i.test(key);
+        if (!image.hasAttribute('data-rapier-html') && key.length > (percent ? 3 * 1048576 : 1398200)) return;
         const value = image.hasAttribute('data-rapier-html') ? JSON.parse(decodeURIComponent(key)) : {
-          body: new win.TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(win.atob(key.slice(key.indexOf(',') + 1)), c => c.charCodeAt(0))),
+          body: percent ? decodeURIComponent(key.slice(key.indexOf(',') + 1)) : new win.TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(win.atob(key.slice(key.indexOf(',') + 1)), c => c.charCodeAt(0))),
           attrs: {resize: 'scale', viewport: (image.dataset.rapierNaturalWidth || image.naturalWidth || 640) + 'x' + (image.dataset.rapierNaturalHeight || image.naturalHeight || 360)}};
         if (typeof value.body !== 'string' || value.body.length > 1048576) return;
         row.attrs = value.attrs || {}; const admitted = value.media || {}; const body = sanitize(value.body, admitted); row.media = admitted;
@@ -524,7 +525,10 @@ export function mountHtmlBlocks(doc, options = {}) {
         image.src = poster.url; image.dataset.rapierFirstFrame = poster.url;
         if (image.hasAttribute('data-rapier-html')) {row.measured = image.offsetWidth * size.height / size.width; schedule();}
       })().catch(() => {});
-    } catch (error) {row.player?.close(); row.surface?.remove(); image.dataset.rapierContour = 'unavailable-box'; image.dataset.rapierPlayback = 'admission-failed';}
+    } catch (error) {
+      refused.set(image, key);
+      row.player?.close(); row.surface?.remove(); image.dataset.rapierContour = 'unavailable-box'; image.dataset.rapierPlayback = 'admission-failed';
+    }
   }
   const scan = () => {if (!dead) {
     if (options.identity && options.identity() !== identity) {identity = options.identity(); local.clear(); for (const row of [...owned.values()]) release(row);}
@@ -598,7 +602,7 @@ export function mountHtmlBlocks(doc, options = {}) {
   const api = {playback(image, playing) {return setPlayback(owned.get(image), playing);},
     async first(image) {const row = owned.get(image); if (row?.player) {const first = await row.player.first(); if (first) image.dataset.rapierFirstFrame = first;} return image.dataset.rapierFirstFrame || '';},
     media(image) {return owned.get(image)?.media || {};},
-    reset() {local.clear(); for (const row of [...owned.values()]) release(row); scan();},
+    reset() {local.clear(); refused = new WeakMap(); for (const row of [...owned.values()]) release(row); scan();},
     inspect(image) {const row = owned.get(image); return row ? {animated: !!row.animated, paused: row.paused, visible: row.visible,
       snapshot: image.dataset.rapierSnapshot || null, contour: image.dataset.rapierContour || null, status: image.dataset.rapierPlayback || 'ready'} : null;},
     close() {dead = true; win.cancelAnimationFrame(pending); observer.disconnect(); resize.disconnect(); visibility?.disconnect();
