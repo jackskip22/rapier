@@ -24,7 +24,7 @@ import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap, portableNeeds } from '../skills/rapier-html/wrap.mjs';
 import {exportTemplate} from './export-template.mjs';
 import {browserWhere} from './browser-where.mjs';
-import {meter, routeClass, personOf, takeDailyShare} from './governor.mjs';
+import {meter, routeClass, personOf, callerOf, takeDailyShare} from './governor.mjs';
 import { parseFlowchart } from '../spec/flowchart.mjs';
 import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, publishedSchema, validateInput } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
@@ -118,6 +118,7 @@ const returnRefused = (reason, status) => returnReply({ accepted: false, reason 
 const receivedReturns = head => (head.returns || []).filter(row => row.receivedAt).sort((a, b) => a.sequence - b.sequence);
 const returnMetadata = row => ({ return_id: row.id, name: row.name, receivedAt: row.receivedAt, bytes: row.bytes, chars: row.chars });
 const CHUNK_CHARS = 32768;
+const HISTORY_PART_CHARS = 4096;
 const WORKSPACE_STATE_FORMAT = 'rapier-workspace/2';
 const MAX_RECEIPTS = 64;
 const MAX_UI_BYTES = 16 * 1024 * 1024;
@@ -1153,7 +1154,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
         : 'Share editor_url with the person; if they read you a code, send show {target:"pair", code}. ') +
         (name === 'read' ? 'Without an editor, read the text.' : 'Without an editor, export markdown, html or txt.')};
   }
-  if (result.isError && !(create && result.structuredContent?.created === true)) return result;
+  if (result.isError) return result;
   const writer = authority.scopes?.includes('rapier:write') === true;
   if ((authority.source === 'server' || env.LOCAL_EDITOR_PAGE === true || !writer || env.ACCESS_PROFILE === true && authority.access?.kind !== 'browser') && result._meta?.rapier) delete result._meta.rapier.live;
   if (result._meta?.rapier?.live?.key) {
@@ -1918,7 +1919,7 @@ async function handleRequest(request, env, authority, observation = null) {
         const admission = await takeToolBudget(request, env, authority, params.name, params.arguments || {}, door, meta['rapier/editorKey'], {deferOAuth: !hostedTask});
         if (admission && !admission.deferred) throw failure('TOOL_INVOCATION_ADMISSION', 'Tool invocation admission refused.', admission);
         if (door !== 'page') {
-          const share = await takeDailyShare(env, personOf(authority, params.arguments),
+          const share = await takeDailyShare(env, personOf(authority, params.arguments, await callerOf(request, env)),
             {creating: params.name === 'open' && params.arguments?.document === undefined && params.arguments?.url === undefined});
           if (share) throw failure('TOOL_INVOCATION_ADMISSION', 'Tool invocation admission refused.', share);
         }
@@ -2265,7 +2266,9 @@ export class RapierBudget {
         const prior = receipts.find(entry => entry.id === takeId);
         if (prior) return json({ allowed: prior.allowed, remaining: prior.remaining, resetAt: prior.resetAt, replayed: true, takeId });
       }
-      const allowed = window.count < limit;
+      const below = Number.isSafeInteger(body.below) && body.below >= 0 && body.below < limit ? body.below : limit;
+      const allowed = window.count < below;
+      if (body.peek === true && !takeId) return json({ allowed, remaining: Math.max(0, limit - window.count), resetAt, peeked: true });
       if (!allowed) return json({ allowed, remaining: 0, resetAt, ...(takeId ? { takeId } : {}) });
       const count = window.count + 1, remaining = Math.max(0, limit - count), step = Math.max(0, Math.ceil(limit / 10) - 1);
       const base = lease && lease.until > now ? lease : null;
@@ -2567,7 +2570,7 @@ export class RapierDocument {
 
   *storedParts(prefix, count) {
     if (count === undefined) throw failure('WORKSPACE_UNAVAILABLE', 'This workspace representation is unavailable. Open a fresh workspace from an exported copy.');
-    if (!Number.isSafeInteger(count) || count < 1 || count > Math.ceil(this.maxStateBytes / (CHUNK_CHARS >> 1))) throw failure('CORRUPT_WORKSPACE', 'The stored workspace is incomplete.');
+    if (!Number.isSafeInteger(count) || count < 1 || count > Math.ceil(this.maxStateBytes / (HISTORY_PART_CHARS >> 1))) throw failure('CORRUPT_WORKSPACE', 'The stored workspace is incomplete.');
     for (let index = 0; index < count; index++) {
       const key = prefix + index;
       const chunk = this.ctx.storage.kv.get(key);
@@ -2716,11 +2719,11 @@ export class RapierDocument {
       if (!contextOnly) {
         const {start, head: metaHead, verified} = workspaceMetadata(canonical, null, this.verifiedMetadata);
         this.verifiedMetadata = verified;
-        text = jsonRecord({format: WORKSPACE_STATE_FORMAT, metadata: {start, head: metaHead}, state: canonical}, CHUNK_CHARS, {contentDefined: true});
+        text = jsonRecord({format: WORKSPACE_STATE_FORMAT, metadata: {start, head: metaHead}, state: canonical}, HISTORY_PART_CHARS, {contentDefined: true});
         head.stateBytes = text.bytes;
       }
       if (Array.isArray(journal)) {
-        journalText = jsonRecord(journal, CHUNK_CHARS, {contentDefined: true});
+        journalText = jsonRecord(journal, HISTORY_PART_CHARS, {contentDefined: true});
         head.journalBytes = journalText.bytes;
       }
 
@@ -2730,12 +2733,12 @@ export class RapierDocument {
     if (!state && !renew && !expired.length && !expiredTasks.length && !exported && !taskResult && material === undefined) return;
     if (renew) head.expiresAt = expiresAt;
     const records = [
-      {prefix: 'state:', field: 'parts', text},
-      {prefix: 'human:', field: 'contextParts', text: human},
-      {prefix: 'journal:', field: 'journalParts', text: journalText},
-      {prefix: 'material:', field: 'materialParts', text: materialText},
+      {prefix: 'state:', field: 'parts', text, chars: HISTORY_PART_CHARS},
+      {prefix: 'human:', field: 'contextParts', text: human, chars: CHUNK_CHARS},
+      {prefix: 'journal:', field: 'journalParts', text: journalText, chars: HISTORY_PART_CHARS},
+      {prefix: 'material:', field: 'materialParts', text: materialText, chars: CHUNK_CHARS},
     ].filter(row => row.text !== undefined).map(row => ({...row, previous: head[row.field] || 0}));
-    for (const row of records) head[row.field] = row.text.parts ?? Math.ceil(row.text.chars / (CHUNK_CHARS >> 1));
+    for (const row of records) head[row.field] = row.text.parts ?? Math.ceil(row.text.chars / (row.chars >> 1));
     const headBytes = contentBytes(JSON.stringify(head));
     const retainedBytes = (head.stateBytes || 0) + (head.contextBytes || 0) + (head.journalBytes || 0) +
       head.exportBytes + (head.returnBytes || 0) + (head.materialBytes || 0) + (head.taskBytes || 0) + headBytes;
@@ -3741,10 +3744,23 @@ export class RapierDocument {
       if (input.connectionKey) this.grantVerdicts.learn(await workspaceAddress(input.prefix, ownerKey));
       head = this.describe(state, { stateFormat: WORKSPACE_STATE_FORMAT, ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null,
         ...(input.hostFileBinding ? {fileHydration: {id: mintId('hydrate_'), binding: input.hostFileBinding, status: 'pending', baseRevision: state.revision}} : {}) }, 1, collaboration);
+      if (fenced && typeof this.ctx.storage.hold === 'function') this.ctx.storage.hold();
       await this.persist(head, state, kernel.invocationJournal({readonly: true}), false, null, undefined, input);
       if (fenced) {
         const edited = await this.advanceMaterial({...input, create: false, operation: 'edit', args: {revision: state.revision, changes: [{text: args.text}], ...(args.agent ? {agent: args.agent} : {})}});
+        if (edited.isError) {
+          this.cachedState = null;
+          this.cachedJournal = null;
+          this.writtenChunks.clear();
+          await this.ctx.storage.deleteAll();
+          await this.ctx.storage.sync();
+          this.live.reset(); this.live.expire(null);
+          const {created: _c, resumed: _r, documentId: _d, revision: _v, documentRevision: _dr, currentRevision: _cr, version: _n,
+            filename: _f, docKind: _k, chars: _ch, collaboration: _co, view: _w, expiresAt: _e, pairing: _p, ...refusal} = edited.structuredContent || {};
+          return envelope(refusal, null);
+        }
         const latest = this.ctx.storage.kv.get('head'), currentState = this.readState(latest);
+        if (typeof this.ctx.storage.release === 'function') { this.ctx.storage.release(currentState.revision); await this.ctx.storage.sync(); }
         let seen = null;
         if (edited.structuredContent?.outcome === 'applied') {
           try {

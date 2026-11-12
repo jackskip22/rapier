@@ -114,6 +114,7 @@ export async function createServer(options={}) {
         if(request.headers.host!==new URL(origin).host)throw refusal('HOST_REFUSED','This Host is not the configured server origin.',403);
         if(!request.url?.startsWith('/') || request.url.startsWith('//'))throw refusal('PATH_REFUSED','Use a local server path.',400);
         const url=new URL(request.url,origin);
+        if(store.poisoned && typeof store.heal==='function')await store.heal();
         const localPage=localDoor && /^\/d\/ws_[A-Za-z0-9_-]{43}$/.test(url.pathname);
         const localEditor=localDoor && /^\/editor\/ws_[A-Za-z0-9_-]{43}(?:\/admit)?$/.test(url.pathname);
         if(localPage || localEditor) {

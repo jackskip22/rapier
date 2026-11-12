@@ -6727,6 +6727,7 @@ function _beginBlockDOMSplice(startIndex, oldCount) {
 	const before = _blockWrapperChildren(container);
 	const removed = before.slice(startIndex, startIndex + oldCount);
 	const removedIds = removed.map(wrapper => wrapper.dataset.blockId);
+	globalThis.RapierImageFlow?.prepareRetire?.(removed);
 	removed.forEach(_rapierRemoveBlockWrapper);
 	const ref = _blockWrapperChildren(container)[startIndex] || null;
 	if (ref && ref.parentElement !== container) _rapierUnpackSleepGroup(ref.parentElement);
@@ -10864,7 +10865,7 @@ function _rapierEditorCanTakeKeys() {
 }
 function _rapierEarlyTargetIsField(target) {
 	if (!(target instanceof Element)) return false;
-	if (target.closest('input, textarea, select')) return true;
+	if (target.closest('input, textarea, select') || _rapierKeysBelongElsewhere(target)) return true;
 	const editable = target.isContentEditable === true || !!target.closest('[contenteditable]');
 	if (!editable) return false;
 	const host = _editorHostEl();

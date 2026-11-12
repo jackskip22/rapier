@@ -8,12 +8,12 @@ const GEAR = (() => {
   for (let index = 0; index < 256; index++) { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; table[index] = x; }
   return table;
 })();
-const CUT_MASK = 0xfff80000 | 0;
+const cutMask = chunkChars => ~(0xffffffff >>> Math.max(1, Math.floor(Math.log2(chunkChars)) - 2)) | 0;
 const LONG_PIECE = 4096, PIECE_CUTS = new Map(), STRING_COUNTS = new Map(), SHORT_COUNTS = new Map();
 const SHORT_COUNT_LIMIT = 1024;
 let cutChars = 0, countChars = 0;
 function scanPiece(piece, index, state, chunkChars, cut) {
-  const least = chunkChars >> 1, window = least - 32;
+  const least = chunkChars >> 1, window = least - 32, mask = cutMask(chunkChars);
   let {length, hash} = state;
   while (index < piece.length) {
     if (length < window) {
@@ -21,7 +21,7 @@ function scanPiece(piece, index, state, chunkChars, cut) {
       index += step; length += step; continue;
     }
     hash = (hash << 1) + GEAR[piece.charCodeAt(index++) & 255] | 0;
-    if (++length === chunkChars || length >= least && (hash & CUT_MASK) === 0) {
+    if (++length === chunkChars || length >= least && (hash & mask) === 0) {
       length = 0; hash = 0;
       if (cut(index)) { state.length = 0; state.hash = 0; return index; }
     }

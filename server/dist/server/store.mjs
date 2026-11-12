@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {join, dirname, basename, resolve, relative, sep} from 'node:path';
 import {createHash, randomBytes} from 'node:crypto';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {RapierDocument, RapierBudget, readWorkspaceState} from '../mcp/worker.mjs';
 
 const utf8 = new TextDecoder('utf-8', {fatal:true, ignoreBOM:true});
@@ -62,7 +63,9 @@ async function atomicFile(path, bytes, {mode=0o600, create=false, beforePublish}
     await syncDirectory(dirname(path));
   } finally { await handle?.close(); await fs.unlink(temp).catch(error=>{if(!absent(error))throw error;}); }
 }
-export function stateText(record) {
+const RECOVERING=new AsyncLocalStorage();
+export function stateText(record) {return workspaceState(record)?.text ?? null;}
+function workspaceState(record) {
   const values=new Map(record.values), head=values.get('head');
   if (!head) return null;
   if (!Number.isSafeInteger(head.parts) || head.parts < 1) throw refusal('STATE_DAMAGED','A workspace state is incomplete.',503);
@@ -81,7 +84,7 @@ export function stateText(record) {
   }
   if(typeof state.text !== 'string' || state.docKind !== 'markdown' || state.filename !== basename(record.document))
     throw refusal('DOCUMENT_IDENTITY_REFUSED','A filesystem workspace cannot change its bound filename or document kind.',409);
-  return state.text;
+  return state;
 }
 
 function workspaceValues(record) {
@@ -146,6 +149,12 @@ class WorkspaceStorage {
   async setAlarm(at) {if(!Number.isSafeInteger(at) || at<0)throw new TypeError('Invalid alarm');this.alarm=at;await this.sync();}
   async getAlarm() {return this.alarm;}
   async deleteAll() {this.values.clear();this.alarm=null;await this.sync();}
+  hold() {this.record={...this.record,held:{revision:null}};}
+  release(revision) {
+    if(!this.record.held)return;
+    if(this.record.fileHash===null || !Number.isSafeInteger(revision)) {const {held:_held,...record}=this.record;this.record=record;}
+    else this.record={...this.record,held:{revision}};
+  }
 }
 
 export class WorkspaceStore {
@@ -154,7 +163,7 @@ export class WorkspaceStore {
     this.maxDocumentBytes=maxDocumentBytes;this.maxDocuments=maxDocuments;this.maxFolderBytes=maxFolderBytes;this.onCommitStep=onCommitStep;
     this.entries=new Map();this.activeKeys=new Map();this.tail=Promise.resolve();this.poisoned=false;this.closed=false;
   }
-  healthy() {if(this.closed || this.poisoned)throw refusal('RECOVERY_REQUIRED','The service stopped writing after a storage failure. Restart to recover the pending commit.',503);}
+  healthy() {if(this.closed || this.poisoned && RECOVERING.getStore()!==this)throw refusal('RECOVERY_REQUIRED','The service stopped writing after a storage failure. Restart to recover the pending commit.',503);}
   queue(operation) {const result=this.tail.then(operation);this.tail=result.catch(()=>{});return result;}
   async checkRecord(_key,record) {
     if(record.document) {
@@ -181,6 +190,7 @@ export class WorkspaceStore {
   }
   #binding(kind,environment,scope=null) {
     return {idFromName:name=>String(name),get:id=>({fetch:async request=>{
+      if(kind==='document' && typeof this.heal==='function')await this.heal();
       this.healthy();const key=sha256(kind+':'+String(id));
       this.activeKeys.set(key,(this.activeKeys.get(key) || 0)+1);
       try {
@@ -413,6 +423,16 @@ export class FileStore extends WorkspaceStore {
     for(const path of [places.before,places.receipt])await fs.unlink(path).catch(error=>{if(!absent(error))throw error;});
     await syncDirectory(dirname(places.receipt));
   }
+  heal() {
+    if(this.closed || !this.poisoned)return;
+    this.healing ??= this.queue(async()=>{
+      if(this.closed || !this.poisoned || !await this.readPrivate('pending.json',true))return;
+      await RECOVERING.run(this,()=>this.recover());
+      this.poisoned=false;
+      for(const key of this.entries.keys())if(!this.activeKeys.get(key))this.entries.delete(key);
+    }).finally(()=>{this.healing=null;});
+    return this.healing;
+  }
   async recover() {
     const pending=await this.readPrivate('pending.json',true);if(!pending)return;
     if(pending.version!==1 || !HASH.test(pending.key || '') || !PUBLICATION.test(pending.publication || '') || typeof pending.text!=='string' ||
@@ -438,8 +458,10 @@ export class FileStore extends WorkspaceStore {
   async commit(key,record) {
     return this.queue(async()=>{
       this.healthy();
-      const text=record.document ? stateText(record) : null;
-      if(record.document) {
+      const state=record.document ? workspaceState(record) : null,text=state?.text ?? null;
+      const held=record.held && (record.held.revision===null || state && state.revision<=record.held.revision);
+      if(record.held && !held)delete record.held;
+      if(record.document && !held) {
         const current=await this.read(record.document,{missing:true});
         if((current?.hash || null)!==record.fileHash)throw refusal('FILE_CONFLICT','The file changed outside this workspace. Reopen its current source.',409);
         if(text!==null && text!==current?.text) {

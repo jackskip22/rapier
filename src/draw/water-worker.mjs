@@ -187,8 +187,9 @@ export function createWaterWorker({postMessage}={}){
     if(jobs.get(id)?.signal.aborted)throw Object.assign(new Error('Water painting cancelled'),{name:'AbortError',code:'WATER_CANCELLED'});
     postMessage({id,value},transferOf(value));
    }catch(error){
+    const strokeWork=request?.operation==='batch'||['WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(error.code);
     for(const [sid,cp]of checkpoints){
-     if(cp.error)continue;
+     if(cp.error||!strokeWork)continue;
      const s=surfaces.get(sid);try{if(s)await s.endStroke(cp.value,true);}catch(restoreError){if(['WATER_GPU_MEMORY','WATER_GPU_FAILED','WATER_DEVICE_LOST'].includes(restoreError.code)){restoreError.cause??=error;error=restoreError;}}restoreBrushes(cp,brushes);
      if(s)s._dirty={x0:0,y0:0,x1:s.width-1,y1:s.height-1};
      checkpoints.set(sid,{id:cp.id,error});

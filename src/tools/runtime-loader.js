@@ -330,7 +330,7 @@ const _rapierHoldEarlyLoader = (row, event) => {
   if (globalThis._rapierEditorKeysLive || globalThis._rapierEditorKeysOwned) return;
   const target = event.target;
   if (target && target.closest) {
-    if (target.closest('input, textarea, select')) return;
+    if (target.closest('input, textarea, select, [role="dialog"]')) return;
     const host = document.getElementById('editor-blocks');
     const editable = target.isContentEditable === true || target.closest('[contenteditable]');
     if (editable && !(host && (target === host || host.contains(target)))) return;

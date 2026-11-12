@@ -63,14 +63,19 @@ function _rapierSyncFindHighlights() {
 	else CSS.highlights.delete('rapier-find-current');
 }
 
+let _rapierFindHighlightSyncQueued = false;
 function _rapierRetireFindBlockProjection(wrapper) {
 	const id = Number(wrapper?.dataset?.blockId);
 	if (!Number.isSafeInteger(id)) return;
 	_rapierFindRuntime.documentGuard?.projection?.blocks?.delete(id);
-	for (const record of new Set([...rapier.find.ranges, ..._rapierFindRuntime.textRecords])) {
-		if (record.surface !== 'picture' && Number(record.blockId) === id) record.range = null;
+	for (const records of [rapier.find.ranges, _rapierFindRuntime.textRecords]) {
+		for (const record of records) {
+			if (record.surface !== 'picture' && Number(record.blockId) === id) record.range = null;
+		}
 	}
-	_rapierSyncFindHighlights();
+	if (_rapierFindHighlightSyncQueued) return;
+	_rapierFindHighlightSyncQueued = true;
+	queueMicrotask(() => { _rapierFindHighlightSyncQueued = false; _rapierSyncFindHighlights(); });
 }
 
 function _rapierRefreshFindBlockProjection(wrapper, paint = true) {
