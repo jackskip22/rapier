@@ -1,0 +1,67 @@
+name: windows
+# Rapier on a GitHub-hosted Windows machine: the published Rapier.exe and the Store MSIX by SHA-256, the WebView2 Runtime,
+# first-start.ps1 unchanged, the Store MSIX installed and started as a packaged app, a write-and-Undo
+# journey, and the five Store listing screenshots from the real window.
+# A product row that fails is a result (the summary and the files say so); the run fails only when the check breaks.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rapier-windows
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            windows-check
+            ci-inputs
+      - name: Rapier.exe and the package, by SHA-256
+        id: fetch
+        run: ./windows-check/fetch.ps1 -Out "$env:RUNNER_TEMP\rapier"
+      - name: WebView2 Runtime
+        run: ./windows-check/webview2.ps1 -Out "$env:RUNNER_TEMP\out"
+      - name: First start (first-start.ps1, unchanged)
+        id: start
+        working-directory: ${{ steps.fetch.outputs.app }}
+        shell: cmd
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath . -Recurse -File | Unblock-File"
+          powershell -NoProfile -ExecutionPolicy Bypass -File first-start.ps1
+          >> "%GITHUB_OUTPUT%" echo exit=%ERRORLEVEL%
+          exit /b 0
+      - name: Receipt
+        run: |
+          $app = '${{ steps.fetch.outputs.app }}'
+          $receipt = Get-ChildItem $app -Filter 'started-*.json' | Select-Object -First 1
+          if (-not $receipt) { throw 'first-start.ps1 wrote no receipt' }
+          Copy-Item (Join-Path $app 'started-*') "$env:RUNNER_TEMP\out\"
+          $r = Get-Content $receipt.FullName -Raw | ConvertFrom-Json
+          "## First start: exit ${{ steps.start.outputs.exit }}`n`n| Row | Result |`n|---|---|`n" +
+          "| Windows | $($r.windows) |`n| WebView2 | $($r.webview2) |`n| Self-test | $($r.selfTest) |`n" +
+          "| Page loaded | $($r.pageLoaded) |`n| One window per file | $($r.windowCells.firstFile), $($r.windowCells.secondFileOwnWindow), $($r.windowCells.sameFileNoNewWindow) |`n" +
+          "| Owner-ACL checks | $($r.ownerAclChecks.syncNative), $($r.ownerAclChecks.attachmentOpen) |`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: The Store MSIX, installed and started
+        run: |
+          # Windows PowerShell 5.1: its Appx module installs packages; PowerShell 7's does not load it natively.
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./windows-check/install.ps1 -App '${{ steps.fetch.outputs.app }}' -Out "$env:RUNNER_TEMP\out"
+          "## MSIX`n" + '```' + "`n" + (Get-Content "$env:RUNNER_TEMP\out\packaged.json" -Raw) + '```' + "`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Journey and Store listing screenshots from the real window
+        run: |
+          ./windows-check/listing.ps1 -App '${{ steps.fetch.outputs.app }}' -Out "$env:RUNNER_TEMP\out\listing"
+          "## Journey and listing`n" + '```' + "`n" + (Get-Content "$env:RUNNER_TEMP\out\listing\listing.json" -Raw) + '```' + "`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/out
+          retention-days: 7
+          if-no-files-found: error
