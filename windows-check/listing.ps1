@@ -69,9 +69,9 @@ $results = @()
 foreach ($s in $scenes) {
   $name = "$($s.n)-$($s.scene)-$(if ($s.light) { 'light' } else { 'dark' })"
   Theme $s.light
-  $app = Start-Process -FilePath $exe -ArgumentList $s.args -PassThru
+  $proc = Start-Process -FilePath $exe -ArgumentList $s.args -PassThru
   $handle = [IntPtr]::Zero; $until = (Get-Date).AddSeconds(60)
-  while ($handle -eq [IntPtr]::Zero -and (Get-Date) -lt $until) { Start-Sleep -Milliseconds 500; $app.Refresh(); $handle = $app.MainWindowHandle }
+  while ($handle -eq [IntPtr]::Zero -and (Get-Date) -lt $until) { Start-Sleep -Milliseconds 500; $proc.Refresh(); $handle = $proc.MainWindowHandle }
   $row = [ordered]@{ name = $name; scene = $s.scene; theme = $(if ($s.light) { 'light' } else { 'dark' }) }
   try {
     if ($handle -eq [IntPtr]::Zero) { throw 'no window' }
@@ -95,8 +95,8 @@ foreach ($s in $scenes) {
     $graphics.Dispose(); $bitmap.Dispose()
     $row.window = "$width x $height"; $row.storeSize = ($width -ge 1366 -and $height -ge 768); $row.ok = $true
   } catch { $row.ok = $false; $row.error = "$_" }
-  if (-not $app.HasExited) { [void]$app.CloseMainWindow(); [void]$app.WaitForExit(8000) }
-  if (-not $app.HasExited) { Stop-Process -InputObject $app }
+  if (-not $proc.HasExited) { [void]$proc.CloseMainWindow(); [void]$proc.WaitForExit(8000) }
+  if (-not $proc.HasExited) { Stop-Process -InputObject $proc }
   Start-Sleep -Seconds 2
   $results += [pscustomobject]$row
 }
