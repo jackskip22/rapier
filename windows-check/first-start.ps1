@@ -53,26 +53,54 @@ $graphics.Dispose(); $bitmap.Dispose()
 if (-not $app.HasExited) { [void]$app.CloseMainWindow(); [void]$app.WaitForExit(5000) }
 if (-not $app.HasExited) { Stop-Process -InputObject $app }
 
-# One window per file: two files open two windows; the first file again brings its window forward and opens none.
 function Pages { try { @(Invoke-RestMethod -Uri "http://127.0.0.1:$port/json/list" -TimeoutSec 3 |
   Where-Object { $_.type -eq 'page' -and $_.url -like 'https://rapier.local/rapier.html*' }) } catch { @() } }
-function WaitPages($count) {
+# One window per file: two files open two windows; the first file again brings its window forward and opens none.
+# Windows are told apart by their own title, which names the document. A DevTools page count cannot: every window shares
+# one WebView2 browser, whose list can still hold the page of a window that has just closed.
+Add-Type @"
+using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
+public static class RapierWindows {
+  delegate bool EnumProc(IntPtr hwnd, IntPtr data);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc proc, IntPtr data);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr hwnd, StringBuilder name, int size);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int size);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+  public static string[] Titles() {
+    var titles = new List<string>();
+    EnumWindows((hwnd, data) => {
+      var name = new StringBuilder(64); GetClassNameW(hwnd, name, 64);
+      if (name.ToString() == "RapierWindow" && IsWindowVisible(hwnd)) { var text = new StringBuilder(512); GetWindowTextW(hwnd, text, 512); titles.Add(text.ToString()); }
+      return true; }, IntPtr.Zero);
+    return titles.ToArray();
+  }
+}
+"@
+function Titles { @([RapierWindows]::Titles()) }
+function Holding($titles, $file) { @($titles | Where-Object { $_ -like "*$([IO.Path]::GetFileNameWithoutExtension($file))*" }).Count }
+function WaitHolding($file) {
   $until = (Get-Date).AddSeconds(60)
-  while ((Get-Date) -lt $until) { $p = Pages; if ($p.Count -ge $count) { return $p }; Start-Sleep -Seconds 1 }
-  return Pages
+  while ((Get-Date) -lt $until) { $t = Titles; if ((Holding $t $file) -ge 1) { return $t }; Start-Sleep -Seconds 1 }
+  return Titles
 }
 $tag = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $fileA = Join-Path $env:TEMP "rapier-first-start-a-$tag.md"; Set-Content $fileA "# A`n" -Encoding UTF8
 $fileB = Join-Path $env:TEMP "rapier-first-start-b-$tag.md"; Set-Content $fileB "# B`n" -Encoding UTF8
+$before = Titles
 $fileAProcess = Start-Process -FilePath $exe -ArgumentList "`"$fileA`"" -PassThru
-$one = WaitPages 1
+$one = WaitHolding $fileA
 $fileBProcess = Start-Process -FilePath $exe -ArgumentList "`"$fileB`"" -PassThru
-$two = WaitPages 2
+$two = WaitHolding $fileB
 $repeatProcess = Start-Process -FilePath $exe -ArgumentList "`"$fileA`"" -PassThru
 Start-Sleep -Seconds 8
-$again = Pages
-$windowCells = [ordered]@{ firstFile = ($one.Count -eq 1); secondFileOwnWindow = ($two.Count -eq 2); sameFileNoNewWindow = ($again.Count -eq 2) }
-# Close only process objects this script started; an unrelated Rapier session is never enumerated or stopped.
+$again = Titles
+$windowCells = [ordered]@{
+  firstFile = ((Holding $one $fileA) -eq 1 -and $one.Count -eq $before.Count + 1)
+  secondFileOwnWindow = ((Holding $two $fileA) -eq 1 -and (Holding $two $fileB) -eq 1 -and $two.Count -eq $before.Count + 2)
+  sameFileNoNewWindow = ((Holding $again $fileA) -eq 1 -and $again.Count -eq $before.Count + 2)
+  titles = [ordered]@{ before = $before; firstFile = $one; secondFile = $two; sameFileAgain = $again; pages = (Pages).Count }
+}
+# Close only process objects this script started; an unrelated Rapier session is never stopped.
 $ownedProcesses = @($fileAProcess, $fileBProcess, $repeatProcess)
 foreach ($process in $ownedProcesses) { if (-not $process.HasExited) { [void]$process.CloseMainWindow() } }
 Start-Sleep -Seconds 5
@@ -107,7 +135,7 @@ $receipt = [ordered]@{
   ownerAclChecks = $aclChecks
   at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 }
-($receipt | ConvertTo-Json -Depth 4) + "`n" | Set-Content (Join-Path $here "$name.json") -Encoding UTF8
+($receipt | ConvertTo-Json -Depth 6) + "`n" | Set-Content (Join-Path $here "$name.json") -Encoding UTF8
 $windowsPassed = $windowCells.firstFile -and $windowCells.secondFileOwnWindow -and $windowCells.sameFileNoNewWindow -and $aclChecks.syncNative -and $aclChecks.attachmentOpen
 if ($selfTest -ne 0 -or -not $page -or -not $windowsPassed) {
   Write-Output "Rapier did not pass its first start (self-test $selfTest, page loaded: $([bool]$page), windows: $windowsPassed). Send $name.json and $name.png."
