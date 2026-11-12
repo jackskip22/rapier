@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {LIMITS} from './limits.mjs';
-import {BitWriter, part, complete} from './bits.mjs';
+import {BitWriter, part} from './bits.mjs';
 import {fault, guard, admitOptions, admitPixels, admitSize} from './admit.mjs';
 import {admitSampleFormat} from './admit-samples.mjs';
 import {admitEffort} from './effort-level.mjs';
@@ -105,10 +105,15 @@ export function* animationSteps(a, shared = null) {
     const eligible = parts.filter(part => part.previous && (part.kept = unchangedShare(part.previous, part.data, width, part.rect)) >= MASK_SHARE);
     const trial = eligible.reduce((best, part) => !best || part.kept * part.rect[2] * part.rect[3] > best.kept * best.rect[2] * best.rect[3] ? part : best, null);
     if (trial) {
-      const [, , w, h] = trial.rect, code = (masked, alpha) => complete(partSteps(coderOf(a, mode, {...floor, alpha}), pixelsOf({...trial, masked}, width), w, h));
+      const [, , w, h] = trial.rect, code = function* (masked, alpha) {
+        const steps = partSteps(coderOf(a, mode, {...floor, alpha}), pixelsOf({...trial, masked}, width), w, h);
+        let step;
+        try { while (!(step = steps.next()).done) if (typeof step.value === 'number') yield 0; } finally { if (!step?.done) steps.return?.(); }
+        return step.value;
+      };
       const fill = inspectPixels(shown[0].data, width, height).palette ? 'zero' : 'up';
       for (const part of eligible) part.fill = fill;
-      const masked = code(true, true), plain = code(false, false);
+      const masked = yield* code(true, true), plain = yield* code(false, false);
       if (masked.length < 0.97 * plain.length) {
         floor.alpha = true;
         for (const part of eligible) part.candidates = a.effort >= 2 ? [false, true] : [true];

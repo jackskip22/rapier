@@ -157,7 +157,7 @@ export const DOORS = Object.freeze({
 		])}),
 	// The converter (interchange/convert-view.js) at its hub and its four pair addresses: one view, each address choosing what it makes
 	// first. Each claim is the editor's own import (interchange/browser.js) or export (_rapierBuildEditorExport).
-	'/convert': Object.freeze({name: 'Document converter', title: 'Markdown converter: PDF, Word and HTML to Markdown, free | Rapier',
+	'/convert': Object.freeze({name: 'Document converter', title: 'Convert PDF, Word and HTML to Markdown | Rapier',
 		description: 'Convert PDF, Word and HTML to Markdown ready for AI, pictures kept, or Markdown to Word, PDF and HTML. Free, offline, nothing uploaded.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Markdown converter', view: 'convert',
@@ -288,7 +288,7 @@ export const PAGES = Object.freeze({...DOORS, ...GUIDES});
 // Pages of the site that are not the editor: the build writes each whole (`file`, tools/gallery-page.mjs) with the same head,
 // data and links as the doors, and `_redirects` serves it. The worker never sees them.
 export const STANDALONE = Object.freeze({
-	'/gallery': Object.freeze({name: 'Gallery', file: 'gallery.html', title: 'Free vintage ornaments, borders and decorative letters | Rapier Gallery',
+	'/gallery': Object.freeze({name: 'Gallery', file: 'gallery.html', title: 'Free vintage page templates and drop letters in SVG | Rapier',
 		description: 'Thousands of free ornaments, page borders and decorative capital letters, traced from old books. Open any piece in Rapier or download it as SVG.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Gallery', lead: 'Borders, ornaments and decorative letters, free in Rapier: page borders and title frames; corners, dividers, flourishes, cartouches, rosettes and vignettes; illuminated, Gothic, Renaissance, Baroque and Art Nouveau initials. Every piece is public domain SVG, traced from old books.'}),

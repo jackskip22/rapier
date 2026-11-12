@@ -179,7 +179,7 @@ function* buildAnsCodingOnce(counts, options) {
 
   const model = {kind: 'ans', contextMap: clustered.contextMap,
     histograms: histograms.map(({config, counts, starts, reverse}) => ({config, counts, starts, reverse}))};
-  const {write, writeTokens, writeFilled, flush, reset} = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? {write: true, flush: true} : (options?.kernels?.ansWriter(model) ?? ansGroupWriter(model));
+  const {write, writeTokens, writeFilled, flush, reset} = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && !options?.strategy ? {write: true, flush: true} : (options?.kernels?.ansWriter?.(model) ?? ansGroupWriter(model));
   return {bits: bits + header.bitLength, payloadBits: bits, model, histogramHeader: header, write, writeTokens, writeFilled, flush, reset, writeHistograms: w => w.append(header)};
 }
 export const ansCodingParts = ({bits, payloadBits, model, histogramHeader: {bytes, at, pending, acc}}) => ({bits, payloadBits, model, header: {bytes: bytes.slice(0, at + 1), at, pending, acc}});

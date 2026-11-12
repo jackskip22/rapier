@@ -1394,8 +1394,15 @@ function _rapierDrawShapeBBoxIn(shape, recipe) {
 		}
 	}
 	const stroke = _rapierDrawShapeStroke(shape, recipe);
-	return stroke ? _rapierDrawBBox(_rapierDrawShapePolyline(shape, recipe) || stroke.pts) : { minX: 0, minY: 0, maxX: 0, maxY: 0, w: 0, h: 0 };
+	if (!stroke) return { minX: 0, minY: 0, maxX: 0, maxY: 0, w: 0, h: 0 };
+	const pts = stroke.pts, kept = KEPT_POINTS.has(pts) && _rapierDrawShapePaintsInk(shape, recipe) ? PAINTED_BOUNDS.get(pts) || new Map() : null;
+	const key = kept && (shape.cut ? 'cut' : '') + '|' + shape.brush + '|' + (shape.smooth ?? recipe.smooth), known = kept?.get(key);
+	if (known) return { ...known };
+	const box = _rapierDrawBBox(_rapierDrawShapePolyline(shape, recipe) || pts);
+	if (kept) { kept.set(key, { ...box }); PAINTED_BOUNDS.set(pts, kept); }
+	return box;
 }
+const PAINTED_BOUNDS = new WeakMap();
 
 const _RAPIER_DRAW_AUTO_ROUTES = new WeakMap();
 const _RAPIER_DRAW_ROUTE_SPENT = {work: 0};
@@ -3730,6 +3737,34 @@ export function _rapierDrawUndoRecipe(live, before, after, later = []) {
 	return _rapierDrawMergeAgentRecipe(live, after, before, {undo: true, later});
 }
 
+const ADMITTED_POINTS = new WeakSet(), KEPT_POINTS = new WeakSet();
+function _rapierDrawFreezePoints(pts, admitted = true) {
+	for (const p of pts) Object.freeze(p);
+	KEPT_POINTS.add(Object.freeze(pts));
+	if (admitted) ADMITTED_POINTS.add(pts);
+	return pts;
+}
+export function _rapierDrawKeepPoints(pts) { return _rapierDrawFreezePoints(pts, false); }
+export function _rapierDrawKeptPoints(value) { return KEPT_POINTS.has(value); }
+const POINTS_TEXT = new WeakMap();
+function _rapierDrawImmutableNumbers(value, inner) {
+	if (!Array.isArray(value) || !Object.isFrozen(value) || Object.getPrototypeOf(value) !== Array.prototype) return false;
+	const own = Object.getOwnPropertyDescriptors(value);
+	if (own.toJSON) return false;
+	for (let i = 0; i < value.length; i++) {
+		const slot = own[i];
+		if (!slot || !('value' in slot) || (inner ? typeof slot.value !== 'number' : !_rapierDrawImmutableNumbers(slot.value, true))) return false;
+	}
+	return true;
+}
+export function _rapierDrawPointsText(pts) {
+	let text = POINTS_TEXT.get(pts);
+	if (text !== undefined) return text;
+	if (!KEPT_POINTS.has(pts)) return null;
+	text = _rapierDrawImmutableNumbers(pts, false) ? JSON.stringify(pts) : null;
+	POINTS_TEXT.set(pts, text);
+	return text;
+}
 function _rapierDrawTestBudget(name, fallback) {
 	const value = typeof globalThis !== 'undefined' ? globalThis[name] : null;
 	return Number.isInteger(value) && value > 0 ? value : fallback;
@@ -3812,9 +3847,11 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		if (raw.stroke != null) {
 			if (!Number.isInteger(raw.stroke) || raw.stroke < 0 || !input.strokes[raw.stroke]) return null;
 			const pts = input.strokes[raw.stroke].pts;
-			if (!Array.isArray(pts) || pts.length < 2 || pts.length > 16384 || (points += pts.length) > 262144 || !pts.every(p => Array.isArray(p) && p.length >= 2 && p.length <= 4 && spatial(p[0]) && spatial(p[1]) && (p.length < 3 || finite(p[2]) && p[2] >= 0) && (p.length < 4 || finite(p[3]) && p[3] >= 0 && p[3] <= 1))) return null;
+			if (ADMITTED_POINTS.has(pts)) { if ((points += pts.length) > 262144) return null; }
+			else if (!Array.isArray(pts) || pts.length < 2 || pts.length > 16384 || (points += pts.length) > 262144 || !pts.every(p => Array.isArray(p) && p.length >= 2 && p.length <= 4 && spatial(p[0]) && spatial(p[1]) && (p.length < 3 || finite(p[2]) && p[2] >= 0) && (p.length < 4 || finite(p[3]) && p[3] >= 0 && p[3] <= 1))) return null;
 			stroke = out.strokes.length;
-			out.strokes.push({ pts: pts.map(p => [p[0], p[1], p[2] || 0].concat(p.length > 3 ? [p[3]] : [])) });
+			const kept = ADMITTED_POINTS.has(pts) || KEPT_POINTS.has(pts) && pts.every(p => p.length >= 3 && Object.is(p[2] || 0, p[2]));
+			out.strokes.push({ pts: kept ? (ADMITTED_POINTS.add(pts), pts) : _rapierDrawFreezePoints(pts.map(p => [p[0], p[1], p[2] || 0].concat(p.length > 3 ? [p[3]] : []))) });
 		}
 		if (kind === 'ink' && stroke === null) return null;
 		const line = kind === 'line' || kind === 'arrow';

@@ -22,7 +22,7 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
   md.core.ruler.after('block', ruleName + '_source_release', state => authored.delete(state.tokens));
   const tokenize = md.block.tokenize;
   md.block.tokenize = function(state, startLine, endLine) {
-    const first = Math.max(state.tokens.length, state._mathScanned || 0);
+    const first = state.tokens.length;
     try { return tokenize.call(this, state, startLine, endLine); }
     finally {
       const len = state.tokens.length;
@@ -55,7 +55,6 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
         }
         token.meta = {...token.meta, mathSource: value};
       }
-      state._mathScanned = len;
     }
   };
   const renderText = md.renderer.renderInlineAsText;

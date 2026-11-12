@@ -103,7 +103,43 @@ export function jsonBody(value) {
 }
 
 export const jsonBodyInit = value => ({body: jsonBody(value), duplex: 'half'});
-export const jsonResponse = (value, status = 200, headers = {}) => new Response(jsonBody(value), {
-  status, headers: {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff', ...headers},
-});
+const jsonHeaders = headers => ({'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff', ...headers});
+export const jsonResponse = (value, status = 200, headers = {}) => new Response(jsonBody(value), {status, headers: jsonHeaders(headers)});
+
+const PREPARED = new WeakMap();
+export function preparedJson(value) {
+  PREPARED.set(value, new TextEncoder().encode(JSON.stringify(value)));
+  return value;
+}
+function around(value, path) {
+  if (!path.length) return ['', ''];
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype || 'toJSON' in value) return null;
+  let before = '{', after = '', inside = false;
+  for (const key of Object.keys(value)) {
+    if (key === path[0]) {
+      const inner = around(value[key], path.slice(1));
+      if (!inner) return null;
+      before += (before === '{' ? '' : ',') + JSON.stringify(key) + ':' + inner[0]; after = inner[1]; inside = true;
+      continue;
+    }
+    const field = JSON.stringify(value[key]);
+    if (field === undefined) continue;
+    const text = JSON.stringify(key) + ':' + field;
+    if (inside) after += ',' + text; else before += (before === '{' ? '' : ',') + text;
+  }
+  return inside ? [before, after + '}'] : null;
+}
+export function preparedJsonResponse(value, path, status = 200, headers = {}) {
+  let held = value;
+  for (const key of path) held = held?.[key];
+  const bytes = held && typeof held === 'object' ? PREPARED.get(held) : undefined;
+  const sides = bytes && around(value, path);
+  if (!sides) return null;
+  const encoder = new TextEncoder();
+  const parts = [encoder.encode(sides[0]), bytes.slice(), encoder.encode(sides[1])];
+  return new Response(new ReadableStream({pull(controller) {
+    controller.enqueue(parts.shift());
+    if (!parts.length) controller.close();
+  }}, {highWaterMark: 0}), {status, headers: jsonHeaders(headers)});
+}

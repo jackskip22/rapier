@@ -1,7 +1,7 @@
 import {orderAfter} from './model.mjs';
 import {readZipEntries, zipOversizeSkip} from './zip.mjs';
 import {headingAnchors, linkMask} from './links.mjs';
-import {propertiesOf, tagsOf, parseFrontMatter} from './frontmatter.mjs';
+import {propertiesOf, tagsOf, aliasesOf, parseFrontMatter} from './frontmatter.mjs';
 import {importTags, importDate, literalInline, literalBlock, importNames} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters} from './import-characters.mjs';
 
@@ -146,7 +146,9 @@ export async function importMarkdown(entries, options) {
 			const created = fmTime(properties, ['created', 'date'], warnings), modified = fmTime(properties, ['updated', 'modified'], warnings) ?? created;
 			if (created !== undefined) entry.created = Math.round(created);
 			if (modified !== undefined) entry.modified = Math.round(modified);
-			notes.push({file, title, text, bytes: text === raw ? original.bytes : ENCODER.encode(text), entry, sourceName: name, rootId, flavour, warnings});
+			const sourceWikiAliases = plain ? [] : aliasesOf(raw);
+			notes.push({file, title, text, bytes: text === raw ? original.bytes : ENCODER.encode(text), entry, sourceName: name, rootId, flavour, warnings,
+				...(sourceWikiAliases.length ? {sourceWikiAliases} : {})});
 		} catch (error) { refuse('could not be read: ' + String(error?.message || error)); }
 	}
 	let last = lastOrder;

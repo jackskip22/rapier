@@ -1,4 +1,5 @@
 import {JsonDepthGuard} from '../kit/json-depth.mjs';
+import {inheritJSON} from './json-custody.mjs';
 import {zipEntries, readZipEntries, zipOversizeSkip, ZIP_MAX_ENTRIES, ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
 import {walkZipEntries} from './zip-walk.mjs';
 import {noteFileName, orderAfter, isCodeFile, codeFileName} from './model.mjs';
@@ -77,7 +78,7 @@ export function importNames(pool) {
 		return file;
 	};
 }
-const TEXT_EXT = /\.(?:json|md|markdown|txt|text|csv|html?|mht|mhtml|znote|zoho|enex|xml|yaml|yml|opml)$/i;
+const TEXT_EXT = /\.(?:json|md|markdown|txt|text|csv|html?|znote|zoho|enex|xml|yaml|yml|opml)$/i;
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|jxl|bmp|svg|heic|heif|avif|ico)$/i;
 const CONTAINER_EXT = /\.(?:zip|textpack|bear2bk)$/i;
 const SYSTEM_FILE = /(?:^|\/)(?:__MACOSX\/|(?:\.DS_Store|Thumbs\.db|desktop\.ini)$)/i;
@@ -497,6 +498,7 @@ export async function importAny(entries, options = {}, importers = {}) {
 		warnings.push({code: 'keep_tasks', rootId: task.rootId, sourceName: task.name, message: 'Google Tasks reminders were kept in the Tasks file. Set reminders on the matching notes; task titles do not reliably identify a Keep note.'});
 	}
 	const audio = [], audioPool = [...(Array.isArray(options.audioExisting) ? options.audioExisting : [])];
+	const audioNames = new Set(audioPool.map(name => name.toLowerCase()));
 	const consumed = new Map(), refused = new Map(unread.map(e => [e.inputId, e.why]));
 	const spelling = new Map(sectionNames(options).map(name => [name.toLowerCase(), name]));
 	let lastOrder = options.lastOrder || '', backupIndex = options.index;
@@ -538,7 +540,7 @@ export async function importAny(entries, options = {}, importers = {}) {
 			continue;
 		}
 		for (const warning of result?.warnings || []) warnings.push({...warning, rootId, source});
-		const got = (Array.isArray(result?.notes) ? result.notes : []).map(n => ({...n, entry: {...n.entry}, text: typeof n.text === 'string' ? n.text : String(n.source ?? ''), rootId,
+		const got = (Array.isArray(result?.notes) ? result.notes : []).map(n => ({...n, entry: inheritJSON({...n.entry}, n.entry), text: typeof n.text === 'string' ? n.text : String(n.source ?? ''), rootId,
 			sourceName: n.sourceName || n.sourcePath || (primary.length === 1 ? primary[0].name : n.file), ...(source === 'rapier' ? {exactBackup: true} : {})}));
 		const backupInputs = source === 'rapier' ? new Map(primary.map(e => [e.name, e])) : null;
 		for (const n of got) {
@@ -552,12 +554,22 @@ export async function importAny(entries, options = {}, importers = {}) {
 			if (n.entry.category) { admitSection(n.entry.category); n.entry.category = spelling.get(n.entry.category.toLowerCase()); }
 			notes.push(n);
 		}
-		for (const row of result?.audio || []) {
-			if (!row?.name || audioPool.some(n => n.toLowerCase() === String(row.name).toLowerCase())) continue;
-			audio.push({...row, rootId}); audioPool.push(row.name);
-			const inputs = row.sourceName ? batch.entries.filter(e => e.name === row.sourceName) : [], owner = got.find(n => n.file === row.note);
-			if (owner) (owner.ownedRecordings ||= []).push(recordingHref(row.name));
-			if (inputs.length === 1 && owner) recordConsumed(inputs[0].inputId, owner);
+		if (result?.audio?.length) {
+			const inputsByName = new Map(), owners = new Map();
+			for (const entry of batch.entries) {
+				if (!inputsByName.has(entry.name)) inputsByName.set(entry.name, []);
+				inputsByName.get(entry.name).push(entry);
+			}
+			for (const note of got) if (!owners.has(note.file)) owners.set(note.file, note);
+			for (const row of result.audio) {
+				if (!row?.name) continue;
+				const key = String(row.name).toLowerCase();
+				if (audioNames.has(key)) continue;
+				audioNames.add(key); audio.push({...row, rootId}); audioPool.push(row.name);
+				const inputs = row.sourceName ? inputsByName.get(row.sourceName) || [] : [], owner = owners.get(row.note);
+				if (owner) (owner.ownedRecordings ||= []).push(recordingHref(row.name));
+				if (inputs.length === 1 && owner) recordConsumed(inputs[0].inputId, owner);
+			}
 		}
 		sources[source] = (sources[source] || 0) + got.length;
 		lastOrder = lastKeyOf(got, lastOrder);
@@ -713,7 +725,7 @@ export function finalizeImport(notes, {existing = [], ascii = false} = {}) {
 		if (!file) throw new Error('import filename cannot keep its code type: ' + note.file);
 		if (occupied.has(file)) throw new Error('import would replace occupied file: ' + file);
 		pool.push(file); occupied.add(file); noteNames.add(file.toLowerCase()); codeNames.add(file.normalize('NFC').toLowerCase());
-		return {...note, entry: {...note.entry}, file, sourceName, rootId: String(note.rootId || '')};
+		return {...note, entry: inheritJSON({...note.entry}, note.entry), file, sourceName, rootId: String(note.rootId || '')};
 	});
 	const fileMap = planned.map(n => ({rootId: n.rootId, sourceName: n.sourceName, file: n.file, sourceAliases: [...(n.sourceAliases || [])],
 		...(n.sourceWikiAliases?.length ? {sourceWikiAliases: [...n.sourceWikiAliases]} : {})}));

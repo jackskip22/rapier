@@ -1,3 +1,4 @@
+import {cloneJSON, parseJSON, stringifyJSON} from './json-custody.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {emptyIndex, serializeIndex, isCodeFile} from './model.mjs';
 import {exactBytes, sha256} from './integrity.mjs';
@@ -10,7 +11,7 @@ export async function prepareLockedNote({store, index, file, id, digest}) {
 		const bytes = await store.read('imports/' + leaf);
 		if (bytes == null) continue;
 		let record;
-		try { record = JSON.stringify(JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes))); }
+		try { record = stringifyJSON(parseJSON(new TextDecoder('utf-8', {fatal: true}).decode(bytes))); }
 		catch { throw new Error('Rapier could not check where this note came from.'); }
 		if (record.includes(JSON.stringify(id)) || record.includes(JSON.stringify(file)))
 			throw new Error('It came from an import you can still undo.');
@@ -48,7 +49,7 @@ export async function prepareLockedNote({store, index, file, id, digest}) {
 		files.set(name, exactBytes(bytes));
 	}
 	const privateIndex = {...emptyIndex(), folderDeviceId: index.folderDeviceId, noteCounters: index.noteCounters,
-		notes: {[file]: structuredClone(entry)}, sections: (index.sections || []).filter(section => section.name === entry.category)};
+		notes: {[file]: cloneJSON(entry)}, sections: (index.sections || []).filter(section => section.name === entry.category)};
 	files.set('notes.json', exactBytes(serializeIndex(privateIndex)));
 	return {file, id, files, media, ledger: entry.canonicalHistory};
 }

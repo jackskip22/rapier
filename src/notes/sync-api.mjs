@@ -5,8 +5,11 @@ import {createPlainKeySession, KEY_PLAIN_PROVIDERS, KEY_PLAIN_LABELS, plainCorsR
 import {createPlainCompanionSession} from './sync-plain-companion.mjs';
 import {createPlainRelay} from './plain-relay.mjs';
 import {createProviderSession, providerGate, PROVIDERS, OTHER_PROVIDERS, isOtherProvider, providerUsesSignIn,
-	openDrivePicker, pickerRegistered, DRIVE_PICKER, createDeviceStorage, createRememberedDevice} from './sync-provider-session.mjs';
+	openDrivePicker, pickerRegistered, DRIVE_PICKER, createDeviceStorage, createRememberedDevice, windowsProviderGate} from './sync-provider-session.mjs';
 import {syncAvailability, r2KeyAvailability} from './sync-config.mjs';
+import {createWorkspaceSignInSession} from './workspace-credential-session.mjs';
+import {workspaceSignInAvailability} from './workspace-oauth.mjs';
 export {readSyncState, PLAIN_DETAIL, createPlainKeySession, KEY_PLAIN_PROVIDERS, KEY_PLAIN_LABELS, plainCorsRule,
 	createPlainCompanionSession, createPlainRelay, createProviderSession, providerGate, PROVIDERS, OTHER_PROVIDERS, isOtherProvider,
-	providerUsesSignIn, openDrivePicker, pickerRegistered, DRIVE_PICKER, createDeviceStorage, createRememberedDevice, syncAvailability, r2KeyAvailability};
+	providerUsesSignIn, openDrivePicker, pickerRegistered, DRIVE_PICKER, createDeviceStorage, createRememberedDevice, windowsProviderGate, syncAvailability, r2KeyAvailability,
+	createWorkspaceSignInSession, workspaceSignInAvailability};

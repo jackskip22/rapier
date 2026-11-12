@@ -6,7 +6,7 @@ import {syncPlainMedia, plainMediaChoice, resolvePlainMedia} from './sync-plain-
 import {syncPlainCards} from './sync-plain-cards.mjs';
 import {withWikiPictures} from './plain-wiki-pictures.mjs';
 
-export const PLAIN_PROVIDERS = Object.freeze(['dropbox', 'drive', 'onedrive', 'webdav', 's3', 'r2', 'companion']);
+export const PLAIN_PROVIDERS = Object.freeze(['dropbox', 'drive', 'onedrive', 'webdav', 's3', 'r2', 'companion', 'workspace']);
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const DEVICE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const IDLE_STAMP_MS = 5 * 60 * 1000;
@@ -163,7 +163,8 @@ export function createPlainSession({folder, store: given, provider, place, devic
 			const expected = (await readSyncStateBytes(folder.store)).state.plain;
 			guard();
 			if (!expected) return;
-			if (expected.provider !== record.provider || expected.place !== record.place || connectionId !== undefined && expected.connectionId !== connectionId)
+			if (expected.provider !== record.provider || expected.place !== record.place ||
+				boundConnectionId !== undefined && expected.connectionId !== boundConnectionId || connectionId !== undefined && expected.connectionId !== connectionId)
 				throw fail('connection', 'the plain-files connection changed.');
 			await updateSyncState(folder, state => {
 				if (!state.plain) return null;

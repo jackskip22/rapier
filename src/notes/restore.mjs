@@ -1,3 +1,4 @@
+import {cloneJSON, parseJSON, stringifyJSON, inheritJSON} from './json-custody.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {emptyIndex, parseIndex, isNoteFile, isMarkdownNote, noteFileName, orderAfter, serializeIndex} from './model.mjs';
 import {exactBytes, sha256} from './integrity.mjs';
@@ -16,7 +17,7 @@ export {BACKUP_MANIFEST_FILE};
 export const BACKUP_INDEX_MAX_BYTES = 8 * 1024 * 1024;
 const tooLarge = (what, bound) => new Error(what + ' is over ' + attachmentSizeWords(bound) + ', more than Rapier reads from one backup file');
 const decode = bytes => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
-const copy = value => JSON.parse(JSON.stringify(value));
+const copy = cloneJSON;
 const fold = name => name.normalize('NFC').toLowerCase();
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 
@@ -48,7 +49,20 @@ function indexFrom(files) {
 	catch (_) { throw new Error('notes.json is not valid UTF-8'); }
 	if (!text.trim()) throw new Error('notes.json is empty; this is not a complete snapshot');
 	const index = parseIndex(text);
-	return {index, sidecar, raw: JSON.parse(text)};
+	return {index, sidecar, raw: parseJSON(text)};
+}
+function snapshotRoot(files) {
+	if (files.some(file => file.name === 'notes.json')) return files;
+	const roots = files.filter(file => file.name.endsWith('/notes.json'));
+	if (!roots.length) return files;
+	const root = roots.reduce((a, b) => a.name.length < b.name.length ? a : b);
+	const prefix = root.name.slice(0, -'notes.json'.length);
+	if (!files.every(file => file.name.startsWith(prefix))) return files;
+	return files.map(file => {
+		const name = file.name.slice(prefix.length);
+		backupPath(name);
+		return {...file, name};
+	});
 }
 function coherence(files, index) {
 	const present = new Set(files.filter(file => isNoteFile(file.name)).map(file => file.name));
@@ -77,7 +91,7 @@ export async function withBackupManifest(entries, {appVersion, stamp, subtle} = 
 
 function manifestFrom(bytes) {
 	let manifest;
-	try { manifest = JSON.parse(decode(bytes).replace(/^\uFEFF/, '')); }
+	try { manifest = parseJSON(decode(bytes).replace(/^\uFEFF/, '')); }
 	catch (_) { throw new Error('rapier-backup.json is not readable JSON'); }
 	if (!manifest || manifest.format !== 'rapier-notes-backup' || manifest.version !== 1 || !Array.isArray(manifest.files)
 		|| typeof manifest.appVersion !== 'string' || !manifest.appVersion || !Number.isFinite(manifest.stamp)) throw new Error('rapier-backup.json has an unsupported shape');
@@ -123,9 +137,8 @@ function snapshotParts(entries) {
 	if (entries.every(row => Array.isArray(row?.entries))) return entries.map(row => row.entries);
 	return rootsOf(entries).map(root => root.entries);
 }
-const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
-	? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
-const sameSet = manifest => canonical({...manifest, set: {...manifest.set, part: 0}});
+const canonical = value => stringifyJSON(value, 0, true);
+const sameSet = manifest => canonical(inheritJSON({...manifest, set: inheritJSON({...manifest.set, part: 0}, manifest.set)}, manifest));
 
 export function backupSetId(entries) {
 	const file = entries.find(row => row.name === BACKUP_MANIFEST_FILE);
@@ -211,7 +224,7 @@ export async function verifyBackupStream(archive, {subtle, signal, notes = false
 	if (!partial && manifest?.omitted?.length) throw new Error('This backup omitted ' + manifest.omitted.map(row => row.name).join(', ') + '. Use Add backup to recover the files it contains. Nothing was restored.');
 	const files = new Map(), digests = new Map();
 	for (const part of parts) {
-		const local = set ? {...part.manifest, files: set.parts[part.manifest.set.part - 1].files} : part.manifest;
+		const local = set ? inheritJSON({...part.manifest, files: set.parts[part.manifest.set.part - 1].files}, part.manifest) : part.manifest;
 		const declared = manifestDeclarations(local, part.files, part.index, file => file.size, !!set);
 		for (const file of part.files) {
 			const bytes = file === part.sidecar ? part.indexBytes : await read(file), digest = await sha256(bytes, {subtle}); check();

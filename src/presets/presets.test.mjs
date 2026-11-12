@@ -92,6 +92,24 @@ test('personal storage persists, isolates input, keeps failed writes and recheck
   await cold.set('preset/' + record.id, null); await first.snapshot(); assert.deepEqual(first.values('preset/'), {});
   assert.throws(() => admitPersonal({'preset/bad': {by: 'a'.repeat(32), n: 1, value: null}}));
 });
+test('a removed asset leaves a newer null revision and drops its body once nothing names it', async () => {
+  const disk = storage(), owner = createPersonalOwner({storage: disk, validateAsset: (_key, value) => admitPreset(value)}); await owner.ready;
+  const one = sample(), two = {...sample(), id: 'p' + 'b'.repeat(24)};
+  await owner.putAsset('preset/' + one.id, one); await owner.putAsset('preset/' + two.id, two);
+  const before = (await disk.read()).records['preset/' + one.id];
+  await owner.removeAsset('preset/' + one.id);
+  const after = await disk.read(), row = after.records['preset/' + one.id];
+  assert.equal(row.value, null); assert.ok(row.n > before.n, 'the removal outranks the add on another shelf');
+  assert.equal(Object.keys(after.blobs).length, 1, 'the removed body goes; the other stays');
+  assert.deepEqual(Object.keys(owner.values('preset/')), [two.id]);
+  await owner.removeAsset('preset/' + one.id); assert.equal((await disk.read()).records['preset/' + one.id].n, row.n, 'removing twice changes nothing');
+  await assert.rejects(owner.removeAsset('preference/x'), /Only a font/);
+  const three = {...sample(), id: 'p' + 'c'.repeat(24)}, alike = {...three, id: 'p' + 'd'.repeat(24)};
+  await owner.putAsset('preset/' + three.id, three); await owner.set('preset/' + alike.id, {...(await disk.read()).records['preset/' + three.id].value});
+  const bodies = Object.keys((await disk.read()).blobs).length;
+  await owner.removeAsset('preset/' + three.id); assert.equal(Object.keys((await disk.read()).blobs).length, bodies, 'still named by another key');
+  await owner.removeAsset('preset/' + alike.id); assert.equal(Object.keys((await disk.read()).blobs).length, bodies - 1, 'the last name gone, the body goes');
+});
 test('a missing named font refuses before a preset can be stored or applied', async () => {
   await assert.rejects(preparePreset({...sample(), presentation: {settings: {mainfont: 'Unavailable custom family'}, fonts: ''}}, md), /missing/);
   await assert.rejects(preparePreset({...sample(), presentation: {settings: {defaultfont: 'rapier-f' + '0'.repeat(24)}, fonts: ''}}, md), /missing/);

@@ -39,7 +39,16 @@ const RAPIER_MARKDOWN_SPEC = Object.freeze({
 	rules: Object.freeze({ mathBlock: 'temml_math_block' }),
 });
 
-const _rapierLinkifyCandidate = {names: null, schemaRe: null, tldsRef: null, tldSet: null, maxTld: 6};
+const _rapierLinkifyCandidate = {names: null, schemaRe: null, anchors: null, tldsRef: null, tldSet: null, maxTld: 6};
+function _rapierSchemaAnchors(names) {
+	const anchors = new Set();
+	for (const name of names) {
+		if (name.includes(':')) anchors.add(':');
+		else if (name.includes('/')) anchors.add('/');
+		else if (name) { const first = String.fromCodePoint(name.codePointAt(0)); for (const c of first.toLowerCase() + first.toUpperCase()) anchors.add(c); }
+	}
+	return anchors.size ? new RegExp('[' + [...anchors].map(c => c.replace(/[\\\]^-]/g, '\\$&')).join('') + ']', 'u') : null;
+}
 function _rapierLinkFlags(text, linkify) {
 	const len = text.length;
 	if (len < 4) return 0;
@@ -47,11 +56,10 @@ function _rapierLinkFlags(text, linkify) {
 	if (_rapierLinkifyCandidate.names !== names) {
 		_rapierLinkifyCandidate.names = names;
 		_rapierLinkifyCandidate.schemaRe = new RegExp(names.source, 'i');
+		_rapierLinkifyCandidate.anchors = _rapierSchemaAnchors(Object.keys(linkify.__schemas__ || {}));
 	}
 	let flags = 0;
-	if (text.indexOf(':') >= 0 || text.indexOf('/') >= 0 || text.indexOf('w') >= 0 || text.indexOf('W') >= 0) {
-		if (_rapierLinkifyCandidate.schemaRe.test(text)) flags |= 1;
-	}
+	if (_rapierLinkifyCandidate.anchors?.test(text) && _rapierLinkifyCandidate.schemaRe.test(text)) flags |= 1;
 	const dotFirst = text.indexOf('.');
 	if (dotFirst < 0) return flags;
 	const atPos = text.indexOf('@');

@@ -142,7 +142,7 @@ function materializeStyles(tree) {
 		const mask = (((inherited | semantic) & 3) & ~marks.clear) | (inherited & 12) | ((semantic & 12) & ~marks.clear) | marks.set;
 		if (node.tag === 'code') return wrap([node], mask & (heading ? ~1 : -1));
 		const children = (node.children || []).flatMap(child => walk(child, mask, heading));
-		if (highlightOf(node) && node.tag !== 'mark') { node.tag = 'span'; node.children = children; return [node]; }
+		if (highlightOf(node) && (STYLE_TAGS[node.tag] || node.tag === 'span' || node.tag === 'font')) { node.tag = 'span'; node.children = children; return [node]; }
 		if (STYLE_TAGS[node.tag] || ((node.tag === 'span' || node.tag === 'font') && !textColorOf(node) && !Object.keys(typography.parseStyle(attrText(node, 'style'))).length)) return children;
 		node.children = children; return [node];
 	};
@@ -209,7 +209,7 @@ function renderCode(node) {
 	const pad = text[0] === '`' || text.at(-1) === '`' || (text[0] === ' ' && text.at(-1) === ' ' && /[^ ]/.test(text)) ? ' ' : '';
 	return f + pad + text + pad + f;
 }
-const MARK_OPEN = {'**': 'strong_open', '*': 'em_open', '++': 'ins_open', '~~': 's_open', '==': 'mark_open'};
+const MARK_OPEN = {'**': 'strong_open', '*': 'em_open', '~~': 's_open', '==': 'mark_open'};
 function edge(node, side) {
 	if (typeof node === 'string') { const text = htmlSpace(node); return side < 0 ? text.slice(-1) : text.slice(0, 1); }
 	if (node.literal || BLOCK.has(node.tag) || node.tag === 'li') return ' ';
@@ -288,18 +288,17 @@ function highlighted(node, text, colour) {
 
 function renderInline(node) {
 	if (node.literal) return renderLiteral(node);
-	const tag = node.tag, light = STYLE_TAGS[tag] && !insideMark(node) && !holdsMark(node) ? highlightOf(node) : '';
+	const tag = node.tag, light = node.tag !== 'mark' && !insideMark(node) && !holdsMark(node) ? highlightOf(node) : '';
 	const inner = () => light ? highlighted(node, inlineText(node.children || []), light) : inlineText(node.children || []);
 	if (tag === 'br') return HARD_BREAK + '\n';
 	if (tag === 'code') return renderCode(node);
 	if (tag === 'img') return '![' + escapeInline(attrText(node, 'alt') || '') + '](' + encodeUrl(attrText(node, 'src') || '') + linkTitle(attrText(node, 'title')) + ')';
 	if (tag === 'b' || tag === 'strong') return marked(inner(), '**', node);
 	if (tag === 'i' || tag === 'em') return marked(inner(), '*', node);
-	if (tag === 'u' || tag === 'ins') return marked(inner(), '++', node);
+	if (tag === 'u' || tag === 'ins') return '<u>' + inner() + '</u>';
 	if (tag === 's' || tag === 'strike' || tag === 'del') return marked(inner(), '~~', node);
 	if (tag === 'mark') return holdsMark(node) ? inner() : highlighted(node, inner(), highlightOf(node) || runHighlight(node));
-	if (tag === 'sub') return scriptRun(inner(), '~') ?? node.raw;
-	if (tag === 'sup') return scriptRun(inner(), '^') ?? node.raw;
+	if (tag === 'sub' || tag === 'sup') return scriptRun(inner(), tag);
 	if (tag === 'a') { const href = attrText(node, 'href'), s = inner(); return href ? '[' + (s || escapeInline(href)) + '](' + encodeUrl(href) + linkTitle(attrText(node, 'title')) + ')' : s; }
 	return inner();
 }

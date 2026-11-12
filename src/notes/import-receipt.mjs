@@ -1,3 +1,4 @@
+import {parseJSON, stringifyJSON, equalJSON, inheritJSON, inheritJSONField} from './json-custody.mjs';
 import {assertImportReference, assertImportReferences, IMPORT_RECEIPT_LIMIT} from './import-storage.mjs';
 export {IMPORT_RECEIPT_LIMIT};
 import {exactBytes, sha256 as digestBytes, sha256State} from './integrity.mjs';
@@ -7,7 +8,7 @@ import {validRecordingName} from './audio.mjs';
 import {finishImportCharacters} from './import-characters.mjs';
 import {missingRecordingPaths} from './import-attachments.mjs';
 import {resolveAssetPath} from './links.mjs';
-const copy = value => JSON.parse(JSON.stringify(value));
+const copy = value => parseJSON(stringifyJSON(value));
 const list = value => Array.isArray(value) ? value : [];
 const bytesOf = value => exactBytes(value ?? '');
 const historyFile = value => typeof value === 'string' && /^history\/(?:manifests\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}![1-9][0-9]*\.json|(?:texts|blobs)\/[a-f0-9]{64})$/.test(value);
@@ -16,7 +17,7 @@ const sha256 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value
 const digestEntry = entry => { const hash = sha256State(); hash.update(bytesOf(canonicalJSON(entry))); return hash.finish(); };
 const metadata = rows => list(rows).map(row => {
 	const out = {};
-	for (const key of ['rootId', 'inputId', 'name', 'byteLength', 'status', 'why', 'code', 'attachment', 'files']) if (row?.[key] !== undefined) out[key] = copy(row[key]);
+	for (const key of ['rootId', 'inputId', 'name', 'byteLength', 'status', 'why', 'code', 'attachment', 'files']) if (row?.[key] !== undefined) { out[key] = copy(row[key]); inheritJSONField(out, key, row); }
 	if (row?.bytes instanceof Uint8Array || typeof row?.text === 'string') {
 		if (!(row.bytes instanceof Uint8Array) && typeof row.text === 'string' && !row.text.isWellFormed()) {
 			out.utf16Length = row.text.length;
@@ -36,11 +37,14 @@ function unappliedFields(notes) {
 			if (!subjects.has(subject)) subjects.set(subject, new Map());
 			const fields = subjects.get(subject);
 			for (const [key, value] of Object.entries(row.fields)) {
-				const id = JSON.stringify(value);
+				const id = stringifyJSON(value, 0, false, row.fields, key);
 				if (id === undefined) continue;
 				if (!fields.has(key)) fields.set(key, {key, label: typeof row.labels?.[key] === 'string' && row.labels[key] ? row.labels[key] : key, values: [], notes: [], ids: new Map()});
 				const field = fields.get(key);
-				if (!field.ids.has(id)) { field.ids.set(id, field.values.length); field.values.push(JSON.parse(id)); field.notes.push([]); }
+				if (!field.ids.has(id)) {
+					const held = copy(inheritJSONField({value}, 'value', row.fields, key));
+					field.ids.set(id, field.values.length); field.values.push(held.value); inheritJSONField(field.values, String(field.values.length - 1), held, 'value'); field.notes.push([]);
+				}
 				const carried = field.notes[field.ids.get(id)];
 				if (carried.at(-1) !== index) carried.push(index);
 			}
@@ -67,14 +71,14 @@ function foldedImportWarnings(result) {
 			const source = {rootId: row.rootId ?? '', sourceName: row.sourceName, notes: [...(sourceNotes.get(key) || [])], items: [], counts: []};
 			sources.set(key, {source, ids: new Map()}); items.sources.push(source);
 		}
-		const {source, ids} = sources.get(key), id = JSON.stringify(row.item);
-		if (!ids.has(id)) { ids.set(id, source.items.length); source.items.push(JSON.parse(id)); source.counts.push(0); }
+		const {source, ids} = sources.get(key), id = stringifyJSON(row.item, 0, false, row, 'item');
+		if (!ids.has(id)) { ids.set(id, source.items.length); source.items.push(copy(row.item)); inheritJSONField(source.items, String(source.items.length - 1), row, 'item'); source.counts.push(0); }
 		source.counts[ids.get(id)]++;
 	}
 	notes.forEach((note, index) => {
 		for (const row of list(note.warnings).filter(databaseRow)) {
-			const key = JSON.stringify(row);
-			if (!groups.has(key)) { const group = {...copy(row), notes: []}; groups.set(key, group); out.push(group); }
+			const key = stringifyJSON(row);
+			if (!groups.has(key)) { const group = inheritJSON({...copy(row), notes: []}, row); groups.set(key, group); out.push(group); }
 			const carried = groups.get(key).notes;
 			if (carried.at(-1) !== index) carried.push(index);
 		}
@@ -96,7 +100,7 @@ function groupedWarningProblem(receipt) {
 				|| source.counts.some(n => !Number.isSafeInteger(n) || n < 1) || source.items.some(item => !object(item))) return true;
 			const key = warningSource(source);
 			if (seen.has(key) || JSON.stringify(source.notes) !== JSON.stringify(sourceNotes.get(key) || [])
-				|| new Set(source.items.map(item => JSON.stringify(item))).size !== source.items.length) return true;
+				|| new Set(source.items.map((item, i) => stringifyJSON(item, 0, false, source.items, String(i)))).size !== source.items.length) return true;
 			seen.add(key);
 		}
 	}
@@ -145,7 +149,7 @@ export async function verifyImportFile(receipt, file, expected, actual) {
 	const wanted = bytesOf(expected), got = bytesOf(actual);
 	if (wanted.length !== got.length || wanted.some((byte, i) => byte !== got[i])) throw new Error('import file read-back differs: ' + file);
 	if (receipt.createdFiles.some(row => row.file === file)) throw new Error('import file was already recorded');
-	return {...copy(receipt), createdFiles: [...copy(receipt.createdFiles), {file, byteLength: got.length, digest: await digestBytes(got)}]};
+	return inheritJSON({...copy(receipt), createdFiles: [...copy(receipt.createdFiles), {file, byteLength: got.length, digest: await digestBytes(got)}]}, receipt);
 }
 
 async function historyProofs(receipt, rows, existing) {
@@ -181,7 +185,7 @@ export async function prepareImportHistory(receipt, rows) {
 export function recordImportSections(receipt, sections) {
 	const found = new Map(receipt.createdSections.map(row => [row.name, row]));
 	for (const section of sections) if (!found.has(section.name)) found.set(section.name, copy(section));
-	return {...copy(receipt), createdSections: [...found.values()]};
+	return inheritJSON({...copy(receipt), createdSections: [...found.values()]}, receipt);
 }
 
 async function writeProof(receipt, note, observed, {digest, pending, recorded}) {
@@ -249,7 +253,7 @@ export function finishImportReceipt(receipt, {status, why, sections = []} = {}) 
 export function appendImportReceipt(index, receipt) {
 	assertImportReference(receipt);
 	const imports = assertImportReferences(index).filter(row => row?.id !== receipt.id).slice(-(IMPORT_RECEIPT_LIMIT - 1));
-	return {...index, imports: [...copy(imports), copy(receipt)]};
+	return inheritJSON({...index, imports: [...copy(imports), copy(receipt)]}, index);
 }
 
 export const IMPORT_SOURCE_WORDS = Object.freeze({rapier: 'a rapier backup', keep: 'a takeout export', markdown: 'markdown files', code: 'code files', notion: 'notion', evernote: 'evernote', html: 'web pages', zoho: 'zoho notebook', joplin: 'joplin', simplenote: 'simplenote', standardnotes: 'standard notes',
@@ -461,10 +465,7 @@ export function describeImportReceipt(receipt, {now} = {}) {
 }
 
 function sameValue(a, b) {
-	if (a === b) return true;
-	return a !== null && b !== null && typeof a === 'object' && typeof b === 'object'
-		&& Array.isArray(a) === Array.isArray(b) && Object.keys(a).length === Object.keys(b).length
-		&& Object.keys(a).every(key => own(b, key) && sameValue(a[key], b[key]));
+	return equalJSON(a, b);
 }
 
 export function planImportUndo(receipt, index, texts, {files, keep = []} = {}) {
@@ -477,7 +478,7 @@ export function planImportUndo(receipt, index, texts, {files, keep = []} = {}) {
 		|| new Set(index.sections.map(section => section.name.toLowerCase())).size !== index.sections.length
 		|| index.transaction || Object.keys(index.deletions || {}).length) return refuse('the folder must be read and recovered before undo');
 	if (pairs(texts).some(([file]) => !own(index.notes, file))) return refuse('the folder changed; read it again before undo');
-	const current = new Map(Object.entries(index.notes).map(([file, entry]) => [file, {...entry}]));
+	const current = new Map(Object.entries(index.notes).map(([file, entry]) => [file, inheritJSON({...entry}, entry)]));
 	for (const row of receipt.written) {
 		const entry = current.get(row.file);
 		if (!entry) continue;
@@ -522,7 +523,7 @@ export function recordImportUndo(receipt, plan, {stamp} = {}) {
 	const why = importUndoReadiness(receipt);
 	if (why || plan.refuse) throw new Error(why || plan.refuse);
 	if (!Number.isSafeInteger(stamp) || stamp < 0) throw new Error('import undo needs a valid time');
-	const out = {...copy(receipt), undo: {kind: 'import-undo', stamp, requested: plan.remove.slice(), kept: copy(plan.kept), ...(plan.released?.length ? {released: plan.released.slice()} : {})}};
+	const out = inheritJSON({...copy(receipt), undo: {kind: 'import-undo', stamp, requested: plan.remove.slice(), kept: copy(plan.kept), ...(plan.released?.length ? {released: plan.released.slice()} : {})}}, receipt);
 	const problem = receiptProblem(out);
 	if (problem) throw new Error(problem);
 	return out;

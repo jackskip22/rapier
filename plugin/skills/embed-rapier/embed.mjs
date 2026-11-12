@@ -271,7 +271,7 @@ function pictureBase(value) {
 return {FEATURES, LIMITS, ASSET_TYPES, refusal, coded, normalizeSettings, snapshotSettings, pickDeviceFile, createFilePicker, assetURL, assetBytes, bytesHash, externalImage, createAssetBroker, pictureBase};
 })();
 const BUILDS = Object.freeze({full: 'https://rapier.website/embed/rapier.html', reader: 'https://rapier.website/embed/rapier-reader.html'});
-const PACKAGE_VERSION = '1.2.62';
+const PACKAGE_VERSION = '1.2.63';
 const OPTIONS = ['build', 'src', 'plugins', 'approvePlugins', 'sessionId', 'documentId', 'agent', 'agentName', 'theme', 'save', 'assets', 'openFile', 'load',
   'onState', 'compare', 'onClose', 'settings', 'style', 'title', 'onError', 'timeout'];
 const READER_FEATURES = ['find', 'readAloud', 'share'];
@@ -317,9 +317,9 @@ function readerStyle(value) {
 }
 
 const HOSTED_ORIGIN = new URL(BUILDS.full).origin;
-function framingProblem(host, source, sandbox, noun) {
+function framingProblem(host, source, sandbox, noun, ownCopy = false) {
   const here = host.location, local = ['localhost', '127.0.0.1', '[::1]'].includes(here.hostname);
-  if (here.protocol !== 'https:' && here.protocol !== 'http:')
+  if (!ownCopy && here.protocol !== 'https:' && here.protocol !== 'http:')
     return {code: 'host_scheme_unsupported', reason: 'The ' + noun + ' cannot be framed by a ' + here.protocol + ' page: it needs an https page, or http on localhost. Serve your app over one of those.'};
   if (source.origin === HOSTED_ORIGIN && here.protocol === 'http:' && !local)
     return {code: 'host_not_secure', reason: 'The hosted ' + noun + ' can be framed by https pages and by http on localhost only. Serve your app over https, or serve a copy of the page yourself and set src.'};
@@ -359,12 +359,15 @@ function mount(target, options = {}) {
     if (options.src !== undefined && typeof options.src !== 'string') throw new TypeError();
     source = new URL(options.src || BUILDS[build], host.location.href);
   } catch { throw coded('invalid_src', TypeError, 'src must be a page address'); }
-  if (source.username || source.password || !(source.protocol === 'https:' || source.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(source.hostname)))
-    throw coded('host_not_secure', TypeError, 'The editor needs HTTPS, or HTTP on localhost');
+  const ownCopy = source.protocol === 'blob:' && host.origin !== 'null' && source.origin === host.origin;
+  if (!ownCopy && (source.username || source.password || !(source.protocol === 'https:' || source.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(source.hostname))))
+    throw coded('host_not_secure', TypeError, 'The editor needs HTTPS, or HTTP on localhost, or a blob: copy of the page on this page\'s own origin');
+  if (ownCopy && (options.plugins !== undefined || options.approvePlugins === true))
+    throw coded('invalid_plugins', TypeError, 'A blob: copy of the page takes no plugins or approvePlugins: its address carries no query');
   const page = source.pathname.split('/').pop();
   if (reader ? page === 'rapier.html' : page === 'rapier-reader.html')
     throw Object.assign(new TypeError('build ' + build + ' cannot frame ' + page + '; set build: \'' + (reader ? 'full' : 'reader') + '\' or src to ' + (reader ? 'rapier-reader.html' : 'rapier.html')), {code: 'build_mismatch'});
-  source.searchParams.set('embed', '1');
+  if (!ownCopy) source.searchParams.set('embed', '1');
   if (options.plugins !== undefined) {
     let directory;
     try { directory = new URL(options.plugins, host.location.href); } catch { throw coded('invalid_plugins', TypeError, 'plugins is not an address'); }
@@ -375,7 +378,7 @@ function mount(target, options = {}) {
     source.searchParams.set('plugins', directory.href);
   }
   if (options.approvePlugins === true) source.searchParams.set('approvePlugins', '1');
-  const origin = source.origin, auto = options.sessionId === undefined && options.documentId === undefined ? autoIdentity(options, host.location) : null;
+  const origin = ownCopy ? host.origin : source.origin, auto = options.sessionId === undefined && options.documentId === undefined ? autoIdentity(options, host.location) : null;
   const pageSession = options.documentId !== undefined && options.save ? 'page-' + fnv(host.location.origin + host.location.pathname) : null;
   const askedSession = options.sessionId ?? (auto ? 'page-' + auto : pageSession ?? mint('session')), askedDocument = options.documentId ?? (auto ? 'doc-' + auto : mint('document'));
   if (!identifier(askedSession) || !identifier(askedDocument)) throw coded('invalid_id', TypeError, 'Session and document IDs must be nonempty strings of at most 256 code units');
@@ -842,13 +845,14 @@ function mount(target, options = {}) {
   iframe.setAttribute('allow', options.agent ? 'clipboard-write; tools' : 'clipboard-write');
   const ownSandbox = iframe === target && iframe.hasAttribute('sandbox');
   if (!ownSandbox) iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads');
-  const blocked = framingProblem(host, source, ownSandbox ? iframe.sandbox : null, noun);
+  const blocked = framingProblem(host, source, ownSandbox ? iframe.sandbox : null, noun, ownCopy);
   if (blocked) {
     if (iframe !== target) target.append(iframe);
     queueMicrotask(() => bootFailed(blocked.code, blocked.reason));
     return handle;
   }
   host.addEventListener('message', onWindowMessage); iframe.addEventListener('load', onLoad);
+  if (ownCopy) iframe.name = 'rapier-embed';
   iframe.src = source.href;
   if (iframe !== target) target.append(iframe);
   function watch() {

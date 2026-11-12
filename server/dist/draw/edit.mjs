@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { RAPIER_DRAW_LABEL_MAX, RAPIER_DRAW_HEADS, RAPIER_DRAW_NIB_MIN, RAPIER_DRAW_NIB_MAX, _rapierDrawApplyShapesPatch, _rapierDrawFigureFault, _rapierDrawRouteChanges, _rapierDrawSetLineGeometry, _rapierDrawStrokeSamples, _rapierDrawDefaultStyle, _rapierDrawInkView, _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, RAPIER_DRAW_DIAGRAM, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout } from './core.mjs';
+import { RAPIER_DRAW_LABEL_MAX, RAPIER_DRAW_HEADS, RAPIER_DRAW_NIB_MIN, RAPIER_DRAW_NIB_MAX, _rapierDrawApplyShapesPatch, _rapierDrawFigureFault, _rapierDrawRouteChanges, _rapierDrawSetLineGeometry, _rapierDrawStrokeSamples, _rapierDrawDefaultStyle, _rapierDrawInkView, _rapierDrawSpatial as spatial, _rapierDrawAdmitRecipe, _rapierDrawAnchorFrame, _rapierDrawBrushesFor, _rapierDrawStylesFor, _rapierDrawValidInk, RAPIER_DRAW_DIAGRAM, _rapierDrawArrowRoutePoints, _rapierDrawClamp, _rapierDrawDashActive, _rapierDrawBorderActive, _rapierDrawRectPolygon, _rapierDrawRerouteBoundArrows, _rapierDrawResolveBindAnchor, _rapierDrawRouteBBoxFromPoints, _rapierDrawShapeBBoxIn, _rapierDrawShapePaintedBBoxIn, _rapierDrawShapePaintsInk, _rapierDrawShapeStroke, _rapierDrawTextFrame, _rapierDrawTextLayout, _rapierDrawKeepPoints, _rapierDrawKeptPoints } from './core.mjs';
 import { admitText } from './text.mjs';
 import {fillEffect, admitEffect, remapRefractionSources, remapRefractionRecipeSources} from './effects.mjs';
 
@@ -7,7 +7,18 @@ const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const FRAMES = new Set(['rect', 'paint', 'ornament', 'diamond', 'star', 'hexagon', 'pentagon', 'octagon', 'cylinder', 'subroutine', 'asymmetric']);
 const AXES = { x: ['minX', 'maxX'], y: ['minY', 'maxY'] };
 const clone = value => JSON.parse(JSON.stringify(value));
-const signature = recipe => JSON.stringify({ ...recipe, fonts: recipe.fonts?.map(font => font.id) });
+const frozenPoints = _rapierDrawKeepPoints;
+const jsonCopy = value => !value || typeof value !== 'object' || _rapierDrawKeptPoints(value) ? value : Array.isArray(value) ? value.map(jsonCopy)
+	: Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined).map(([k, v]) => [k, jsonCopy(v)]));
+function jsonEqual(a, b) {
+	if (a === b) return true;
+	if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return JSON.stringify(a) === JSON.stringify(b);
+	if (Array.isArray(a) !== Array.isArray(b)) return false;
+	if (Array.isArray(a)) return a.length === b.length && a.every((v, i) => jsonEqual(v === undefined ? null : v, b[i] === undefined ? null : b[i]));
+	const keys = Object.keys(a).filter(key => a[key] !== undefined), other = Object.keys(b).filter(key => b[key] !== undefined);
+	return keys.length === other.length && keys.every((key, i) => key === other[i] && jsonEqual(a[key], b[key]));
+}
+const signature = recipe => ({ ...recipe, fonts: recipe.fonts?.map(font => font.id) });
 function _rapierDrawReleaseAuthorPaint(shape, change) {
 	const own = shape.authorStyle;
 	if (!own) return;
@@ -37,7 +48,7 @@ function _rapierDrawTranslateShape(shape, recipe, dx, dy) {
 	const points = stroke?.pts.map(p => pointOK([p[0] + dx, p[1] + dy]).concat(p.slice(2))), grow = shape.labelGrow?.slice();
 	if (grow) { grow[4] += dx - grow[0] * dx - grow[2] * dy; grow[5] += dy - grow[1] * dx - grow[3] * dy; inverse(grow); }
 	if (geom) shape.geom = geom;
-	if (points) stroke.pts = points;
+	if (points) stroke.pts = frozenPoints(points);
 	if (grow) shape.labelGrow = grow;
 	return shape;
 }
@@ -160,7 +171,7 @@ function transformShape(shape, recipe, matrix, preserveGrow = true) {
 	geomOK(geom);
 	if (shape.recognized !== recognized && shape.brush && !_rapierDrawBrushesFor(recognized, shape.stroke != null).includes(shape.brush)) shape.brush = 'ink';
 	shape.geom = geom; shape.recognized = recognized;
-	if (points) stroke.pts = points;
+	if (points) stroke.pts = frozenPoints(points);
 	if (bend != null) { shape.bend = bend; shape.curveT = curveT; }
 	if (textSize != null) shape.textSize = textSize;
 	if (grow) shape.labelGrow = grow;
@@ -536,7 +547,7 @@ function applyOperations(input, operations) {
 	if (!Array.isArray(operations) || operations.length > 64) fail('drawing_operation_invalid', 'operations');
 	let recipe = _rapierDrawAdmitRecipe(input);
 	if (!recipe) fail('drawing_geometry_limit');
-	const before = signature(recipe);
+	const before = jsonCopy(signature(recipe));
 	for (const shape of recipe.shapes) _rapierDrawFitText(shape, recipe);
 	_rapierDrawRerouteBoundArrows(recipe);
 	let ids = [], work = 0;
@@ -594,7 +605,7 @@ function applyOperations(input, operations) {
 			const mapped = new Map(shapes.map((shape, i) => [shape.id, assigned?.[i] || nextId('s', all)])), groups = new Map(), paintGroups = new Map(), used = new Set(recipe.shapes.flatMap(shape => [shape.id, shape.group, shape.paint?.group].filter(Boolean)).concat([...mapped.values()]));
 			const copies = shapes.map(shape => {
 				const copy = clone(shape), stroke = _rapierDrawShapeStroke(shape, recipe); copy.id = mapped.get(shape.id);
-				if (stroke) { copy.stroke = recipe.strokes.length; recipe.strokes.push({ pts: stroke.pts.map(p => p.slice()) }); }
+				if (stroke) { copy.stroke = recipe.strokes.length; recipe.strokes.push({ pts: frozenPoints(stroke.pts.map(p => p.slice())) }); }
 				if (shape.group) { if (!groups.has(shape.group)) groups.set(shape.group, nextId('g', used)); copy.group = groups.get(shape.group); }
 				if (shape.paint?.group) {
 					if (!paintGroups.has(shape.paint.group)) paintGroups.set(shape.paint.group, copy.id);
@@ -691,7 +702,7 @@ function applyOperations(input, operations) {
 	catch (error) { error.field = operations.length ? 'operations[' + (operations.length - 1) + ']' : 'recipe'; throw error; }
 	const admitted = _rapierDrawAdmitRecipe(recipe);
 	if (!admitted) fail('drawing_geometry_limit', operations.length ? 'operations[' + (operations.length - 1) + ']' : 'recipe');
-	const changed = before !== signature(admitted);
+	const changed = !jsonEqual(before, signature(admitted));
 	return { recipe: admitted, ids, changed };
 }
 function editDrawing(recipe, ids, action) { return applyOperations(recipe, [{ ...action, ids }]); }

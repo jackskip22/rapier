@@ -14,24 +14,25 @@ import {isImportReceiptFile, readImportReceiptFile} from './import-storage.mjs';
 import {backupManifestHeader, BACKUP_INDEX_MAX_BYTES} from './restore.mjs';
 import {preflightBackup} from './backup-stream.mjs';
 import {writeBackupSet} from './backup-set.mjs';
+import {cloneJSON, equalJSONFields, inheritJSON, inheritJSONField} from './json-custody.mjs';
 
 const hash = /^[a-f0-9]{64}$/;
 const historyFile = /^history\/(?:manifests\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}![1-9][0-9]*\.json|(?:texts|blobs)\/[a-f0-9]{64})$/;
 const mediaFile = /^(?:audio|attachments)\/(?!\.{1,2}$)[^/\\\x00-\x1f\x7f]+$/;
 const immutableFile = /^history\/(?:texts|blobs)\/[a-f0-9]{64}$/;
 const decode = bytes => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
-const clone = value => JSON.parse(JSON.stringify(value));
+const clone = cloneJSON;
 const equal = (a, b) => canonicalJSON(a) === canonicalJSON(b);
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const safe = name => typeof name === 'string' && name.isWellFormed() && !/[\\\x00-\x1f\x7f]/.test(name) &&
 	(name === 'notes.json' || isNoteFile(name) || historyFile.test(name) || mediaFile.test(name) || isImportReceiptFile(name));
 const pastId = name => name.slice('history/manifests/'.length, -5).replace('!', ':');
-const eventKey = row => { const {id, ...event} = row; return canonicalJSON(event); };
-const thinningKey = batch => { const {removes, ...event} = batch; return canonicalJSON(event); };
+const eventKey = row => { const {id, ...event} = row; return canonicalJSON(inheritJSON(event, row)); };
+const thinningKey = batch => { const {removes, ...event} = batch; return canonicalJSON(inheritJSON(event, batch)); };
 const historyFields = new Set(['version', 'noteId', 'file', 'next', 'current', 'versions', 'objects', 'protected', 'thinned', 'canonical']);
 function historyExtensions(local, incoming) {
 	const fields = Object.entries(incoming).filter(([key]) => !historyFields.has(key));
-	for (const [key, value] of fields) if (Object.hasOwn(local, key) && !equal(local[key], value)) throw fail('notes_history_conflict', 'Both histories have different kept metadata.');
+	for (const [key] of fields) if (Object.hasOwn(local, key) && !equalJSONFields(local, key, incoming)) throw fail('notes_history_conflict', 'Both histories have different kept metadata.');
 	return fields;
 }
 
@@ -85,7 +86,7 @@ async function joinedHistory(local, incoming, ledger, {file, entry, now}) {
 	for (const batch of next.thinned) for (const row of batch.removes) thinned.set(canonicalJSON({batch: thinningKey(batch), event: eventKey(row)}), row.id);
 	const source = [...incoming.versions.map(row => ({row})), ...incoming.thinned.flatMap(batch => batch.removes.map(row => ({row, batch})))].sort((a, b) => a.row.id - b.row.id);
 	let changed = local.canonical.sha256 !== ledger.sha256;
-	for (const [key, value] of historyExtensions(local, incoming)) if (!Object.hasOwn(next, key)) { Object.defineProperty(next, key, {value: clone(value), enumerable: true, configurable: true, writable: true}); changed = true; }
+	for (const [key, value] of historyExtensions(local, incoming)) if (!Object.hasOwn(next, key)) { Object.defineProperty(next, key, {value: clone(value), enumerable: true, configurable: true, writable: true}); inheritJSONField(next, key, incoming); changed = true; }
 	for (const {row: original, batch} of source) {
 		const row = clone(original);
 		if (row.restoredFrom !== undefined) { row.restoredFrom = mapped.get(row.restoredFrom); if (!row.restoredFrom) throw fail('android_backup_history', 'A restored history event lost its protected source.'); }
@@ -94,7 +95,7 @@ async function joinedHistory(local, incoming, ledger, {file, entry, now}) {
 		row.id = next.next++; mapped.set(original.id, row.id); changed = true;
 		if (batch) {
 			let group = next.thinned.find(value => thinningKey(value) === thinningKey(batch));
-			if (!group) { group = {...clone(batch), removes: []}; next.thinned.push(group); }
+			if (!group) { group = clone(batch); group.removes = []; next.thinned.push(group); }
 			group.removes.push(row); thinned.set(key, row.id);
 		} else { next.versions.push(row); events.set(key, row.id); }
 	}
@@ -104,7 +105,7 @@ async function joinedHistory(local, incoming, ledger, {file, entry, now}) {
 		if (next.objects[key] && !equal(next.objects[key], object)) throw fail('android_backup_history', 'Two histories disagree about a kept object. Both copies were kept.');
 		next.objects[key] = clone(object);
 	}
-	const recorded = await recordVersion({...clone(local), canonical: ledger}, {file, text: readLedger(ledger).text, entry, reason: 'merge', now});
+	const recorded = await recordVersion(inheritJSON({...clone(local), canonical: ledger}, local), {file, text: readLedger(ledger).text, entry, reason: 'merge', now});
 	const current = {...recorded.manifest.versions.at(-1), id: next.next++};
 	next.versions.push(current); next.objects = {...next.objects, ...recorded.manifest.objects};
 	next.current = current.id; next.file = file; next.canonical = ledger; next.protected.sort((a, b) => a - b);
@@ -141,7 +142,7 @@ async function capturePhysical({file, entry, history, bytes, authority, actId, s
 		ledger = exportLedger({text: read.text, metadata: read.metadata, records, documentAuthority: ledger.documentAuthority, revision: read.revision, root: read.root, complete: true});
 	}
 	entry.canonicalHistory = ledger.sha256; entry.revision = 'sha256:' + await sha256(bytes);
-	const recorded = await recordVersion({...manifest, canonical: ledger}, {file, text: body, entry, reason: 'capture', now: stamp});
+	const recorded = await recordVersion(inheritJSON({...manifest, canonical: ledger}, manifest), {file, text: body, entry, reason: 'capture', now: stamp});
 	manifest = recorded.manifest;
 	return {manifest, historyBytes: exactBytes(serializeManifest(manifest)), writes: recorded.writes.filter(row => row.immutable)};
 }
@@ -266,7 +267,7 @@ async function restoreAndroidSnapshot(folder, source, {now = Date.now} = {}) {
 		for (const row of source.manifest.omitted) if (incoming.referenced.has(row.name) && await store.stat(row.name) !== null) throw fail('android_backup_conflict',
 			'Android kept a restored backup because its omitted file cannot be checked against an existing file: ' + row.name + '. Use Export restored backup and keep the original full backup.');
 		const {folderDeviceId: localDevice, folderGeneration: localGeneration, noteCounters: localCounters, ...localMetadata} = current.index;
-		const fresh = current.files.length === 0 && equal(localMetadata, emptyIndex());
+		const fresh = current.files.length === 0 && equal(inheritJSON(localMetadata, current.index), emptyIndex());
 		const support = [], targets = new Map([...source.rows].map(([name, row]) => [name, row.digest]));
 		for (const row of source.rows.values()) {
 			if (!mediaFile.test(row.name) && !immutableFile.test(row.name) && !isImportReceiptFile(row.name)) continue;
@@ -294,7 +295,8 @@ async function restoreAndroidSnapshot(folder, source, {now = Date.now} = {}) {
 		}
 		if (fresh) current = await lease.transact(({index}) => {
 			const {notes, folderDeviceId, folderGeneration, ownerNotice, transaction, deletions, ...metadata} = clone(incoming.index);
-			return {kind: 'android-restore-metadata', index: {...metadata, notes: index.notes, folderDeviceId: index.folderDeviceId, folderGeneration: index.folderGeneration}};
+			inheritJSON(metadata, incoming.index);
+			return {kind: 'android-restore-metadata', index: inheritJSON({...metadata, notes: index.notes, folderDeviceId: index.folderDeviceId, folderGeneration: index.folderGeneration}, metadata)};
 		});
 		const localHistory = async (file, id) => {
 			if (!file) return null;
@@ -340,7 +342,7 @@ async function restoreAndroidSnapshot(folder, source, {now = Date.now} = {}) {
 				file = availableName(original, current.files);
 				if (await store.read('history/' + manifestName(id)) != null) throw fail('android_backup_conflict', 'A restored history identity is already occupied. Both copies were kept.');
 			}
-			const retained = current.index.notes[file], nextEntry = {...clone(retained || entry), id, canonicalHistory: ledger.sha256};
+			const retained = current.index.notes[file], heldEntry = clone(retained || entry), nextEntry = inheritJSON({...heldEntry, id, canonicalHistory: ledger.sha256}, heldEntry);
 			manifest = incomingHistory;
 			if (local) {
 				const joined = await joinedHistory(local, incomingHistory, ledger, {file, entry: nextEntry, now: restoreStamp});

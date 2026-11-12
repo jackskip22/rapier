@@ -5,13 +5,14 @@ const _rapierNotesSyncUi = (() => {
 	let heldFiles = [], heldChoices = null;
 	let others = false, providerId = null;
 	let keyId = null, keySession = null, keyState = null, keyDraft = {};
+	let workspace = false, workspaceSession = null;
 	let plainKept = null, plainPlace = 'Rapier Notes';
 	const api = () => globalThis.RapierNotesSyncSession;
 	const platformId = () => globalThis.RapierPlatform?.environment.id;
 	const environment = () => ({url: location.href, native: ['android', 'windows'].includes(platformId()), framed: window.top !== window});
 	const oauthGate = () => api()?.syncAvailability(environment()) || {ready: false, reason: 'Sync didn’t load. Use Backup for now.'};
 	const keyGate = () => api()?.r2KeyAvailability(environment()) || {ready: false, reason: oauthGate().reason};
-	const providerGate = () => api()?.providerGate(providerId, environment()) || {ready: false, reason: oauthGate().reason};
+	const providerGate = () => api()?.providerGate(providerId, environment(), windowsAccess) || {ready: false, reason: oauthGate().reason};
 	const signsIn = id => !!api()?.providerUsesSignIn(id);
 	const keyProvider = id => (api()?.KEY_PLAIN_PROVIDERS || []).includes(id);
 	const labelOf = id => api()?.PROVIDERS?.[id]?.label || api()?.KEY_PLAIN_LABELS?.[id] || String(id);
@@ -26,8 +27,14 @@ const _rapierNotesSyncUi = (() => {
 		unsigned: COMPANION_ABSENT.unsigned});
 	const PRO_REQUIRED = 'Rapier Pro is required to sync your notes.';
 	const proRefusal = error => error?.code === 'pro_required' || /\(PRO_REQUIRED\)$/.test(String(error?.message || ''));
-	let companion = null, plainCompanion = null, companionPlaces = null;
+	let companion = null, plainCompanion = null, companionPlaces = null, windowsAccess = null;
 	const companionSeam = () => { try { const host = globalThis.RapierPlatform?.host; return typeof host?.syncTransport === 'function' ? host : null; } catch (_) { return null; } };
+	async function askWindows() {
+		if (platformId() !== 'windows' || windowsAccess) return windowsAccess;
+		const host = companionSeam(); if (!host) return null;
+		const bootstrap = await host.syncTransport('sync.bootstrap', {});
+		return windowsAccess = {bootstrap, call: (operation, args) => host.syncTransport(operation, args)};
+	}
 	const plainThroughCompanion = () => plainCompanion ||= api().createPlainCompanionSession({folder: _rapierNotesStore.folder, call: (operation, args) => companionSeam().syncTransport(operation, args)});
 	const companionGate = () => companion?.state === 'ready' && companionSeam() ? {ready: true, reason: ''}
 		: {ready: false, reason: (companion?.listing ? COMPANION_ABSENT_LISTED : COMPANION_ABSENT)[companion?.state] || (companion?.listing ? COMPANION_ABSENT_LISTED : COMPANION_ABSENT).absent};
@@ -42,7 +49,7 @@ const _rapierNotesSyncUi = (() => {
 		if (companion.state === 'ready') { try { await _rapierNotesReady(); companionPlaces = await plainThroughCompanion().places(); } catch (_) {} }
 	}
 	function openCompanion() { if (typeof _rapierUiSyncOpen === 'function') _rapierUiSyncOpen(null); }
-	const mode = () => platformId() === 'android' ? 'companion' : keyId ? 'key' : providerId ? 'provider' : 'start';
+	const mode = () => platformId() === 'android' ? 'companion' : keyId ? 'key' : workspace ? 'workspace' : providerId ? 'provider' : 'start';
 	const status = () => session?.status() || {authorized: false, busy: false, gate: providerId ? providerGate() : oauthGate()};
 	function node(tag, className, text) {
 		const el = document.createElement(tag);
@@ -102,17 +109,30 @@ const _rapierNotesSyncUi = (() => {
 		if (plainKept && plainKept.provider !== 'companion' && signsIn(plainKept.provider) && providerId !== plainKept.provider) { providerId = plainKept.provider; session = null; }
 		return plainKept;
 	}
-	async function owner() {
-		if (session) return session;
-		if (initializing) return initializing;
+	async function owner(screen = null) {
+		const provider = providerId, current = () => providerId === provider && (screen === null || visible && screen === view);
+		if (!current()) return null;
+		if (session) return session.status().provider === provider ? session : null;
+		if (initializing) {
+			const opened = await initializing;
+			if (!current()) return null;
+			return opened && opened === session && opened.status().provider === provider ? opened : owner(screen);
+		}
 		initializing = (async () => {
 			await _rapierNotesReady(); await _rapierNotesStore.kind();
+			if (!current()) return null;
+			await askWindows();
+			if (!current()) return null;
 			const gate = providerGate(); if (!gate.ready) throw new Error(gate.reason);
-			const opened = api().createProviderSession({folder: _rapierNotesStore.folder, fetch: window.fetch.bind(window), pendingStorage: sessionStorage,
-				device: api().createRememberedDevice({storage: api().createDeviceStorage({scope: RapierStorage.scope})}),
-				pendingKey: providerPendingKey(), environment: environment(), provider: providerId,
+			const access = windowsAccess ? {windows: windowsAccess} : {fetch: window.fetch.bind(window), pendingStorage: sessionStorage,
+				device: api().createRememberedDevice({storage: api().createDeviceStorage({scope: RapierStorage.scope})})};
+			const opened = api().createProviderSession({folder: _rapierNotesStore.folder, ...access,
+				pendingKey: providerPendingKey(), environment: environment(), provider,
 				onChange: () => { paint(); renderSettings(); wearBox(); }});
-			await opened.inspect(); session = opened;
+			try { await opened.inspect(); }
+			catch (error) { if (current()) throw error; }
+			if (!current()) { await opened.lock(); return null; }
+			session = opened;
 			if (!syncBlocked()) { automatic = true; schedule(1600); }
 			return opened;
 		})().finally(() => { initializing = null; });
@@ -150,6 +170,7 @@ const _rapierNotesSyncUi = (() => {
 		if (message) { const p = node('p', 'export-choice__description', message); p.setAttribute('role', 'alert'); body.append(p); }
 		if (mode() === 'companion') { paintCompanion(); return; }
 		if (mode() === 'key') { paintKeyPlain(); return; }
+		if (mode() === 'workspace') { paintWorkspace(); return; }
 		if (mode() === 'provider') { paintProvider(); return; }
 		if (others) { paintOtherList(); return; }
 		paintStart();
@@ -173,6 +194,7 @@ const _rapierNotesSyncUi = (() => {
 	function paintOtherList() {
 		for (const id of api().OTHER_PROVIDERS) choice(labelOf(id), '', () => pickProvider(id), {enabled: !acting && !status().busy, key: 'provider:' + id});
 		for (const id of (api().KEY_PLAIN_PROVIDERS || []).filter(id => id !== 'r2' && keyReachable(id))) choice(api().KEY_PLAIN_LABELS[id].toLowerCase(), 'plain files, not private', async () => { await readKeyPlain(); keyId = id; keyDraft = {}; }, {enabled: !acting && !status().busy, key: 'plain-key:' + id});
+		if (workspaceReady()) choice('cloudflare workspace', 'plain files in your own workspace', () => { workspace = true; }, {enabled: !acting, key: 'workspace'});
 	}
 	const plainWords = run => {
 		heldFrom(run);
@@ -228,11 +250,20 @@ const _rapierNotesSyncUi = (() => {
 		}
 	}
 	async function pickProvider(id) {
-		const gate = api().providerGate(id, environment());
+		const screen = view, current = () => visible && screen === view;
+		if (!current()) return;
+		await askWindows(); if (!current()) return;
+		const gate = api().providerGate(id, environment(), windowsAccess);
 		if (!gate.ready) { comingSoon(gate); return; }
-		if (providerId !== id) session = null;
+		if (providerId !== id) {
+			const prior = session;
+			if (windowsAccess) await prior?.lock();
+			if (!current() || session !== prior) return;
+			session = null;
+		}
 		providerId = id; keyId = null; others = true;
-		await owner();
+		const own = await owner(screen);
+		if (!current() || !own || own !== session || providerId !== id) return;
 		if (!status().authorized) await startSignIn();
 	}
 	function paintProvider() {
@@ -258,7 +289,7 @@ const _rapierNotesSyncUi = (() => {
 		if (plainKept?.provider === id && state.hasConnection) {
 			notPrivate(plainKept.place, label);
 			choice('sync now', '', async () => { const run = await runSync(); automatic = true; schedule(60000); if (visible) message = plainWords(run); }, {key: 'sync'});
-			if (id === 'drive' && api().pickerRegistered(api().DRIVE_PICKER)) choice('choose files other apps made', 'in google drive; they sync from then on', async () => {
+			if (!windowsAccess && id === 'drive' && api().pickerRegistered(api().DRIVE_PICKER)) choice('choose files other apps made', 'in google drive; they sync from then on', async () => {
 				const picked = await api().openDrivePicker({facts: await session.plainDrivePicker(), registration: api().DRIVE_PICKER, origin: location.origin,
 					open: (url, name, features) => window.open(url, name, features), listen: fn => { addEventListener('message', fn); return () => removeEventListener('message', fn); }});
 				if (!picked) return;
@@ -280,12 +311,12 @@ const _rapierNotesSyncUi = (() => {
 		if (!plainKept) paintBack();
 	}
 	async function startSignIn() {
-		const screen = view, current = () => visible && screen === view;
+		const screen = view, provider = providerId, current = () => visible && screen === view && providerId === provider;
 		if (!current()) return;
 		await flush(true); if (!current()) return;
-		const own = await owner(); if (!current()) return;
+		const own = await owner(screen); if (!current() || !own) return;
 		const url = await own.beginSignIn();
-		await flush(true); if (current()) location.assign(url);
+		await flush(true); if (current() && typeof url === 'string' && url) location.assign(url);
 	}
 	const relayPossible = () => location.protocol === 'https:' && !environment().native && typeof api().createPlainRelay === 'function';
 	function keyReachable(id) {
@@ -367,6 +398,33 @@ const _rapierNotesSyncUi = (() => {
 			if (visible) message = plainWords(run);
 		}, {key: 'plain-connect'});
 		choice('back', '', () => { others = keyId !== 'r2'; keyId = null; }, {enabled: !acting, key: 'back'});
+	}
+	const WORKSPACE_ADDRESS = 'rapier-notes-workspace-address';
+	const workspaceReady = () => api()?.workspaceSignInAvailability?.({environment: environment()})?.ready === true;
+	function workspaceOwner() {
+		workspaceSession ||= api().createWorkspaceSignInSession({folder: _rapierNotesStore.folder, fetch: window.fetch.bind(window),
+			device: api().createRememberedDevice({storage: api().createDeviceStorage({scope: RapierStorage.scope + '/workspace'})})});
+		return workspaceSession;
+	}
+	function paintWorkspace() {
+		const own = workspaceSession, kept = own?.status().connection;
+		if (kept) {
+			notPrivate(kept.place, 'your workspace');
+			choice('sync now', '', async () => { const run = await own.plainSyncNow(); await _rapierNotesFolderChanged(); if (visible) message = plainWords(run); }, {key: 'sync'});
+			choice('stop syncing plain files', 'your notes and the files stay; this device signs out', async () => {
+				await own.plainForget(); await own.signOut(); workspace = false; await _rapierNotesFolderChanged();
+			}, {key: 'plain-forget'});
+			return;
+		}
+		paragraph(api().PLAIN_DETAIL);
+		let saved = ''; try { saved = sessionStorage.getItem(WORKSPACE_ADDRESS) || ''; } catch (_) {}
+		const address = input('workspace address (https://…)', {value: saved});
+		choice('sign in to your workspace', 'cloudflare asks you to sign in; then your notes become files there', async () => {
+			const s = workspaceOwner(); await s.selectWorkspace(address.value.trim());
+			try { sessionStorage.setItem(WORKSPACE_ADDRESS, address.value.trim()); } catch (_) {}
+			const began = await s.signIn(); location.assign(began.url);
+		}, {enabled: !acting, key: 'workspace-signin'});
+		choice('back', '', () => { workspace = false; others = true; }, {enabled: !acting, key: 'back'});
 	}
 	function paintCompanion() {
 		if (!companion) { loading(); return; }
@@ -486,7 +544,7 @@ const _rapierNotesSyncUi = (() => {
 			if (!environment().native) await readKeyPlain();
 			if (!visible || screen !== view) return;
 			if (keyId && !syncBlocked()) { automatic = true; schedule(1600); }
-			if (providerId && !keyId) { const prior = session; await owner(); if (prior === session && !status().busy) await session.inspect(); }
+			if (providerId && !keyId) { const prior = session, own = await owner(); if (own && prior === own && own === session && !status().busy) await own.inspect(); }
 		}, false);
 		paint(); openDialog(overlay, {panel: '.settings-panel', onEscape: close});
 	}
@@ -499,13 +557,23 @@ const _rapierNotesSyncUi = (() => {
 		try { sent = JSON.parse(sessionStorage.getItem(providerPendingKey())); } catch (_) {}
 		const at = new URL(location.href), search = fragment || context.params.toString(), callback = at.origin + at.pathname;
 		history.replaceState(null, '', _rapierBootPathAndQuery());
+		if (!fragment && context.params.has('iss') && workspaceReady()) {
+			let selected = ''; try { selected = sessionStorage.getItem(WORKSPACE_ADDRESS) || ''; } catch (_) {}
+			if (!selected) return;
+			workspace = true; others = true; open({initialize: false});
+			void perform(async () => {
+				const s = workspaceOwner(); await s.selectWorkspace(selected);
+				await s.finishSignIn(callback + '?' + search); await s.plainConnect(); await _rapierNotesFolderChanged();
+			});
+			return;
+		}
 		if (!sent || !api().isOtherProvider(sent.provider) || sent.state !== returnedState) return;
 		session = null; keyId = null; providerId = sent.provider; others = true;
 		open({initialize: false});
 		const screen = view;
 		if (providerGate().ready) void perform(async () => {
 			await readSaved();
-			const own = await owner(); if (!visible || screen !== view) return;
+			const own = await owner(); if (!own || !visible || screen !== view) return;
 			await own.finishSignIn(search, callback);
 		});
 	}

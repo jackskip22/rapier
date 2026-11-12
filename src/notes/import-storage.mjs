@@ -1,10 +1,11 @@
+import {cloneJSON, equalJSON, equalJSONFields, parseJSON, stringifyJSON, inheritJSONField, sliceJSON, appendJSON} from './json-custody.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {exactBytes, sha256} from './integrity.mjs';
-const copy = value => JSON.parse(JSON.stringify(value));
+const copy = cloneJSON;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
-const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+const same = equalJSON;
 const error = (file, why) => Object.assign(new Error('Import receipt ' + file + ' ' + why + '. Nothing was undone.'), {code:'import-receipt'});
 const idOK = id => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id);
 const importReceiptFile = id => {
@@ -35,10 +36,10 @@ function delta(before,after) {
  const set={},append={},remove=[];
  for(const key of new Set([...Object.keys(before),...Object.keys(after)])) {
   const a=before[key],b=after[key];
-  if(same(a,b))continue;
+  if(equalJSONFields(before,key,after,key))continue;
   if(b===undefined){remove.push(key);continue;}
-  if(Array.isArray(a)&&Array.isArray(b)&&b.length>=a.length&&a.every((row,i)=>same(row,b[i])))append[key]=b.slice(a.length);
-  else Object.defineProperty(set,key,{value:b,enumerable:true,writable:true,configurable:true});
+  if(Array.isArray(a)&&Array.isArray(b)&&b.length>=a.length&&a.every((row,i)=>equalJSONFields(a,i,b,i)))append[key]=sliceJSON(b,a.length);
+  else { Object.defineProperty(set,key,{value:b,enumerable:true,writable:true,configurable:true}); inheritJSONField(set,key,after,key); }
  }
  return {set,append,remove};
 }
@@ -47,10 +48,10 @@ function apply(receipt,patch,file) {
  const keys=[...Object.keys(patch.set),...Object.keys(patch.append),...patch.remove];
  if(keys.some(key=>typeof key!=='string')||new Set(keys).size!==keys.length||keys.some(key=>['id','stamp','version'].includes(key)))throw error(file,'changes its journal identity');
  for(const key of patch.remove)delete receipt[key];
- for(const [key,value]of Object.entries(patch.set))Object.defineProperty(receipt,key,{value,enumerable:true,writable:true,configurable:true});
+ for(const [key,value]of Object.entries(patch.set)) { Object.defineProperty(receipt,key,{value,enumerable:true,writable:true,configurable:true}); inheritJSONField(receipt,key,patch.set,key); }
  for(const [key,rows]of Object.entries(patch.append)){
   if(!Array.isArray(receipt[key])||!Array.isArray(rows))throw error(file,'has an invalid journal append');
-  for(const row of rows)receipt[key].push(row);
+  appendJSON(receipt[key],rows);
  }
  return receipt;
 }
@@ -67,7 +68,7 @@ export async function encodeImportReceipt(receipt,{previous,reference:parent,gen
    value={version:1,id:receipt.id,stamp:receipt.stamp,parent,patch:delta(previous,receipt)};
   }else value={version:1,id:receipt.id,stamp:receipt.stamp,receipt};
  }
- const bytes=exactBytes(JSON.stringify(value)),digest=await sha256(bytes);
+ const bytes=exactBytes(stringifyJSON(value)),digest=await sha256(bytes);
  return {bytes,reference:reference(receipt,path,bytes,digest,journal)};
 }
 export async function readImportReceiptFile(row,read) {
@@ -81,7 +82,7 @@ export async function readImportReceiptFile(row,read) {
   if(raw==null)throw error(current.file,'is missing');
   const bytes=exactBytes(raw);
   if(bytes.length!==current.byteLength||await sha256(bytes)!==current.digest)throw error(current.file,'failed digest or length verification');
-  let value;try{value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch(_){throw error(current.file,'is not readable JSON');}
+  let value;try{value=parseJSON(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch(_){throw error(current.file,'is not readable JSON');}
   members.push({file:current.file,digest:current.digest,byteLength:current.byteLength});
   if(current.journal===undefined){receipt=value;assertReceipt(receipt,current.file);break;}
   if(!object(value)||value.version!==1||value.id!==row.id||value.stamp!==row.stamp)throw error(current.file,'has an unreadable journal');

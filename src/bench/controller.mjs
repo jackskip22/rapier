@@ -3,7 +3,7 @@ import {BENCH_MANIFEST} from './manifest.mjs';
 import {appendRun, createResult, finishResult, serializeResult, unavailable, validateSample} from './results.mjs';
 
 export const CHILD_CSP = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data: blob:; worker-src blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'";
-const PAYLOAD_IDS = ['rapier-platform-runtime', 'rapier-codec-runtime', 'rapier-styles-runtime', 'rapier-style-rest-runtime', 'rapier-ui-runtime', 'rapier-editor-runtime'];
+const PAYLOAD_IDS = ['rapier-platform-runtime', 'rapier-codec-runtime', 'rapier-styles-runtime', 'rapier-editor-runtime'];
 const STOP_REASON = 'Stopped by the person running the benchmark.';
 const clone = value => value === null ? null : JSON.parse(JSON.stringify(value));
 const describeError = error => String(error?.message || error || 'Unknown benchmark error.').slice(0, 1000);

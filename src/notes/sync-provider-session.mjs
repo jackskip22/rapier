@@ -16,9 +16,11 @@ export {readSyncState, PROVIDERS, OTHER_PROVIDERS, providerAvailability, provide
 import {createDeviceStorage, createRememberedDevice} from './sync-device.mjs';
 import {openDrivePicker, pickerRegistered} from './drive-picker.mjs';
 import {PLAIN_DETAIL} from './sync-plain.mjs';
-export {createDeviceStorage, createRememberedDevice, openDrivePicker, pickerRegistered, PLAIN_DETAIL};
+import {createWindowsAccount, windowsProviderGate} from './sync-windows.mjs';
+export {createDeviceStorage, createRememberedDevice, openDrivePicker, pickerRegistered, PLAIN_DETAIL, windowsProviderGate};
 export const DRIVE_PICKER = OTHER_SYNC.drive;
-export function providerGate(provider, environment = {}) {
+export function providerGate(provider, environment = {}, windows = null) {
+ if (windows) return windowsProviderGate(provider, windows.bootstrap);
  return providerAvailability(provider, {environment, registration: OTHER_SYNC[provider], listed: listedProviders});
 }
 const fail = (code, message) => Object.assign(new Error(message), {code});
@@ -39,15 +41,17 @@ export function verificationReturn(url, proof, search, config = CLOUDFLARE_SYNC,
 
 export function createProviderSession({folder, fetch: fetchFn, pendingStorage, pendingKey = 'rapier:provider:pending',
  provider = null, mode = provider ? 'provider' : 'oauth', config = CLOUDFLARE_SYNC, registrations = OTHER_SYNC,
- listed = listedProviders, environment = {}, device = null, now = Date.now, onChange = () => {}} = {}) {
- if (!folder?.owner || typeof fetchFn !== 'function') throw fail('config', 'sync needs the notes folder and the network.');
+ listed = listedProviders, environment = {}, device = null, windows = null, now = Date.now, onChange = () => {}} = {}) {
+ if (!folder?.owner || !windows && typeof fetchFn !== 'function') throw fail('config', 'sync needs the notes folder and the network.');
  if (!['provider', 'oauth'].includes(mode) || mode === 'provider' && !providerUsesSignIn(provider)) throw fail('config', 'choose a storage service you sign in to.');
  const other = mode === 'provider', service = other ? provider : 'cloudflare';
+ if (windows && (!other || device)) throw fail('config', 'native provider credentials belong to Windows.');
+ const native = windows ? createWindowsAccount({...windows, service}) : null;
  provider = other ? provider : null;
  config = Object.freeze({...config, scopes: Object.freeze([...(config.scopes || [])])});
  environment = Object.freeze({...environment});
- const registration = Object.freeze({...other ? registrations[provider] : config});
- const gate = Object.freeze(other ? providerAvailability(provider, {environment, registration, listed}) : syncAvailability(environment, config));
+ const registration = Object.freeze({...native ? native.registration : other ? registrations[provider] : config});
+ const gate = Object.freeze(native ? native.gate : other ? providerAvailability(provider, {environment, registration, listed}) : syncAvailability(environment, config));
  const who = other ? PROVIDERS[provider].label : 'Cloudflare';
  let grant = null, grantValid = false, connection = null, bound = null, folderIdentity = null, epoch = 0, work = null;
  let stopping = null, locking = null, revoking = null, cancelling = null, forgetting = null;
@@ -70,6 +74,7 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
  function capture(token, registrationFacts = registration, grantProvider = service, family = crypto.randomUUID()) {
   const expiresAt = token.expiresAt ?? (Number.isFinite(token.expiresIn) ? now() + token.expiresIn * 1000 : null);
   const held = {...token, provider: grantProvider, family, expiresAt};
+  if (native) return held;
   for (const [value, hint] of [[held.accessToken, 'access_token'], [held.refreshToken, 'refresh_token']]) if (tokenString(value)) {
    const row = {token: value, hint, provider: grantProvider, clientId: registrationFacts.clientId,
     redirectUri: registrationFacts.redirectUri, family, expiresAt: hint === 'access_token' ? expiresAt : null};
@@ -98,6 +103,18 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
    registration: [registration.clientId, registration.redirectUri, other ? scopes[provider] : config.scopes], origin: new URL(environment.url).origin});
  }
  async function restoreDevice(ticket, custodyOnly = false) {
+  if (native) {
+   if (deviceInspected && !custodyOnly) return;
+   const restored = await native.inspect();
+   deviceInspected = true;
+   if (restored.pending) {
+    needsRevoke = true; locked = true; grantValid = false; stage = 'revocation-pending';
+    notice = 'provider access still needs removal. retry removing access.';
+   }
+   if (restored.otherActive) throw fail('busy', 'let the current sync finish, or lock sync to stop it.');
+   if (!custodyOnly && ticket !== epoch) throw fail('cancelled', 'sync stopped. your notes are kept.');
+   return;
+  }
   if (!device || deviceInspected && !custodyOnly) return;
   const restored = await device.read(binding()), data = restored.data, custody = data || restored.retired;
   const rows = custody?.credentials || [];
@@ -155,11 +172,14 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
   if (!grant || locked) throw fail('auth', 'sign in with ' + who + ' first.');
   if (grant.expiresAt <= now() + 30000) {
    if (!grant.refreshToken) throw fail('auth', 'your ' + who + ' sign-in lapsed. sign in again.');
-   const previous = grant, client = oauth(undefined, token => capture(token, registration, service, previous.family)); let refreshed;
+   const previous = grant, client = native ? null : oauth(undefined, token => capture(token, registration, service, previous.family)); let refreshed;
    grantValid = false;
-   try { refreshed = await client.refresh({refreshToken: previous.refreshToken}); }
-   catch (error) { active(ticket); await keepDevice(ticket); throw error; }
-   finally { client.pause(); }
+   try { refreshed = native ? await native.refresh(previous) : await client.refresh({refreshToken: previous.refreshToken}); }
+   catch (error) {
+    if (native) { needsRevoke ||= native.pending(); locked ||= needsRevoke; throw error; }
+    active(ticket); await keepDevice(ticket); throw error;
+   }
+   finally { client?.pause(); }
    grantValid = false; grant = capture({...refreshed, refreshToken: refreshed.refreshToken || previous.refreshToken, scope: refreshed.scope || previous.scope}, registration, service, previous.family);
    if (refreshed.refreshToken && refreshed.refreshToken !== previous.refreshToken)
     for (const [key, row] of credentials) if (row.family === previous.family && row.token === previous.refreshToken) credentials.delete(key);
@@ -191,17 +211,17 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
   if (kept) assertBound(kept);
   const where = plainPlace(provider, place), token = await authority(ticket);
   active(ticket);
-  if (plainTransport && (plainTransport.where !== where || plainTransport.accessToken !== token.accessToken ||
+  if (plainTransport && (plainTransport.where !== where || plainTransport.accessToken !== token.accessToken || plainTransport.receipt !== grant.receipt ||
    plainTransport.family !== grant.family || !kept || plainTransport.connectionId !== kept.connectionId || plainTransport.destination !== kept.destination)) discardPlainTransport();
   let store = plainTransport?.store, plain;
   try {
    if (!store) {
-    store = plainStore(provider, {place: where, token, fetch: fetchFn}); transports.add(store);
+    store = plainStore(provider, {place: where, token, fetch: native ? native.fetch(grant) : fetchFn}); transports.add(store);
     const identity = provider === 'drive' ? {id: await store.folderId({create: connect && !kept})} : await store.destinationIdentity({create: connect && !kept});
     active(ticket);
     const destination = await sha256(JSON.stringify([provider, identity])); active(ticket);
     if (kept && (kept.place !== where || kept.destination !== destination)) throw fail('connection', 'this sign-in names another plain-files folder. your notes were not sent.');
-    plainTransport = {store, where, destination, connectionId: kept?.connectionId, accessToken: token.accessToken, family: grant.family};
+    plainTransport = {store, where, destination, connectionId: kept?.connectionId, accessToken: token.accessToken, family: grant.family, receipt: grant.receipt};
    }
    const value = kept || {provider, place: where, destination: plainTransport.destination, device: folder.deviceId && folder.deviceId !== 'files' ? folder.deviceId : 'rapier'};
    plain = localPlain(value, ticket, store);
@@ -218,12 +238,13 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
  }
 
  function clearPending() {
-  if (!pendingStorage) return;
+  if (native || !pendingStorage) return;
   pendingStorage.removeItem(pendingKey);
   if (pendingStorage.getItem(pendingKey) !== null) throw fail('storage', 'this page could not remove its sign-in proof.');
  }
  function interrupt() {
   epoch++;
+  if (native) void native.cancel().catch(() => {});
   for (const plain of plains) plain.pause();
   for (const store of transports) store.pause();
   transports.clear(); plainTransport = null;
@@ -240,12 +261,21 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
   const saved = await device.forget(value, {revocationPending: !!(credentials.size || needsRevoke || unresolvedRevocation), unresolved: unresolvedRevocation});
   coveredMarkerRevision = saved?.revision;
  }
+ async function stopNative() {
+  if (!native) return;
+  let failure;
+  try { await native.cancel(); } catch (error) { failure = error; }
+  try { const pending = await native.retire(); needsRevoke ||= pending; } catch (error) { needsRevoke = true; failure ||= error; }
+  locked = true; grantValid = false;
+  if (failure) throw failure;
+ }
  function stop({forRevocation = false} = {}) {
   if (stopping) return stopping;
   interrupt(); locked = true;
   let pendingError; try { clearPending(); } catch (error) { pendingError = error; }
   stopping = (async () => {
    try { await work; } catch {}
+   await stopNative();
    if (device) {
     try { await readLocal(); } catch {}
     try { await restoreDevice(epoch, true); }
@@ -263,6 +293,19 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
  function signOut() {
   if (revoking) return revoking;
   needsRevoke = true; announce('revoking');
+  if (native) {
+   revoking = (async () => {
+    let failure, done;
+    try { await stop({forRevocation: true}); } catch (error) { failure = error; }
+    try { done = await native.signOut(); } catch (error) { failure ||= error; }
+    grant = null; grantValid = false;
+    if (failure) { announce('revocation-pending', failure.message); throw failure; }
+    needsRevoke = done.revoked !== true && done.noLocalCredentials !== true;
+    announce(needsRevoke ? 'revocation-pending' : 'signed-out', done.message || 'signed out. your notes and files are kept.');
+    return done;
+   })().finally(() => { revoking = null; onChange(status()); });
+   return revoking;
+  }
   revoking = (async () => {
    let removalError; try { await stop({forRevocation: true}); await keepRevocation(); } catch (error) { removalError = error; }
    prune(); let unrevoked = ''; const hadCredentials = credentials.size > 0;
@@ -324,6 +367,15 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
   async plainConnection() { return publicConnection((await readSyncState(folder)).plain); },
   beginSignIn() { return run(async ticket => {
    if (grant && !locked && !lapsed()) throw fail('auth', 'this page is already signed in.');
+   if (native) {
+    announce('signing-in'); let received;
+    try { received = await native.begin(); }
+    catch (error) { needsRevoke ||= native.pending(); locked ||= needsRevoke; throw error; }
+    grantValid = false; grant = capture(received);
+    active(ticket); await validateHeld(ticket); grantValid = true; locked = false; explicitLock = false;
+    await readLocal(); active(ticket);
+    announce(connection ? 'ready' : 'signed-in'); return null;
+   }
    let begun;
    if (other) begun = await beginProviderSignIn(provider, registration);
    else {
@@ -340,6 +392,7 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
    announce('signing-in'); return begun.url;
   }, {network: true}); },
   finishSignIn(search, callbackUrl) { return run(async ticket => {
+   if (native) throw fail('redirect', 'Windows owns this sign-in return.');
    let returned, pending;
    try { returned = new URL(callbackUrl); } catch { throw fail('redirect', 'the full sign-in return address is required.'); }
    if (returned.origin + returned.pathname !== registration.redirectUri || returned.username || returned.password ||
@@ -375,6 +428,7 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
    const kept = await current(ticket); return plainRun(ticket, kept.place, plain => plain.syncNow());
   }, {network: true}); },
   plainDrivePicker() { return run(async ticket => {
+   if (native) throw fail('unavailable', 'Sign in at rapier.website.');
    const kept = await current(ticket);
    if (provider !== 'drive') throw fail('connection', 'connect plain files on Google Drive first.');
    return plainRun(ticket, kept.place, async (_plain, store) => {
@@ -418,6 +472,7 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
    let pendingError; try { clearPending(); } catch (error) { pendingError = error; }
    cancelling = (async () => {
     try { await work; } catch {}
+    if (native) { await stopNative(); announce(needsRevoke ? 'revocation-pending' : 'locked'); }
     if (ticket === epoch && !needsRevoke && !locking && !stopping) {
      try { await keepDevice(ticket); }
      catch { if (ticket === epoch && !needsRevoke && !locking && !stopping) await signOut(); }
@@ -431,18 +486,25 @@ export function createProviderSession({folder, fetch: fetchFn, pendingStorage, p
    if (forgetting) return forgetting;
    let expected = bound && {...bound}; interrupt(); const ticket = epoch;
    forgetting = (async () => {
-    try { await work; } catch {}
-    active(ticket);
-    expected ||= bound && {...bound};
-    await readLocal(); active(ticket);
-    if (!deviceInspected) { await restoreDevice(ticket); active(ticket); }
-    const value = (await readSyncStateBytes(folder.store)).state.plain;
-    active(ticket);
-    if (!value) return null;
-    if (value.provider !== provider || expected && !sameConnection(expected, value)) throw fail('connection', 'the plain-files connection changed.');
-    const plain = localPlain(value, ticket);
-    try { await plain.forget({connectionId: value.connectionId}); active(ticket); connection = bound = null; await keepDevice(ticket); announce(grant && !locked ? 'signed-in' : 'signed-out'); return null; }
-    finally { plains.delete(plain); }
+    let failure;
+    try {
+     try { await work; } catch {}
+     active(ticket);
+     expected ||= bound && {...bound};
+     await readLocal(); active(ticket);
+     if (!deviceInspected) { await restoreDevice(ticket); active(ticket); }
+     const value = (await readSyncStateBytes(folder.store)).state.plain;
+     active(ticket);
+     if (value) {
+      if (value.provider !== provider || expected && !sameConnection(expected, value)) throw fail('connection', 'the plain-files connection changed.');
+      const plain = localPlain(value, ticket);
+      try { await plain.forget({connectionId: value.connectionId}); active(ticket); connection = bound = null; await keepDevice(ticket); }
+      finally { plains.delete(plain); }
+     }
+    } catch (error) { failure = error; }
+    try { await stopNative(); } catch (error) { failure ||= error; }
+    if (failure) throw failure;
+    announce(native ? needsRevoke ? 'revocation-pending' : 'locked' : grant && !locked ? 'signed-in' : 'signed-out'); return null;
    })().finally(() => { forgetting = null; onChange(status()); });
    return forgetting;
   },

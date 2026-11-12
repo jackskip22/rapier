@@ -12,8 +12,8 @@
         "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
         "name": "io.github.jackskip22/rapier",
         "title": "Rapier - Markdown Editor & Art",
-        "description": "Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.",
-        "version": "1.2.62",
+        "description": "Markdown editor for notes, diagrams, drawing and painting with your AI, and a JPEG XL converter.",
+        "version": "1.2.63",
         "websiteUrl": "https://rapier.website/agents",
         "repository": {
           "url": "https://github.com/jackskip22/rapier-plugins",

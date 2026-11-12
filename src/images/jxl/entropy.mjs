@@ -450,6 +450,7 @@ export function buildTokenCoding(counts, options) {
   writeHistograms(header, {contextMap, histograms});
   bits += header.bitLength;
   const model = {kind: 'prefix', contextMap, histograms: histograms.map(({config, code}) => ({config, code}))};
-  const {write, writeTokens} = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? {} : prefixGroupWriter(model), writeFilled = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? undefined : (options?.kernels?.prefixFilled(model) || undefined);
+  const bare = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && !options?.strategy;
+  const {write, writeTokens} = bare ? {} : prefixGroupWriter(model), writeFilled = bare ? undefined : (options?.kernels?.prefixFilled?.(model) || undefined);
   return {contextMap, histograms, model, write, writeTokens, writeFilled, bits, writeHistograms: w => w.append(header)};
 }

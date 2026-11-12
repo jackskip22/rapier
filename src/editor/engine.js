@@ -358,6 +358,7 @@ function enterBlockEdit(block, wrapper, activation = null) {
 	if (rawEditor) {
 		_rapierDiscardEditProjection(editDiv);
 		editDiv.textContent = block.raw || '';
+		_rapierEnsureRawEditLineBox(editDiv);
 		if (_rapierIsDiagramFence(block.raw)) _rapierAttachDiagramPreview(wrapper, editDiv);
 	} else {
 		_rapierAdoptReadProjection(readDiv, editDiv);
@@ -8211,6 +8212,7 @@ function _rapierInitBlockInteractionRouter() {
 	});
 	host.addEventListener('input', event => {
 		if (event.target !== host && !host.contains(event.target)) return;
+		if (event.target !== host && _rapierHostNativeField(event.target)) return;
 		const context = _activeBlockEditContext();
 		if (context) {
 			if (event.target === host) _rapierHandleEditInput(context.editDiv, event);
@@ -8664,6 +8666,7 @@ function _rapierInitBlockInteractionRouter() {
 	for (const name of ['click', 'contextmenu', 'selectstart']) host.addEventListener(name, _rapierPickSwallow, true);
 	document.addEventListener('pointerdown', _rapierPickPressElsewhere, true);
 	document.addEventListener('keydown', _rapierPickKey, true);
+	document.addEventListener('selectionchange', () => _rapierSettleMathInPlace());
 	document.addEventListener('selectionchange', () => {
 		if (host._rapierGripFrame) return;
 		host._rapierGripFrame = requestAnimationFrame(() => { host._rapierGripFrame = 0; _rapierSyncBlockHandle(); });
@@ -9061,9 +9064,7 @@ function _rapierBlockHoldsWords(block) {
 function _rapierMakeEdgeParagraph(block, tail) {
 	const host = _editorHostEl();
 	_rapierCheckpointPendingTyping();
-	const blocks = rapier.document.blocks, shown = tail ? blocks.findLast(row => !_rapierMetadataBlock(row)) : blocks.find(row => !_rapierMetadataBlock(row));
-	const edge = !block || shown?.id === block.id;
-	const mark = edge ? _rapierHistoryMark() : null;
+	const mark = _rapierHistoryMark();
 	const insert = () => {
 		const id = host && _insertBlockAfter(tail ? block?.id : null, '', tail ? { noEdit: true } : { before: block.id, noEdit: true });
 		const created = id != null && rapier.document.blocks.find(candidate => candidate.id === id);
@@ -22705,6 +22706,9 @@ async function _rapierKeepForNativeClose(verb, canClose) {
 	let departure = {settled: true, value: 'stale'};
 	for (let attempt = 0; attempt < 3 && departure.settled && departure.value === 'stale'; attempt++) {
 		await _rapierEndOpenComposition();
+		for (const until = Date.now() + 2000; _rapierNativeCloseCallersPending() && Date.now() < until;) {
+			await new Promise(resolve => setTimeout(resolve, 25));
+		}
 		await _rapierSaveRuntime.queue;
 		if (await host.settlePersistence() !== true) return {kept: false};
 		const notesPart = _rapierNotesPart;
@@ -30746,7 +30750,8 @@ function _rapierBlockHalfRaw(wrapper, block, range, atEnd, { given = null, comme
 	const raw = String(block.raw || ''), cut = atEnd ? raw.slice(at) : raw.slice(0, at);
 	const kind = value => md.parse(value, _rapierMarkdownEnvironment()).filter(token => token.nesting).map(token => token.tag + token.nesting).join();
 	const comments = keepComments && atEnd ? _rapierLeadingComments(cut) : '';
-	return kind(cut.slice(comments.length)) === kind(read) ? cut : read;
+	const lead = text => comments ? text.replace(/^[ \t]+/, '') : text;
+	return kind(lead(cut.slice(comments.length))) === kind(lead(read)) ? cut : read;
 }
 
 function _rapierCommentsAtParagraphEnd(raw, comments) {
@@ -30755,7 +30760,7 @@ function _rapierCommentsAtParagraphEnd(raw, comments) {
 }
 
 function _rapierLeadingComments(raw) {
-	return /^(?:<!--[\s\S]*?-->)+/.exec(String(raw || ''))?.[0] || '';
+	return /^<!--[\s\S]*?-->(?:[ \t]*<!--[\s\S]*?-->)*/.exec(String(raw || ''))?.[0] || '';
 }
 
 function _rapierCapturePasteContext(range) {
@@ -35117,6 +35122,19 @@ function _rapierAdmitParentOrigin(raw) {
 		return parsed.origin;
 	} catch (_) { return ''; }
 }
+function _rapierEmbedModeAsked() {
+	return new URLSearchParams(location.search).get('embed') || (window.name === 'rapier-embed' ? '1' : '');
+}
+function _rapierEmbedSavedSaid() {
+	if (_rapierEmbedSameOriginParent(_rapierEmbed.hostOrigin)) return;
+	let where = 'the host';
+	try { where = new URL(_rapierEmbed.hostOrigin).host || where; } catch (_) {}
+	showToast('Saved to ' + where);
+	srAnnounce('Embedded document saved.');
+}
+function _rapierEmbedSameOriginParent(origin) {
+	return typeof origin === 'string' && origin !== 'null' && origin === location.origin && _rapierHasSameOriginParent();
+}
 function _rapierHasSameOriginParent() {
 	if (window.self === window.top) return false;
 	try { return window.parent.location.origin === window.location.origin; }
@@ -35131,7 +35149,7 @@ function _rapierClassifyFrameAuthority(framed, mode, sameOriginParent) {
 const _rapierEmbedFramed = window.RapierPlatform?.environment.allowsEmbed === true && window.self !== window.top;
 const _rapierFrameAuthority = _rapierClassifyFrameAuthority(
 	_rapierEmbedFramed,
-	new URLSearchParams(location.search).get('embed') || '',
+	_rapierEmbedModeAsked(),
 	_rapierHasSameOriginParent(),
 );
 function _rapierEmbedPluginsApproved() {
@@ -35730,6 +35748,7 @@ async function _rapierEmbedLoadRun(data, respond) {
 		const admission = await _rapierWithSettledExternalDocument(() => ({
 			dirty: _rapierEmbed.loaded && _rapierIsDirty(),
 			stamp: Object.freeze(_rapierMutationStamp()),
+			view: _rapierEmbed.loaded && filename === String(rapier.document.filename || '') ? _rapierCaptureViewContinuity() : null,
 		}), { quiet: true });
 		if (operation !== _rapierEmbed.loadToken) return;
 		if (!admission.settled) {
@@ -35777,6 +35796,7 @@ async function _rapierEmbedLoadRun(data, respond) {
 			restore: true,
 			embed: true,
 			bom: payload.content.charCodeAt(0) === 0xFEFF,
+			...(admission.value.view && !draft ? {documentAuthority: String(rapier.identity.authority || '')} : {}),
 			...(draft ? {carriedLedger: draft.ledger, documentAuthority: draft.ledger.documentAuthority, documentKind: draft.docKind} : {}),
 			expectedMutationStamp: transitionGuard,
 			restoredRevisionState: {
@@ -35822,7 +35842,7 @@ async function _rapierEmbedLoadRun(data, respond) {
 		rapierHold('host', readOnly);
 
 		rapierSetReadOnly(!!RapierPreferences.read('readOnly'));
-		rapierSetMode('read');
+		if (!(admission.value.view && !draft && _rapierRestoreViewContinuity(admission.value.view))) rapierSetMode('read');
 		if (recoveredDraft) showToast('Unsaved draft restored', 'info');
 		await _rapierEmbedWhenScreenReleased();
 		if (operation !== _rapierEmbed.loadToken) return;
@@ -35998,10 +36018,7 @@ async function _rapierEmbedCompleteSave(data) {
 	});
 
 	_rapierEmbedNotify();
-	let where = 'the host';
-	try { where = new URL(_rapierEmbed.hostOrigin).host || where; } catch (_) {}
-	showToast('Saved to ' + where);
-	srAnnounce('Embedded document saved.');
+	_rapierEmbedSavedSaid();
 	const closeOptions = pending.closeAfter
 		? { closeAfter: true, closeRequestId: pending.closeRequestId }
 		: (completion.queuedOptions && completion.queuedOptions.closeAfter
@@ -36224,7 +36241,7 @@ function _rapierEmbedListen() {
 }
 function _rapierEmbedConnect(event) {
 	if (!_rapierEmbed.active || event.source !== window.parent
-			|| _rapierAdmitParentOrigin(event.origin) !== event.origin
+			|| (!_rapierEmbedSameOriginParent(event.origin) && _rapierAdmitParentOrigin(event.origin) !== event.origin)
 			|| (_rapierEmbed.hostOrigin && event.origin !== _rapierEmbed.hostOrigin)) return;
 	const data = event.data;
 	if (!data || typeof data !== 'object' || Array.isArray(data) || data.type !== 'rapier-connect') return;
@@ -40333,6 +40350,18 @@ function _rapierHandleMathIslandKeydown(e) {
 		}
 	}
 	if (!isle) return false;
+	if (kind === 'before' && isBackspace && _rapierOpenMathInPlace(editDiv, block, isle, 'end')) return true;
+	if (kind === 'after' && isDelete && _rapierOpenMathInPlace(editDiv, block, isle, 'start')) return true;
+	if (kind === 'replace' && _rapierOpenMathInPlace(editDiv, block, isle, 'end')) {
+		const opened = editDiv._rapierOpenMath, whole = document.createRange();
+		whole.selectNodeContents(opened.text);
+		sel.removeAllRanges();
+		sel.addRange(whole);
+		return false;
+	}
+	let tex = '';
+	try { tex = decodeURIComponent(isle.getAttribute('data-math-src')); } catch (_) {}
+	if (!_rapierMathIsWholeBlock(block, tex)) return false;
 	return _rapierMathIslandToSource(wrapper, editDiv, block, isle, (fullRaw, idx, mathRaw) => {
 	let content = fullRaw, caretPos;
 	if (kind === 'replace') {
@@ -40414,13 +40443,73 @@ function _rapierMathIslandToSource(wrapper, editDiv, block, isle, edit) {
 }
 function _rapierMathTapCaret(fullRaw, idx, mathRaw) {
 	const close = /(\$\$|\$|\\\)|\\\])$/.exec(mathRaw)?.[0].length || 0;
+	if (fullRaw.slice(idx, idx + mathRaw.length) !== mathRaw) {
+		const end = /\s*(\$\$|\\\])\s*$/.exec(fullRaw);
+		if (end) return {content: fullRaw, caretPos: end.index};
+	}
 	return {content: fullRaw, caretPos: idx + Math.max(0, mathRaw.length - close)};
 }
 function _rapierOpenMathIslandByTap(wrapper, ordinal) {
 	const editDiv = wrapper?.querySelector(':scope > .block-edit'), block = _rapierBoundBlock(wrapper);
 	const isle = editDiv?.querySelectorAll('.math-rendered[data-math-src]')[ordinal];
 	if (!isle || !block || rapier.access.readOnly || wrapper.classList.contains('block-wrapper--math-source')) return false;
+	if (rapier.composition.block) return true;
+	if (_rapierOpenMathInPlace(editDiv, block, isle, 'end')) return true;
 	return _rapierMathIslandToSource(wrapper, editDiv, block, isle, _rapierMathTapCaret);
+}
+function _rapierOpenMathInPlace(editDiv, block, isle, at) {
+	let tex;
+	try { tex = decodeURIComponent(isle.getAttribute('data-math-src')); } catch (_) { return false; }
+	const open = /^(\$\$|\$|\\\(|\\\[)/.exec(tex)?.[0], close = /(\$\$|\$|\\\)|\\\])$/.exec(tex)?.[0];
+	if (!open || !close || tex.length <= open.length + close.length || _rapierMathIsWholeBlock(block, tex)) return false;
+	_rapierSettleMathInPlace(true);
+	const text = document.createTextNode(tex);
+	isle.replaceWith(text);
+	editDiv._rapierOpenMath = {text, isle, tex};
+	const caret = document.createRange();
+	caret.setStart(text, at === 'end' ? tex.length - close.length : open.length);
+	caret.collapse(true);
+	const sel = window.getSelection();
+	sel.removeAllRanges();
+	sel.addRange(caret);
+	return true;
+}
+function _rapierMathIsWholeBlock(block, tex) {
+	return String(block.raw || '').replace(/\s+/g, '') === String(tex).replace(/\s+/g, '');
+}
+function _rapierPasteIntoOpenMath(event, clipboard) {
+	const sel = window.getSelection(), range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+	const opened = range && _nodeAsElement(range.startContainer)?.closest?.('.block-edit')?._rapierOpenMath;
+	if (!opened || range.startContainer !== opened.text || range.endContainer !== opened.text) return false;
+	const line = String(clipboard?.getData?.('text/plain') || '');
+	if (!line || /[\r\n]/.test(line)) return false;
+	event.preventDefault();
+	if (!document.execCommand('insertText', false, line)) return false;
+	return true;
+}
+function _rapierSettleMathInPlace(all = false) {
+	for (const editDiv of document.querySelectorAll('#editor-blocks .block-edit')) {
+		const opened = editDiv._rapierOpenMath;
+		if (!opened) continue;
+		const {text, isle, tex} = opened;
+		if (!text.isConnected || !editDiv.contains(text)) { editDiv._rapierOpenMath = null; continue; }
+		const sel = window.getSelection(), range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+		const inside = !!range && (range.collapsed ? range.startContainer === text && range.startOffset > 0 && range.startOffset < text.data.length
+			: range.intersectsNode(text));
+		if (rapier.composition.block || (!all && inside)) continue;
+		editDiv._rapierOpenMath = null;
+		const now = text.data;
+		if (now === tex) { text.replaceWith(isle); continue; }
+		const html = md.renderInline(now, _rapierMarkdownEnvironment());
+		const holder = _rapierFinishSanitizedBlock(_rapierRenderModule('render-sanitize').sanitizeRapierHtml(html, 'render'), null, true).root;
+		const drawn = holder.childNodes.length === 1 && holder.firstChild.matches?.('.math-rendered[data-math-src]') ? holder.firstChild : null;
+		let drawnTex = null;
+		try { drawnTex = drawn && decodeURIComponent(drawn.getAttribute('data-math-src')); } catch (_) {}
+		if (drawn && drawnTex === now) {
+			for (const name of isle.getAttributeNames()) if (name !== 'data-math-src' && !drawn.hasAttribute(name)) drawn.setAttribute(name, isle.getAttribute(name));
+			text.replaceWith(drawn);
+		}
+	}
 }
 
 document.addEventListener('keydown', e => {
@@ -40455,11 +40544,16 @@ function _rapierLeaveCodeAtEnd(editDiv, wrapper, block, codeEl, range) {
 	return _rapierMakeEdgeParagraph(rapier.document.blocks[index], true);
 }
 
+function _rapierEnsureRawEditLineBox(editDiv) {
+	if (/[\r\n]$/.test(editDiv.textContent || '') && editDiv.lastChild?.nodeName !== 'BR') editDiv.append(document.createElement('br'));
+}
+
 function _insertRawNewline(editDiv, range) {
 	const textNode = document.createTextNode('\n');
 	range.insertNode(textNode);
 	const pre = textNode.parentElement && textNode.parentElement.closest('pre');
-	if (pre && editDiv.contains(pre)) {
+	if (editDiv.closest('.block-wrapper--source-edit')) _rapierEnsureRawEditLineBox(editDiv);
+	else if (pre && editDiv.contains(pre)) {
 		const rest = document.createRange();
 		rest.setStartAfter(textNode);
 		rest.setEnd(pre, pre.childNodes.length);
@@ -40725,7 +40819,7 @@ async function _rapierCommitDroppedPictures(items, target) {
 			if (!_rapierMutationStampIsCurrent(item.stamp) || source !== _rapierSourceText())
 				return giveUp('Document changed. Choose the picture again.', 'info');
 			if (answer?.url) {
-				raw = globalThis.RapierEmbedContract.externalImage(raw, normalized.asset, answer.url);
+				raw = globalThis.RapierEmbedContract.externalImage(raw, normalized.asset, answer.url, globalThis.RapierEmbedPictureBase?.base);
 				normalized = {...normalized, hostAsset: normalized.asset, asset: null};
 			} else if (answer?.code && !['asset_not_granted', 'asset_rejected'].includes(answer.code)) {
 				_rapierEmbedPost('protocol-error', {code: answer.code});
@@ -41933,7 +42027,7 @@ function _rapierPasteCaretInCode(editDiv, range) {
 		const before = document.createRange();
 		before.selectNodeContents(editDiv);
 		before.setEnd(range.startContainer, range.startOffset);
-		return _rapierPasteInsideFence(before.toString()) && !/^ {0,3}(?:`{3,}|~{3,})/m.test(range.toString()) ? 'fence' : '';
+		return _rapierPasteInsideFence(before.toString()) && !/^ {0,3}(?:`{3,}|~{3,})/m.test(range.toString()) ? 'fence' : 'source';
 	}
 	const element = node => node && (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement);
 	const start = element(range.startContainer), end = element(range.endContainer);
@@ -41982,7 +42076,7 @@ function _rapierPasteIntoCode(editDiv, payload) {
 	const selection = window.getSelection && window.getSelection();
 	const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
 	const where = _rapierPasteCaretInCode(editDiv, range);
-	if (where !== 'block' && where !== 'fence' && where !== 'inline') return false;
+	if (where !== 'block' && where !== 'fence' && where !== 'source' && where !== 'inline') return false;
 	const content = _rapierResolvePastePayload({...payload, insideCode: true});
 	let text = content ? String(content.markdown || '').replace(/\r\n?/g, '\n') : '';
 	if (where === 'inline') {
@@ -41997,6 +42091,7 @@ function _rapierPasteIntoCode(editDiv, payload) {
 	const node = document.createTextNode(text);
 	range.insertNode(node);
 	placeholder?.remove();
+	if (where === 'source' || where === 'fence') _rapierEnsureRawEditLineBox(editDiv);
 	const after = document.createRange();
 	after.setStart(node, node.data.length);
 	after.collapse(true);
@@ -42018,6 +42113,7 @@ function _rapierHandlePaste(event) {
 function _rapierApplyPaste(event) {
 	if (event.defaultPrevented || _rapierClipboardOutsideDocument(event, true)) return false;
 	const clipboard = event.clipboardData || window.clipboardData;
+	if (_rapierPasteIntoOpenMath(event, clipboard)) return true;
 
 	const payload = _readPastePayload(clipboard);
 	const rasterFile = _rapierRasterClipboardFile(clipboard);

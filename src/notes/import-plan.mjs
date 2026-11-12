@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {isNoteFile} from './model.mjs';
+import {numberJSON, inheritJSONField} from './json-custody.mjs';
 
 export const IMPORT_LANDING_DEFAULTS = Object.freeze({batchBytes: 64 * 1024, batchCount: 8});
 export function importBatchCount(existing, planned) {
@@ -12,8 +13,15 @@ const object = value => value !== null && typeof value === 'object' &&
 	(proto => proto === null || Object.getPrototypeOf(proto) === null)(Object.getPrototypeOf(value));
 const need = (condition, why) => { if (!condition) throw new TypeError(why); };
 
-function copyEntry(value, parents = new Set()) {
-	if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)) return value;
+function copyEntry(value, parents = new Set(), holder = null, field = '') {
+	if (typeof value === 'number') {
+		if (!Number.isFinite(value)) {
+			try { numberJSON(value, holder, field); }
+			catch (_) { need(false, 'import sidecar entries must be JSON values'); }
+		}
+		return value;
+	}
+	if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
 	need(Array.isArray(value) || object(value), 'import sidecar entries must be JSON values');
 	need(!parents.has(value), 'import sidecar entries must not be cyclic');
 	parents.add(value);
@@ -22,7 +30,8 @@ function copyEntry(value, parents = new Set()) {
 		if (Array.isArray(value) && key === 'length') continue;
 		const property = Object.getOwnPropertyDescriptor(value, key);
 		need(typeof key === 'string' && property.enumerable && 'value' in property, 'import sidecar entries need ordinary JSON properties');
-		Object.defineProperty(out, key, {value: copyEntry(property.value, parents), enumerable: true, configurable: true, writable: true});
+		Object.defineProperty(out, key, {value: copyEntry(property.value, parents, value, key), enumerable: true, configurable: true, writable: true});
+		inheritJSONField(out, key, value);
 	}
 	if (Array.isArray(value)) need(out.length === value.length && Object.keys(out).length === value.length &&
 		Array.from({length: value.length}, (_, i) => Object.hasOwn(out, i)).every(Boolean), 'import sidecar arrays must be dense');

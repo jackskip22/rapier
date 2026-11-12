@@ -1,3 +1,4 @@
+import {parseJSON, stringifyJSON, cloneJSON, inheritJSON, inheritJSONField} from './json-custody.mjs';
 import {parseFrontMatter, stripFrontMatter, tagsOf, setTags} from './frontmatter.mjs';
 import {stripInkMarkers} from '../spec/md-marks.mjs';
 import {markdownParser} from '../spec/md-assets.mjs';
@@ -103,10 +104,10 @@ export function cleanAgent(raw) {
 	return {by: raw.by.trim(), at: raw.at};
 }
 export function validNoteId(id) { return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id.slice(id.lastIndexOf(':') + 1))); }
+const NOTE_ENTRY_FIELDS = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'remindSnoozedUntil', 'remindAction', 'modified', 'created', 'agent']);
 function cleanEntry(raw) {
 	if (!raw || typeof raw !== 'object') return null;
 	const entry = {};
-	const known = new Set(['id', 'revision', 'order', 'pinned', 'skill', 'archived', 'trashed', 'trashedAt', 'colour', 'category', 'remind', 'remindDone', 'remindDoneFor', 'remindSnoozedUntil', 'remindAction', 'modified', 'created', 'agent']);
 	if (raw.id !== undefined && !validNoteId(raw.id)) throw Object.assign(new Error('invalid note identity'), {code: 'corrupt'});
 	if (raw.revision !== undefined && (typeof raw.revision !== 'string' || !raw.revision)) throw Object.assign(new Error('invalid note revision'), {code: 'corrupt'});
 	if (raw.id !== undefined) entry.id = raw.id;
@@ -129,14 +130,14 @@ function cleanEntry(raw) {
 	if (Number.isFinite(raw.created)) entry.created = raw.created;
 	const agent = cleanAgent(raw.agent);
 	if (agent) entry.agent = agent;
-	for (const key of Object.keys(raw)) if (!known.has(key)) Object.defineProperty(entry, key, {value: raw[key], enumerable: true, configurable: true, writable: true});
-	return entry;
+	for (const key of Object.keys(raw)) if (!NOTE_ENTRY_FIELDS.has(key)) Object.defineProperty(entry, key, {value: raw[key], enumerable: true, configurable: true, writable: true});
+	return inheritJSON(entry, raw);
 }
 function cleanSection(raw) {
 	if (!raw || typeof raw !== 'object') return null;
 	const name = typeof raw.name === 'string' ? raw.name.trim() : '';
 	if (!name || isBuiltinSectionName(name)) return null;
-	return {...raw, name, collapsed: raw.collapsed === true};
+	return inheritJSON({...raw, name, collapsed: raw.collapsed === true}, raw);
 }
 function cleanSections(raw) {
 	if (!Array.isArray(raw)) return [];
@@ -151,17 +152,17 @@ function cleanSections(raw) {
 }
 function cleanCollapsed(raw) {
 	const c = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-	return {...c, skills: c.skills !== false, pinned: c.pinned === true, others: c.others === true, archive: c.archive !== false, trash: c.trash !== false};
+	return inheritJSON({...c, skills: c.skills !== false, pinned: c.pinned === true, others: c.others === true, archive: c.archive !== false, trash: c.trash !== false}, c);
 }
 export function parseIndex(text) {
 	if (text == null || String(text).trim() === '') return emptyIndex();
 	let raw;
-	try { raw = JSON.parse(text); } catch (_) { throw Object.assign(new Error('the notes index is not readable JSON'), {code: 'corrupt'}); }
+	try { raw = parseJSON(text); } catch (_) { throw Object.assign(new Error('the notes index is not readable JSON'), {code: 'corrupt'}); }
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !raw.notes || typeof raw.notes !== 'object' || Array.isArray(raw.notes)) throw Object.assign(new Error('the notes index does not have the shape of one'), {code: 'corrupt'});
 	const version = raw.version;
 	if (!Number.isSafeInteger(version) || version < 1) throw Object.assign(new Error('the notes index names no readable version'), {code: 'corrupt'});
 	if (version > NOTES_INDEX_VERSION) throw Object.assign(new Error('the notes index was written by a newer Rapier'), {code: 'newer', version});
-	const index = {...raw, ...emptyIndex()};
+	const index = inheritJSON({...raw, ...emptyIndex()}, raw);
 	if (raw.tombstones !== undefined && (!raw.tombstones || typeof raw.tombstones !== 'object' || Array.isArray(raw.tombstones))) throw Object.assign(new Error('invalid note tombstones'), {code: 'corrupt'});
 	if (raw.conflicts !== undefined && !Array.isArray(raw.conflicts)) throw Object.assign(new Error('invalid note conflicts'), {code: 'corrupt'});
 	for (const [file, entry] of Object.entries(raw.notes)) {
@@ -173,7 +174,8 @@ export function parseIndex(text) {
 	index.collapsed = cleanCollapsed(raw.collapsed);
 	return index;
 }
-export function serializeIndex(index) { return JSON.stringify({...index, version: NOTES_INDEX_VERSION}, null, 1) + '\n'; }
+export function serializeIndex(index) { return stringifyJSON(inheritJSON({...index, version: NOTES_INDEX_VERSION}, index), 1) + '\n'; }
+export {cloneJSON, inheritJSON, inheritJSONField};
 const CODE_EXTENSIONS = new Set(('txt js mjs cjs ts tsx jsx json jsonc html htm xml xhtml vue svelte css scss sass less styl ' +
 	'py rb go rs php cs fs fsx java kt swift m mm c h cpp cc cxx hpp hh zig sh bash zsh fish ps1 psm1 psd1 yml yaml toml ini ' +
 	'cfg conf env properties sql lua r dart vb pl pm ex exs erl hrl clj cljs scala groovy nim graphql gql proto diff patch ' +
@@ -193,13 +195,13 @@ export function codeFileName(wanted, existing = [], {ascii = false} = {}) {
 const arrivalCollator = new Intl.Collator('en', {numeric: true, sensitivity: 'base'});
 export function reconcile(index, files) {
 	const present = new Set(files.filter(isNoteFile));
-	const out = {...index, notes: {}}, added = [], dropped = [];
+	const out = inheritJSON({...index, notes: {}}, index), added = [], dropped = [];
 	let last = '';
 	out.sections = cleanSections(index.sections);
 	out.collapsed = cleanCollapsed(index.collapsed);
 	for (const [file, entry] of Object.entries(index.notes)) {
 		if (present.has(file)) {
-			out.notes[file] = entry.order ? entry : {...entry};
+			out.notes[file] = entry.order ? entry : inheritJSON({...entry}, entry);
 			if (entry.order > last) last = entry.order;
 			present.delete(file);
 		} else dropped.push(file);
@@ -275,7 +277,7 @@ export function admitSection(index, name) {
 	if (!clean || isBuiltinSectionName(clean)) return {index, name: '', added: false};
 	const found = index.sections.find(s => s.name.toLowerCase() === clean.toLowerCase());
 	if (found) return {index, name: found.name, added: false};
-	return {index: {...index, sections: [...index.sections, {name: clean, collapsed: false}]}, name: clean, added: true};
+	return {index: inheritJSON({...index, sections: [...index.sections, {name: clean, collapsed: false}]}, index), name: clean, added: true};
 }
 export function admitIdentities(index, namespace) {
 	if (typeof namespace !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(namespace)) throw Object.assign(new Error('a note identity needs a namespace'), {code: 'identity'});
@@ -296,7 +298,7 @@ export function admitIdentities(index, namespace) {
 		index.notes[file].id = id;
 		assigned.push({file, id});
 	}
-	if (assigned.length) index.noteCounters = {...index.noteCounters, [namespace]: next};
+	if (assigned.length) index.noteCounters = inheritJSON({...index.noteCounters, [namespace]: next}, index.noteCounters);
 	return assigned;
 }
 
@@ -312,10 +314,10 @@ export function renameSection(index, from, to) {
 		if (isBuiltinSectionName(clean) || index.sections.some((s, i) => i !== at && s.name.toLowerCase() === key)) return index;
 	}
 	const sections = index.sections.slice();
-	sections[at] = {...sections[at], name: clean};
-	const notes = {...index.notes};
-	for (const [file, entry] of Object.entries(notes)) if (entry.category === from) notes[file] = {...entry, category: clean};
-	return {...index, sections, notes};
+	sections[at] = inheritJSON({...sections[at], name: clean}, sections[at]);
+	const notes = inheritJSON({...index.notes}, index.notes);
+	for (const [file, entry] of Object.entries(notes)) if (entry.category === from) notes[file] = inheritJSON({...entry, category: clean}, entry);
+	return inheritJSON({...index, sections, notes}, index);
 }
 
 export function removeSection(index, name) {
@@ -323,9 +325,9 @@ export function removeSection(index, name) {
 	if (at < 0) return index;
 	const sections = index.sections.slice();
 	sections.splice(at, 1);
-	const notes = {...index.notes};
-	for (const [file, entry] of Object.entries(notes)) if (entry.category === name) notes[file] = {...entry, category: ''};
-	return {...index, sections, notes};
+	const notes = inheritJSON({...index.notes}, index.notes);
+	for (const [file, entry] of Object.entries(notes)) if (entry.category === name) notes[file] = inheritJSON({...entry, category: ''}, entry);
+	return inheritJSON({...index, sections, notes}, index);
 }
 
 export function moveSection(index, name, before) {
@@ -335,14 +337,14 @@ export function moveSection(index, name, before) {
 	const [moved] = sections.splice(at, 1);
 	const to = before ? sections.findIndex(s => s.name === before) : -1;
 	sections.splice(to < 0 ? sections.length : to, 0, moved);
-	return {...index, sections};
+	return inheritJSON({...index, sections}, index);
 }
 
 export function setCategory(index, file, name) {
 	if (!index.notes[file]) return index;
 	const raw = typeof name === 'string' ? name : '';
 	const category = index.sections.find(s => s.name.toLowerCase() === raw.trim().toLowerCase())?.name ?? raw;
-	return {...index, notes: {...index.notes, [file]: {...index.notes[file], category}}};
+	return inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: inheritJSON({...index.notes[file], category}, index.notes[file])}, index.notes)}, index);
 }
 
 export const NOTE_CONTROL_FIELDS = Object.freeze(['pinned', 'colour', 'section', 'tags', 'archived', 'trashed', 'reminder']);
@@ -378,7 +380,7 @@ export function stampNoteControls(before, after, generation, touched = []) {
 }
 export function noteControlsSnapshot(index, file, text) {
 	const entry = index.notes[file];
-	return entry ? {id: entry.id, writer: index.folderDeviceId, values: noteControlValues(index, file, text), groups: noteControlGroups(entry), versions: {...entry.controlVersions}} : null;
+	return entry ? {id: entry.id, writer: index.folderDeviceId, values: noteControlValues(index, file, text), groups: noteControlGroups(entry), versions: inheritJSON({...entry.controlVersions}, entry.controlVersions)} : null;
 }
 export function setNoteControls(index, file, fields, {text, app = false} = {}) {
 	const fail = code => { throw Object.assign(new Error(code), {code}); };
@@ -387,7 +389,7 @@ export function setNoteControls(index, file, fields, {text, app = false} = {}) {
 	for (const name of ['pinned', 'archived', 'trashed']) if (Object.hasOwn(fields, name) && typeof fields[name] !== 'boolean') fail('notes_fields_invalid');
 	if (Object.hasOwn(fields, 'reminder') && !app) fail('notes_reminder_app_only');
 	if (fields.archived === true && fields.trashed === true) fail('notes_archive_trash_conflict');
-	let next = {...index, notes: {...index.notes, [file]: {...index.notes[file]}}}, entry = next.notes[file];
+	let next = inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: inheritJSON({...index.notes[file]}, index.notes[file])}, index.notes)}, index), entry = next.notes[file];
 	if (Object.hasOwn(fields, 'pinned')) entry.pinned = fields.pinned;
 	if (Object.hasOwn(fields, 'colour')) { if (!NOTE_COLOURS.includes(fields.colour)) fail('notes_colour_invalid'); entry.colour = fields.colour; }
 	if (Object.hasOwn(fields, 'section')) {
@@ -417,17 +419,17 @@ export function setNoteControls(index, file, fields, {text, app = false} = {}) {
 
 export function setCollapsed(index, id, collapsed) {
 	const flag = collapsed === true;
-	if (id === 'skills' || id === 'pinned' || id === 'others' || id === 'archive' || id === 'trash') return {...index, collapsed: {...index.collapsed, [id]: flag}};
+	if (id === 'skills' || id === 'pinned' || id === 'others' || id === 'archive' || id === 'trash') return inheritJSON({...index, collapsed: inheritJSON({...index.collapsed, [id]: flag}, index.collapsed)}, index);
 	const at = index.sections.findIndex(s => s.name === id);
 	if (at < 0) return index;
 	const sections = index.sections.slice();
-	sections[at] = {...sections[at], collapsed: flag};
-	return {...index, sections};
+	sections[at] = inheritJSON({...sections[at], collapsed: flag}, sections[at]);
+	return inheritJSON({...index, sections}, index);
 }
 
 export function setRemind(index, file, remind) {
 	if (!index.notes[file]) return index;
-	const entry = {...index.notes[file]};
+	const entry = inheritJSON({...index.notes[file]}, index.notes[file]);
 	const clean = remind === null ? null : cleanRemind(remind);
 	if (remind !== null && !clean) throw new TypeError('Invalid reminder');
 	const previous = cleanRemind(entry.remind);
@@ -439,7 +441,7 @@ export function setRemind(index, file, remind) {
 		delete entry.remindAction;
 	} else if (entry.remindDoneFor === JSON.stringify(previous)) entry.remindDoneFor = JSON.stringify(clean);
 	if (clean) entry.remind = clean; else delete entry.remind;
-	return {...index, notes: {...index.notes, [file]: entry}};
+	return inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: entry}, index.notes)}, index);
 }
 
 const LATER_TODAY_HOURS = [8, 13, 18, 20];
@@ -594,7 +596,7 @@ export function acknowledgeRemind(index, file, now) {
 	if (!entry || !entry.remind) return index;
 	const at = dueOccurrence(entry, now);
 	if (at == null || at <= remindDoneAt(entry)) return index;
-	return {...index, notes: {...index.notes, [file]: {...entry, remindDone: at, remindDoneFor: JSON.stringify(cleanRemind(entry.remind)), remindSnoozedUntil: 0}}};
+	return inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: inheritJSON({...entry, remindDone: at, remindDoneFor: JSON.stringify(cleanRemind(entry.remind)), remindSnoozedUntil: 0}, entry)}, index.notes)}, index);
 }
 
 export function nextReminderAt(entry, now) {
@@ -643,8 +645,8 @@ export function changeReminders(index, targets, change, now) {
 			if (occurrence === null) continue;
 			const until = change.kind === 'snooze' ? Math.max(now, occurrence) + (remind.snoozeMinutes ?? 10) * 60000 : 0;
 			if (!Number.isSafeInteger(until) || until > REMIND_MAX_DATE) throw new TypeError('Invalid snooze');
-			next = {...next, notes: {...next.notes, [file]: {...entry, remindDone: occurrence,
-				remindDoneFor: JSON.stringify(remind), remindSnoozedUntil: until}}};
+			next = inheritJSON({...next, notes: inheritJSON({...next.notes, [file]: inheritJSON({...entry, remindDone: occurrence,
+				remindDoneFor: JSON.stringify(remind), remindSnoozedUntil: until}, entry)}, next.notes)}, next);
 		} else throw new TypeError('Invalid reminder change');
 	}
 	return next;
@@ -672,10 +674,10 @@ export function applyReminderActions(index, actions) {
 			if (entry.trashed) break;
 			const row = nativeReminderRows({notes: {[file]: entry}})[0], before = action.before;
 			if (!row || ['at', 'days', 'months', 'weekdays', 'done', 'snoozedUntil'].some(key => row[key] !== before[key])) continue;
-			entry = {...entry, remindDone: before.delivered, remindDoneFor: JSON.stringify(cleanRemind(entry.remind)),
-				remindSnoozedUntil: action.snoozedUntil, remindAction: action.token};
+			entry = inheritJSON({...entry, remindDone: before.delivered, remindDoneFor: JSON.stringify(cleanRemind(entry.remind)),
+				remindSnoozedUntil: action.snoozedUntil, remindAction: action.token}, entry);
 		}
-		if (entry !== next.notes[file]) next = {...next, notes: {...next.notes, [file]: entry}};
+		if (entry !== next.notes[file]) next = inheritJSON({...next, notes: inheritJSON({...next.notes, [file]: entry}, next.notes)}, next);
 	}
 	return next;
 }

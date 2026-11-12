@@ -179,12 +179,15 @@ function ownedPicture(bytes) {
   copy.set(bytes);
   return copy;
 }
-export function externalImage(raw, asset, url) {
+export function externalImage(raw, asset, url, base) {
   if (!url) return raw;
   const token = '[' + asset.label + ']', at = raw.lastIndexOf(token);
   if (at < 0) throw refusal('asset_reference_invalid');
   const title = asset.title ? ' "' + String(asset.title).replace(/&/g, '&amp;').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]/g, ' ') + '"' : '';
-  return raw.slice(0, at) + '(<' + assetURL(url).replace(/&/g, '&amp;') + '>' + title + ')' + raw.slice(at + token.length);
+  let address = assetURL(url);
+  const folder = base ? new URL('.', base).href : '';
+  if (folder && address.startsWith(folder) && address.length > folder.length && !/[?#]/.test(address)) address = address.slice(folder.length);
+  return raw.slice(0, at) + '(<' + address.replace(/&/g, '&amp;') + '>' + title + ')' + raw.slice(at + token.length);
 }
 
 export function createAssetBroker({current, send}) {
@@ -265,5 +268,5 @@ export function pictureBase(value) {
     const text = String(src || '').trim();
     if (!text || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(text)) return null;
     try { const url = new URL(text, base); if (url.origin !== base.origin) return null; vouched.add(url.href); return url.href; } catch (_) { return null; }
-  }, {vouched});
+  }, {vouched, base: base.href});
 }

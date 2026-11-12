@@ -64,7 +64,7 @@ export function parseCssColor(value) {
 }
 
 export function highlightOfStyle(style, tagName) {
-	if (!/^(?:SPAN|FONT|MARK|B|I|U|S|STRONG|EM|DEL|INS)$/.test(String(tagName || '').toUpperCase())) return '';
+	if (!/^(?:SPAN|FONT|MARK|B|I|U|S|STRONG|EM|DEL|INS|A|SUB|SUP)$/.test(String(tagName || '').toUpperCase())) return '';
 	const source = String(style || '');
 	const match = /(?:^|;)\s*background-color\s*:\s*([^;]+)/i.exec(source) ||
 		/(?:^|;)\s*background\s*:\s*([^;]+)/i.exec(source);
@@ -125,8 +125,8 @@ export function codeBlock(fence, language, body) {
 	return fence + language + '\n' + body + (body && !body.endsWith('\n') ? '\n' : '') + fence;
 }
 
-export function scriptRun(text, mark) {
-	return new RegExp('^[^\\s' + (mark === '~' ? '~' : '\\^') + ']+$').test(text) ? mark + text + mark : null;
+export function scriptRun(text, tag) {
+	return tag === 'sub' ? '<sub>' + text + '</sub>' : tag === 'sup' ? '<sup>' + text + '</sup>' : null;
 }
 
 export function definitionList(parts) {

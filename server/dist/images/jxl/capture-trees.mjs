@@ -339,7 +339,7 @@ function proposeSplit(st, item) {
   let best = kernelHooks.sampled ? kernelHooks.sampled(members, item.hist, symbolSets, columns, table, rawPrice, item.ownBits, keep) : false;
   item.parent = item.sibling = null; item.forSibling = false;
   if (keep) item.handle = keep.handle;
-  if (!(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && best === false) {
+  if (best === false) {
     best = null;
     for (let c = 0; c < kinds; c++) {
       let t = 0, r = 0; const h = item.hist[c];
@@ -446,11 +446,10 @@ function sampleTree(quantized, symbolSets, candidates, population, options, save
     splitCost: (LEAF_BITS + options.charge + SAMPLE_BIAS * (1 - count / population) * scale) * Q,
     scratchHist: clustered ? new Uint32Array(alphabet) : null,
     remCluster: clustered ? {freq: new Uint32Array(alphabet), total: 0, sumT: 0, ent: 0, used: 0} : null,
-    ...((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? {} : {
-      lowCounts: candidates.map(() => new Uint32Array(alphabet)), highCounts: candidates.map(() => new Uint32Array(alphabet)),
-      lowTable: new Float64Array(kinds), highTable: new Float64Array(kinds), lowRaw: new Float64Array(kinds), highRaw: new Float64Array(kinds),
-      baseTable: new Float64Array(kinds), baseRaw: new Float64Array(kinds), slotOf: new Int16Array(alphabet),
-      dense: new Uint32Array(0), offsets: new Uint32Array(0)})};
+    lowCounts: candidates.map(() => new Uint32Array(alphabet)), highCounts: candidates.map(() => new Uint32Array(alphabet)),
+    lowTable: new Float64Array(kinds), highTable: new Float64Array(kinds), lowRaw: new Float64Array(kinds), highRaw: new Float64Array(kinds),
+    baseTable: new Float64Array(kinds), baseRaw: new Float64Array(kinds), slotOf: new Int16Array(alphabet),
+    dense: new Uint32Array(0), offsets: new Uint32Array(0)};
   if (saved) {
     st.clusters = saved.clusters; st.epoch = saved.epoch;
     return {...saved, st, reserve, active: saved.active.map(item => ({...item, proposal: item.proposal && {...item.proposal, column: columns[item.proposal.column]}}))};
@@ -604,7 +603,7 @@ function sampleColumns(plane, w, h, {samples = SAMPLES, bins = 32, properties: w
 
 const gradient = (w, n, nw) => Math.max(Math.min(w, n), Math.min(Math.max(w, n), w + n - nw));
 export const rankingPositions = (pixels, samples = 32768) => positionsOf(pixels, samples);
-export const transformRanking = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : function transformRanking(rgba, width, height, samples = 32768) {
+export function transformRanking(rgba, width, height, samples = 32768) {
   const positions = positionsOf(width * height, samples), count = positions.length, table = nlogQ12(count);
   const gathered = samples === 32768 ? journalFact(rgba, FACTS)?.ranking?.() : null, source = gathered ?? rgba;
   const run = count * 4, planes = new Int16Array(18 * run);
@@ -662,7 +661,7 @@ function numbered(tree) {
   return leaves.length > 1 ? {tree, leaves, classes: remap.size} : null;
 }
 const TREE_SPLITS = 8;
-export const learnTreeSteps = (typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true) ? null : function* learnTreeSteps(plane, w, h, {nodes = 119, samples = SAMPLES, bins = BINS, properties = PROPERTIES, predictors = PREDICTORS,
+export function* learnTreeSteps(plane, w, h, {nodes = 119, samples = SAMPLES, bins = BINS, properties = PROPERTIES, predictors = PREDICTORS,
   references = [], referenceKinds = [0, 1, 2, 3], least = 4096, depth = 24, charge = 32, clustered = false, clusters = 192} = {}, answer = null) {
   const count = (nodes + 1) >> 1, deep = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ === 'undefined' || !__RAPIER_JXL_CAPTURE_PHOTO__) && (typeof __RAPIER_JXL_CAPTURE_DEEP__ === 'undefined' || __RAPIER_JXL_CAPTURE_DEEP__) && (typeof __RAPIER_JXL_UPLOAD__ === 'undefined' || !__RAPIER_JXL_UPLOAD__));
   const options = {leaves: deep ? count : Math.min(count, 255), depth, samples, bins, properties, predictors, references, referenceKinds, least, charge, clustered: deep && (clustered || count > 255), clusters};
@@ -677,7 +676,7 @@ export const learnTreeSteps = (typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' &
   } while (!state?.done);
   return numbered(treeOf(grow(state)));
 }
-export const planeTreeSteps = (typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true) ? null : function* planeTreeSteps(plane, w, h, options, references = []) {
+export function* planeTreeSteps(plane, w, h, options, references = []) {
   const none = plainAnswer(w, h), learn = learnOf(options, references, none);
   return none && learn.predictors.length < 3 ? null : yield* learnTreeSteps(plane, w, h, learn, none);
 }

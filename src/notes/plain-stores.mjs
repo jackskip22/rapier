@@ -4,6 +4,7 @@ import {createDrivePlainStore} from './plain-drive.mjs';
 import {createOneDrivePlainStore} from './plain-onedrive.mjs';
 import {createWebDAVPlainStore} from './plain-webdav.mjs';
 import {createS3PlainStore} from './plain-s3.mjs';
+import {createWorkspacePlainStore} from './plain-workspace.mjs';
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 export function plainPlace(provider, value) {
@@ -17,5 +18,6 @@ export function plainStore(provider, {place, token, settings, fetch, authorizeEn
 	if (provider === 'onedrive') return createOneDrivePlainStore({fetch, token, folder: place});
 	if (provider === 'webdav') return createWebDAVPlainStore({fetch, authorizeEndpoint, ...settings, endpoint: String(settings?.endpoint || '').replace(/\/?$/, '/') + encodeURIComponent(place) + '/'});
 	if (provider === 's3' || provider === 'r2') return createS3PlainStore({fetch, ...settings, folder: place});
+	if (provider === 'workspace') return createWorkspacePlainStore({fetch, token, endpoint: settings?.endpoint});
 	throw fail('config', 'plain files are not kept on this storage.');
 }

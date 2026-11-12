@@ -5,7 +5,7 @@ export const OCR_MODEL = 'PP-OCRv6 tiny';
 export const OCR_VERSION = 'ppocrv6-tiny-0.1.0+ort-1.30.0+libjxl-0.12.0-brotli-1.2.1-r2';
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
 const TINY = 'https://cdn.jsdelivr.net/npm/@arcships/light-ocr-model-ppocrv6-tiny@0.1.0/';
-const JXL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.62/plugins/ocr-libjxl-0.12.0/';
+const JXL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.63/plugins/ocr-libjxl-0.12.0/';
 // (`plugins`, shell/bundle-io.js): unique there, which the packages' own file names are not (inference.onnx, LICENSE). The
 // PP-OCRv6_tiny_{det,rec}_onnx_infer archives (paddle-model-ecology, paddle3.0.0), carried on npm by an Apache-2.0 package so
 export const OCR_FILES = Object.freeze([

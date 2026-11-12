@@ -839,7 +839,7 @@ export function createSearchIndexRunner({getState, setState, getLinks, setLinks,
 			if (small(file, text, state)) {
 				try {
 					const proj = withPictures(projectText(text, state.index.sidecar.notes?.[file] || {}, file), pictures), bag = tokenBag(proj);
-					if (linkDirty.has(file) && getLinks?.() && !isCodeFile(file)) {
+					if ((linkDirty.has(file) || !getLinks?.()?.out.has(file)) && getLinks?.() && !isCodeFile(file)) {
 						active = {file, text, pictures, note: indexNote(proj, file, bag), links: projectLinks(source, {mapLink: text?.mapLink}), done: true, cardTitle: projectCard(file, source).title || ''};
 						addPostings(state.index.postings, file, bag); return true;
 					}

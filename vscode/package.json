@@ -1,0 +1,647 @@
+{
+  "name": "markdown-editor",
+  "displayName": "Rapier - Markdown Editor & Art",
+  "description": "Write Markdown in Rapier inside VS Code: formatted or source view, find and replace, compare, comments, diagrams, math and tables. Saves the file exactly as written.",
+  "version": "0.1.0",
+  "publisher": "rapier",
+  "icon": "icon.png",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://rapier.website",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jackskip22/rapier.git",
+    "directory": "vscode"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "markdown",
+    "markdown editor",
+    "wysiwyg",
+    "rich text",
+    "writing",
+    "notes",
+    "mermaid",
+    "math",
+    "diagrams",
+    "rapier"
+  ],
+  "browser": "./dist/extension.js",
+  "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "rapier.markdown",
+        "displayName": "Rapier",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "rapier.open",
+        "title": "Open in Rapier",
+        "category": "Rapier",
+        "icon": "$(edit)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "rapier.open",
+          "when": "resourceLangId == markdown && activeCustomEditorId != rapier.markdown",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "rapier.open",
+          "when": "resourceLangId == markdown",
+          "group": "navigation@20"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "rapier.open",
+          "when": "resourceLangId == markdown && activeCustomEditorId != rapier.markdown"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "rapier.open",
+          "when": "resourceLangId == markdown && activeCustomEditorId != rapier.markdown"
+        }
+      ]
+    },
+    "languageModelTools": [
+      {
+        "name": "rapier_read",
+        "toolReferenceName": "rapier-read",
+        "displayName": "Read Rapier",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines; a drawing's block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs. Acts on the Markdown file open in Rapier in VS Code.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "note": {
+              "type": "string",
+              "maxLength": 160,
+              "minLength": 1
+            },
+            "block": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "heading": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "maxItems": 32
+                }
+              ]
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[first, last], 1-based, inclusive."
+            },
+            "query": {
+              "type": "string",
+              "maxLength": 2048,
+              "description": "Literal text to find in this document."
+            },
+            "search": {
+              "type": "string",
+              "maxLength": 2048,
+              "description": "Search the Notes store; \"\" lists all."
+            },
+            "as": {
+              "type": "string",
+              "maxLength": 32,
+              "enum": [
+                "text",
+                "image",
+                "outline"
+              ]
+            },
+            "versions": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cursor": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32768
+            },
+            "state": {
+              "type": "boolean"
+            },
+            "preferences": {
+              "type": "boolean",
+              "description": "Include editor preferences in state; omitted by default."
+            },
+            "history": {
+              "type": "boolean"
+            },
+            "since": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "comparison": {
+              "type": "boolean"
+            },
+            "return_id": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "after_revision": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "With wait_ms: return when the revision passes this."
+            },
+            "wait_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20000,
+              "description": "Bounded wait (ms) for the next human revision."
+            },
+            "guide": {
+              "type": "string",
+              "maxLength": 32,
+              "description": "Instructions only; use no other read selectors and no document.",
+              "enum": [
+                "overview",
+                "draw",
+                "water",
+                "blocks"
+              ]
+            },
+            "agent": {
+              "type": "string",
+              "description": "Your display name on acts; never grants authority."
+            },
+            "operation_id": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "rapier_edit",
+        "toolReferenceName": "rapier-edit",
+        "displayName": "Edit Rapier",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting. Acts on the Markdown file open in Rapier in VS Code.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "revision": {
+              "type": [
+                "integer",
+                "string"
+              ],
+              "description": "From your latest read or open; a Note's is its sha256."
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "old": {
+                        "type": "string",
+                        "maxLength": 67108864
+                      },
+                      "new": {
+                        "type": "string",
+                        "maxLength": 67108864
+                      },
+                      "block": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "heading": {
+                        "oneOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 1024
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 256
+                            },
+                            "maxItems": 32
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "old",
+                      "new"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "after": {
+                        "type": "string",
+                        "maxLength": 67108864
+                      },
+                      "insert": {
+                        "type": "string",
+                        "maxLength": 67108864
+                      },
+                      "block": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "heading": {
+                        "oneOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 1024
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 256
+                            },
+                            "maxItems": 32
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "after",
+                      "insert"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "maxLength": 67108864
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 32
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 160,
+              "minLength": 1
+            },
+            "turn_id": {
+              "type": "string",
+              "maxLength": 160,
+              "description": "Groups acts for undo {turn_id}."
+            },
+            "label": {
+              "type": "string",
+              "description": "Short description of this edit in history."
+            },
+            "fields": {
+              "type": "object",
+              "properties": {
+                "pinned": {
+                  "type": "boolean"
+                },
+                "colour": {
+                  "type": "string",
+                  "enum": [
+                    "",
+                    "red",
+                    "orange",
+                    "yellow",
+                    "green",
+                    "teal",
+                    "blue",
+                    "purple",
+                    "pink",
+                    "brown"
+                  ]
+                },
+                "section": {
+                  "type": "string",
+                  "maxLength": 48
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "maxItems": 64
+                },
+                "archived": {
+                  "type": "boolean"
+                },
+                "trashed": {
+                  "type": "boolean"
+                },
+                "reminder": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "description": "App only; {at} in ms."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Note fields, with note and without changes."
+            },
+            "filename": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "agent": {
+              "type": "string",
+              "description": "Your display name on acts; never grants authority."
+            },
+            "operation_id": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            }
+          },
+          "required": [
+            "revision"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "rapier_undo",
+        "toolReferenceName": "rapier-undo",
+        "displayName": "Undo Rapier work",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Undo one act or one turn (act or turn_id, not both), preserving later work. Acts on the Markdown file open in Rapier in VS Code.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "act": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "From edit; pass act or turn_id."
+            },
+            "turn_id": {
+              "type": "string",
+              "maxLength": 160,
+              "description": "Undo a whole turn; pass act or turn_id."
+            },
+            "agent": {
+              "type": "string",
+              "description": "Your display name on acts; never grants authority."
+            },
+            "operation_id": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "rapier_show",
+        "toolReferenceName": "rapier-show",
+        "displayName": "Show or ask in Rapier",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired; only paired confirms pairing. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins. Acts on the Markdown file open in Rapier in VS Code.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "maxLength": 48,
+              "enum": [
+                "passage",
+                "block",
+                "pointer",
+                "read_aloud",
+                "playback",
+                "comparison",
+                "view",
+                "preferences",
+                "plugin",
+                "file",
+                "record",
+                "attachment",
+                "return",
+                "note",
+                "ask",
+                "pair"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 67108864,
+              "description": "Exact passage, or for comparison the whole alternative document."
+            },
+            "block": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "heading": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "maxItems": 32
+                }
+              ]
+            },
+            "revision": {
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "act": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "turn_id": {
+              "type": "string",
+              "maxLength": 160
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Comparison title or target:plugin name: math|mermaid|pdf|ocr|letters-field|letters-relief|letters-leaf|letters-arabesque|letters-silhouette|letters-gothic|letters-sugar|letters-illuminated-1490|letters-tuscan-1845|letters-renaissance-alphabet."
+            },
+            "words": {
+              "type": "string",
+              "maxLength": 160,
+              "description": "Pointer label."
+            },
+            "view": {
+              "type": "string",
+              "maxLength": 32,
+              "enum": [
+                "formatted",
+                "source",
+                "notes"
+              ]
+            },
+            "question": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "wait": {
+              "type": "string",
+              "maxLength": 32,
+              "description": "ask: message (default) or selection.",
+              "enum": [
+                "selection",
+                "message"
+              ]
+            },
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 120000,
+              "default": 20000
+            },
+            "preference": {
+              "type": "string",
+              "enum": [
+                "accent",
+                "theme",
+                "fontSize",
+                "defaultDocumentFont",
+                "checker",
+                "lineNums",
+                "imageStorage",
+                "inkColour",
+                "inkWidth",
+                "inkStylus",
+                "wrap",
+                "dim",
+                "lineFit",
+                "showPlayButton",
+                "focus",
+                "typewriter",
+                "highlights",
+                "highlightColor",
+                "headings",
+                "invertImageAlpha",
+                "layout",
+                "startIn",
+                "notesSort",
+                "notesLayout",
+                "notesColour",
+                "audioSpeed"
+              ]
+            },
+            "value": {
+              "type": [
+                "string",
+                "boolean"
+              ],
+              "description": "preferences: the setting; playback: false pauses, true plays."
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 160,
+              "minLength": 1
+            },
+            "code": {
+              "type": "string",
+              "maxLength": 4,
+              "description": "Browser pairing code (target:\"pair\")."
+            },
+            "close": {
+              "type": "boolean"
+            },
+            "compare_id": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "lifetime": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            },
+            "after_return_id": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "agent": {
+              "type": "string",
+              "description": "Your display name on acts; never grants authority."
+            },
+            "operation_id": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}

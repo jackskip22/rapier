@@ -1,8 +1,9 @@
+import {cloneJSON, inheritJSON} from './json-custody.mjs';
 import {expiredTrash, trashEvidence, isNoteFile, serializeIndex, parseIndex} from './model.mjs';
 import {exactBytes, sha256} from './integrity.mjs';
 import {manifestName} from './history.mjs';
 
-const clone = value => JSON.parse(JSON.stringify(value));
+const clone = cloneJSON;
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const hex = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const validTime = value => Number.isSafeInteger(value) && value >= 0;
@@ -23,7 +24,7 @@ export function deletionRefusal(error, {pending = false} = {}) {
 	return refused;
 }
 function active(entry, digest) {
-	const out = {...entry, trashed: false, archived: false};
+	const out = inheritJSON({...entry, trashed: false, archived: false}, entry);
 	delete out.trashedAt; delete out.trashDigest; delete out.trashRevision;
 	if (digest) out.revision = 'sha256:' + digest;
 	return out;
@@ -35,17 +36,17 @@ function nextID(index, deviceId) {
 	if (!Number.isSafeInteger(n) || n < 1) throw fail('corrupt', 'The note identity counter is not readable.');
 	while (used.has(deviceId + ':' + n)) n++;
 	if (!Number.isSafeInteger(n + 1)) throw fail('identity', 'The note identity counter is exhausted.');
-	index.noteCounters = {...index.noteCounters, [deviceId]: n + 1};
+	index.noteCounters = inheritJSON({...index.noteCounters, [deviceId]: n + 1}, index.noteCounters);
 	return deviceId + ':' + n;
 }
 export function markTrashed(index, file, {digest, now} = {}) {
 	if (!index.notes[file] || !hex(digest) || !validTime(now)) throw fail('trash', 'Trash needs the note and its verified content digest.');
 	const revision = 'sha256:' + digest;
-	return {...index, notes: {...index.notes, [file]: {...index.notes[file], trashed: true, archived: false, trashedAt: now, revision, trashRevision: revision, trashDigest: digest}}};
+	return inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: inheritJSON({...index.notes[file], trashed: true, archived: false, trashedAt: now, revision, trashRevision: revision, trashDigest: digest}, index.notes[file])}, index.notes)}, index);
 }
 export function reviveTrashed(index, file, digest) {
 	if (!index.notes[file] || digest !== undefined && !hex(digest)) throw fail('trash', 'A revived note needs a valid digest.');
-	return {...index, notes: {...index.notes, [file]: active(index.notes[file], digest)}};
+	return inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: active(index.notes[file], digest)}, index.notes)}, index);
 }
 
 function committer(commitIndex) {
@@ -62,7 +63,7 @@ function verifyPending(index, opId, row) {
 	if (!proof || proof.file !== row.file || proof.revision !== row.revision || proof.digest !== row.digest || proof.pending !== true) throw fail('corrupt', 'The pending trash operation has no matching tombstone; its files have been kept.');
 }
 function alterProof(index, id, opId, change) {
-	index.tombstones[id] = index.tombstones[id].map(row => row.opId === opId ? change({...row}) : row).filter(Boolean);
+	index.tombstones[id] = index.tombstones[id].map(row => row.opId === opId ? change(inheritJSON({...row}, row)) : row).filter(Boolean);
 	if (!index.tombstones[id].length) delete index.tombstones[id];
 }
 const settle = (row, change) => proof => row.sync ? null : change(proof);
@@ -240,7 +241,7 @@ export async function recoverTrash({store, index, commitIndex, clock = Date.now,
 			}
 			const completedAt = clock();
 			if (!validTime(completedAt)) throw fail('time', 'The deletion completion time is not readable.');
-			if (current && current.id !== row.id) { next.missingFiles = {...next.missingFiles, [row.file]: {entry: current, noticedAt: completedAt}}; result.missing.push(row.file); }
+			if (current && current.id !== row.id) { next.missingFiles = inheritJSON({...next.missingFiles, [row.file]: {entry: current, noticedAt: completedAt}}, next.missingFiles); result.missing.push(row.file); }
 			delete next.notes[row.file];
 			alterProof(next, row.id, opId, settle(row, proof => { delete proof.pending; proof.deletedAt = completedAt; return proof; }));
 			discardPending(next, opId);
@@ -282,7 +283,7 @@ export async function runTrash({store, index, files, now, deviceId, mode = 'expi
 			const value = await store.read(file), bytes = value == null ? null : exactBytes(value);
 			if (keep && keep(file)) continue;
 			if (bytes == null) {
-				next.missingFiles = {...next.missingFiles, [file]: {entry, noticedAt: now}}; delete next.notes[file]; result.missing.push(file); continue;
+				next.missingFiles = inheritJSON({...next.missingFiles, [file]: {entry, noticedAt: now}}, next.missingFiles); delete next.notes[file]; result.missing.push(file); continue;
 			}
 			const digest = await sha256(bytes), evidence = trashEvidence(entry);
 			const proof = expected?.get(file);
@@ -297,12 +298,12 @@ export async function runTrash({store, index, files, now, deviceId, mode = 'expi
 			}
 			if (mode === 'expiry' && !expiredTrash({notes: {[file]: entry}}, now).includes(file)) continue;
 			if (store.assertRemovable) await store.assertRemovable(file);
-			entry = {...entry, id: entry.id || nextID(next, deviceId), revision: 'sha256:' + digest};
+			entry = inheritJSON({...entry, id: entry.id || nextID(next, deviceId), revision: 'sha256:' + digest}, entry);
 			next.notes[file] = entry;
 			const opId = nextID(next, deviceId);
 			const row = {opId, file, revision: entry.revision, digest, device: deviceId, at: now, ...(checkpoint ? {checkpoint} : {}), pending: true};
-			next.tombstones = {...next.tombstones, [entry.id]: [...(next.tombstones?.[entry.id] || []), row]};
-			next.deletions = {...next.deletions, [opId]: {id: entry.id, file, revision: entry.revision, digest, entry: clone(entry), startedAt: now, history: 'erase', ...(sync ? {sync: true} : {})}};
+			next.tombstones = inheritJSON({...next.tombstones, [entry.id]: [...(next.tombstones?.[entry.id] || []), row]}, next.tombstones);
+			next.deletions = inheritJSON({...next.deletions, [opId]: {id: entry.id, file, revision: entry.revision, digest, entry: clone(entry), startedAt: now, history: 'erase', ...(sync ? {sync: true} : {})}}, next.deletions);
 		}
 		if (serializeIndex(next) !== serializeIndex(result.index)) result.index = await commit(next, {changed: candidates, kind: 'trash-prepare', admissionGuard});
 		appendOutcome(result, await recoverTrash({store, index: result.index, commitIndex, clock, keep}));
@@ -343,7 +344,7 @@ export async function recoverPressureTrash({store, index, intent, commit, keep =
   state = await intent.transition(index, state, {...row, phase: heldBytes == null ? 'cancelled' : 'detached'}); row = state.record;
  }
  let next = clone(index);
- next.noteCounters = {...next.noteCounters, [row.device]: Math.max(next.noteCounters?.[row.device] || 1, row.counter)};
+ next.noteCounters = inheritJSON({...next.noteCounters, [row.device]: Math.max(next.noteCounters?.[row.device] || 1, row.counter)}, next.noteCounters);
  if (row.phase === 'detached') {
   checkKeep();
   if (heldBytes != null && !await intent.api.removeOwned(held, row.digest)) throw fail('delete-pending', 'The quarantined note could not be removed.');
@@ -357,7 +358,7 @@ export async function recoverPressureTrash({store, index, intent, commit, keep =
   checkKeep();
   const erased = await eraseNoteHistory({store: guardedHistory, index: next, noteId: row.id});
   if (erased.erased) result.erased.push(file);
-  if (!row.sync) next.tombstones = {...next.tombstones, [row.id]: [...(next.tombstones?.[row.id] || []), {opId: row.opId, file, revision: 'sha256:' + row.digest, digest: row.digest, device: row.device, at: row.at, deletedAt: row.at, ...(row.checkpoint ? {checkpoint: row.checkpoint} : {})}]};
+  if (!row.sync) next.tombstones = inheritJSON({...next.tombstones, [row.id]: [...(next.tombstones?.[row.id] || []), {opId: row.opId, file, revision: 'sha256:' + row.digest, digest: row.digest, device: row.device, at: row.at, deletedAt: row.at, ...(row.checkpoint ? {checkpoint: row.checkpoint} : {})}]}, next.tombstones);
   result.deleted.push(file);
  } else {
   next.notes[file] = active(next.notes[file]);
@@ -388,14 +389,14 @@ export async function admitPressureTrash({store, index, prepared, opId, row, int
  const proof = prepared.tombstones[row.id].find(value => value.opId === opId);
  const record = {baseDigest, digest: row.digest, fileDigest: await sha256(exactBytes(row.file)), id: row.id, opId, token, device: proof.device, counter: prepared.noteCounters[proof.device], at: proof.at, ...(proof.checkpoint ? {checkpoint: proof.checkpoint} : {}), ...(row.sync ? {sync: true} : {})};
  const preview = clone(index);
- preview.noteCounters = {...preview.noteCounters, [record.device]: record.counter};
+ preview.noteCounters = inheritJSON({...preview.noteCounters, [record.device]: record.counter}, preview.noteCounters);
  preview.folderGeneration = (index.folderGeneration || 0) + 1;
  preview.deleteCheckpoint = {opId, baseDigest, token};
  preview.ownerNotice = {generation: preview.folderGeneration, changed: [row.file], kind: 'trash-defer'};
  preview.notes[row.file] = active(preview.notes[row.file]);
  const cancelledBytes = exactBytes(serializeIndex(preview)).length;
  delete preview.notes[row.file]; preview.ownerNotice.kind = 'trash-delete';
- if (!row.sync) { const completed = {...proof, deletedAt: record.at}; delete completed.pending; preview.tombstones = {...preview.tombstones, [row.id]: [...(preview.tombstones?.[row.id] || []), completed]}; }
+ if (!row.sync) { const completed = inheritJSON({...proof, deletedAt: record.at}, proof); delete completed.pending; preview.tombstones = inheritJSON({...preview.tombstones, [row.id]: [...(preview.tombstones?.[row.id] || []), completed]}, preview.tombstones); }
  const required = Math.max(cancelledBytes, exactBytes(serializeIndex(preview)).length);
  if (await sha256(exactBytes(await store.read('notes.json'))) !== baseDigest) throw fail('changed', 'The folder metadata changed before deletion admission. Nothing was removed.');
  if (keep && keep(row.file)) return blankResult(index);

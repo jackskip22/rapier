@@ -25,7 +25,9 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
   md.core.ruler.after('block', ruleName + '_source_release', state => authored.delete(state.tokens));
   const tokenize = md.block.tokenize;
   md.block.tokenize = function(state, startLine, endLine) {
-    const first = Math.max(state.tokens.length, state._mathScanned || 0);
+    // Tokens before this call are already scanned. A yielding host empties the list between block windows, so a
+    // count kept from an earlier window would skip the fences of the next.
+    const first = state.tokens.length;
     // A yielding host can leave tokenize at a completed block boundary by throwing.
     // Retain those completed fences before that boundary releases its line tables.
     try { return tokenize.call(this, state, startLine, endLine); }
@@ -61,7 +63,6 @@ export function installMathRules(md, {singleDollar = false, brackets = true, rul
         }
         token.meta = {...token.meta, mathSource: value};
       }
-      state._mathScanned = len;
     }
   };
   // The host's image-alt renderer ignores unknown token types. Keep math as

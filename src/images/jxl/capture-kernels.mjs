@@ -221,7 +221,7 @@ export function captureWeightedLanes(planes, width, height, minimum, small, grad
 }
 
 export const SCAN_WORDS = 1 << 21;
-export const captureLowestInk = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : function captureLowestInk(words, width, height, background, stride = width, origin = 0) {
+export function captureLowestInk(words, width, height, background, stride = width, origin = 0) {
   if (!(words instanceof Uint32Array) || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || width > 32767 ||
       height < 1 || height > 32767 || !Number.isInteger(stride) || stride < width || !Number.isInteger(origin) || origin < 0 ||
       origin + (height - 1) * stride + width > words.length)
@@ -261,7 +261,7 @@ export function captureCropEdges(words, width, height, stride = width, origin = 
   } catch { return undefined; }
 }
 
-export const captureRowsUnlike = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : function captureRowsUnlike(words, width, height, stride, origin) {
+export function captureRowsUnlike(words, width, height, stride, origin) {
   const at = heldAt(words.subarray(origin, origin + (height - 1) * stride + width));
   if (at < 0) return undefined;
   try {
@@ -270,7 +270,7 @@ export const captureRowsUnlike = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undef
     return new Int32Array(engine.memory.buffer.slice(base, base + height * 4));
   } catch { return undefined; }
 }
-export const captureColumnsUnlike = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : function captureColumnsUnlike(words, width, height, stride, origin, y0, y1, key) {
+export function captureColumnsUnlike(words, width, height, stride, origin, y0, y1, key) {
   const at = heldAt(words.subarray(origin, origin + (height - 1) * stride + width));
   if (at < 0 || !(y0 >= 0 && y0 <= y1 && y1 <= height)) return undefined;
   try {
@@ -694,7 +694,7 @@ export function captureTreeWalk(nodes, plane, width, height, residuals, wp, refe
   return {values, contexts};
 }
 
-export const captureDenseTiles = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : function captureDenseTiles(words, stride, x, y, width, height) {
+export function captureDenseTiles(words, stride, x, y, width, height) {
   if (!(words instanceof Uint32Array) || !Number.isInteger(stride) || !Number.isInteger(x) || !Number.isInteger(y) ||
       !Number.isInteger(width) || !Number.isInteger(height) || x < 0 || y < 0 || width < 1 || height < 1 ||
       width > 32767 || height > 32767 || x + width > stride || (y + height - 1) * stride + x + width > words.length)

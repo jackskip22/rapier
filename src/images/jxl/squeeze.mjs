@@ -19,7 +19,7 @@ function squeeze(ch, horizontal) {
   const ow = horizontal ? low : w, oh = horizontal ? h : low, rw = horizontal ? high : w, rh = horizontal ? h : high;
   const channel = (data, w, h) => ({w, h, hshift: ch.hshift + +horizontal, vshift: ch.vshift + !horizontal, data});
   const kernel = captureSqueezeStep(p, w, h, horizontal);
-  if (kernel || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) return [channel(kernel[0], ow, oh), channel(kernel[1], rw, rh)];
+  if (kernel) return [channel(kernel[0], ow, oh), channel(kernel[1], rw, rh)];
   const out = new Int16Array(ow * oh), res = new Int16Array(rw * rh), step = horizontal ? 1 : w;
   for (let y = 0; y < oh; y++) for (let x = 0; x < ow; x++) {
     const pos = horizontal ? x : y, at = horizontal ? y * w + 2 * x : 2 * y * w + x;

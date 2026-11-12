@@ -120,7 +120,7 @@
 	}
 	function overall(of = view) {
 		if (!of) return;
-		const rows = of.rows, done = rows.filter(row => row.state === 'done'), settled = rows.filter(row => row.state !== 'waiting' && row.state !== 'working').length;
+		const rows = of.rows, done = rows.filter(row => row.state === 'done' && row.result), settled = rows.filter(row => row.state !== 'waiting' && row.state !== 'working').length;
 		const working = rows.some(row => row.state === 'working' || row.state === 'waiting');
 		let fraction = rows.length ? (settled + rows.filter(row => row.state === 'working').reduce((sum, row) => sum + (row.progress || 0), 0)) / rows.length : 0;
 		of.line.style.setProperty('--rapier-progress', String(Math.min(1, fraction)));

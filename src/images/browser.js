@@ -1188,7 +1188,7 @@ const _rapierEmbeddedImages = (() => {
       const answer = await _rapierEmbed.assets?.request(normalized.asset);
       if (!_rapierMutationStampIsCurrent(stamp) || source !== _rapierSourceText()) return false;
       if (answer?.url) {
-        raw = RapierEmbedContract.externalImage(raw, normalized.asset, answer.url);
+        raw = RapierEmbedContract.externalImage(raw, normalized.asset, answer.url, globalThis.RapierEmbedPictureBase?.base);
         normalized = {...normalized, hostAsset: normalized.asset, asset: null};
       } else if (answer?.code && !['asset_not_granted', 'asset_rejected'].includes(answer.code)) {
         _rapierEmbedPost('protocol-error', {code: answer.code});

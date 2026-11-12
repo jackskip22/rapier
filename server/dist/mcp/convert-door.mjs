@@ -15,6 +15,7 @@ export function convertOnDoor({files = [], quality, effort} = {}, uncounted = 0)
 			'; tell the person to choose ' + (unpassed === 1 ? 'it' : 'them') + ' in the converter.' : '') +
 		' The converter tells you what it got and how the conversion ended.';
 	return {reply: {outcome: 'converter', converter: CONVERTER, pictures: count, ...(unpassed ? {unpassed} : {}), message: opened, ...(quality ? {quality} : {}), ...(effort ? {effort} : {}),
-		hint: 'Where no view shows, give the person ' + CONVERTER + ' to add the pictures there.',
+		hint: 'Where no view shows, give the person ' + CONVERTER + ' to add the pictures there. An agent with a shell converts its own files: ' +
+			'npx rapier-jxl <file> --json (a .jxl that carries its JPEG restores with --out <name>.jpg).',
 		files: named}, content: []};
 }

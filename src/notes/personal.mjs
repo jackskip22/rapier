@@ -50,6 +50,14 @@ export function createPersonalOwner({storage, apply = () => {}, validateAsset = 
 			validateAsset(key, value); const content = await personalDigest(encode(value));
 			state = check(await storage.update(raw => { const next = check(raw); assertActive(next); next.blobs[content] = value; if (next.records[key]?.value?.content !== content) next.records[key] = {by: next.writer, n: tick(clock(next)), value: {content, object: null}}; next.records = admitPersonal(next.records, {local: true}); return next; }));
 		}); },
+		removeAsset(key, assertActive = () => {}) { return schedule(async () => {
+			if (!assetKey(key)) fail('Only a font, brush or starter is removed.');
+			state = check(await storage.update(raw => { const next = check(raw); assertActive(next); const row = next.records[key];
+				if (!row || row.value === null) return next;
+				next.records[key] = {by: next.writer, n: tick(clock(next)), value: null};
+				if (!Object.values(next.records).some(other => other.value?.content === row.value.content)) delete next.blobs[row.value.content];
+				next.records = admitPersonal(next.records, {local: true}); return next; }));
+		}); },
 		snapshot() { return schedule(async () => { await read(); return {records: structuredClone(state.records), blobs: {...state.blobs}}; }); }
 	});
 }

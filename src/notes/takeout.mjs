@@ -1,7 +1,7 @@
 import {parseImportJson} from './import.mjs';
 import {orderAfter, NOTE_COLOURS, isBuiltinSectionName} from './model.mjs';
 import {resolveAssetPath, scanLinks} from './links.mjs';
-import {audioMime, appendImportedRecording, findAudioAttachment} from './audio.mjs';
+import {audioMime, createRecordingAppender, indexAudioAttachments} from './audio.mjs';
 import {importTags, literalInline, literalBlock, literalDestination, importMetadata, importTrash, importClock, importNames} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters, literalImportSource} from './import-characters.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
@@ -85,7 +85,8 @@ export function importTakeout(files, options) {
 	const existing = Array.isArray(options && options.existing) ? options.existing.filter(n => typeof n === 'string') : [];
 	const lastOrder = typeof (options && options.lastOrder) === 'string' ? options.lastOrder : '';
 	const now = importClock(options);
-	const skipped = [], built = [], pool = existing.slice(), audio = [], audioPool = [...(options?.audioExisting || [])];
+	const skipped = [], built = [], pool = existing.slice(), audio = [];
+	const appendRecording = createRecordingAppender(options?.audioExisting || []), findAudio = indexAudioAttachments(list);
 	const allocate = importNames(pool);
 	const jpegPaths = new Map(), paths = new Set(list.map(f => f.name));
 	for (const file of list) if (file.bytes && /\.jpe?g$/i.test(file.name)) {
@@ -124,10 +125,10 @@ export function importTakeout(files, options) {
 			for (const a of Array.isArray(data.attachments) ? data.attachments : []) {
 				const mime = audioMime(a?.mimetype || a?.mimeType, a?.filePath);
 				if (!mime || !a?.filePath) continue;
-				const source = findAudioAttachment(list, f, a.filePath);
+				const source = findAudio(f, a.filePath);
 				if (!source) { warnings.push({code: 'recording_missing', sourcePath: a.filePath, message: 'Recording bytes were missing or ambiguous. The original link was kept; keep the source export.'}); text += '\n[' + literalInline(a.filePath.split('/').pop()) + '](' + literalDestination(a.filePath) + ')\n'; continue; }
-				const mapped = appendImportedRecording(text, file, {...source, mime}, audioPool);
-				text = mapped.text; audio.push({...mapped.audio, sourceName: source.name}); audioPool.push(mapped.audio.name);
+				const mapped = appendRecording(text, file, {...source, mime});
+				text = mapped.text; audio.push({...mapped.audio, sourceName: source.name});
 			}
 			const reminder = keepTime(data.reminderTimeUsec, warnings, 'reminder');
 			importMetadata(data, ['title','textContent','textContentHtml','listContent','attachments','annotations','labels','color','isPinned','isArchived','isTrashed','createdTimestampUsec','userEditedTimestampUsec', ...(reminder > 0 ? ['reminderTimeUsec'] : [])], warnings, 'Keep fields');

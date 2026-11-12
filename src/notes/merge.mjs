@@ -1,3 +1,4 @@
+import {parseJSON, numberJSON, inheritJSON, inheritJSONField} from './json-custody.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {isNoteFile, isCodeFile, cleanRemind, validNoteId} from './model.mjs';
 
@@ -21,10 +22,10 @@ function ixString(value) {
 	return JSON.stringify(value);
 }
 
-function ixJSON(value, stack = new Set()) {
+function ixJSON(value, stack = new Set(), holder = null, field = '') {
 	if (value === null || typeof value === 'boolean') return JSON.stringify(value);
 	if (typeof value === 'string') return ixString(value);
-	if (typeof value === 'number') { if (!Number.isFinite(value) || Object.is(value, -0)) ixFail('non-canonical JSON number'); return JSON.stringify(value); }
+	if (typeof value === 'number') return numberJSON(value, holder, field, true);
 	if (!Array.isArray(value) && !ixRecord(value)) ixFail('non-JSON value');
 	if (stack.has(value)) ixFail('cyclic JSON value');
 	stack.add(value);
@@ -39,14 +40,14 @@ function ixJSON(value, stack = new Set()) {
 		if (keys.length !== value.length + 1) ixFail('sparse array or extra array property');
 		out = '[' + Array.from({length: value.length}, (_, i) => {
 			if (!ixOwn(value, i)) ixFail('sparse array');
-			return ixJSON(value[i], stack);
+			return ixJSON(value[i], stack, value, String(i));
 		}).join(',') + ']';
-	} else out = '{' + keys.sort().map(key => ixString(key) + ':' + ixJSON(value[key], stack)).join(',') + '}';
+	} else out = '{' + keys.sort().map(key => ixString(key) + ':' + ixJSON(value[key], stack, value, key)).join(',') + '}';
 	stack.delete(value);
 	return out;
 }
 const ixEqual = (a, b) => a === IX_MISSING || b === IX_MISSING ? a === b : ixJSON(a) === ixJSON(b);
-const ixClone = value => JSON.parse(ixJSON(value));
+const ixClone = value => parseJSON(ixJSON(value));
 const ixFile = file => isNoteFile(file) && !/[\u0000-\u001F]/.test(file);
 const ixID = validNoteId;
 
@@ -115,22 +116,33 @@ function ixDevices(context) {
 	ixString(oursId); ixString(theirsId);
 	return [oursId, theirsId];
 }
-const ixPresent = value => value === IX_MISSING ? {present: false} : {present: true, value};
-function ixConflict(context, kind, path, base, ours, theirs, extra = {}) {
+const ixPresent = (value, holder = null, key = '') => value === IX_MISSING ? {present: false} : inheritJSONField({present: true, value}, 'value', holder, key);
+function ixConflict(context, kind, path, base, ours, theirs, extra = {}, holders = [], key = '') {
 	const devices = ixDevices(context);
-	context.conflicts.push({kind, path, base: ixPresent(base), variants: [ours, theirs].map((value, i) => ({device: devices[i], ...ixPresent(value)})).sort((a, b) => ixCompare(a.device, b.device)), ...extra});
+	context.conflicts.push({kind, path, base: ixPresent(base, holders[0], key), variants: [ours, theirs].map((value, i) => {
+		const present = ixPresent(value, holders[i + 1], key); return inheritJSON({device: devices[i], ...present}, present);
+	}).sort((a, b) => ixCompare(a.device, b.device)), ...extra});
+}
+function ixFieldChoice(context, values, path, kind = 'field', holders = [], key = '') {
+	const equal = (a, b) => values[a] === IX_MISSING || values[b] === IX_MISSING ? values[a] === values[b]
+		: ixJSON(values[a], new Set(), holders[a], key) === ixJSON(values[b], new Set(), holders[b], key);
+	if (equal(1, 2)) return 1;
+	if (equal(1, 0)) return 2;
+	if (equal(2, 0)) return 1;
+	ixConflict(context, kind, path, ...values, {}, holders, key);
+	return ixDevices(context)[0] < ixDevices(context)[1] ? 1 : 2;
 }
 function ixField(context, base, ours, theirs, path, kind = 'field') {
-	if (ixEqual(ours, theirs)) return ours;
-	if (ixEqual(ours, base)) return theirs;
-	if (ixEqual(theirs, base)) return ours;
-	ixConflict(context, kind, path, base, ours, theirs);
-	return ixDevices(context)[0] < ixDevices(context)[1] ? ours : theirs;
+	const values = [base, ours, theirs]; return values[ixFieldChoice(context, values, path, kind)];
 }
 function ixFields(context, base, ours, theirs, path, excluded = []) {
 	const out = {};
 	for (const key of [...new Set([base, ours, theirs].flatMap(value => value === IX_MISSING ? [] : Object.keys(value)))].sort()) {
-		if (!excluded.includes(key)) ixPut(out, key, ixField(context, ixGet(base, key), ixGet(ours, key), ixGet(theirs, key), [...path, key]));
+		if (!excluded.includes(key)) {
+			const holders = [base, ours, theirs], values = holders.map(value => ixGet(value, key));
+			const chosen = ixFieldChoice(context, values, [...path, key], 'field', holders, key);
+			ixPut(out, key, values[chosen]); inheritJSONField(out, key, holders[chosen], key);
+		}
 	}
 	return out;
 }
@@ -160,7 +172,7 @@ function ixReminders(context, base, ours, theirs, out, path) {
 function ixChanged(context, base, side, which) {
 	if (base === IX_MISSING) return true;
 	if (base.file !== side.file) return true;
-	const omit = value => Object.fromEntries(Object.entries(value).filter(([key]) => !['id', 'revision', 'trashed', 'modified', 'created'].includes(key)));
+	const omit = value => inheritJSON(Object.fromEntries(Object.entries(value).filter(([key]) => !['id', 'revision', 'trashed', 'modified', 'created'].includes(key))), value);
 	if (!ixEqual(omit(base.entry), omit(side.entry))) return true;
 	const before = ixGet(base.entry, 'revision'), after = ixGet(side.entry, 'revision');
 	if (before !== IX_MISSING && after !== IX_MISSING && before !== after) return true;
@@ -230,7 +242,7 @@ function ixSections(context, indexes, notes) {
 		const category = entry.category, section = typeof category === 'string' ? kept.get(category.toLowerCase()) : null;
 		if (!section || section.name === category || !noteMaps.some((map, i) => map.get(entry.id)?.category === category && lists[i].some(s => s.name === category))) continue;
 		ixConflict(context, 'section-category-spelling', ['notes', entry.id, 'category'], ...noteMaps.map(map => ixGet(map.get(entry.id), 'category')), {section: section.name});
-		ixPut(notes, file, {...entry, category: section.name});
+		ixPut(notes, file, inheritJSON({...entry, category: section.name}, entry));
 	}
 	const ids = [...kept.keys()], edges = new Map(ids.map(id => [id, new Set()]));
 	for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
@@ -293,7 +305,7 @@ export function mergeIndex(base, ours, theirs, options = {}) {
 			const records = [...ixNewDeletes(base, ours, id), ...ixNewDeletes(base, theirs, id)];
 			if (ancestor !== IX_MISSING && !ixDeleteCovers(records, ancestor)) {
 				ixConflict(context, records.length ? 'delete-content-unproven' : 'missing-entry', ['notes', id], ancestor, a, b);
-				merged.push({file: ancestor.file, entry: {...ancestor.entry, trashed: false, archived: false}});
+				merged.push({file: ancestor.file, entry: inheritJSON({...ancestor.entry, trashed: false, archived: false}, ancestor.entry)});
 			}
 			continue;
 		}
@@ -303,7 +315,7 @@ export function mergeIndex(base, ours, theirs, options = {}) {
 		if (ancestor !== IX_MISSING && ixDeleteCovers(records, live) && changed === false) continue;
 		if (ancestor !== IX_MISSING || deletion) {
 			ixConflict(context, !deletion ? 'missing-entry' : changed === null ? 'delete-change-unknown' : changed ? 'delete-edit' : 'delete-content-unproven', ['notes', id], ...values);
-			merged.push({file: live.file, entry: {...live.entry, trashed: false, archived: false}});
+			merged.push({file: live.file, entry: inheritJSON({...live.entry, trashed: false, archived: false}, live.entry)});
 		} else merged.push(live);
 	}
 	out.notes = {};

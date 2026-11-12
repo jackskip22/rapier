@@ -4,7 +4,7 @@ import {openSync, closeSync, readFileSync, statSync} from 'node:fs';
 import {gzipSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
 import {resolve, dirname, join, basename} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import acorn from '../agent/vendor/acorn.mjs';
 import {unpackGroup} from './packed-group.mjs';
@@ -48,11 +48,12 @@ export function omitLoader(source, path) {
   });
   return edits(source, [one(found, 'platform entry for ' + path)]);
 }
+export const BLANK_SPAN = 'omitted.js';
 export function omitVendor(source, id) {
-  const node = one(find(source, n => n.type === 'AwaitExpression' &&
-    n.argument.callee?.name === 'packedSpans' && n.argument.arguments[0]?.name === 'id' &&
-    n.argument.arguments[1]?.value === 'text/rapier-vendor'), 'vendor packing call');
-  return edits(source, [[node.start, node.end, `id === ${JSON.stringify(id)} ? '' : ${source.slice(node.start, node.end)}`]]);
+  const node = one(find(source, n => n.type === 'CallExpression' && n.callee?.name === 'packedSpans' &&
+    n.arguments[1]?.value === 'text/rapier-vendor' && n.arguments[2]?.type === 'MemberExpression'), 'vendor packing call');
+  const spans = node.arguments[2];
+  return edits(source, [[spans.start, spans.end, `id === ${JSON.stringify(id)} ? [{name: ${JSON.stringify(BLANK_SPAN)}, source: ' '}] : ${source.slice(spans.start, spans.end)}`]]);
 }
 export function omitPdf(source) {
   const calls = [], props = [];
@@ -78,40 +79,12 @@ const styleRecords = a => {
   const rest = a.spans.has('rapier-styles-rest.json') ? JSON.parse(a.text('rapier-styles-rest.json') || '[]') : [];
   return [...paint, ...rest];
 };
-export function drawModuleEdits(source) {
-  const bundle = one(find(source, n => n.type === 'FunctionDeclaration' && n.id?.name === 'bundle'), 'bundle() declaration');
-  assert.equal(bundle.params[0]?.name, 'path', 'bundle() takes the module path');
-  const load = one(find(source, n => n.type === 'ExpressionStatement' && n.expression.type === 'AwaitExpression' &&
-    n.expression.argument.callee?.name === 'bundle' && n.expression.argument.arguments[0]?.name === 'dependency'), 'bundle(dependency) import site');
-  const assemble = one(find(source, n => n.type === 'FunctionDeclaration' && n.id?.name === 'assemble'), 'assemble() declaration');
-  const rewrites = [];
-  walk(assemble.body, n => { if (n.type === 'VariableDeclaration' && n.declarations.length === 1 && n.declarations[0].id?.name === 'fields') rewrites.push(n); });
-  const rewrite = one(rewrites, "import rewrite in assemble() (the `fields` declaration)");
-  const publish = one(find(source, n => n.type === 'ForOfStatement' && source.slice(n.right.start, n.right.end) === 'Object.values(globals)'), 'globals publication loop');
-  const notices = one(find(source, n => n.type === 'VariableDeclaration' && n.declarations.some(d => d.id?.name === 'sheetNotices')), 'sheetNotices declaration');
-  return [
-    [notices.end, notices.end, "\nfor (const path of SHEET_NOTICES.keys()) if (path.startsWith('draw/')) withoutSheetNotice(path, await read(path));"],
-    [bundle.body.start + 1, bundle.body.start + 1, "\n  if (path.startsWith('draw/')) return;"],
-    [load.start, load.start, "if (dependency.startsWith('draw/')) continue;\n    "],
-    [rewrite.start, rewrite.start, "if (dependency.startsWith('draw/')) { changes.push({start: node.start, end: node.end, text: ''}); continue; }\n      "],
-    [publish.start, publish.start, "for (const [name, path] of Object.entries(globals)) if (path.startsWith('draw/')) delete globals[name];\n"],
-  ];
-}
-export const omitDrawModules = source => edits(source, drawModuleEdits(source));
 export {edits as splice};
-export function omitDrawScripts(json) {
-  const rows = JSON.parse(json), kept = rows.filter(path => !path.startsWith('draw/'));
-  assert(kept.length < rows.length, 'editor/scripts.json names no draw/ script');
-  return JSON.stringify(kept, null, 2) + '\n';
-}
-export const FONTS_SHEET = 'shell/fonts/fonts.css';
-export function omitStyles(json) {
-  const rows = JSON.parse(json);
-  assert(rows.length > 0, 'editor/styles.json has no rows');
-  const fonts = rows.filter(row => row.path === FONTS_SHEET);
-  assert.equal(fonts.length, 1, 'expected exactly one fonts sheet row (' + FONTS_SHEET + ')');
-  assert(rows.length > 1, 'editor/styles.json has no row but the fonts sheet');
-  return JSON.stringify(fonts, null, 2) + '\n';
+export function omitStyles(source) {
+  const row = one(find(source, n => n.type === 'ObjectExpression' && n.properties.some(p => p.key?.name === 'css' && p.value.type === 'ConditionalExpression' &&
+    source.slice(p.value.test.start, p.value.test.end).includes("'rapier-font-style'"))), 'core style row');
+  const css = row.properties.find(p => p.key?.name === 'css').value;
+  return edits(source, [[css.start, css.end, "''"]]);
 }
 
 export function inspect(html, symbols = {}) {
@@ -159,16 +132,6 @@ export function modules(a) {
   assert(ids.size, 'the shared runtime defines no module factories');
   return ids;
 }
-const functions = a => once(a.spans.get('rapier-editor.js'), 'functions', () => {
-  assert(a.restored.has('rapier-editor.js'), 'the ledger needs the editor span\'s verified runtime symbol record');
-  const names = new Set();
-  walk(parse(a.restored.get('rapier-editor.js'), 'script'), node => { if (node.type === 'FunctionDeclaration') names.add(node.id.name); });
-  return names;
-});
-export function scriptFunctions(source) {
-  return parse(source, 'script').body.filter(node => node.type === 'FunctionDeclaration').map(node => node.id.name);
-}
-
 export function partition(a) {
   const fonts = fontRules(a.html), total = Buffer.byteLength(a.html);
   const ranges = [...a.elements.map(e => [e.start, e.end]), ...fonts.map(m => [m.index, m.index + m[0].length])].sort((x, y) => x[0] - y[0]);
@@ -185,47 +148,42 @@ export function partition(a) {
 }
 
 const SCRIPTS = 'editor/scripts.json', STYLES = 'editor/styles.json';
+const element = (a, id) => a.elements.find(e => e.id === id);
+const vendorCarries = id => a => !!element(a, id)?.spans.some(name => name !== BLANK_SPAN);
 export const GROUPS = [
   {id: 'jxl', name: 'JPEG XL (rapier-jxl\'s embedded worker files; rapier-jxl/codec stays)', edits: {'tools/build.mjs': omitEncoder},
-    inputs: (a, ctx) => ctx.jxlModules,
+    inputs: a => element(a, 'rapier-jxl-worker').spans.map(name => 'images/vendor/rapier-jxl/' + name),
     carries: a => a.spans.has('still.worker.mjs'),
     leaves: a => a.spans.has('codec.mjs') && !a.spans.has('still.worker.mjs')},
-  {id: 'fonts', name: 'Geist + Geist Mono (four static 400/560 faces, shared by native layout and exports)',
+  {id: 'fonts', name: 'Geist + Geist Mono export fonts (shell/fonts/docx-fonts.mjs, in the codec runtime; native layout shares them)',
     edits: {'shell/fonts/docx-fonts.mjs': () => 'export const DOCX_FONTS = Object.freeze([]);\n'},
     inputs: () => ['shell/fonts/docx-fonts.mjs'],
-    carries: a => factoryFaces(a) > 0 || fontRules(a.html).length > 0},
-  {id: 'draw', name: 'Draw + Paint (both classic scripts, every draw/ module)', edits: {'tools/build.mjs': omitDrawModules, [SCRIPTS]: omitDrawScripts},
-    inputs: (a, ctx) => [...ctx.drawScripts.filter(s => s.functions.every(f => functions(a).has(f))).map(s => s.path), ...[...modules(a)].filter(id => id.startsWith('draw/')).sort()],
-    carries: (a, ctx) => [...modules(a)].some(id => id.startsWith('draw/')) || ctx.drawScripts.some(s => s.functions.some(f => functions(a).has(f))),
-    leaves: a => a.text('rapier-ui.html').includes('perfect-freehand') && a.text('rapier-ui.html').includes('rough.js generator')},
+    carries: a => /["']?family["']?\s*:\s*["']Geist/.test(a.text('rapier-codecs.js'))},
   {id: 'plugins', name: 'Plug-in loader, maths and Mermaid manifests (not the engines it fetches)', edits: {'tools/build.mjs': s => omitLoader(s, 'shell/plugin-loader.js')},
     inputs: () => ['shell/plugin-loader.js'], carries: a => a.spans.has('rapier-plugin-loader.js')},
   {id: 'pdf', name: 'PDF plug-in + resources', edits: {'tools/build.mjs': omitPdf},
     inputs: () => ['interchange/pdf.mjs', 'interchange/pdf-resources.mjs'],
     carries: a => modules(a).has('interchange/pdf.mjs') || modules(a).has('interchange/pdf-resources.mjs')},
-  {id: 'styles', name: 'Styles (every editor/styles.json row but the fonts sheet, which is the fonts row)', edits: {[STYLES]: omitStyles},
-    inputs: (a, ctx) => styleRecords(a).map(row => one(ctx.styles.filter(s => s.id === row.id), 'style row ' + row.id).path).filter(path => path !== FONTS_SHEET),
-    carries: a => styleRecords(a).some(row => fontRules(row.css).length === 0)},
+  {id: 'styles', name: "Styles (core's rows: every editor/styles.json row no part carries; parts carry their own; the boot style stays)", edits: {'tools/build.mjs': omitStyles},
+    inputs: (a, ctx) => ctx.styles.filter(row => !ctx.partStyleIds.has(row.id) && row.id !== 'rapier-font-style').map(row => row.path),
+    carries: a => styleRecords(a).some(row => row.css.length > 0)},
   ...[
-    ['lib-markdownit', 'Markdown-it and its shipped extensions'],
+    ['lib-markdownit', 'DOMPurify, Turndown and the Markdown binding (the lib-markdownit element; markdown-it itself is in the editor runtime)'],
     ['lib-gpu-lexer', 'GPU syntax lexer'],
     ['lib-acorn', 'Acorn JavaScript parser (the browser derivation)'],
-    ['lib-dompurify', 'DOMPurify HTML sanitizer'],
-    ['lib-turndown', 'Turndown HTML-to-Markdown reader (the browser derivation)'],
   ].map(([id, name]) => ({id, name, edits: {'tools/build.mjs': source => omitVendor(source, id)},
-    inputs: (a, ctx) => ctx.vendors[id].map(name => 'shell/vendor/' + name),
-    carries: a => a.elements.some(element => element.id === id)})),
+    inputs: (a, ctx) => ctx.vendors[id === 'lib-markdownit' ? 'lib-dompurify' : id].concat(id === 'lib-markdownit' ? ctx.vendors['lib-turndown'] : []).map(name => 'shell/vendor/' + name),
+    carries: vendorCarries(id)})),
 ];
 export async function context(root) {
-  const scripts = JSON.parse(await readFile(join(root, SCRIPTS), 'utf8')).filter(path => path.startsWith('draw/'));
   const buildSource = await readFile(join(root, 'tools/build.mjs'), 'utf8');
   const vendors = one(find(buildSource, node => node.type === 'VariableDeclarator' && node.id?.name === 'VENDOR_GROUPS'), 'vendor groups').init;
   assert.equal(vendors.type, 'ObjectExpression', 'vendor groups are an explicit inventory');
-  const pin = JSON.parse(await readFile(join(root, 'images/vendor/rapier-jxl/PIN.json'), 'utf8'));
-  return {jxlModules: Object.keys(pin.files).map(name => 'images/vendor/rapier-jxl/' + name), vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
-    styles: JSON.parse(await readFile(join(root, STYLES), 'utf8')),
-    drawScripts: await Promise.all(scripts.map(async path => ({path, functions: scriptFunctions(await readFile(join(root, path), 'utf8'))})))};
+  const {PARTS} = await import(pathToFileURL(join(root, 'tools/parts.mjs')).href);
+  return {vendors: Object.fromEntries(vendors.properties.map(row => [row.key.value, row.value.elements.map(node => node.value)])),
+    styles: JSON.parse(await readFile(join(root, STYLES), 'utf8')), partStyleIds: new Set(PARTS.flatMap(part => part.styles))};
 }
+let active = GROUPS;
 export function proveOmission(group, baseline, without, ctx) {
   for (const other of GROUPS) if (other !== group && other.carries(baseline, ctx))
     assert(other.carries(without, ctx), group.id + ': the omission also took ' + other.id);
@@ -290,7 +248,7 @@ async function measureProfile(frozen, work, profile, packing, logs) {
     } finally { await rm(dir, {recursive: true, force: true}); }
   }
   const baseline = await variant('baseline'), groups = [];
-  for (const group of GROUPS) {
+  for (const group of active) {
     const row = {id: group.id, name: group.name, marginalBytes: null};
     try {
       const paths = group.carries(baseline.artifact, ctx) ? group.inputs(baseline.artifact, ctx) : [];
@@ -318,7 +276,7 @@ export async function inventories(root) {
 
 export function validate(r) {
   for (const p of r.profiles) {
-    assert.deepEqual(p.groups.map(g => g.id), GROUPS.map(g => g.id), p.profile + ': every payload, once, in order');
+    assert.deepEqual(p.groups.map(g => g.id), active.map(g => g.id), p.profile + ': every payload, once, in order');
     for (const g of p.groups) {
       if (g.blocked) { assert(g.marginalBytes === null && typeof g.blocked === 'string' && g.blocked.trim(), g.id + ': a blocked row carries its reason and no number'); continue; }
       for (const key of ['marginalBytes', 'withoutBytes', 'authoredBytes', 'ownCompressedBytes']) assert(Number.isSafeInteger(g[key]), `${p.profile}/${g.id}: ${key} must be measured`);
@@ -356,9 +314,10 @@ export function report(r) {
     '## Reading it', '',
     '- Marginals do not add up: payloads share compression with their neighbours, and the build-derived search-cache identity moves with any edit to the build inputs. A negative marginal would mean growth.',
     '- The partition does add up, and it is the only table that does. A payload that crosses parts -- Draw lives in the editor runtime and the shared runtime -- is not another part to add to them.',
-    '- The encoder omission ships the decoder worker (adapter and refusal, no encoder); the Draw build drops both classic scripts and every draw/ factory and keeps their callers, the Draw CSS and the notices; the styles build keeps the critical boot style and the fonts sheet; the PDF build drops the module and its global, not the export caller; the plug-in loader is the loader and its two manifests, not the maths and Mermaid engines fetched on demand.',
+    '- The encoder omission ships the decoder worker (adapter and refusal, no encoder); the styles build blanks core\'s style rows (the boot style stays; parts carry their own sheets); the PDF build drops the module and its global, not the export caller; the plug-in loader is the loader and its two manifests, not the maths and Mermaid engines fetched on demand.',
+    '- Draw is a fetched part, not a row: the page carries only draw/core, draw/edit and draw/font, which the kernel\'s document.draw imports, so no omission build exists for them.',
     '- A zero where a profile ships none of a payload is a measurement: that omission build is byte-identical to its baseline.',
-    '- Each vendor omission removes its packed element after the normal pinned derivation; the parser identities used by the search cache and all callers stay. The input column names the upstream files; the marginal measures the shipped derivation, not the upstream source size.',
+    '- Each vendor omission leaves its packed element holding one blank span after the normal pinned derivation; the parser identities used by the search cache and all callers stay. The input column names the upstream files; the marginal measures the shipped derivation, not the upstream source size.',
     '- The gzip -9 column concatenates the listed inputs in the listed order: a proxy, not an allocation of the file.',
     '- Prior dated receipts are in [size-ledger-history.md](size-ledger-history.md); they describe their own trees and packings.', '');
   return lines.join('\n');
@@ -371,12 +330,15 @@ export function options(args) {
     if (arg === '--ledger') continue;
     if ((m = /^--profile=(full)$/.exec(arg))) out.profiles = [m[1]];
     else if ((m = /^--packing=(release|fast)$/.exec(arg))) out.packing = m[1];
-    else throw new Error('usage: node tools/size-ledger.mjs [--profile=full] [--packing=release|fast]; not ' + JSON.stringify(arg));
+    else if ((m = /^--only=([a-z,-]+)$/.exec(arg))) out.only = m[1].split(',');
+    else throw new Error('usage: node tools/size-ledger.mjs [--profile=full] [--packing=release|fast] [--only=id,id]; not ' + JSON.stringify(arg));
   }
-  return {...out, publishes: out.packing === 'release' && out.profiles.length === 1 && out.profiles[0] === 'full'};
+  return {...out, publishes: !out.only && out.packing === 'release' && out.profiles.length === 1 && out.profiles[0] === 'full'};
 }
 export async function main(args = process.argv.slice(2)) {
-  const opts = options(args), out = join(ROOT, 'dist/size-ledger'), name = [opts.packing, ...opts.profiles].join('-');
+  const opts = options(args);
+  if (opts.only) { active = GROUPS.filter(g => opts.only.includes(g.id)); assert.equal(active.length, opts.only.length, 'unknown row in --only'); }
+  const out = join(ROOT, 'dist/size-ledger'), name = [opts.packing, ...opts.profiles].join('-');
   const logs = join(out, 'logs-' + name);
   await mkdir(logs, {recursive: true});
   const work = await mkdtemp(join(out, 'work-')), frozen = join(work, 'frozen');

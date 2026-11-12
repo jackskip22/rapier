@@ -29,6 +29,14 @@ export function windowsFailure(error, service, context = 'sign-in') {
 	return mapped;
 }
 const SCOPES = Object.freeze({drive: DRIVE_SCOPES, dropbox: DROPBOX_SCOPES, onedrive: ONEDRIVE_SCOPES});
+export function windowsProviderGate(service, bootstrap) {
+	const row = bootstrap?.providers?.[service];
+	const registered = Object.hasOwn(WINDOWS_REDIRECTS, service) && row?.registered === true && typeof row.clientId === 'string' &&
+		row.clientId.length > 0 && !/^PENDING/i.test(row.clientId) && !/[\x00-\x20\x7f]/.test(row.clientId) &&
+		row.redirectUri === WINDOWS_REDIRECTS[service] && row.scopes === SCOPES[service];
+	const ready = registered && bootstrap?.schema === 1 && bootstrap.available === true && row.qualified === true && row.available === true;
+	return Object.freeze({ready, soon: !ready, reason: ready ? '' : 'Sign in with ' + (service === 'drive' ? 'Google Drive' : PROVIDER_NAMES[service] || 'this service') + ' is coming soon.'});
+}
 const CHUNK = 128 * 1024, MAX_BYTES = 150000000, ID = /^[a-f0-9]{32}$/;
 const HEX = /^[a-f0-9]{64}$/;
 const utf8 = new TextEncoder();
@@ -181,7 +189,14 @@ export function createWindowsSignIn({call, service, clientId, custody, random, t
 	const binding = Object.freeze({service, clientId, redirectUri, scopes: SCOPES[service]});
 	let work = null, listener = null, epoch = 0, cancelWait = null;
 	const active = ticket => { if (ticket !== epoch) throw stopped(); };
-	const close = async () => { const id = listener; listener = null; if (id) await boundedClose(() => call('sync.authorize.close', {listener: id})); };
+	const close = async () => {
+		const id = listener;
+		if (id) {
+			const answer = await boundedClose(() => call('sync.authorize.close', {listener: id}));
+			if (answer?.closed !== true) refuse('response', 'the native listener cleanup was not acknowledged');
+			if (listener === id) listener = null;
+		}
+	};
 	async function capture(action, ticket, revocation = false, sourceReceipt = null) {
 		let receipt = null;
 		const issued = [], fetch = createWindowsFetch({call, service, sourceReceipt, purpose: revocation ? 'revoke' : 'access', onCredentialReceipt: value => { receipt = value; }});
@@ -197,12 +212,14 @@ export function createWindowsSignIn({call, service, clientId, custody, random, t
 			}
 		} catch (error) { failure = error; }
 		for (const {token: issuedToken, receipt: issuedReceipt} of issued) {
-			if (!HEX.test(issuedReceipt || '')) refuse('response', 'the native credential receipt was not confirmed');
-			const accepted = !failure && ticket === epoch && issuedToken === token && !revocation;
-			await custody(Object.freeze({binding, token: issuedToken, receipt: issuedReceipt, accepted}));
-			if (accepted && ticket !== epoch) await custody(Object.freeze({binding, token: issuedToken, receipt: issuedReceipt, accepted: false}));
+			try {
+				if (!HEX.test(issuedReceipt || '')) refuse('response', 'the native credential receipt was not confirmed');
+				const accepted = !failure && ticket === epoch && issuedToken === token && !revocation;
+				await custody(Object.freeze({binding, token: issuedToken, receipt: issuedReceipt, accepted}));
+				if (accepted && ticket !== epoch) await custody(Object.freeze({binding, token: issuedToken, receipt: issuedReceipt, accepted: false}));
+			} catch (error) { failure ||= error; }
 		}
-		active(ticket); if (failure) throw failure;
+		if (failure) throw failure; active(ticket);
 		return token ? Object.freeze({...token, receipt: issued.find(row => row.token === token)?.receipt}) : token;
 	}
 	function once(action) {
@@ -215,7 +232,7 @@ export function createWindowsSignIn({call, service, clientId, custody, random, t
 		begin: () => once(async ticket => {
 			const verifier = createVerifier(random), state = createVerifier(random), challenge = await challengeFor(verifier);
 			active(ticket);
-			let timer;
+			let timer, failure;
 			const expiry = new Promise((_, reject) => {
 				cancelWait = () => reject(stopped());
 				timer = setTimeout(() => { epoch++; void close().catch(() => {}); reject(fail('timeout', 'the native sign-in expired')); }, timeoutMs);
@@ -237,7 +254,8 @@ export function createWindowsSignIn({call, service, clientId, custody, random, t
 				await close(); active(ticket);
 				clearTimeout(timer); cancelWait = null;
 				return await capture(client => client.exchange({code, verifier}), ticket);
-			} finally { clearTimeout(timer); cancelWait = null; await close(); }
+			} catch (error) { failure = error; throw error; }
+			finally { clearTimeout(timer); cancelWait = null; try { await close(); } catch (error) { if (!failure) throw error; } }
 		}),
 		refresh: grant => once(ticket => { if (!HEX.test(grant?.receipt || '')) refuse('credential', 'the issued grant has no native custody receipt'); return capture(client => client.refresh({refreshToken: grant.refreshToken}), ticket, false, grant.receipt); }),
 		async cancel() { epoch++; cancelWait?.(); const running = work; let failure; try { await close(); } catch (error) { failure = error; } if (running) await running.catch(() => {}); if (failure) throw windowsFailure(failure, service); },
@@ -253,5 +271,107 @@ export function createWindowsSignIn({call, service, clientId, custody, random, t
 				active(ticket); return {revoked: true};
 			});
 		},
+	});
+}
+
+const accountOperations = new Map();
+export function createWindowsAccount({call, service, bootstrap} = {}) {
+	serviceCheck(service);
+	if (typeof call !== 'function') refuse('config', WINDOWS_MESSAGES.fault);
+	const gate = windowsProviderGate(service, bootstrap), registration = Object.freeze({...bootstrap?.providers?.[service]});
+	const held = new Map(); let pending = false, otherActive = false;
+	const ready = () => { if (!gate.ready) refuse('unavailable', gate.reason); };
+	const owner = {};
+	async function exclusive(action) {
+		ready();
+		if (accountOperations.has(service)) refuse('busy', WINDOWS_MESSAGES.busy);
+		accountOperations.set(service, owner);
+		try { return await action(); }
+		finally { if (accountOperations.get(service) === owner) accountOperations.delete(service); }
+	}
+	const seal = createWindowsCustody({call});
+	const signer = gate.ready ? createWindowsSignIn({call, service, clientId: registration.clientId, custody: async record => {
+		held.set(record.receipt, {...record.token, receipt: record.receipt, accepted: record.accepted, revoked: false});
+		return seal(record);
+	}}) : null;
+	async function inspectOwned() {
+		const rows = new Map(); let offset = 0;
+		for (;;) {
+			const page = await call('sync.credentials.list', {service, offset});
+			if (!Array.isArray(page?.records) || page.records.length > 128 || page.next !== null && (!Number.isSafeInteger(page.next) || page.next <= offset || page.next > 128))
+				refuse('device', 'the native custody page was not confirmed');
+			for (const row of page.records) {
+				if (!row || !HEX.test(row.receipt || '') || rows.has(row.receipt) || rows.size >= 128 || row.service !== service ||
+					row.clientId !== registration.clientId || row.redirectUri !== registration.redirectUri || row.scopes !== registration.scopes ||
+					!row.token || typeof row.token !== 'object' || typeof row.accepted !== 'boolean' || typeof row.revoked !== 'boolean')
+					refuse('device', 'the native custody record changed its registration');
+				rows.set(row.receipt, row);
+			}
+			if (page.next === null) break;
+			offset = page.next;
+		}
+		otherActive = [...rows.values()].some(row => row.accepted && !held.has(row.receipt));
+		for (const receipt of held.keys()) if (!rows.has(receipt)) held.delete(receipt);
+		for (const row of rows.values()) {
+			if (!held.has(row.receipt) && (row.accepted || otherActive)) continue;
+			held.set(row.receipt, {...row.token, receipt: row.receipt, accepted: row.accepted, revoked: row.revoked});
+		}
+		pending = [...held.values()].some(row => !row.accepted && !row.revoked);
+		return Object.freeze({pending, otherActive});
+	}
+	async function retireOwned() {
+		let failure;
+		try { await inspectOwned(); } catch (error) { failure = error; }
+		for (const row of held.values()) {
+			try {
+				const answer = await call('sync.credentials.forget', {service, receipt: row.receipt});
+				if (answer?.forgotten !== row.revoked || answer.retainedForRevocation !== !row.revoked) refuse('device', 'the native credential retirement was not confirmed');
+				if (row.revoked) held.delete(row.receipt); else row.accepted = false;
+			} catch (error) { failure ||= error; }
+		}
+		pending = held.size > 0 || !!failure;
+		if (failure) throw windowsFailure(failure, service);
+		return pending;
+	}
+	async function issued(action) {
+		return exclusive(async () => {
+			if (pending || otherActive) refuse('credential', 'the native sign-in still has provider access to remove');
+			try { return await action(); }
+			catch (error) { try { await retireOwned(); } catch {} throw error; }
+		});
+	}
+	return Object.freeze({gate, registration,
+		inspect: () => gate.ready ? exclusive(inspectOwned) : Promise.resolve(Object.freeze({pending: false, otherActive: false})),
+		retire: () => gate.ready ? exclusive(retireOwned) : Promise.resolve(false),
+		pending: () => pending,
+		begin: () => issued(() => signer.begin()),
+		refresh: grant => issued(() => signer.refresh(grant)),
+		fetch(grant) { ready(); if (!HEX.test(grant?.receipt || '') || !held.get(grant.receipt)?.accepted) refuse('credential', 'the file request has no active native custody receipt'); return createWindowsFetch({call, service, sourceReceipt: grant.receipt}); },
+		async cancel() { if (signer) await signer.cancel(); },
+		signOut: () => exclusive(async () => {
+			await signer.cancel(); let failure;
+			try { await retireOwned(); } catch (error) { failure = error; }
+			const hadCredentials = held.size > 0;
+			if (service === 'onedrive' && hadCredentials) {
+				pending = true; if (failure) throw failure;
+				return Object.freeze({...REVOCATION, actionRequired: true});
+			}
+			for (const receipt of [...held.keys()]) {
+				const row = held.get(receipt);
+				try { if (row && !row.revoked) { await signer.revoke(row); await inspectOwned(); } }
+				catch (error) { failure ||= error; }
+			}
+			try {
+				await inspectOwned();
+				for (const row of [...held.values()]) if (row.revoked) {
+					const answer = await call('sync.credentials.forget', {service, receipt: row.receipt});
+					if (answer?.forgotten !== true || answer.retainedForRevocation !== false) refuse('device', 'the native revocation removal was not confirmed');
+					held.delete(row.receipt);
+				}
+			} catch (error) { failure ||= error; }
+			pending = held.size > 0 || !!failure;
+			if (pending) throw windowsFailure(failure || fail('credential', 'the provider has not confirmed revocation'), service);
+			return Object.freeze({revoked: hadCredentials, ...(!hadCredentials ? {noLocalCredentials: true} : {})});
+		}),
 	});
 }

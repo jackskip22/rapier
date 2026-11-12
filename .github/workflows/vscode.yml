@@ -1,0 +1,60 @@
+# Publishes Rapier's VS Code extension (vscode/, staged by repo/vscode/stage.mjs) to the Visual Studio Marketplace and
+# Open VSX: packaged once, the same .vsix to both, only a version neither registry has. Staged as .github/workflows/vscode.yml.
+name: vscode
+on:
+  push:
+    branches: [main]
+    paths: [vscode/**]
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: vscode
+  cancel-in-progress: false
+jobs:
+  vscode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: package the extension once; both registries get this file
+        id: vsix
+        run: |
+          set -eu
+          # The page is the release's own, at the root of this repository.
+          cp rapier.html vscode/dist/rapier.html
+          cd vscode
+          id=$(node -p "require('./package.json').publisher + '.' + require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          npx --yes @vscode/vsce@4.1.0 package --no-dependencies --out "$RUNNER_TEMP/extension.vsix"
+          known=$(npx --yes @vscode/vsce@4.1.0 show "$id" --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).versions.map(v=>v.version).join("\n"))}catch{}})' || true)
+          if printf '%s\n' "$known" | grep -qxF "$version"; then new=false; else new=true; fi
+          { echo "id=$id"; echo "version=$version"; echo "marketplace=$new"; echo "vsix=$RUNNER_TEMP/extension.vsix"; } >> "$GITHUB_OUTPUT"
+      - name: publish to the Visual Studio Marketplace unless it has this version (trusted publishing through OIDC; no token)
+        run: |
+          set -eu
+          if [ "${{ steps.vsix.outputs.marketplace }}" != "true" ]; then
+            echo "${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }} is already on the Marketplace" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          npx --yes @vscode/vsce@4.1.0 publish --oidc --no-dependencies --packagePath "${{ steps.vsix.outputs.vsix }}"
+          echo "published ${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }} to the Marketplace" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: publish the same file to Open VSX (a token for the first publish, trusted publishing after it)
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -u
+          id=${{ steps.vsix.outputs.id }}; namespace=${id%%.*}; name=${id#*.}
+          if [ "$(curl -s -o /dev/null -w '%{http_code}' "https://open-vsx.org/api/$namespace/$name/${{ steps.vsix.outputs.version }}")" = 200 ]; then
+            echo "$id@${{ steps.vsix.outputs.version }} is already on Open VSX" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          if [ -n "${OVSX_PAT:-}" ]; then
+            set -e
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' "https://open-vsx.org/api/$namespace")" != 200 ]; then npx --yes ovsx@1.4.0 create-namespace "$namespace" -p "$OVSX_PAT"; fi
+            npx --yes ovsx@1.4.0 publish "${{ steps.vsix.outputs.vsix }}" -p "$OVSX_PAT"
+          elif ! npx --yes ovsx@1.4.0 publish "${{ steps.vsix.outputs.vsix }}" --trusted-publishing; then
+            echo "Open VSX did not take $id@${{ steps.vsix.outputs.version }}: no OVSX_PAT, and no trusted publisher for it yet. Skipped." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          echo "published $id@${{ steps.vsix.outputs.version }} to Open VSX" | tee -a "$GITHUB_STEP_SUMMARY"

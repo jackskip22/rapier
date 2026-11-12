@@ -347,6 +347,6 @@ export function createWorkspaceNotes({url = globalThis.location?.href, fetch: se
 			try { return await run(); } finally { lease.restoreReads = previous; }
 		},
 		async prepare() { if (!prepared) { await statAll('', true); prepared = true; } return true; },
-		get writable() { return true; }, durable: true, ascii: false, streamingAttachments: true};
+		get writable() { return true; }, durable: true, ascii: false, streamingAttachments: true, exactRestoreReplace: false};
 	return {store, locks, channel, scope: 'notes', getUsageSnapshot, setUsageOwner};
 }

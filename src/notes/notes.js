@@ -49,38 +49,45 @@ function _rapierNotesRemember() {
 	return Object.freeze({snapshot, history,
 		view: _rapierCaptureViewContinuity(), bom: rapier.document.bom === true});
 }
-function _rapierNotesDepartureState() {
-	const state = _rapierNotes, store = _rapierNotesStore;
-	const attachment = typeof _rapierAttachmentsState === 'function' ? _rapierAttachmentsState() : null;
-	const recorder = typeof _rapierRecorder === 'undefined' ? null : _rapierRecorder;
-	const syncBusy = typeof _rapierNotesSyncUi !== 'undefined' && !!_rapierNotesSyncUi.status().busy;
-	return Object.freeze({state, folder: store.folder, bytes: store.bytes, index: state.index, mode: state.mode,
-		current: state.current, proof: state.currentProof, capturing: state.capturing, importFaults: state.importFaults,
-		attachment, recorder: !!(recorder?.draft || recorder?.transcript || recorder?.speech), syncBusy,
-		pending: !!attachment?.pending, refused: !!attachment?.refused});
+function _rapierNotesWritePending() {
+	const state = _rapierNotes, store = _rapierNotesStore, attachment = _rapierAttachmentsState(), recorder = _rapierRecorder;
+	const recording = !!(recorder.draft || recorder.transcript || recorder.speech);
+	const syncBusy = !!_rapierNotesSyncUi.status().busy;
+	const refused = attachment.refused > 0, attachmentPending = attachment.pending > 0;
+	const folderPending = store.chains.size > 0 || store.folder?.pending > 0;
+	const taskPending = !!(state.saveTask || state.inputSaveTask || state.inputSaveWanted || state.orderOperation || state.renaming || state.savingText != null);
+	const capturePending = typeof state.capturing?.then === 'function';
+	let noteDirty = false;
+	if (state.current && _rapierNotesDocumentBound()) {
+		const proof = state.currentProof, saved = state.savedReceipt;
+		noteDirty = !!state.saveFailed || !saved || saved.proof !== proof || state.savedGen !== saved.generation ||
+			!saved.stamp || !_rapierMutationStampIsCurrent(saved.stamp) || _rapierSourceText() !== proof?.text;
+	}
+	return {recording, syncBusy, refused, importFaults: state.importFaults,
+		pending: attachmentPending || folderPending || taskPending || capturePending, noteDirty,
+		capturing: capturePending ? state.capturing : null};
 }
 function _rapierNotesDepartureCurrent(receipt) {
-	if (!receipt) return false;
-	const now = _rapierNotesDepartureState();
-	return !now.pending && !now.refused && !now.recorder && !now.syncBusy &&
-		['state', 'folder', 'bytes', 'index', 'mode', 'current', 'proof', 'capturing', 'importFaults'].every(key => now[key] === receipt[key]) &&
-		now.attachment?.intake === receipt.attachment?.intake;
+	if (!receipt || receipt.importFaults !== _rapierNotes.importFaults) return false;
+	const now = _rapierNotesWritePending();
+	return !now.pending && !now.noteDirty && !now.refused && !now.recording && !now.syncBusy;
+}
+function _rapierNotesDepartureBusy(code) {
+	return Object.assign(new Error('Some changes aren’t saved. Keep this page open.'), {code});
 }
 async function _rapierNotesSettleDeparture() {
-	for (;;) {
-		const before = _rapierNotesDepartureState();
-		if (before.recorder || before.syncBusy)
-			throw Object.assign(new Error('Some changes aren’t saved. Keep this page open.'), {code: 'notes_departure_busy'});
-		await before.capturing;
-		if (_rapierNotes.importFaults !== before.importFaults)
-			throw Object.assign(new Error('Some changes aren’t saved. Keep this page open.'), {code: 'notes_departure_failed'});
-		if (typeof _rapierAttachmentsSettle === 'function') await _rapierAttachmentsSettle();
-		await _rapierNotesFlush();
-		const receipt = _rapierNotesDepartureState();
-		if (receipt.refused || receipt.recorder || receipt.syncBusy)
-			throw Object.assign(new Error('Some changes aren’t saved. Keep this page open.'), {code: 'notes_departure_busy'});
-		if (before.capturing === receipt.capturing && before.importFaults === receipt.importFaults && !receipt.pending) return receipt;
-	}
+	const state = _rapierNotes, faults = state.importFaults;
+	const busy = () => { const now = _rapierNotesWritePending(); if (now.recording || now.syncBusy) throw _rapierNotesDepartureBusy('notes_departure_busy'); if (now.refused || state.importFaults !== faults) throw _rapierNotesDepartureBusy('notes_departure_failed'); return now; };
+	let now = busy();
+	if (now.capturing) await now.capturing;
+	busy();
+	await _rapierAttachmentsSettle();
+	busy();
+	await _rapierNotesFlush();
+	now = busy();
+	const follow = state.saveTask || state.inputSaveTask || state.orderOperation?.task || state.renaming || now.capturing;
+	if (follow) { await follow; busy(); await _rapierNotesFlush(); busy(); }
+	return Object.freeze({importFaults: state.importFaults});
 }
 function _rapierNotesBesideLeave() {
 	const state = _rapierNotes, R = _rapierRecorder;
@@ -328,6 +335,75 @@ const _rapierNotesPending = {
 		if (typeof out?.head?.sha256 === 'string') this.lastDigest = {text, digest: out.head.sha256};
 		return out;
 	},
+	quota(error) {
+		const name = String(error?.name || '');
+		return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || error?.code === 22 || error?.code === 1014;
+	},
+	put(key, serial) {
+		const storage = _rapierNotesDraftStorage();
+		if (storage.getItem(key) !== serial) storage.setItem(key, serial);
+	},
+	departureHistory(canonical, text, id) {
+		if (!canonical || canonical.unverified || typeof canonical.text !== 'string' || !canonical.ledger?.records || !canonical.ledger.start) return null;
+		const H = globalThis.RapierNotesHistory;
+		let ledger = canonical.ledger;
+		if (canonical.text !== text) {
+			const start = H.parseManifest(null, {noteId: id, now: Date.now()});
+			const carried = H.adoptCanonical(start, ledger, canonical.text);
+			ledger = H.appendCanonical(carried.manifest, {text, author: {kind: 'human', id: _rapierNotesStore.folder?.deviceId || 'notes-local'}, now: Date.now()}).ledger;
+		}
+		return {...ledger, start: {...ledger.start, text: ''}};
+	},
+	packPaste(paste, text) {
+		const model = paste?.model;
+		if (!model || !Array.isArray(model.blocks)) return paste;
+		const front = String(model.frontmatter ?? ''), prefix = String(model.markdownPrefix ?? ''), tail = String(model.markdownTail ?? '');
+		let body = prefix;
+		const blocks = [];
+		for (let i = 0; i < model.blocks.length; i++) {
+			const row = model.blocks[i];
+			if (!row || typeof row.raw !== 'string') return paste;
+			if (i > 0) body += typeof row.leading === 'string' ? row.leading : '\n\n';
+			body += row.raw;
+			const {raw, ...rest} = row;
+			blocks.push({...rest, rawLength: raw.length});
+		}
+		if (front + body + tail !== text) return paste;
+		let context = paste.context;
+		if (context && Number.isSafeInteger(context.startIndex) && Number.isSafeInteger(context.replaceCount)) {
+			const start = model.blocks[context.startIndex], end = model.blocks[context.startIndex + context.replaceCount - 1];
+			if (start && end && typeof context.prefixRaw === 'string' && typeof context.suffixRaw === 'string' && start.raw.startsWith(context.prefixRaw) && end.raw.endsWith(context.suffixRaw)) {
+				const {prefixRaw, suffixRaw, ...kept} = context;
+				context = {...kept, prefixLength: prefixRaw.length, suffixLength: suffixRaw.length};
+			}
+		}
+		return {...paste, model: {...model, blocks}, ...(context ? {context} : {})};
+	},
+	unpackPaste(paste, text) {
+		const model = paste?.model;
+		if (!model?.blocks?.some(row => row && Object.hasOwn(row, 'rawLength'))) return paste;
+		const front = String(model.frontmatter ?? '');
+		if (typeof text !== 'string' || !text.startsWith(front)) throw new Error('The composing note has no complete source context.');
+		let at = front.length + String(model.markdownPrefix ?? '').length;
+		const blocks = model.blocks.map((row, i) => {
+			if (i > 0) at += typeof row.leading === 'string' ? row.leading.length : 2;
+			const raw = text.slice(at, at + row.rawLength);
+			if (raw.length !== row.rawLength) throw new Error('The composing note has no complete source context.');
+			at += row.rawLength;
+			const {rawLength, ...rest} = row;
+			return {...rest, raw};
+		});
+		at += String(model.markdownTail ?? '').length;
+		if (at !== text.length) throw new Error('The composing note has no complete source context.');
+		let context = paste.context;
+		if (context && Object.hasOwn(context, 'prefixLength')) {
+			const start = blocks[context.startIndex], end = blocks[context.startIndex + context.replaceCount - 1];
+			if (!start || !end) throw new Error('The composing note has no complete source context.');
+			const {prefixLength, suffixLength, ...kept} = context;
+			context = {...kept, prefixRaw: start.raw.slice(0, prefixLength), suffixRaw: end.raw.slice(end.raw.length - suffixLength)};
+		}
+		return {...paste, model: {...model, blocks}, context};
+	},
 	retain(proof, stamp, text, settled = false, paste = null, canonical = undefined) {
 		if (!proof?.id) return false;
 		const state = _rapierNotes, kind = this.kind(), file = proof.file || state.current;
@@ -335,7 +411,6 @@ const _rapierNotesPending = {
 		try {
 			if (this.retired.has(proof.id) && (state.currentProof !== proof || !_rapierNotesDocumentBound() ||
 				!_rapierMutationStampSharesDocument(stamp))) throw new Error('This note was locked. Unlock it with your phone.');
-			const digest = !paste && this.known(proof, stamp, text) || this.digest(paste ? JSON.stringify({text, paste}) : text);
 			const token = proof.id + ':' + stamp.documentEpoch, prior = this.held.get(token), key = prior?.key || this.prefix + crypto.randomUUID();
 			if (prior?.retired) throw new Error('This note was locked. Unlock it with your phone.');
 			if (canonical === undefined) {
@@ -343,6 +418,8 @@ const _rapierNotesPending = {
 				catch (_) { canonical = null; }
 			}
 			if (!canonical && prior?.canonical) canonical = {...prior.canonical, unverified: true};
+			const storedPaste = paste ? this.packPaste(paste, text) : null;
+			const digest = !storedPaste && this.known(proof, stamp, text) || this.digest(storedPaste ? JSON.stringify({text, paste: storedPaste}) : text);
 			const expectedLedger = [...new Set([proof.ledger, state.attemptedLedger.get(file), state.savingLedger, canonical?.ledger.sha256].filter(value => typeof value === 'string'))];
 			const historySaved = !canonical?.unverified && canonical?.text === text && canonical.ledger.sha256 === proof.ledger;
 			if (!paste && state.savingText === text) state.savingDigest = digest;
@@ -352,12 +429,23 @@ const _rapierNotesPending = {
 				...(state.savingText == null ? [] : [state.savingDigest || this.digest(state.savingText)])].filter(value => typeof value === 'string'))];
 			if (digest === proof.digest && historySaved && expectedDigest.every(value => value === digest) && !prior) return true;
 			if (!this.live) throw new Error('This page could not claim its unfinished note.');
-			const same = prior && prior.digest === digest && prior.text === text && prior.paste === paste && prior.canonical?.ledger.sha256 === canonical?.ledger.sha256 && prior.canonical?.text === canonical?.text && prior.canonical?.unverified === canonical?.unverified && JSON.stringify(prior.expectedLedger) === JSON.stringify(expectedLedger) && prior.store === kind &&
+			const history = this.departureHistory(canonical, text, proof.id);
+			const record = {version: 1, store: kind, owner: this.live.id, file, id: proof.id, documentAuthority: stamp.documentAuthority, expectedDigest, digest, text};
+			if (history) { record.history = history; record.expectedLedger = expectedLedger; }
+			if (storedPaste) record.paste = storedPaste;
+			const same = !prior?.short && prior && prior.digest === digest && prior.text === text && prior.paste === paste && prior.canonical?.ledger.sha256 === canonical?.ledger.sha256 && prior.canonical?.text === canonical?.text && prior.canonical?.unverified === canonical?.unverified && JSON.stringify(prior.expectedLedger) === JSON.stringify(expectedLedger) && prior.store === kind &&
 				prior.owner === this.live.id && prior.file === file && prior.expectedDigest.length === expectedDigest.length &&
 				prior.expectedDigest.every((value, i) => value === expectedDigest[i]);
-			const serial = same ? prior.serial : JSON.stringify({version: 1, store: kind, owner: this.live.id, file, id: proof.id, documentAuthority: stamp.documentAuthority, expectedDigest, expectedLedger, canonical, text, digest, ...(paste ? {paste} : {})});
-			if (_rapierNotesDraftStorage().getItem(key) !== serial) _rapierNotesDraftStorage().setItem(key, serial);
-			this.held.set(token, {key, serial, id: proof.id, stamp, digest, text, paste, canonical, expectedLedger, store: kind, owner: this.live.id, file, expectedDigest});
+			let serial = same ? prior.serial : JSON.stringify(record), shortened = false;
+			try { this.put(key, serial); }
+			catch (error) {
+				if (!this.quota(error) || same || storedPaste || !history) throw error;
+				const words = JSON.stringify({version: 1, store: kind, owner: this.live.id, file, id: proof.id, documentAuthority: stamp.documentAuthority, expectedDigest, text, digest: this.digest(text)});
+				try { this.put(key, words); serial = words; shortened = true; }
+				catch (again) { if (this.quota(again)) throw error; throw again; }
+			}
+			if (shortened && prior?.serial !== serial) showToast('Note history didn’t fit; words are kept. Keep this page open.', 'error', {outlive: 'save-failed'});
+			this.held.set(token, {key, serial, id: proof.id, stamp, digest, text, paste, canonical, expectedLedger, store: kind, owner: this.live.id, file, expectedDigest, short: shortened || !!(same && prior.short)});
 			if (digest === proof.digest && historySaved && expectedDigest.every(value => value === digest)) this.forget(proof, stamp, digest, proof.ledger);
 			return true;
 		} catch (error) {
@@ -379,6 +467,7 @@ const _rapierNotesPending = {
 		}
 	},
 	async resolve(record) {
+		if (record?.paste) record.paste = this.unpackPaste(record.paste, record.text);
 		if (!record.paste) return record.text;
 		const {model, context, content, route, text} = record.paste;
 		if (!model || !Array.isArray(model.blocks) || model.blocks.some(row => !Number.isSafeInteger(row?.id) || typeof row.raw !== 'string' || row.leading != null && typeof row.leading !== 'string') ||
@@ -417,17 +506,26 @@ const _rapierNotesPending = {
 					const serial = _rapierNotesDraftStorage().getItem(key); if (serial == null) continue;
 					const record = JSON.parse(serial);
 					if (record?.store !== kind) continue;
-					if (record.version !== 1 || !_rapierNotesModel().isNoteFile(record.file) || typeof record.id !== 'string' || !record.id ||
+					if (Object.hasOwn(record, 'canonical') || record.version !== 1 || !_rapierNotesModel().isNoteFile(record.file) || typeof record.id !== 'string' || !record.id ||
 						typeof record.text !== 'string' || !/^[a-f0-9]{64}$/.test(record.digest) || !Array.isArray(record.expectedDigest) ||
 						!record.expectedDigest.length || record.expectedDigest.some(value => !/^[a-f0-9]{64}$/.test(value)) ||
 						await globalThis.RapierNotesIntegrity.sha256(record.paste ? JSON.stringify({text: record.text, paste: record.paste}) : record.text) !== record.digest) throw new Error('The unfinished note has no complete byte proof.');
 					const recover = async () => {
 						if (_rapierNotesDraftStorage().getItem(key) !== serial) return;
 						const text = await this.resolve(record);
-						const ledger = this.ledger(record, text);
-						if (!Array.isArray(record.expectedLedger) || !record.expectedLedger.length || record.expectedLedger.some(value => !/^[a-f0-9]{64}$/.test(value)) ||
-							typeof record.documentAuthority !== 'string' || record.documentAuthority !== ledger.documentAuthority) throw new Error('The unfinished note has no complete history admission proof.');
-						const saved = await _rapierNotesStore.folder.save({...record, text, ledger});
+						const save = {file: record.file, id: record.id, expectedDigest: record.expectedDigest, text};
+						if (record.history) {
+							const H = globalThis.RapierNotesHistory;
+							let ledger = H.restoreDepartureLedger(record.history, record.text);
+							if (text !== record.text) {
+								const carried = H.adoptCanonical(H.parseManifest(null, {noteId: record.id, now: Date.now()}), ledger, record.text);
+								ledger = H.appendCanonical(carried.manifest, {text, author: {kind: 'human', id: _rapierNotesStore.folder?.deviceId || 'notes-local'}, now: Date.now()}).ledger;
+							}
+							if (!Array.isArray(record.expectedLedger) || !record.expectedLedger.length || record.expectedLedger.some(value => !/^[a-f0-9]{64}$/.test(value)) ||
+								typeof record.documentAuthority !== 'string' || record.documentAuthority !== ledger.documentAuthority) throw new Error('The unfinished note has no complete history admission proof.');
+							save.expectedLedger = record.expectedLedger; save.ledger = ledger;
+						}
+						const saved = await _rapierNotesStore.folder.save(save);
 						changed = true;
 						if (_rapierNotesDraftStorage().getItem(key) === serial) _rapierNotesDraftStorage().removeItem(key);
 						if (saved.copied) showToast('Note changed elsewhere. Yours saved as ' + saved.file, 'info');
@@ -1008,27 +1106,54 @@ async function _rapierNotesLoad() {
 	_rapierNotesReadsReset();
 	state.cachePlan = null;
 	state.searchCache?.close(); state.searchCache = null;
-	const cache = await _rapierNotesOpenSearchCache();
-	if (state.loadRequest !== request) { cache?.close(); return; }
-	state.searchCache = cache;
-	if (cache) {
-		try {
-			const folder = [...stamps].map(([file, row]) => ({file, size: row.size, modified: row.modified,
-				...(index.notes[file]?.canonicalHistory ? {contentId: index.notes[file].revision} : {})}));
-			const plan = await cache.plan(folder);
-			if (state.loadRequest !== request) return;
-			state.cachePlan = plan;
-		} catch (_) { state.cachePlan = null; }
-	}
-	for (const row of state.cachePlan?.reuse || []) if (typeof row.projection?.title === 'string') state.titles.set(row.file, row.projection.title);
 	if (state.current && index.notes[state.current]) await _rapierNotesTexts([state.current]);
 	if (state.loadRequest !== request) return;
+	const cacheIndex = state.index, cacheTexts = state.texts, cacheGeneration = state.loadGen;
+	const cacheCurrent = () => state.loadRequest === request && state.texts === cacheTexts && state.loadGen === cacheGeneration;
+	const yieldTurn = () => new Promise(resolve => setTimeout(resolve, 0));
+	const afterPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+	const cardsBusy = () => cacheCurrent() && state.open && state.reads?.deriving?.size > 0;
+	const inputBusy = () => cacheCurrent() && _rapierNotesBackgroundBlocked();
+	const waitQuiet = async () => {
+		if (!cacheCurrent() || !state.open) return;
+		for (;;) {
+			while (cardsBusy() || inputBusy()) await yieldTurn();
+			if (!cacheCurrent()) return;
+			await afterPaint();
+			if (!cardsBusy() && !inputBusy()) return;
+		}
+	};
 	state.indexing = async () => {
-		if (state.loadRequest !== request) return;
+		if (!cacheCurrent()) return;
 		state.indexing = null;
 		state.reading = {total: state.sizes.size, done: 0, complete: false};
-		if (typeof _rapierNotesLibraryBegin === 'function' && await _rapierNotesLibraryBegin() === false) return;
-		if (state.loadRequest !== request) return;
+		await waitQuiet();
+		if (!cacheCurrent()) return;
+		const cache = await _rapierNotesOpenSearchCache();
+		if (!cacheCurrent()) { cache?.close(); return; }
+		state.searchCache = cache;
+		if (cache) {
+			try {
+				const folder = [...stamps].map(([file, row]) => ({file, size: row.size, modified: row.modified,
+					...(cacheIndex.notes[file]?.canonicalHistory ? {contentId: cacheIndex.notes[file].revision} : {})}));
+				const plan = await cache.plan(folder);
+				if (!cacheCurrent()) return;
+				state.cachePlan = plan;
+				const reuse = plan?.reuse || [], titles = state.titles;
+				let added = 0;
+				for (let i = 0; i < reuse.length; i++) {
+					if (!cacheCurrent() || state.titles !== titles) return;
+					if (cardsBusy() || inputBusy()) { await waitQuiet(); if (!cacheCurrent() || state.titles !== titles) return; }
+					const row = reuse[i];
+					if (row && typeof row.projection?.title === 'string' && !titles.has(row.file)) { titles.set(row.file, row.projection.title); added++; }
+					if (reuse.length > 200 && (i + 1) % 32 === 0) await yieldTurn();
+				}
+				if (added && state.open) _rapierNotesRender();
+			} catch (_) { if (cacheCurrent()) state.cachePlan = null; }
+		}
+		if (!cacheCurrent()) return;
+		if (await _rapierNotesLibraryBegin() === false) return;
+		if (!cacheCurrent()) return;
 		return _rapierNotesReadRest();
 	};
 	if (damaged) showToast('Note list rebuilt. Pins, colors and sections were reset.', 'error', null, damaged);
@@ -4725,7 +4850,7 @@ async function _rapierNotesClearLockProjections(file, id, digest, ledger) {
 			const text = await pending.resolve(opening ? draft.delivered : draft);
 			if (typeof text !== 'string' || pending.digest(text) !== digest)
 				throw new Error('The unfinished words are not in the saved note. They were kept for retry.');
-			if (!opening && (!ledger || draft.canonical?.unverified || draft.canonical?.text !== text || draft.canonical?.ledger?.sha256 !== ledger))
+			if (!opening && (Object.hasOwn(draft, 'canonical') || !ledger || draft.history?.sha256 !== ledger || draft.history?.start?.text !== '' || draft.text !== text))
 				throw new Error('The unfinished history has not been saved. It was kept for retry.');
 		}
 		for (const name of await store.bytes.list('thumbs')) await store.bytes.remove('thumbs/' + name);
@@ -5722,10 +5847,12 @@ async function _rapierNotesImportPick(source) {
 }
 function _rapierNotesImportQueued(files, source) {
 	const state = _rapierNotes;
-	state.capturing = (state.capturing || Promise.resolve()).then(async () => {
+	const queued = (state.capturing || Promise.resolve()).then(async () => {
 		const popup = _rapierProgressOpen({label: source === 'restore' ? 'Restoring notes' : 'Importing notes', after: 500});
 		try { await _rapierNotesImportFiles(files, source); } finally { popup.end(); }
 	}).catch(error => { state.importFaults++; console.warn('[rapier] notes import', error); showToast('Import didn’t finish. Keep your export.', 'error'); });
+	state.capturing = queued;
+	void queued.finally(() => { if (state.capturing === queued) state.capturing = null; });
 }
 function _rapierNotesEmptyLibraryDrop(event) {
 	const state = _rapierNotes;
@@ -8461,7 +8588,7 @@ globalThis.RapierSiblingPictures = Object.freeze({
 _rapierNotesPart = Object.freeze({
 	presetCaptureAllowed: () => !_rapierNotesHostLocked() && globalThis.RapierPlatform?.host?.lockedNotes !== true,
 	state: _rapierNotes, pending: _rapierNotesPending, admitInverse: _rapierNotesAdmitInverse, store: _rapierNotesStore, fields: _rapierNotesFields,
-	departureState: _rapierNotesDepartureState, settleDeparture: _rapierNotesSettleDeparture, departureCurrent: _rapierNotesDepartureCurrent,
+	settleDeparture: _rapierNotesSettleDeparture, departureCurrent: _rapierNotesDepartureCurrent,
 	search: globalThis.RapierNotesSearch, syncSession: globalThis.RapierNotesSyncSession, get sync() { return _rapierNotesSyncUi; },
 	open: _rapierNotesOpen, openNote: _rapierNotesOpenNote, leaveNote: _rapierNotesLeaveNote, editor: _rapierNotesEditor, documentBound: _rapierNotesDocumentBound,
 	currentFile: _rapierNotesCurrentFile, flush: _rapierNotesFlush, back: _rapierNotesHandleBack, backOver: _rapierNotesBackOver, unlock: _rapierNotesUnlock,

@@ -1,0 +1,10 @@
+{
+  "name": "rapier",
+  "version": "1.2.63",
+  "description": "Markdown editor for notes, diagrams, drawing and painting with your AI, and a JPEG XL converter.",
+  "mcpServers": {
+    "rapier": {
+      "httpUrl": "https://mcp.rapier.website/door/mcp"
+    }
+  }
+}

@@ -425,7 +425,8 @@ function RAPIER_RECOVERY_SCOPE() {
 		return RAPIER_STORAGE_SCOPE + carried + tab;
 	} catch (_) { return RAPIER_STORAGE_SCOPE + carried; }
 }
-const RAPIER_STORAGE_FORBIDDEN = (function () { try { void window.localStorage; return false; } catch (error) { return !!error && error.name === 'SecurityError'; } })();
+const RAPIER_STORAGE_FORBIDDEN = globalThis.RapierBenchSession?.active === true ? false :
+	(function () { try { void window.localStorage; return false; } catch (error) { return !!error && error.name === 'SecurityError'; } })();
 const RapierStorage = Object.freeze({
 	scope: RAPIER_STORAGE_SCOPE,
 	get recoveryScope() { return RAPIER_RECOVERY_SCOPE(); },

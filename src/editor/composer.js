@@ -16,13 +16,6 @@ function _rapierComposerHex(color) {
 	context.fillStyle = color || '#121212';
 	return /^#[0-9a-f]{6}$/.test(context.fillStyle) ? context.fillStyle : '#121212';
 }
-function _rapierComposerPicture(svg, label) {
-	const image = _rapierComposerEl('img', 'rapier-composer__picture');
-	image.alt = label || '';
-	image.draggable = false;
-	image.src = 'data:image/svg+xml;base64,' + btoa(svg);
-	return image;
-}
 function _rapierComposerOpen(title, fill, onClose) {
 	const overlay = _rapierComposerEl('div', 'link-dialog__overlay');
 	overlay.id = 'rapier-composer';
@@ -43,7 +36,7 @@ function _rapierComposerOpen(title, fill, onClose) {
 	return state;
 }
 
-const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.62/';
+const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.63/';
 const _rapierOrnamentDoor = {providers: new Map(), allowed: new Set(), held: new Map(), bringing: new Map(), hubs: new Map(), plugins: new Map()};
 const RAPIER_ORNAMENT_FORMAT = 1;
 const _RAPIER_ORNAMENT_KINDS = Object.freeze({

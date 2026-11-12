@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {noteFileName} from './model.mjs';
+import {inheritJSON, inheritJSONField} from './json-custody.mjs';
 
 const encoder = new TextEncoder();
 const unitEscape = c => '\\u' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0');
@@ -100,6 +101,7 @@ function repairTree(value, repairs, label) {
         else { v = Array.isArray(item) ? [] : {}; seen.set(item, v); queue.push([item, v, at]); }
       }
       Object.defineProperty(into, name, {value: v, enumerable: true, writable: true, configurable: true});
+      inheritJSONField(into, name, from, key);
     }
   }
   return copy;
@@ -107,6 +109,7 @@ function repairTree(value, repairs, label) {
 
 export function finishImportCharacters(result) {
   const {notes, ...rest} = result, repairs = [];
+  inheritJSON(rest, result);
   const out = repairTree(rest, repairs, 'import');
   if (repairs.length) out.warnings = [...(out.warnings || []), ...repairs];
   if (!Array.isArray(notes)) return out;

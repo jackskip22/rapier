@@ -80,7 +80,7 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 	const describe = (record, index) => {
 		const {id, marker, bytes, proof} = record;
 		const inspected = marker && bytes ? inspectRecording(bytes, marker.mime) : {duration: null, completeBytes: 0};
-		return {id, note: noteFor(marker, index), originalNote: marker?.note ?? null, noteId: marker?.noteId ?? null,
+		return {id, stampId: marker?.id ?? null, note: noteFor(marker, index), originalNote: marker?.note ?? null, noteId: marker?.noteId ?? null,
 			mime: marker?.mime ?? null, name: marker?.name ?? null, size: record.error ? null : bytes?.length ?? 0,
 			completion: marker?.stopped === true ? 'recorder-stopped' : 'interrupted',
 			duration: marker?.state === 'finished' ? marker.duration : inspected.duration, completeBytes: inspected.completeBytes, durationResolution: inspected.resolution ?? null,
@@ -132,6 +132,7 @@ export function createRecordings({store, owned, underLease, locks, scope, shared
 		const current = async () => { const r = await load(id); if (r.error) throw r.error; if (!r.marker) throw fail('recording-marker', 'The recording changed; nothing was lost.'); return r; };
 		return {
 			id,
+			stampId: initial.marker?.id ?? null,
 			append(value) {
 				try { guard(); if (!accepting) throw fail('recording-ended', 'A recovered or stopped recording cannot accept new microphone chunks.'); }
 				catch (e) { return Promise.reject(e); }

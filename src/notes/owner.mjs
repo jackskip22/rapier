@@ -1,3 +1,4 @@
+import {parseJSON, stringifyJSON, cloneJSON, equalJSON, equalJSONFields, inheritJSON, inheritJSONField} from './json-custody.mjs';
 import {createDeleteIntent, deleteIdleScratch, isDeletePrivateName, deleteFrameName, DELETE_RESERVE_FILE} from './delete-intent.mjs';
 import {recoverPressureTrash, admitPressureTrash, deletionFailure} from './trash.mjs';
 import {isImportReceiptFile, readImportReceiptFile, assertImportReferences} from './import-storage.mjs';
@@ -7,8 +8,8 @@ import {exactBytes, sha256, sha256State, sha256Yielding, storedFileDigest} from 
 import {manifestName, createHistoryPreparation, resolveHistoryPreparation} from './history.mjs';
 import {notesHostWords} from './host-words.mjs';
 
-const decode = value => new TextDecoder('utf-8', {fatal: true, ignoreBOM: false}).decode(exactBytes(value));
-const copy = value => JSON.parse(JSON.stringify(value));
+const decode = value => new TextDecoder('utf-8', {fatal: true, ignoreBOM: false}).decode(value);
+const copy = cloneJSON;
 export const OWNER_JOURNAL_FILE = '.rapier-owner.json';
 const syncStateFile = file => file === '.rapier-sync.json';
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
@@ -56,8 +57,8 @@ function fileName(file, snapshot = false) {
 	return file;
 }
 const jsonObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const jsonSame = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const canonicalJSON = value => JSON.stringify(value, (_key, row) => jsonObject(row) ? Object.fromEntries(Object.entries(row).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : row);
+const jsonSame = equalJSON;
+const canonicalJSON = value => stringifyJSON(value, 0, true);
 const setOwn = (object, key, value) => Object.defineProperty(object, key, {value, enumerable: true, configurable: true, writable: true});
 function indexDelta(before, after) {
 	const notes = [], root = [];
@@ -65,20 +66,20 @@ function indexDelta(before, after) {
 		const old = before.notes[file], next = after.notes[file];
 		if (!jsonSame(old, next)) notes.push({file, id: (next || old)?.id ?? null, beforeId: old?.id ?? null, entry: next ?? null});
 	}
-	const walk = (old, next, path) => {
-		if (jsonSame(old, next)) return;
+	const walk = (old, next, path, oldParent, nextParent, key) => {
+		if (equalJSONFields(oldParent, key, nextParent, key)) return;
 		if (jsonObject(old) && jsonObject(next)) {
-			for (const key of new Set([...Object.keys(old), ...Object.keys(next)])) walk(own(old, key) ? old[key] : undefined, own(next, key) ? next[key] : undefined, [...path, key]);
-		} else root.push(next === undefined ? {path, remove: true} : {path, value: next});
+			for (const key of new Set([...Object.keys(old), ...Object.keys(next)])) walk(own(old, key) ? old[key] : undefined, own(next, key) ? next[key] : undefined, [...path, key], old, next, key);
+		} else root.push(next === undefined ? {path, remove: true} : inheritJSONField({path, value: next}, 'value', nextParent, key));
 	};
 	for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) if (!['notes', 'folderGeneration', 'ownerNotice', 'transaction'].includes(key))
-		walk(own(before, key) ? before[key] : undefined, own(after, key) ? after[key] : undefined, [key]);
+		walk(own(before, key) ? before[key] : undefined, own(after, key) ? after[key] : undefined, [key], before, after, key);
 	return {notes, root};
 }
 function applyIndexDelta(base, journal) {
 	const delta = journal.delta;
 	if (!jsonObject(delta) || !Array.isArray(delta.notes) || !Array.isArray(delta.root)) throw fail('corrupt', 'The pending index change is unreadable.');
-	const after = {...base, notes: {...base.notes}}, names = new Set(), paths = [];
+	const after = inheritJSON({...base, notes: inheritJSON({...base.notes}, base.notes)}, base), names = new Set(), paths = [];
 	delete after.ownerNotice;
 	for (const row of delta.notes) {
 		if (!jsonObject(row) || !isNoteFile(row.file) || names.has(row.file) || row.beforeId !== (base.notes[row.file]?.id ?? null) ||
@@ -101,10 +102,10 @@ function applyIndexDelta(base, journal) {
 		let target = after;
 		for (const key of row.path.slice(0, -1)) {
 			if (!own(target, key) || !jsonObject(target[key])) throw fail('corrupt', 'The pending metadata path has no base.');
-			const next = {...target[key]}; setOwn(target, key, next); target = next;
+			const next = inheritJSON({...target[key]}, target[key]); setOwn(target, key, next); target = next;
 		}
 		const key = row.path.at(-1);
-		if (row.remove) delete target[key]; else setOwn(target, key, row.value);
+		if (row.remove) delete target[key]; else { setOwn(target, key, row.value); inheritJSONField(target, key, row, 'value'); }
 	}
 	after.folderGeneration = journal.generation;
 	return after;
@@ -128,7 +129,7 @@ function requestedBodies({bodies = []} = {}) {
 	return files;
 }
 function repairListing(index, files, clock) {
-	const fixed = reconcile(index, files), missing = {...index.missingFiles};
+	const fixed = reconcile(index, files), missing = inheritJSON({...index.missingFiles}, index.missingFiles);
 	for (const file of fixed.dropped) missing[file] = {entry: index.notes[file], noticedAt: clock()};
 	for (const file of fixed.added) delete missing[file];
 	if (Object.keys(missing).length) fixed.index.missingFiles = missing; else delete fixed.index.missingFiles;
@@ -198,11 +199,15 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			for (const name of await store.list(prefix)) files.push(prefix ? prefix + '/' + name : name);
 		return files;
 	};
+	const assertRestore = ({replace = false} = {}) => {
+		if (replace === true && store.exactRestoreReplace === false)
+			throw fail('delete-unavailable', 'Exact restore needs an empty Notes folder. Existing files were kept; use Add backup.');
+	};
 	const emptyDestination = async () => {
 		if ((await snapshotFiles()).some(file => file !== NOTES_INDEX_FILE)) throw fail('occupied', 'Exact restore needs an empty Notes folder. Existing files were kept; use Add backup.');
 		const bytes = await readBytes(NOTES_INDEX_FILE);
 		if (bytes != null) {
-			const raw = JSON.parse(decode(bytes)), clean = copy(raw);
+			const raw = parseJSON(decode(bytes)), clean = copy(raw);
 			if (clean.deleteOwner === clean.folderDeviceId) delete clean.deleteOwner;
 			delete clean.folderDeviceId; delete clean.folderGeneration;
 			if (clean.ownerNotice?.kind === 'identity' && clean.ownerNotice.generation === folderGeneration(raw) && Array.isArray(clean.ownerNotice.changed) && clean.ownerNotice.changed.length === 0) delete clean.ownerNotice;
@@ -212,8 +217,25 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				throw fail('occupied', 'This Notes folder already has saved metadata. It was kept; use Add backup.');
 		}
 	};
-	let indexReceipt = null;
-	const readIndex = async () => { const bytes = await readBytes(NOTES_INDEX_FILE); indexReceipt = bytes; if (bytes == null && (await store.list()).includes(NOTES_INDEX_FILE)) throw fail('changed', 'The listed notes index could not be read. The folder changed or its handle is stale; nothing was rebuilt.'); let text = null; if (bytes != null) { try { text = decode(bytes); } catch (_) { throw fail('corrupt', 'The notes index is not UTF-8 text.'); } } return parseIndex(text); };
+	let indexReceipt = null, indexReading = null;
+	const readIndex = async (immutable = false) => {
+		const bytes = await readBytes(NOTES_INDEX_FILE); indexReceipt = bytes;
+		if (bytes == null && (await store.list()).includes(NOTES_INDEX_FILE)) throw fail('changed', 'The listed notes index could not be read. The folder changed or its handle is stale; nothing was rebuilt.');
+		if (indexReading && equal(bytes, indexReading.bytes)) return immutable ? indexReading.index : copy(indexReading.index);
+		let text = null;
+		if (bytes != null) { try { text = decode(bytes); } catch (_) { throw fail('corrupt', 'The notes index is not UTF-8 text.'); } }
+		const index = parseIndex(text);
+		if (!immutable) return index;
+		const pending = [index];
+		while (pending.length) {
+			const value = pending.pop();
+			if (!value || typeof value !== 'object' || Object.isFrozen(value)) continue;
+			for (const child of Object.values(value)) if (child && typeof child === 'object') pending.push(child);
+			Object.freeze(value);
+		}
+		indexReading = {bytes: bytes?.slice() ?? null, index};
+		return index;
+	};
 	const readBodies = async (files, requested) => {
 		const present = new Set(files), bodies = new Map();
 		for (const file of requested) {
@@ -235,11 +257,11 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		const bytes = await readBytes(OWNER_JOURNAL_FILE);
 		if (bytes == null) return null;
 		let journal;
-		try { journal = JSON.parse(decode(bytes)); } catch (_) { throw fail('corrupt', 'The pending notes journal is unreadable; its files were kept.'); }
+		try { journal = parseJSON(decode(bytes)); } catch (_) { throw fail('corrupt', 'The pending notes journal is unreadable; its files were kept.'); }
 		if (!jsonObject(journal) || journal.version !== 2 || own(journal, 'after')) throw fail('corrupt', 'The pending notes journal has an unreadable version; its files were kept.');
 		return journal;
 	};
-	const journalBytes = journal => { const saved = {...journal}; delete saved.after; return exactBytes(JSON.stringify(saved)); };
+	const journalBytes = journal => { const saved = {...journal}; delete saved.after; return exactBytes(stringifyJSON(saved)); };
 	const writeJournal = journal => writeVerified(OWNER_JOURNAL_FILE, journalBytes(journal));
 	const clearJournal = async () => {
 		await store.remove(OWNER_JOURNAL_FILE);
@@ -311,7 +333,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		try {
 			if (deletion) {
 				let state = null;
-				try { state = await deletion.read(await readIndex()); } catch (error) { if (error?.code !== 'corrupt') throw error; }
+				try { state = await deletion.read(await readIndex(true)); } catch (error) { if (error?.code !== 'corrupt') throw error; }
 				if (state?.record && state.record.phase !== 'idle') pressureOnly = true;
 			}
 			if (!pressureOnly) {
@@ -456,7 +478,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			active();
 			if (await readJournal()) throw fail('pending', 'Finish the pending save before deleting.');
 			if (!args.index.deleteOwner) {
-				const armed = await commitIndex({...args.index, deleteOwner: args.index.folderDeviceId}, {kind: 'delete-arm'});
+				const armed = await commitIndex(inheritJSON({...args.index, deleteOwner: args.index.folderDeviceId}, args.index), {kind: 'delete-arm'});
 				args = {...args, index: armed.index}; await tryArmDeletion(armed.index);
 			}
 			const baseReceipt = indexReceipt?.slice();
@@ -520,7 +542,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 				if (entry?.id !== proof.id || entry.canonicalHistory !== proof.ledger) throw fail('corrupt', 'The saved note identity does not match its pending history.');
 				conflict.name = isCodeFile(proof.file) ? codeFileName(proof.file.replace(/(\.[^.]+)$/, ' kept$1'), [...names], {ascii: store.ascii})
 					: noteFileName(proof.file.replace(/\.md$/i, '') + ' kept', [...names], {ascii: store.ascii}); names.add(conflict.name);
-				after.notes[conflict.name] = {...entry, keptFrom: {file: proof.file, ...(row.before === null ? {} : {digest: row.before})}};
+				after.notes[conflict.name] = inheritJSON({...entry, keptFrom: {file: proof.file, ...(row.before === null ? {} : {digest: row.before})}}, entry);
 				try { conflict.text = conflict.bytes === null ? null : new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(conflict.bytes); }
 				catch (_) { conflict.text = null; }
 				if (conflict.text === null) delete after.notes[proof.file];
@@ -840,7 +862,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					if (!dropped.includes(file)) dropped.push(file);
 					if (!isNoteFile(file)) return;
 					if (digest == null) delete journal.after.notes[file];
-					else journal.after.notes[file] = {...index.notes?.[file], revision: 'sha256:' + digest};
+					else journal.after.notes[file] = inheritJSON({...index.notes?.[file], revision: 'sha256:' + digest}, index.notes?.[file]);
 				};
 				const ready = async row => {
 					if (row.requires === undefined) return true;
@@ -922,7 +944,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 					const names = [...new Set([...(await store.list()).filter(isNoteFile), ...Object.keys(journal.after.notes)])];
 					const name = noteFileName(row.file.replace(/\.md$/i, '') + ' kept', names, {ascii: store.ascii});
 					await writeVerified(name, row.bytes);
-					const entry = {...(planned.get(row.file) || {}), revision: 'sha256:' + row.digest, modified: clock(), keptFrom: {file: row.file, ...(row.before == null ? {} : {digest: row.before})}};
+					const sourceEntry = planned.get(row.file) || {}, entry = inheritJSON({...sourceEntry, revision: 'sha256:' + row.digest, modified: clock(), keptFrom: {file: row.file, ...(row.before == null ? {} : {digest: row.before})}}, sourceEntry);
 					delete entry.id;
 					journal.after.notes[name] = entry;
 					kept.push({file: row.file, name});
@@ -982,7 +1004,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		};
 		const readNote = async file => {
 			if (pressureOnly) return null;
-			const index = await readIndex();
+			const index = await readIndex(true);
 			if (await readJournal() || index.transaction || Object.keys(index.deletions || {}).length) return null;
 			if (deletion) { const state = await deletion.read(index); if (state.record && state.record.phase !== 'idle') return null; }
 			if (!index.notes[file]?.id) return null;
@@ -1011,6 +1033,7 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 		const transact = async (planner, options) => {
 			if (pressureOnly) throw fail('delete-pending', 'Finish deletion recovery before saving or syncing.');
 			const restoring = options?.exactRestore === true, replacing = restoring && options?.replace === true;
+			if (restoring) assertRestore(options);
 			if (restoring) incarnation = crypto.randomUUID();
 			if (restoring && (await readJournal())?.exactIndex?.source) {
 				if (typeof planner !== 'object' || planner?.kind !== 'restore') throw fail('plan', 'A restore continuation needs its verified source plan.');
@@ -1356,6 +1379,6 @@ export function createOwner({store, locks, channel, shared = true, timeoutMs = 1
 			return {certified: false, kind: 'deletion-recovery', entries: [...entries].map(([name, bytes]) => ({name, bytes}))};
 		} finally { await lease?.release(); }
 	};
-	return {admitOpen, keepDeletion, validateDeletionScratch, pendingDeletion, captureDeletion, get incarnation() { return incarnation; }, get pending() { return pending.size; }, settle, acquire, read, readImportReceipt, transact: async (scope, plan, options) => { const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
+	return {admitOpen, keepDeletion, validateDeletionScratch, pendingDeletion, captureDeletion, assertRestore, get incarnation() { return incarnation; }, get pending() { return pending.size; }, settle, acquire, read, readImportReceipt, transact: async (scope, plan, options) => { if (options?.exactRestore === true) assertRestore(options); const lease = await acquire(scope); try { return await lease.transact(plan, options); } finally { await lease.release(); } }, close: () => { closed = true; channel?.removeEventListener?.('message', receive); }};
 }
 

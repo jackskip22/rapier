@@ -2802,7 +2802,7 @@ description: "Make a .rapier.html file: the whole Rapier editor with your Markdo
 
 ## Start here
 
-Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the helper installed with this skill (below) when Node 22, a supported file surface and a Rapier `.html` page to build on are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.57 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
+Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the helper installed with this skill (below) when Node 22, a supported file surface and a Rapier `.html` page to build on are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.62 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
@@ -2877,7 +2877,7 @@ node cli.mjs notes.md --editor page.html out.html                       # a name
 
 It never overwrites: an existing output is refused, so pick a new name. Write the Markdown as Self-contained Markdown
 first (`rapier-markdown`) so pictures, layout and color travel inside the page. On their own computer, the person can
-make the same pages with the published package: `npx -- rapier-html@1.2.57 notes.md`, with the options above and no
+make the same pages with the published package: `npx -- rapier-html@1.2.62 notes.md`, with the options above and no
 `--editor`.
 
 ## When to use it
@@ -2992,7 +2992,7 @@ other Markdown readers show the same words and ignore what they don't know. No i
 particular app is needed.
 
 The standard is [Self-contained Markdown](references/markdown-standard.md), also at
-https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.57`.
+https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.62`.
 Rapier renders it and writes it back exactly; so can any editor.
 
 Rapier has two kinds of diagram, kept apart:
@@ -3198,7 +3198,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.57
+npm install rapier-embed@1.2.62
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -3286,7 +3286,7 @@ The reader on its own page opens a document at an address on its own origin: `ht
 
 Keep the helper, page and plug-in manifest on one version. For version 1.2.46:
 
-1. Install the helper: `npm install rapier-embed@1.2.57`.
+1. Install the helper: `npm install rapier-embed@1.2.62`.
 2. Create `public/vendor/rapier/` and save the reader into it from
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.46/embed/rapier-reader.html`.
 3. Fetch its plug-ins from the same version's manifest:
@@ -3320,7 +3320,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.62.
+Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.63.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -4654,7 +4654,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.57
+npm install rapier-embed@1.2.62
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -4742,7 +4742,7 @@ The reader on its own page opens a document at an address on its own origin: `ht
 
 Keep the helper, page and plug-in manifest on one version. For version 1.2.46:
 
-1. Install the helper: `npm install rapier-embed@1.2.57`.
+1. Install the helper: `npm install rapier-embed@1.2.62`.
 2. Create `public/vendor/rapier/` and save the reader into it from
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.46/embed/rapier-reader.html`.
 3. Fetch its plug-ins from the same version's manifest:
@@ -4776,7 +4776,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.62.
+Totals: the reader, 9.34 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.63.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -5190,7 +5190,7 @@ Used by [SnapDOM's official JPEG XL plugin](https://snapdom.dev/plugins/jxl/) an
 
 - Uploads over 2x faster than libvips.
 - 52 KB Brotli exact capture.
-- 240 KB Brotli complete capture.
+- 244 KB Brotli complete capture.
 - 277 KB Brotli upload.
 - 361 KB Brotli full encoder with HDR and parallel workers. Used by [rapier.html](https://rapier.website)
 - Lossless JPEG transcoding, decoding, verification, serving, metadata, animation, polyfill, CLI and resumable encoding

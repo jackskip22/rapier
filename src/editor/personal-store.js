@@ -42,6 +42,7 @@ const _rapierPersonalStore = globalThis.__rapierServerRenderHost === true ? null
 						next = change(current);
 						const known = new Set(read.result?.blobKeys || []), {blobs, ...metadata} = next;
 						for (const [key, body] of Object.entries(blobs)) if (!known.has(key)) store.put(body, 'asset/' + key);
+						for (const key of known) if (!Object.hasOwn(blobs, key)) { store.delete('asset/' + key); bodies.delete(key); }
 						store.put({...metadata, blobKeys: Object.keys(blobs)}, 'profile');
 					} catch (caught) { refuse(caught); }
 				}, refuse);

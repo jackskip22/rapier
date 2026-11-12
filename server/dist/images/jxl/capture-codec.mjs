@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {unit, stage, carried, journaling, unread, PASSED} from './step-journal.mjs';
 import {BitWriter, packSigned} from './bits.mjs';
+import {captureHeld} from './turn.mjs';
 import {admitOptions, admitPixels, admitSize, admitOutputSize, answer, fault, guard} from './admit.mjs';
 import {SCREEN_INTEGER_CONFIGS, screenDistanceMap} from './screen-codes.mjs';
 import {fullFrame, groupLayout, groupRect, writeHeaderFields as generalHeader, writeModularFrameHeader as generalFrame, assembleCodestream as generalAssembly} from './frame.mjs';
@@ -1642,7 +1643,7 @@ export function capturePaletteChoice(colours, area, base, channels, repeated) {
 
 function* pageSteps(source, imageWidth, imageHeight, colorSpace, coding) {
   const facts = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ === 'undefined' || !__RAPIER_JXL_CAPTURE_PHOTO__) && (typeof __RAPIER_JXL_CAPTURE_DEEP__ === 'undefined' || __RAPIER_JXL_CAPTURE_DEEP__)) && isRows(source) ? yield* rowFacts(source) : null;
-  const crop = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || coding.oneFrame) ? null : yield* unit('crop', () => timed('crop', () => screenCrop(source, imageWidth, imageHeight)));
+  const crop = coding.oneFrame ? null : yield* unit('crop', () => timed('crop', () => screenCrop(source, imageWidth, imageHeight)));
   const width = crop ? crop.width : imageWidth, height = crop ? crop.height : imageHeight;
   let scan = facts ? rowScan(facts) : yield* unit('scan', () => timed('scan', () => scanColours(source, imageWidth, crop?.x ?? 0, crop?.y ?? 0, width, height, PALETTE_LIMIT, true)));
   const header = new BitWriter(128);
@@ -1685,7 +1686,6 @@ function repeats(indices, width) {
 }
 
 function* routeSteps(source, imageWidth, imageHeight, colorSpace, coding, header, crop, scan) {
-  if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) return yield* pictureSteps(source, imageWidth, imageHeight, colorSpace, coding, header, null, crop, scan);
   const width = crop ? crop.width : imageWidth, height = crop ? crop.height : imageHeight;
   const bands = coding.oneFrame ? null : yield* unit('bands', () => screenBands(scan, width, height));
   const rare = !coding.oneFrame && coding.effort > 3 && !coding.base && (!scan || scan.colours.length > RARE_PALETTE) ? yield* unit('rare', () => timed('rare', () => rareRegions(source, imageWidth, scan, width, height, crop?.x ?? 0, crop?.y ?? 0))) : null;
@@ -1747,7 +1747,7 @@ function* bandSteps(source, imageWidth, imageHeight, colorSpace, coding, header,
 function rareRegions(source, stride, scan, width, height, cx, cy) {
   if (width * height < 4096) return null;
   const TILE = 16, tx = Math.ceil(width / TILE), ty = Math.ceil(height / TILE), words = pixelKeys(source);
-  const dense = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || scan) ? new Uint8Array(tx * ty) : captureDenseTiles(words, stride, cx, cy, width, height);
+  const dense = scan ? new Uint8Array(tx * ty) : captureDenseTiles(words, stride, cx, cy, width, height);
   if (scan) {
     const {colours, indices} = scan, freq = new Uint32Array(colours.length), rareColour = new Uint8Array(colours.length);
     let run = indices[0], length = 0;
@@ -1859,7 +1859,7 @@ function* pictureSteps(source, imageWidth, imageHeight, colorSpace, coding, head
   const at = r => band ? {...r, x: r.x + band.x, y: r.y + band.y} : r, whole = {x: 0, y: 0, width: imageWidth, height: imageHeight};
   const canvas = band?.canvas ?? {width: imageWidth, height: imageHeight}, bandCrop = band && !fullFrame(at(whole), canvas) ? at(whole) : undefined;
   const final = !band || band.last;
-  let partition = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : forced ?? (coding.oneFrame ? null : timed('partition', () => frame && screenColumns(source, imageWidth, imageHeight, view.stride, view.origin, crop) ||
+  let partition = forced ?? (coding.oneFrame ? null : timed('partition', () => frame && screenColumns(source, imageWidth, imageHeight, view.stride, view.origin, crop) ||
     screenRegions(source, imageWidth, imageHeight, !frame, view.stride, view.origin)));
   if (partition) {
     const x0 = cx, y0 = cy, x1 = x0 + width, y1 = y0 + height;
@@ -1882,7 +1882,7 @@ function* pictureSteps(source, imageWidth, imageHeight, colorSpace, coding, head
     return captureFrameSteps(frame ? null : source, width, height, shape, coding, frame, header,
       final && !coding.reference ? placement : {...placement, last: false, reference: 1}, vStride, vx + cx, vy + cy);
   };
-  if (!partition || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) {
+  if (!partition) {
     if (automatic) automatic.unsplit = true;
     return yield* unsplit();
   }
@@ -1992,6 +1992,7 @@ export function captureBand(data, width, rows, options) {
 let stepping = false;
 const idle = () => { if (stepping) throw fault('JXL_INTERNAL', 'A capture is already running; the next waits.'); };
 export const captureBusy = () => stepping;
+captureHeld(captureBusy);
 export function* encodeCaptureSteps(data, width, height, options = {}) {
   idle();
   const {colorSpace, coding} = admitCapture(data, width, height, options);

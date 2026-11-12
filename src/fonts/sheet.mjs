@@ -56,11 +56,13 @@ export function openFontLibrary({catalog, library, manifest: manifestPin, readJs
 	status.setAttribute('role', 'status'); status.hidden = true;
 	const more = el('div', 'rapier-font-more'); more.setAttribute('aria-hidden', 'true');
 	const actions = el('div'); actions.setAttribute('data-pop-row', '');
-	const done = el('button', 'rapier-draw-chip', 'Done'); done.type = 'button'; done.dataset.pop = 'affirm'; actions.append(done);
+	// An added family, tapped, is offered for removal here beside Done.
+	const drop = el('button', 'rapier-draw-chip rapier-font-remove'); drop.type = 'button'; drop.dataset.pop = 'destructive'; drop.hidden = true;
+	const done = el('button', 'rapier-draw-chip', 'Done'); done.type = 'button'; done.dataset.pop = 'affirm'; actions.append(drop, done);
 	head.append(search, kinds);
 	body.append(title, head, list, more, status, actions); panel.append(body); overlay.append(panel);
 	const dialog = host.beginDialog(overlay);
-	let kind = '', query = '', shown = [], drawn = 0, busy = 0, manifest = null;
+	let kind = '', query = '', shown = [], drawn = 0, busy = 0, manifest = null, offered = null;
 	dialog.blocking = () => busy > 0;
 	const note = value => { status.hidden = !value; status.textContent = value || ''; };
 	const close = () => { if (!busy) dialog.close(true); };
@@ -100,9 +102,24 @@ export function openFontLibrary({catalog, library, manifest: manifestPin, readJs
 		void library.installed(family.id).then(added => { if (added && button.isConnected) mark(button, detail, family); }).catch(() => {});
 		return button;
 	}
-	function mark(button, detail, family) { button.setAttribute('aria-pressed', 'true'); detail.textContent = fontLibraryDetail(family, true); }
+	function mark(button, detail, family, added = true) { button.setAttribute('aria-pressed', String(added)); detail.textContent = fontLibraryDetail(family, added); }
+	function offer(next) {
+		offered = next;
+		drop.hidden = !next; drop.textContent = next ? 'Remove ' + next.family.name : '';
+		host.arrange(actions);
+	}
+	drop.addEventListener('click', async () => {
+		const held = offered;
+		if (!held || busy) return;
+		busy++; drop.disabled = true; note('');
+		try { await library.remove(held.family.id); mark(held.button, held.detail, held.family, false); offer(null); }
+		catch (error) { if (overlay.isConnected) note(host.errorWords(error, 'Couldn’t remove ' + held.family.name + '.')); }
+		finally { busy--; drop.disabled = false; }
+	});
 	async function add(family, button, detail) {
-		if (button.getAttribute('aria-pressed') === 'true' || button.getAttribute('aria-busy') === 'true') return;
+		if (button.getAttribute('aria-busy') === 'true' || busy && offered) return;
+		if (button.getAttribute('aria-pressed') === 'true') { offer(offered?.family === family ? null : {family, button, detail}); return; }
+		if (offered) offer(null);
 		busy++; button.setAttribute('aria-busy', 'true'); note('');
 		try { await library.install(family.id); if (button.isConnected) mark(button, detail, family); }
 		catch (error) { if (overlay.isConnected) note(host.errorWords(error, 'Couldn’t add ' + family.name + '.')); }
@@ -116,7 +133,7 @@ export function openFontLibrary({catalog, library, manifest: manifestPin, readJs
 	function refilter() {
 		const asked = fold(query.trim()).split(/\s+/).filter(Boolean);
 		shown = families.filter(family => (!kind || family.category === kind) && asked.every(word => words.get(family.id).includes(word)));
-		drawn = 0; list.replaceChildren();
+		drawn = 0; list.replaceChildren(); if (offered) offer(null);
 		note(shown.length ? '' : 'No fonts match.');
 		drawMore();
 	}

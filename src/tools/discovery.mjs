@@ -16,12 +16,14 @@ export const APP_DESCRIPTION = 'Free Markdown editor and notes app for Android, 
   'Text and pictures stay in one plain Markdown file. Import Word and PDF; export Word, PDF, text and offline HTML for free. ' +
   'Works offline, with no account, ads or tracking. Optionally, an AI agent edits with you over MCP and WebMCP.';
 
+export const REGISTRY_DESCRIPTION = 'Markdown editor for notes, diagrams, drawing and painting with your AI, and a JPEG XL converter.';
+
 export function mcpServer({endpoint = MCP_DOOR, packageVersion = VERSION} = {}) {
   return {
     $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
     name: 'io.github.jackskip22/rapier',
     title: 'Rapier - Markdown Editor & Art',
-    description: 'Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.',
+    description: REGISTRY_DESCRIPTION,
     version: packageVersion,
     websiteUrl: 'https://rapier.website/agents',
     repository: {url: 'https://github.com/jackskip22/rapier-plugins', source: 'github'},
@@ -37,4 +39,8 @@ export function aiCatalog(target) {
     entries: [{identifier: 'urn:air:rapier.website:mcp:rapier', type: 'application/mcp-server-card+json',
       data: {...mcpServer(target), $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json'}}],
   };
+}
+
+export function geminiExtension({endpoint = CURRENT_DOOR, packageVersion = VERSION} = {}) {
+  return {name: 'rapier', version: packageVersion, description: REGISTRY_DESCRIPTION, mcpServers: {rapier: {httpUrl: endpoint}}};
 }

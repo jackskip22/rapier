@@ -54,13 +54,21 @@ async function destinationOf(provider, settings) {
 
 export function createPlainKeySession({folder, fetch: fetchFn, device = null, origin = 'https://rapier.website', now = Date.now} = {}) {
 	if (!folder?.owner || typeof fetchFn !== 'function') throw fail('config', 'plain files need the notes folder and the network.');
-	let held = null, bound = null, transport = null, remember = !!device && device.available !== false, inspected = false, running = null, activePlain = null, epoch = 0, locked = false, closing = null;
+	let held = null, bound = null, transport = null, remember = !!device && device.available !== false, inspected = false, running = null, activePlain = null, epoch = 0, locked = false, closing = null, stopping = null;
 	const binding = (kept, identity) => JSON.stringify({kind: 'plain-keys', folder: identity, provider: kept.provider, place: kept.place, connectionId: kept.connectionId, origin});
-	async function kept() {
-		const plain = (await readSyncState(folder)).plain;
-		if (!plain || !KEY_PLAIN_PROVIDERS.includes(plain.provider)) return null;
-		bound ||= {...plain};
-		return plain;
+	const observing = new Set();
+	function kept() {
+		const remember = !closing && !stopping;
+		const reading = (async () => {
+			const plain = (await readSyncState(folder)).plain;
+			if (!plain || !KEY_PLAIN_PROVIDERS.includes(plain.provider)) return null;
+			if (remember) bound ||= {...plain};
+			return plain;
+		})();
+		observing.add(reading);
+		const finished = () => observing.delete(reading);
+		reading.then(finished, finished);
+		return reading;
 	}
 	const identity = async () => (await folder.read()).index.folderDeviceId;
 	async function restore(plain) {
@@ -92,7 +100,7 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 		return {store, plain: activePlain};
 	}
 	const active = ticket => { if (ticket !== epoch) throw fail('cancelled', 'sync stopped. your notes, and what waits to upload, are kept.'); };
-	const once = fn => { if (running || closing) throw fail('busy', 'let the current sync finish.'); const ticket = epoch; running = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).catch(error => { transport?.store.pause(); transport = null; throw error; }).finally(() => { running = null; activePlain = null; }); return running; };
+	const once = fn => { if (running || closing || stopping) throw fail('busy', 'let the current sync finish.'); const ticket = epoch; running = Promise.resolve().then(() => { active(ticket); return fn(ticket); }).catch(error => { transport?.store.pause(); transport = null; throw error; }).finally(() => { running = null; activePlain = null; }); return running; };
 	const mediaSession = async ticket => {
 		const plain = await kept(); active(ticket);
 		if (!plain) throw fail('connection', 'connect this folder to its plain files first.');
@@ -103,7 +111,15 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 		active(ticket);
 		return session(plain.provider, plain.place.replace(/^\//, ''), held.settings, () => active(ticket), plain.connectionId, plain.destination).plain;
 	};
-	const stop = async () => { epoch++; activePlain?.pause(); transport?.store.pause(); transport = null; if (running) await running.catch(() => {}); };
+	const stop = () => {
+		epoch++; activePlain?.pause(); transport?.store.pause(); transport = null;
+		if (stopping) return stopping;
+		const drain = Promise.allSettled([running, ...observing]).then(() => {});
+		stopping = drain;
+		const finished = () => { if (stopping === drain) stopping = null; };
+		drain.then(finished, finished);
+		return drain;
+	};
 	return Object.freeze({
 		async status() {
 			let plain = await kept();
@@ -163,10 +179,11 @@ export function createPlainKeySession({folder, fetch: fetchFn, device = null, or
 		async lock() { locked = true; await stop(); held = null; },
 		forget() {
 			if (closing) return closing;
-			const expected = bound && {...bound}; locked = true;
+			let expected = bound && {...bound}; locked = true;
 			const stopped = stop(), ticket = epoch;
 			closing = (async () => {
 			await stopped; active(ticket);
+			expected ||= bound && {...bound};
 			const plain = await kept(); active(ticket);
 			if (plain && expected && !sameConnection(plain, expected)) throw fail('connection', 'the plain-files connection changed.');
 			if (plain) await createPlainSession({folder, store: {}, provider: plain.provider, place: plain.place, device: plain.device,

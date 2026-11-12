@@ -301,17 +301,31 @@ function parseBracket(s, i, mask, inline = true) {
 	return {raw: s.slice(i + 1, j - 1), end: j};
 }
 
+const HTML_LEGACY_ENTITIES = new Set(('AElig AMP Aacute Acirc Agrave Aring Atilde Auml COPY Ccedil ETH Eacute Ecirc Egrave Euml GT Iacute Icirc Igrave Iuml LT Ntilde Oacute Ocirc Ograve Oslash Otilde Ouml QUOT REG THORN Uacute Ucirc Ugrave Uuml Yacute aacute acirc acute aelig agrave amp aring atilde auml brvbar ccedil cedil cent copy curren deg divide eacute ecirc egrave eth euml frac12 frac14 frac34 gt iacute icirc iexcl igrave iquest iuml laquo lt macr micro middot nbsp not ntilde oacute ocirc ograve ordf ordm oslash otilde ouml para plusmn pound quot raquo reg sect shy sup1 sup2 sup3 szlig thorn times uacute ucirc ugrave uml uuml yacute yen yuml').split(' '));
+let htmlControlReferences = null;
+function htmlNumericReference(raw) {
+	const hex = raw[2] === 'x' || raw[2] === 'X', point = parseInt(raw.slice(hex ? 3 : 2), hex ? 16 : 10);
+	if (!point || point > 0x10ffff || point >= 0xd800 && point <= 0xdfff) return '\ufffd';
+	if (point >= 0x80 && point <= 0x9f) {
+		htmlControlReferences ||= new TextDecoder('windows-1252').decode(Uint8Array.from({length: 32}, (_, i) => i + 0x80));
+		return htmlControlReferences[point - 0x80];
+	}
+	return String.fromCodePoint(point);
+}
 function destinationText(raw, html = false) {
 	if ((html || raw.indexOf('\\') < 0) && raw.indexOf('&') < 0) return {raw, hashAt: raw.indexOf('#'), unresolvedDecode: false};
-	let decode = null, unresolvedDecode = false;
-	if (/&(?:#[xX][0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/.test(raw)) {
-		try { decode = markdownParser().utils.unescapeAll; } catch { unresolvedDecode = true; }
-	}
-	const tokens = html ? /&(?:#[xX][0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/g
+	let decode, unresolvedDecode = false;
+	const tokens = html ? /&(?:#[xX][0-9a-fA-F]+;?|#\d+;?|[A-Za-z][A-Za-z0-9]*;?)/g
 		: /\\[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~]|&(?:#[xX][0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/g;
 	let text = '', pos = 0, hashAt = -1, m;
 	while ((m = tokens.exec(raw))) {
-		const plain = raw.slice(pos, m.index), value = m[0][0] === '\\' ? m[0].slice(1) : decode ? decode(m[0]) : m[0];
+		const plain = raw.slice(pos, m.index), entity = m[0];
+		let value = entity;
+		if (entity[0] === '\\') value = entity.slice(1);
+		else if (!html || entity[1] === '#' || entity.endsWith(';') || HTML_LEGACY_ENTITIES.has(entity.slice(1)) && raw[tokens.lastIndex] !== '=') {
+			if (decode === undefined) { try { decode = markdownParser().utils.unescapeAll; } catch { decode = null; unresolvedDecode = true; } }
+			if (decode) value = html && entity[1] === '#' ? htmlNumericReference(entity) : decode(entity.endsWith(';') ? entity : entity + ';');
+		}
 		if (hashAt < 0 && plain.includes('#')) hashAt = pos + plain.indexOf('#');
 		text += plain;
 		if (hashAt < 0 && value.includes('#')) hashAt = value === m[0] ? m.index + value.indexOf('#') : m.index;
@@ -679,7 +693,7 @@ function resolutionNames(files, aliases) {
 	return {folded, named};
 }
 
-function resolveLinkWithNames(link, {from, files, sourceFiles = false, aliases} = {}, names = null) {
+function resolveLinkWithNames(link, {from, files, sourceFiles = false, noteNames = false, aliases} = {}, names = null) {
 	if (!link) return {unresolved: 'missing'};
 	if (link.unresolvedDecode) return {unresolved: 'entity_decoder_unavailable'};
 	if (link.kind === 'autolink') return {unresolved: 'outside'};
@@ -696,6 +710,7 @@ function resolveLinkWithNames(link, {from, files, sourceFiles = false, aliases} 
 	if (asset && !sourceFiles) return {unresolved: 'notNote'};
 	const list = files instanceof Set ? files : new Set(files || []);
 	const wiki = link.kind === 'wikilink' || link.kind === 'embed';
+	const named = wiki || noteNames && !/[\\/]/.test(dest);
 	const vaultPath = () => {
 		if (!wiki || !sourceFiles || /^(?:\.{1,2})(?:[\\/]|$)/.test(dest)) return null;
 		const rootPath = normalizeSourcePath(dest).path;
@@ -705,7 +720,7 @@ function resolveLinkWithNames(link, {from, files, sourceFiles = false, aliases} 
 		return matches.length === 1 ? {file: matches[0], anchor: link.anchor || ''} : matches.length > 1 ? {unresolved: 'ambiguous'} : null;
 	};
 	if (/[\\/]/.test(dest)) { const target = vaultPath(); if (target) return target; }
-	const want = wiki
+	const want = named
 		? unique([path, /\.md$/i.test(path) ? path : path + '.md'])
 		: unique([path]);
 	for (const w of want) if (list.has(w)) return {file: w, anchor: link.anchor || ''};
@@ -719,7 +734,7 @@ function resolveLinkWithNames(link, {from, files, sourceFiles = false, aliases} 
 	if (hits.length > 1) return {unresolved: 'ambiguous'};
 	if (!/[\\/]/.test(dest)) { const target = vaultPath(); if (target) return target; }
 	if (asset) return {unresolved: 'notNote'};
-	if (wiki && !/[\\/]/.test(dest) && !/\.md$/i.test(dest)) {
+	if (named && !/[\\/]/.test(dest) && !/\.md$/i.test(dest)) {
 		const name = dest.normalize('NFC').toLowerCase(), targets = names ? names.named.get(name) || [] : [];
 		if (!names) for (const [file, aliasesOfFile] of aliases || []) if (list.has(file) && aliasesOfFile.some(alias => alias.normalize('NFC').toLowerCase() === name)) targets.push(file);
 		if (targets.length === 1) return {file: targets[0], anchor: link.anchor || '', via: 'alias'};
@@ -1007,7 +1022,7 @@ export function importLinkPatches(notes, fileMap) {
 		for (const alias of new Set(rec.sourceAliases || [])) {
 			const atAlias = root.aliases.get(alias) || []; atAlias.push(rec); root.aliases.set(alias, atAlias);
 		}
-		for (const alias of new Set(rec.sourceWikiAliases || [])) {
+		for (const alias of new Set((rec.sourceWikiAliases || []).filter(alias => typeof alias === 'string').map(alias => alias.normalize('NFC').toLowerCase()))) {
 			const atAlias = root.wikiAliases.get(alias) || []; atAlias.push(rec); root.wikiAliases.set(alias, atAlias);
 		}
 	}
@@ -1018,9 +1033,14 @@ export function importLinkPatches(notes, fileMap) {
 		const files = root.files;
 		const changed = [], unresolved = [], spans = new Map();
 		for (const link of scanLinks(text)) {
-			const aliasHits = [...new Set([...(root.aliases.get(link.dest) || []),
-				...(['wikilink', 'embed'].includes(link.kind) ? root.wikiAliases.get(link.dest) || [] : [])])];
-			const resolved = aliasHits.length ? (aliasHits.length === 1 ? {file: aliasHits[0].sourceName || aliasHits[0].sourcePath} : {unresolved: 'ambiguous'}) : resolveLinkWithNames(link, {from, files, sourceFiles: true}, root.names ||= resolutionNames(files));
+			const path = resolveLinkWithNames(link, {from, files, sourceFiles: true}, root.names ||= resolutionNames(files));
+			let wikiHits = [];
+			if (root.wikiAliases.size && ['wikilink', 'embed'].includes(link.kind) && ['missing', 'notNote', 'outside'].includes(path.unresolved)) {
+				const name = (SCHEME.test(link.dest) ? link.dest : decodeDest(link.dest)).normalize('NFC').toLowerCase();
+				wikiHits = root.wikiAliases.get(name) || [];
+			}
+			const aliasHits = [...new Set([...(root.aliases.get(link.dest) || []), ...wikiHits])];
+			const resolved = aliasHits.length ? (aliasHits.length === 1 ? {file: aliasHits[0].sourceName || aliasHits[0].sourcePath} : {unresolved: 'ambiguous'}) : path;
 			if (resolved.unresolved === 'outside') continue;
 			if (resolved.unresolved === 'notNote') {
 				if (!link.image) unresolved.push({dest: link.dest, anchor: link.anchor, reason: 'attachment', start: link.start, end: link.end});

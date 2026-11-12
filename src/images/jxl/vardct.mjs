@@ -472,7 +472,7 @@ export function* varDCTSteps(jpeg, plan = {}, shared) {
     const {state, g: local} = groupInput(g);
     if (strategyData) {
       const n = kernelHooks.strategyFill?.(state, local, pass, COEFF_NUM_NONZERO_CONTEXT, COEFF_FREQ_CONTEXT, ORDER_OF, buffer.ctxs, buffer.values);
-      return [n ?? ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? 0 : fillStrategyGroup(state, local, pass, buffer.ctxs, buffer.values)), buffer.ctxs, buffer.values];
+      return [n ?? fillStrategyGroup(state, local, pass, buffer.ctxs, buffer.values), buffer.ctxs, buffer.values];
     }
     if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) return null;
     const filled = kernels?.fill(state, local, pass, DCT8_DENSITY);
@@ -498,7 +498,7 @@ export function* varDCTSteps(jpeg, plan = {}, shared) {
       const flushed = kernelHooks.strategyWrite?.(input.state, input.g, pass, COEFF_NUM_NONZERO_CONTEXT, COEFF_FREQ_CONTEXT, ORDER_OF, coding, w);
       if (flushed) return flushed;
     }
-    if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) return;
+    if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && !strategyData) return;
     if (!buffer || !coding.writeTokens) { tokens(g, (ctx, value) => coding.write(w, ctx, value), pass); return; }
     if (coding.writeFilled && !strategyData) {
       const filled = kernels.fill(input.state, input.g, pass, DCT8_DENSITY);
@@ -584,7 +584,7 @@ export function* varDCTSteps(jpeg, plan = {}, shared) {
   for (let i = 0; i < list.length; i++) {
     const [name, buckets] = list[i];
     if (remoteTotals) { if (remoteTotals[i] != null && (bestAt < 0 || remoteTotals[i] < best)) { best = remoteTotals[i]; bestAt = i; } continue; }
-    const priced = yield* designPriceSteps(name, buckets, grey, null, countedMap, counts, buildCoding, {...plan.clusters, smallestMap: true, kernels}, counting.thresholds ?? []);
+    const priced = yield* designPriceSteps(name, buckets, grey, null, countedMap, counts, buildCoding, {...plan.clusters, smallestMap: true, kernels, ...(strategyData && {strategy: true})}, counting.thresholds ?? []);
     if (!priced) continue;
     if (!codings || priced.total < codings.reduce((n, coding) => n + coding.bits, contextHeader.bitLength)) {
       codings = priced.codings; contexts = priced.candidate; contextHeader = priced.header;
@@ -593,7 +593,7 @@ export function* varDCTSteps(jpeg, plan = {}, shared) {
   if (!(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && remoteTotals && bestAt >= 0) {
     const made = !remotePriced?.[bestAt] && remote.coding?.(bestAt), shape = made ? designShape(list[bestAt][0], list[bestAt][1], grey, lumaDcOf()) : null;
     if (remotePriced?.[bestAt] || shape) globalThis.__jxlTrace?.push(['the kept design built as ' + (shape ? 'a helper priced it' : 'priced here'), performance.now()]);
-    const priced = remotePriced?.[bestAt] ?? (shape && designWith(shape, [made])) ?? designPrice(list[bestAt][0], list[bestAt][1], grey, lumaDcOf(), countedMap, counts, buildCoding, {...plan.clusters, smallestMap: true, kernels});
+    const priced = remotePriced?.[bestAt] ?? (shape && designWith(shape, [made])) ?? designPrice(list[bestAt][0], list[bestAt][1], grey, lumaDcOf(), countedMap, counts, buildCoding, {...plan.clusters, smallestMap: true, kernels, ...(strategyData && {strategy: true})});
     codings = priced.codings; contexts = priced.candidate; contextHeader = priced.header;
   }
   const sameMap = contexts === countedMap || (contexts.numDc === countedMap.numDc && contexts.numCtxs === countedMap.numCtxs && contexts.map.every((v, i) => v === countedMap.map[i]));

@@ -1,3 +1,4 @@
+import {cloneJSON, equalJSON, equalJSONFields, inheritJSON, inheritJSONField} from './json-custody.mjs';
 import {deleteIdleScratch} from './delete-intent.mjs';
 import {encodeImportReceipt, isImportReceiptFile, importReceiptMembers} from './import-storage.mjs';
 import {mapImportBatch} from './import-concurrency.mjs';
@@ -19,8 +20,8 @@ import {backupNames} from './backup-folder.mjs';
 import {prepareLockedNote, createPrivateDrafts as privateDraftStorage} from './locked.mjs';
 export function createPrivateDrafts(options) { return privateDraftStorage(options); }
 
-const copy = value => JSON.parse(JSON.stringify(value));
-const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const copy = cloneJSON;
+const eq = equalJSON;
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const prepareMutation = async prepare => {
 	try { return await prepare(); }
@@ -29,6 +30,45 @@ const prepareMutation = async prepare => {
 };
 const decode = bytes => new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
 const decodeIndex = bytes => new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+function prepareRestoreWriter(bytes) {
+	const text = decode(bytes), raw = JSON.parse(text.replace(/^\uFEFF/, ''));
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw fail('corrupt', 'The notes index does not have the shape of one.');
+	const whitespace = at => /[\t\r\n ]/.test(text[at]);
+	const skip = at => { while (whitespace(at)) at++; return at; };
+	const stringEnd = start => {
+		let at = start + 1;
+		while (at < text.length) {
+			const char = text[at++];
+			if (char === '\\') at++;
+			else if (char === '"') return at;
+		}
+	};
+	let at = skip(text.charCodeAt(0) === 0xfeff ? 1 : 0) + 1, start = -1, end = -1;
+	for (;;) {
+		at = skip(at);
+		if (text[at] === '}') break;
+		const keyEnd = stringEnd(at), key = JSON.parse(text.slice(at, keyEnd));
+		at = skip(skip(keyEnd) + 1);
+		const valueStart = at; let depth = 0;
+		while (at < text.length) {
+			const char = text[at];
+			if (char === '"') { at = stringEnd(at); continue; }
+			if (char === '{' || char === '[') depth++;
+			else if (char === '}' || char === ']') { if (!depth) break; depth--; }
+			else if (char === ',' && !depth) break;
+			at++;
+		}
+		if (key === 'folderDeviceId') {
+			start = valueStart; end = at;
+			while (whitespace(end - 1)) end--;
+		}
+		if (text[at] === '}') break;
+		at++;
+	}
+	const left = start < 0 ? text.slice(0, at) + (Object.keys(raw).length ? ',' : '') + '"folderDeviceId":' : text.slice(0, start);
+	const right = text.slice(start < 0 ? at : end);
+	return writer => exactBytes(left + JSON.stringify(writer) + right);
+}
 const digest = value => value == null ? null : sha256(value);
 const sameBytes = (before, after) => {
 	if (before == null || after == null) return before == null && after == null;
@@ -63,9 +103,12 @@ const reserved = new Set(['deleteOwner', 'deleteCheckpoint', 'folderGeneration',
 
 export function applyMetadata(base, wanted, fresh) {
 	const out = copy(fresh);
-	const merge = (before, after, now, path = []) => {
-		if (eq(before, after)) return now;
-		if (path.length === 1 && reserved.has(path[0])) return now;
+	const field = (holder, key) => ({value: holder?.[key], holder, key});
+	const same = (a, b) => a.holder && b.holder ? equalJSONFields(a.holder, a.key, b.holder, b.key) : eq(a.value, b.value);
+	const merge = (beforeCell, afterCell, nowCell, path = []) => {
+		const before = beforeCell.value, after = afterCell.value, now = nowCell.value;
+		if (same(beforeCell, afterCell)) return nowCell;
+		if (path.length === 1 && reserved.has(path[0])) return nowCell;
 		if (path.length === 2 && path[0] === 'notes' && (!before || !after || !now || before.id !== now.id)) throw fail('changed', 'This note changed or moved. Open the cards again before changing it.');
 		if (path.length === 1 && path[0] === 'sections' && Array.isArray(before) && Array.isArray(after) && before.every(row => after.some(n => eq(n, row)))) {
 			const rows = copy(now || []);
@@ -74,21 +117,22 @@ export function applyMetadata(base, wanted, fresh) {
 				if (present && !eq(row, present)) throw fail('changed', 'This section changed in another page. Open the cards again.');
 				if (!present) { const next = after.slice(after.indexOf(row) + 1).map(n => rows.findIndex(m => m.name === n.name)).find(i => i >= 0); rows.splice(next ?? rows.length, 0, copy(row)); }
 			}
-			return rows;
+			return {value: rows};
 		}
 		if (before && after && typeof before === 'object' && typeof after === 'object' && !Array.isArray(before) && !Array.isArray(after)) {
 			const result = now && typeof now === 'object' ? copy(now) : {};
 			for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
-				if (['__proto__', 'constructor', 'prototype'].includes(key)) { if (!eq(before[key], after[key])) throw fail('plan', 'This metadata key cannot be changed here.'); continue; }
-				const value = merge(before[key], after[key], now?.[key], [...path, key]);
-				if (value === undefined) delete result[key]; else result[key] = value;
+				if (['__proto__', 'constructor', 'prototype'].includes(key)) { if (!equalJSONFields(before, key, after, key)) throw fail('plan', 'This metadata key cannot be changed here.'); continue; }
+				const chosen = merge(field(before, key), field(after, key), field(now, key), [...path, key]);
+				if (chosen.value === undefined) delete result[key];
+				else { result[key] = chosen.value; inheritJSONField(result, key, chosen.holder, chosen.key); }
 			}
-			return result;
+			return {value: result};
 		}
-		if (!eq(now, before) && !eq(now, after)) throw fail('changed', 'This choice changed in another page. Open the cards again before changing it.');
-		return after === undefined ? undefined : copy(after);
+		if (!same(nowCell, beforeCell) && !same(nowCell, afterCell)) throw fail('changed', 'This choice changed in another page. Open the cards again before changing it.');
+		return {...afterCell, value: after === undefined ? undefined : copy(after)};
 	};
-	return merge(base, wanted, out);
+	return merge({value: base}, {value: wanted}, {value: out}).value;
 }
 
 export async function planFolderRename({index, files, bodies}, {file, id, expectedDigest, wanted, linking, ascii = false, now = Date.now(), readHistory, author = {kind: 'human', id: 'notes-local'}} = {}) {
@@ -135,7 +179,7 @@ export async function planFolderRename({index, files, bodies}, {file, id, expect
 		index.notes[patch.file].revision = 'sha256:' + await sha256(bytes); index.notes[patch.file].modified = now;
 	}
 	patched = writes.length - 1;
-	index.notes[destination] = {...index.notes[file], revision: 'sha256:' + await sha256(body)}; delete index.notes[file];
+	index.notes[destination] = inheritJSON({...index.notes[file], revision: 'sha256:' + await sha256(body)}, index.notes[file]); delete index.notes[file];
 	const canonical = [];
 	for (const row of writes.slice()) {
 		const originalFile = row.file === destination ? file : row.file, entry = index.notes[row.file];
@@ -175,7 +219,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const fixed = reconcile(repaired.index, names), index = fixed.index;
 		let ranks = false;
 		for (const [file, entry] of Object.entries(index.notes)) {
-			if (!entry.id) index.notes[file] = {...entry};
+			if (!entry.id) index.notes[file] = inheritJSON({...entry}, entry);
 			if (entry.order !== repaired.index.notes[file]?.order) ranks = true;
 		}
 		const identities = identify(index);
@@ -209,7 +253,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const owned = (job, options) => underLease(async lease => job(lease, await lease.read()), options);
 	const createEntry = (index, name, extra = {}) => {
 		const next = reconcile(index, [...Object.keys(index.notes), name]).index;
-		next.notes[name] = {...next.notes[name], ...extra};
+		next.notes[name] = inheritJSON({...next.notes[name], ...extra}, next.notes[name], extra);
 		const arrived = typeof extra.id === 'string' && extra.id && !Object.entries(next.notes).some(([other, entry]) => other !== name && entry.id === extra.id);
 		if (!arrived) delete next.notes[name].id;
 		identify(next);
@@ -221,12 +265,12 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		for (const [file, entry] of Object.entries(scanned.notes)) if (!fresh.has(file)) { notes[file] = entry; if (entry.order > last) last = entry.order; }
 		const held = new Set(Object.values(notes).map(entry => entry.id).filter(Boolean));
 		for (const {name, extra = {}} of rows) {
-			const entry = {...scanned.notes[name], order: orderAfter(last), ...extra};
+			const entry = inheritJSON({...scanned.notes[name], order: orderAfter(last), ...extra}, scanned.notes[name], extra);
 			if (typeof extra.id === 'string' && extra.id && !held.has(extra.id)) held.add(extra.id); else delete entry.id;
 			if (entry.order > last) last = entry.order;
 			notes[name] = entry;
 		}
-		const next = {...scanned, notes};
+		const next = inheritJSON({...scanned, notes}, scanned);
 		identify(next);
 		return next;
 	};
@@ -348,11 +392,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			if (nextText !== priorText) await sourceGuard?.(priorText, nextText); active();
 			const values = noteControlValues(index, file, nextText), changed = {}, previous = {};
 			for (const name of Object.keys(values)) if (!eq(beforeValues[name], values[name])) { changed[name] = values[name]; previous[name] = beforeValues[name]; }
-			if (!Object.keys(changed).length && !undo) { nextText = priorText; return {index: {...index, notes: {...index.notes, [file]: previousEntry}}}; }
+			if (!Object.keys(changed).length && !undo) { nextText = priorText; return {index: inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: previousEntry}, index.notes)}, index)}; }
 			if (exactBytes(JSON.stringify({changed, previous})).length > 8192) throw fail('notes_receipt_too_large', 'These choices cannot fit an exact change receipt. Change fewer fields.');
 			const content = await sha256(nextText); active();
 			if (index.notes[file].trashed && (!previousEntry.trashed || nextText !== priorText)) index = markTrashed(index, file, {digest: content, now});
-			if (nextText !== priorText) index.notes[file] = {...index.notes[file], revision: 'sha256:' + content, modified: now};
+			if (nextText !== priorText) index.notes[file] = inheritJSON({...index.notes[file], revision: 'sha256:' + content, modified: now}, index.notes[file]);
 			const path = manifestName(id); await loadPast();
 			appended ||= await history.appendCanonical(past, {text: nextText, ...context, requestDigest}); active();
 			stampNoteControls(previousEntry, index.notes[file], (index.folderGeneration || 0) + 1);
@@ -431,7 +475,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			...(wholeReferences ? {spans: source => scanLinks(source).flatMap(row => row.definition
 				? [[row.start, row.end], [row.definition.start, row.definition.end]] : [[row.start, row.end]])} : {})});
 		const source = exactBytes(appended.text ?? next);
-		index.notes[file] = {...entry, revision: 'sha256:' + await sha256(source), modified: now, canonicalHistory: appended.ledger.sha256};
+		index.notes[file] = inheritJSON({...entry, revision: 'sha256:' + await sha256(source), modified: now, canonicalHistory: appended.ledger.sha256}, entry);
 		const writes = await canonicalWrites(appended.manifest, {file, text: next, entry: index.notes[file], prior, now, reason: 'merge'});
 		return {writes, canonical: [canonicalProof(file, entry.id, appended.ledger)]};
 	};
@@ -462,7 +506,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			if (!entry || id && entry.id !== id || entry.canonicalHistory || await store.read('history/' + manifestName(entry.id)) != null) return {index};
 			const text = decode((await readBodies([file])).get(file)), now = clock();
 			const result = appendCanonical(freshCanonical(parseManifest(null, {noteId: entry.id, now}), {filename: file, docKind: isCodeFile(file) ? 'code' : 'markdown'}), {text, author: canonicalAuthor(), operation: 'notes.admit', now});
-			const next = {...index, notes: {...index.notes, [file]: {...entry, canonicalHistory: result.ledger.sha256, revision: 'sha256:' + await sha256(text)}}};
+			const next = inheritJSON({...index, notes: inheritJSON({...index.notes, [file]: inheritJSON({...entry, canonicalHistory: result.ledger.sha256, revision: 'sha256:' + await sha256(text)}, entry)}, index.notes)}, index);
 			const writes = await canonicalWrites(result.manifest, {file, text, entry: next.notes[file], prior: null, now});
 			admitted = true;
 			return {kind: 'admit', index: next, writes, canonical: [canonicalProof(file, entry.id, result.ledger)]};
@@ -528,7 +572,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				return {index};
 			}
 			file = available(wanted, text, files);
-			const now = clock(), next = createEntry(media ? reviveMedia(index, media.path, media.digest) : index, file, {created: now, modified: now, ...extra, ...(request ? {createdByRequest: request} : {})});
+			const now = clock(), next = createEntry(media ? reviveMedia(index, media.path, media.digest) : index, file, inheritJSON({created: now, modified: now, ...extra, ...(request ? {createdByRequest: request} : {})}, extra));
 			const id = next.notes[file].id, manifest = freshCanonical(parseManifest(null, {noteId: id, now}), {filename: file, docKind: isCodeFile(file) ? 'code' : 'markdown'});
 			result = appendCanonical(manifest, {text, ...context, requestDigest});
 			next.notes[file].canonicalHistory = result.ledger.sha256;
@@ -635,7 +679,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 					const keptId = made.notes[keptName].id, start = history.parseManifest(null, {noteId: keptId, now});
 					let first = ledger ? history.adoptCanonical(start, ledger, text)
 						: await history.appendCanonical(history.freshCanonical(start, {filename: keptName, docKind: isCodeFile(keptName) ? 'code' : 'markdown'}), {text, ...context, requestDigest});
-					if (inverseMedia?.length) first = {...first, manifest: {...first.manifest, media: inverseMedia}};
+					if (inverseMedia?.length) first = {...first, manifest: inheritJSON({...first.manifest, media: inverseMedia}, first.manifest)};
 					const source = await history.source(text);
 					made.notes[keptName].canonicalHistory = first.ledger.sha256;
 					made.notes[keptName].revision = 'sha256:' + source.hash;
@@ -650,13 +694,13 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 					if (!bases.some(base => base.ledger === proved.ledger.sha256)) bases.push({digest: actual, ledger: proved.ledger.sha256});
 					inputReceipt = {id, ledger: result.ledger.sha256, incarnation: owner.incarnation, bases};
 				}
-				if (inverseMedia !== result.manifest.media) result = {...result, manifest: {...result.manifest, media: inverseMedia}};
+				if (inverseMedia !== result.manifest.media) result = {...result, manifest: inheritJSON({...result.manifest, media: inverseMedia}, result.manifest)};
 				if (result.unchanged && !index.notes[destination].trashed) return {index, historyPreparation: history};
 				text = result.text ?? text;
 				await options.sourceGuard?.(proved.text, text, proved.metadata); await active();
 				const source = await history.source(text), nextDigest = source.hash, now = clock();
 				if (index.notes[destination].trashed) index = reviveTrashed(index, destination, nextDigest);
-				index.notes[destination] = {...index.notes[destination], revision: 'sha256:' + nextDigest, modified: now, canonicalHistory: result.ledger.sha256};
+				index.notes[destination] = inheritJSON({...index.notes[destination], revision: 'sha256:' + nextDigest, modified: now, canonicalHistory: result.ledger.sha256}, index.notes[destination]);
 				const writes = await canonicalWrites(result.manifest, {file: destination, text, entry: index.notes[destination], prior, now, reason: options.reason || 'save', restoredFrom: options.restoredFrom, history});
 				await active();
 				return {kind: 'canonical-save', index, writes: [{file: destination, bytes: source.bytes, expectedDigest: actual}, ...writes], canonical: [canonicalProof(destination, id, result.ledger)], historyPreparation: history};
@@ -965,7 +1009,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 	const forgetMedia = async (index, path, content) => {
 		const previous = (await readSyncStateBytes(store)).state.head?.assets?.[path], source = previous?.content === content ? previous.source : path;
 		const opId = deviceId + ':' + crypto.randomUUID();
-		index.assetTombstones = {...index.assetTombstones, [opId]: {opId, file: path, source, content, device: deviceId, at: clock()}};
+		index.assetTombstones = inheritJSON({...index.assetTombstones, [opId]: {opId, file: path, source, content, device: deviceId, at: clock()}}, index.assetTombstones);
 		return index;
 	};
 
@@ -975,7 +1019,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		for (const id of new Set(history.map(row => row.noteId))) {
 			const name = 'history/' + manifestName(id), prior = await store.read(name), manifest = parseManifest(prior, {noteId: id, now: clock()});
 			const media = manifest.canonical && bindMedia(manifest.canonical, manifest.media, path, content, mediaNames, {close: true});
-			if (media && media !== manifest.media) writes.push({file: name, bytes: exactBytes(serializeManifest({...manifest, media})), expectedDigest: await digest(prior)});
+			if (media && media !== manifest.media) writes.push({file: name, bytes: exactBytes(serializeManifest(inheritJSON({...manifest, media}, manifest))), expectedDigest: await digest(prior)});
 		}
 		return writes;
 	};
@@ -1126,7 +1170,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			}
 			if (result.notes.length) index = createEntries(index, result.notes.map(note => ({name: note.file, extra: note.entry || {}})));
 			const prepared = await mapImportBatch(result.notes, async note => {
-				const entry = {...index.notes[note.file]}, id = entry.id, path = 'history/' + manifestName(id);
+				const entry = inheritJSON({...index.notes[note.file]}, index.notes[note.file]), id = entry.id, path = 'history/' + manifestName(id);
 				const prior = writes.get(path)?.bytes || await store.read(path), now = clock();
 				let text; try { text = decode(writes.get(note.file).bytes); } catch (_) { return null; }
 				let manifest, ledger;
@@ -1157,7 +1201,11 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 				canonical.push(proof);
 			}
 
-			for (const section of result.sectionsAdded || []) if (section?.collapsed === true && !before.index.sections.some(row => row.name === section.name)) index = setCollapsed(index, section.name, true);
+			for (const section of result.sectionsAdded || []) {
+				if (!section || before.index.sections.some(row => row.name === section.name)) continue;
+				const at = index.sections.findIndex(row => row.name === section.name);
+				if (at >= 0) index.sections[at] = inheritJSON({...index.sections[at], ...copy(section), name: index.sections[at].name, collapsed: section.collapsed === true}, index.sections[at], section);
+			}
 			for (const row of writes.values()) if (/^(?:audio|attachments)\//.test(row.file)) index = reviveMedia(index, row.file, await digest(row.bytes));
 			if (result.importReceipt) {
 				let receipt = result.importReceipt;
@@ -1174,6 +1222,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		return {...snapshot, result, ...(receiptCommit ? {receiptCheckpoint:receiptCommit.receiptCheckpoint} : {})};
 	});
 	const restoreSnapshot = async (entries, {replace = false, signal, guard} = {}) => {
+		owner.assertRestore({replace});
 		const admit = async () => { checkByteAbort(signal); await guard?.(); checkByteAbort(signal); };
 		await admit();
 		const plan = entries?.parts ? await planSnapshotStream(entries) : await planSnapshot(entries), sidecar = plan.files.find(row => row.name === NOTES_INDEX_FILE);
@@ -1185,7 +1234,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 		const scratch = await deleteIdleScratch(plan.index, [...sourceRows.keys()], async name => { const row = sourceRows.get(name); return row ? row.bytes ?? await row.read() : null; });
 		plan.files = plan.files.filter(row => !scratch.has(row.name));
 		let indexBytes = sidecar.bytes ?? await sidecar.read(), checkpoint = null;
-		const restoredIndex = JSON.parse(decode(indexBytes).replace(/^﻿/, ''));
+		const renewWriter = prepareRestoreWriter(indexBytes);
 		const writes = [];
 		for (const row of plan.files) {
 			if (row === sidecar) continue;
@@ -1205,8 +1254,8 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const lease = await owner.acquire(scope);
 			try {
 				await admit();
-				restoredIndex.folderDeviceId = await lease.restoreWriter(restoreSource) || crypto.randomUUID().replace(/-/g, '');
-				indexBytes = exactBytes(JSON.stringify(restoredIndex));
+				const writer = await lease.restoreWriter(restoreSource) || crypto.randomUUID().replace(/-/g, '');
+				indexBytes = renewWriter(writer);
 				plan.index = parseIndex(decodeIndex(indexBytes));
 				const snapshot = await lease.transact({kind: 'restore', index: plan.index, exactIndex: indexBytes, writes, restoreSource},
 					{exactRestore: true, replace, restoreGuard: admit});
@@ -1227,7 +1276,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			}
 			before = await lease.transact(async ({index,readImportReceipt}) => {
 				const held = await readImportReceipt(record.id);
-				record = {...held.receipt, undo: {...held.receipt.undo, historyCleanup: {requested: removes.map(row => row.file), kept}}};
+				record = inheritJSON({...held.receipt, undo: inheritJSON({...held.receipt.undo, historyCleanup: {requested: removes.map(row => row.file), kept}}, held.receipt.undo)}, held.receipt);
 				const stored = await receiptPlan(index, record, held, readImportReceipt);
 				return {kind:'import-undo-history',index:stored.index,writes:stored.writes,removes:[...removes,...stored.removes]};
 			});
@@ -1254,7 +1303,7 @@ export function createFolder({store, scope = 'notes', locks, channel, shared = t
 			const held = await readImportReceipt(record.id); record = held.receipt;
 			const sections = importUndoSections(record, index), removedSections = index.sections.filter(row => !sections.includes(row)).map(row => row.name);
 			index.sections = sections;
-			record = {...record, undo: {...record.undo, cleanup: {requested: removes.map(row => row.file), kept, sections: removedSections}}};
+			record = inheritJSON({...record, undo: inheritJSON({...record.undo, cleanup: {requested: removes.map(row => row.file), kept, sections: removedSections}}, record.undo)}, record);
 			for (const row of removes) if (/^(?:attachments|audio)\//.test(row.file)) index = await forgetMedia(index, row.file, row.expectedDigest);
 			const stored = await receiptPlan(index,record,held,readImportReceipt);
 			return {kind:'import-undo-files',index:stored.index,writes:stored.writes,removes:[...removes,...stored.removes]};

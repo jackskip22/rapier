@@ -375,9 +375,10 @@ function _rapierDrawMeasuredView(body, w, h) {
 
 function _rapierDrawNewRecipe(w, h) { return { version: RAPIER_DRAW_VERSION, canvas: { w, h }, strokes: [], shapes: [] }; }
 function _rapierDrawClone(value) { return JSON.parse(JSON.stringify(value)); }
+function _rapierDrawFrozenPoints(pts) { return globalThis.RapierDrawCore._rapierDrawKeepPoints(pts); }
 function _rapierDrawHistoryCopy(value) {
+	if (!value || typeof value !== 'object' || globalThis.RapierDrawCore?._rapierDrawKeptPoints(value)) return value;
 	if (Array.isArray(value)) return value.map(_rapierDrawHistoryCopy);
-	if (!value || typeof value !== 'object') return value;
 	const copy = {};
 	for (const key of Object.keys(value)) if (value[key] !== undefined) copy[key] = _rapierDrawHistoryCopy(value[key]);
 	return copy;
@@ -617,14 +618,16 @@ function _rapierDrawSyncCanvasAccess(only = null) {
 		const {shape, index} = item, label = String(shape.label || '').trim();
 		const said = _rapierDrawKindWord(shape.recognized) + (label ? ': ' + label : '') + ', ' + (index + 1) + ' of ' + shapes.length + (shape.locked || groupLocked(shape.group) ? ', locked' : '');
 		if (only && node.getAttribute('aria-label') !== said && (label || node.hasAttribute('aria-label'))) renamed = true;
-		node.id = 'rapier-draw-object-' + shape.id;
-		node.setAttribute('role', 'button'); node.setAttribute('tabindex', '-1');
-		node.setAttribute('aria-pressed', String(selected.has(shape.id)));
-		node.setAttribute('aria-label', said);
+		const id = 'rapier-draw-object-' + shape.id, pressed = String(selected.has(shape.id));
+		if (node.id !== id) node.id = id;
+		if (node.getAttribute('role') !== 'button') node.setAttribute('role', 'button');
+		if (node.getAttribute('tabindex') !== '-1') node.setAttribute('tabindex', '-1');
+		if (node.getAttribute('aria-pressed') !== pressed) node.setAttribute('aria-pressed', pressed);
+		if (node.getAttribute('aria-label') !== said) node.setAttribute('aria-label', said);
 		if (shape.id === state.canvasShapeId && selected.has(shape.id)) active = node.id;
 	}
 	if (only && state.canvasShapeId && selected.has(state.canvasShapeId) && document.getElementById('rapier-draw-object-' + state.canvasShapeId)) active = 'rapier-draw-object-' + state.canvasShapeId;
-	canvas.setAttribute('role', 'application');
+	if (canvas.getAttribute('role') !== 'application') canvas.setAttribute('role', 'application');
 	if (renamed || !canvas.hasAttribute('aria-label')) {
 		const name = 'Draw canvas, ' + (RAPIER_DRAW_TOOL_WORDS[_rapierDrawTool()] || _rapierDrawTool()) + ' tool. ' + _rapierDrawTextAlternative(state.recipe);
 		if (canvas.getAttribute('aria-label') !== name) canvas.setAttribute('aria-label', name);
@@ -650,7 +653,8 @@ function _rapierDrawMarkSelection(touched = null) {
 	const key = _rapierDrawLeanMarkKey(chosen);
 	const only = _rapierDrawLean() && touched && state.leanMarked === key ? touched.filter(node => node.isConnected) : null;
 	for (const g of only || state.svg.querySelectorAll('[data-shape-id]')) {
-		if (chosen.has(g.getAttribute('data-shape-id'))) g.setAttribute('data-selected', ''); else g.removeAttribute('data-selected');
+		if (chosen.has(g.getAttribute('data-shape-id'))) { if (g.getAttribute('data-selected') !== '') g.setAttribute('data-selected', ''); }
+		else if (g.hasAttribute('data-selected')) g.removeAttribute('data-selected');
 	}
 	state.leanMarked = _rapierDrawLean() ? key : null;
 	_rapierDrawSyncCanvasAccess(only);
@@ -726,8 +730,8 @@ function _rapierDrawPatchShapeNodes(ids) {
 	_rapierDrawDarkStyleSync();
 	_rapierDrawMarkSelection(touched);
 }
-function _rapierDrawShapeCache() {
-	const state = _rapierDrawState, {shapes, strokes, ...head} = state.recipe;
+function _rapierDrawShapeCache(recipe = _rapierDrawState.recipe) {
+	const state = _rapierDrawState, {shapes, strokes, ...head} = recipe;
 	let cache = state.shapeMarkupCache;
 	if (!cache || cache.session !== state.session || !_rapierDrawHistoryEqual(head, cache.head))
 		cache = state.shapeMarkupCache = {session: state.session, head: _rapierDrawHistoryCopy(head), rows: new Map()};
@@ -736,14 +740,22 @@ function _rapierDrawShapeCache() {
 	return shape => {
 		const shown = _rapierDrawDisplayShape(shape);
 		const related = shape.bind || shape.effect || ['line', 'arrow'].includes(shape.recognized) || ['ray', 'light', 'lens'].includes(shape.brush);
-		const input = {shape: shown, stroke: strokes[shape.stroke], related: related ? shapes : undefined};
+		const input = {shape: shape.stroke == null ? shown : {...shown, stroke: -1}, stroke: strokes[shape.stroke], related: related ? shapes : undefined};
 		let row = cache.rows.get(shape.id);
 		if (!row || !_rapierDrawHistoryEqual(input, row.input)) {
-			row = {input: _rapierDrawHistoryCopy(input), html: _rapierDrawShapeMarkup(shown, state.recipe, {sourceOnly: true})};
+			row = {input: _rapierDrawHistoryCopy(input), html: _rapierDrawShapeMarkup(shown, recipe, {sourceOnly: true})};
 			cache.rows.set(shape.id, row);
 		}
 		return row;
 	};
+}
+function _rapierDrawKeyedScene(recipe) {
+	const host = _rapierDrawState.svg;
+	if (!_rapierDrawLean() || recipe.effect || recipe.shapes.some(shape => shape.effect && shape.paint?.group) || host.querySelector('[data-rapier-effect-scene],[data-rapier-effect-layer]')) return false;
+	const markup = _rapierDrawShapeCache(recipe);
+	let bytes = 0;
+	for (const shape of recipe.shapes) bytes += markup(shape).html.length - (shape.recognized === 'paint' ? _rapierDrawDisplayShape(shape).raster.length : 0);
+	return bytes <= 15 * 1024 * 1024;
 }
 function _rapierDrawAdoptShapeNodes() {
 	const state = _rapierDrawState, host = state.svg;
@@ -2841,7 +2853,7 @@ function _rapierDrawEraseWith(path) {
 			if (source.opacity != null) piece.opacity = source.opacity;
 			keepEffect(piece, source);
 			if (brush === 'ink') piece.smooth = source.smooth ?? recipe.smooth;
-			strokes.push({ pts: run }); next.push(piece);
+			strokes.push({ pts: _rapierDrawFrozenPoints(run.map(p => p.slice())) }); next.push(piece);
 		};
 		const headPiece = (head, source) => {
 			if (head.kind === 'arrow') { linePiece(head.poly, source, 2, 'ink'); return; }
@@ -3503,7 +3515,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.62/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.63/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -4489,6 +4501,8 @@ function _rapierDrawHandleSpecs() {
 const RAPIER_DRAW_HANDLE_CLEAR_PX = 18;
 function _rapierDrawClearHandleSpots(recipe, ids, box, scale, sides = [], viewport = null) {
 	const r = RAPIER_DRAW_HANDLE_CLEAR_PX / scale, boxes = [], paths = [], taken = [];
+	const rows = recipe === _rapierDrawState.recipe && _rapierDrawLean() && _rapierDrawState.shapeMarkupCache ? _rapierDrawShapeCache(recipe) : null;
+	const boundsOf = shape => { if (!rows) return _rapierDrawShapeBBoxIn(shape, recipe); const row = rows(shape); return row.bounds ||= _rapierDrawShapeBBoxIn(shape, recipe); };
 	const project = p => viewport ? [_rapierDrawClamp(p[0], viewport.minX, viewport.maxX), _rapierDrawClamp(p[1], viewport.minY, viewport.maxY)] : p;
 	for (const shape of recipe.shapes) {
 		if (ids.includes(shape.id) || shape.hidden || shape.recognized === 'paint' || shape.recognized === 'image') continue;
@@ -4498,7 +4512,7 @@ function _rapierDrawClearHandleSpots(recipe, ids, box, scale, sides = [], viewpo
 			if (label) boxes.push(label);
 		}
 		else {
-			const bounds = _rapierDrawShapeBBoxIn(shape, recipe);
+			const bounds = boundsOf(shape);
 			const frame = viewport && shape.recognized === 'rect' && shape.group === shape.id &&
 				ids.every(id => recipe.shapes.find(item => item.id === id)?.group === shape.id) &&
 				bounds.minX <= box.minX && bounds.maxX >= box.maxX && bounds.minY <= box.minY && bounds.maxY >= box.maxY;
@@ -4507,6 +4521,15 @@ function _rapierDrawClearHandleSpots(recipe, ids, box, scale, sides = [], viewpo
 		}
 	}
 	if (viewport) boxes.push(box);
+	{
+		const reach = 88 / scale + r, area = {minX: box.minX - reach, minY: box.minY - reach, maxX: box.maxX + reach, maxY: box.maxY + reach};
+		if (viewport) for (const [lo, hi, min, max] of [['minX', 'maxX', viewport.minX, viewport.maxX], ['minY', 'maxY', viewport.minY, viewport.maxY]]) {
+			area[lo] = Math.min(area[lo], _rapierDrawClamp(area[lo], min, max) - r); area[hi] = Math.max(area[hi], _rapierDrawClamp(area[hi], min, max) + r);
+		}
+		const meets = b => b.maxX >= area.minX && b.minX <= area.maxX && b.maxY >= area.minY && b.minY <= area.maxY;
+		const kept = boxes.filter(meets), lines = paths.filter(path => meets(_rapierDrawBBox(path)));
+		boxes.length = 0; boxes.push(...kept); paths.length = 0; paths.push(...lines);
+	}
 	const along = (p, a, b) => {
 		const dx = b[0] - a[0], dy = b[1] - a[1], t = dx || dy ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy))) : 0;
 		return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
@@ -4868,7 +4891,7 @@ function _rapierDrawCommand(change, snapshot = true, menu = true, historyContext
 		const grown = _rapierDrawGrowCanvasToContent(state.recipe);
 		const admitted = _rapierDrawAdmitRecipe(state.recipe, true);
 		if (!admitted) throw new Error('Drawing full. Change not made.');
-		const markup = _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(admitted, false, true, {sourceOnly: true}));
+		const markup = _rapierDrawKeyedScene(admitted) ? null : _rapierDrawDisplayMarkup(_rapierDrawSceneMarkup(admitted, false, true, {sourceOnly: true}));
 		state.recipe = admitted;
 		if (snapshot && !_rapierDrawSameRecipe(before)) {
 			_rapierDrawSnapshot(before);
@@ -4887,9 +4910,11 @@ function _rapierDrawCommand(change, snapshot = true, menu = true, historyContext
 			state.undoStack[state.undoStack.length - 1] = entry;
 			state.humanChangePending = true; _rapierDrawBackupTouch();
 		}
-		state.svg.innerHTML = markup;
+		if (markup == null) _rapierDrawAdoptShapeNodes();
+		else state.svg.innerHTML = markup;
 		if (typeof _rapierPaintReattachLive === 'function') _rapierPaintReattachLive();
-		_rapierDrawSyncFonts(); _rapierDrawMarkSelection(); if (menu) _rapierDrawUpdateMenu();
+		if (markup != null) { _rapierDrawSyncFonts(); _rapierDrawMarkSelection(); }
+		if (menu) _rapierDrawUpdateMenu();
 		state.renderEdit = null;
 		return true;
 	} catch (error) {
@@ -5041,12 +5066,12 @@ function _rapierDrawSettleMovedShape(shape, scale) {
 		_rapierDrawSnapArcGeom(shape.geom, shape.id);
 		if (stroke && Math.abs(old.a1 - old.a0) > .000001 && (old.a0 !== shape.geom.a0 || old.a1 !== shape.geom.a1)) {
 			let previous = old.a0;
-			for (const p of stroke.pts) {
+			stroke.pts = _rapierDrawFrozenPoints(stroke.pts.map(p => {
 				const radius = Math.hypot(p[0] - old.cx, p[1] - old.cy);
 				previous = _rapierDrawNearestAngle(Math.atan2(p[1] - old.cy, p[0] - old.cx), previous);
 				const angle = shape.geom.a0 + (previous - old.a0) / (old.a1 - old.a0) * (shape.geom.a1 - shape.geom.a0);
-				p[0] = old.cx + Math.cos(angle) * radius; p[1] = old.cy + Math.sin(angle) * radius;
-			}
+				return [old.cx + Math.cos(angle) * radius, old.cy + Math.sin(angle) * radius, ...p.slice(2)];
+			}));
 		}
 	} else {
 		const geom = _rapierDrawRestGeom(kind, shape.geom, shape.id);
@@ -5422,7 +5447,7 @@ function _rapierDrawPasteRecipe(incoming) {
 	}
 	const recipe = _rapierDrawAdmitRecipe({ ...state.recipe, fonts: admittedFonts, shapes: state.recipe.shapes.concat(incoming.shapes), strokes: state.recipe.strokes.concat(incoming.strokes) }, true);
 	if (!recipe) throw new Error('Too large to paste here.');
-	_rapierDrawSceneMarkup(recipe, false, true, {sourceOnly: true});
+	if (!_rapierDrawKeyedScene(recipe)) _rapierDrawSceneMarkup(recipe, false, true, {sourceOnly: true});
 	_rapierDrawSnapshot(); state.recipe = recipe; _rapierDrawSetSelection([...ids.values()]); _rapierDrawRenderAll(); _rapierDrawSealHistory();
 	state.fontReady = _rapierDrawLoadFonts(recipe, state.session); state.fontReady.catch(error => showToast('Couldn’t load the font.', 'error', null, error));
 }
@@ -6607,10 +6632,12 @@ function _rapierDrawBackupOwner(prepare = false) {
 	const state = _rapierDrawState;
 	if (state.backupRecovery?.session !== state.session || state.backupRecovery.released) {
 		void _rapierDrawBackupRelease();
-		state.backupRecovery = { session: state.session, drawing: crypto.randomUUID(), authority: '', filename: '', prepared: true, revision: 0, change: 0, cleared: 0, writing: 0, files: new Set() };
+		state.backupRecovery = { session: state.session, drawing: crypto.randomUUID(), authority: '', filename: '', prepared: true, epoch: 0, revision: 0, change: 0, cleared: 0, writing: 0, files: new Set() };
 	}
 	const owner = state.backupRecovery;
-	if (owner.prepared && !prepare) {
+	const epoch = Number(rapier.identity.epoch || 0);
+	if (!prepare && (owner.prepared || !owner.authority && owner.epoch === 0 && epoch === 1)) {
+		if (owner.prepared) owner.epoch = epoch;
 		owner.authority = String(rapier.identity.authority || ''); owner.filename = String(rapier.document.filename || ''); owner.prepared = false;
 	}
 	if (!owner.ready || owner.lockFailed) {
@@ -6655,6 +6682,38 @@ async function _rapierDrawBackupRemove(store, files, owner, { quiet = false } = 
 	}
 	if (!ok && !quiet) _rapierDrawBackupProblem('Couldn’t remove an old backup.');
 	return ok;
+}
+function _rapierDrawBackupText(record) {
+	const pointsText = globalThis.RapierDrawCore?._rapierDrawPointsText;
+	if (typeof pointsText !== 'function' || 'toJSON' in Object.prototype || 'toJSON' in Array.prototype) return null;
+	const data = (holder, key) => { const slot = Object.getOwnPropertyDescriptor(holder, key); return slot && 'value' in slot ? slot : null; };
+	const plain = value => value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype && !Object.hasOwn(value, 'toJSON');
+	const value = (key, item) => { if (item != null && typeof item.toJSON === 'function') throw null; return JSON.stringify(item); };
+	const object = (holder, write) => {
+		const out = [];
+		for (const key of Object.keys(holder)) {
+			const slot = data(holder, key);
+			if (!slot) throw null;
+			const text = write(key, slot.value);
+			if (text !== undefined) out.push(JSON.stringify(key) + ':' + text);
+		}
+		return '{' + out.join(',') + '}';
+	};
+	const strokes = list => {
+		if (!Array.isArray(list) || Object.getPrototypeOf(list) !== Array.prototype || Object.hasOwn(list, 'toJSON')) throw null;
+		const out = new Array(list.length);
+		for (let i = 0; i < list.length; i++) {
+			const stroke = data(list, i)?.value, keys = plain(stroke) ? Object.keys(stroke) : null, pts = keys?.length === 1 && keys[0] === 'pts' ? data(stroke, 'pts') : null;
+			const text = pts && pointsText(pts.value);
+			if (typeof text !== 'string') throw null;
+			out[i] = '{"pts":' + text + '}';
+		}
+		return '[' + out.join(',') + ']';
+	};
+	try {
+		if (!plain(record) || !plain(record.recipe)) return null;
+		return object(record, (key, item) => key === 'recipe' ? object(item, (key, item) => key === 'strokes' ? strokes(item) : value(key, item)) : value(key, item));
+	} catch (_) { return null; }
 }
 async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 	const state = _rapierDrawState;
@@ -6761,7 +6820,7 @@ async function _rapierDrawBackupWrite(closing = false, sealed = false) {
 			}
 			failure = 'Storage full. Add or ' + (globalThis.RapierPlatform?.environment.native === true ? 'save' : 'download') + ' it.';
 			store = _rapierDrawBackupStore();
-			await store.write(name, record, { background: !urgent, remove: previous });
+			await store.write(name, _rapierDrawBackupText(record) ?? record, { background: !urgent, remove: previous });
 		} catch (error) {
 			if (error?.code === 'PAINT_CAPTURE_CHANGED') {
 				owner.files.delete(name);
@@ -6848,9 +6907,10 @@ async function _rapierDrawBackupRead() {
 	}
 	let best = null, count = 0;
 	const authority = String(rapier.identity.authority || '');
+	const ours = record => !!record.authority && record.authority === authority;
 	const consider = record => {
 		count++;
-		if (!best || (record.authority === authority) > (best.authority === authority) || (record.authority === authority) === (best.authority === authority) && (record.at < best.at || record.at === best.at && record.drawing < best.drawing)) best = record;
+		if (!best || ours(record) > ours(best) || ours(record) === ours(best) && (record.at < best.at || record.at === best.at && record.drawing < best.drawing)) best = record;
 	};
 	for (const [drawing, rows] of groups) {
 		rows.sort((a, b) => b.revision - a.revision);
@@ -6861,7 +6921,7 @@ async function _rapierDrawBackupRead() {
 					const text = await row.text();
 					if (!text) continue;
 					const record = JSON.parse(text);
-					if (record?.version !== 1 || record.drawing !== drawing || record.revision !== row.revision || typeof record.authority !== 'string' || !record.authority || typeof record.filename !== 'string' || !Number.isFinite(record.at)) throw new Error('recovery record');
+					if (record?.version !== 1 || record.drawing !== drawing || record.revision !== row.revision || typeof record.authority !== 'string' || typeof record.filename !== 'string' || !Number.isFinite(record.at)) throw new Error('recovery record');
 					const recipe = _rapierDrawAdmitRecipe({ ...record.recipe, fonts: record.fonts }, true);
 					if (!recipe) throw new Error('recovery recipe');
 					if (record.agentPatches != null && (!Array.isArray(record.agentPatches) || record.agentPatches.some(row => !row || !_rapierDrawAdmitAgentPatch(row.patch, row.options)))) throw new Error('recovery drawing contribution');
@@ -6895,7 +6955,7 @@ async function _rapierDrawOfferRecovery(chosen = false) {
 			if (state.open || state.finishing) return;
 		}
 		if (!chosen) { showToast('Unfinished drawing kept', 'info', { label: 'Open', fn: () => { void _rapierDrawOfferRecovery(true); } }); return; }
-		const same = record.authority === String(rapier.identity.authority || '');
+		const same = !!record.authority && record.authority === String(rapier.identity.authority || '');
 		let editing = null, baselineRecipe = null;
 		if (same && record.editing?.sourceHash) {
 			try {

@@ -1,10 +1,11 @@
+import {parseJSON, stringifyJSON, inheritJSON} from './json-custody.mjs';
 // SPDX-License-Identifier: AGPL-3.0-only
 import {canonicalNote, canonicalIndex, canonicalJSON} from './merge.mjs';
 import {projectCard, isNoteFile, validNoteId as validId, NOTE_CONTROL_GROUPS, NOTE_CONTROL_FIELDS} from './model.mjs';
 import {sha256, sha256State, sha256Yielding, checkByteAbort} from './integrity.mjs';
 export {sha256};
 import {diff} from '../packages/rapier-diff/index.mjs';
-import {exportLedger, prepareLedgerAsync, readLedger, textRoot, rootAfter} from '../kit/ledger/format.mjs';
+import {exportLedger, prepareLedgerAsync, readLedger, ledgerWithStart, textRoot, rootAfter} from '../kit/ledger/format.mjs';
 import {utf8Length} from '../kit/ledger/data.mjs';
 import {_rapierMetadataDelta, _rapierTransformMetadata, _rapierTransformSplices} from '../kit/ledger/journal-records.mjs';
 import {selectiveUndo} from '../kit/ledger/history.mjs';
@@ -23,7 +24,7 @@ const record = o => !!o && typeof o === 'object' && !Array.isArray(o);
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 const fault = (code, message) => Object.assign(new Error(message), {code});
 const requireThat = (ok, message, code = 'corrupt') => { if (!ok) throw fault(code, message); };
-const clone = value => JSON.parse(canonicalJSON(value));
+const clone = value => parseJSON(canonicalJSON(value));
 const equal = (a, b) => canonicalJSON(a) === canonicalJSON(b);
 function freezeData(value) {
 	if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -51,7 +52,7 @@ function admitLedger(state, ledger, text) {
 	if (state) { freezeData(admitted); state.ledgers.set(admitted.ledger, admitted); state.sourceHashes.set(admitted.text, admitted.ledger.head.sha256); }
 	return admitted;
 }
-const draft = (manifest, state) => state ? {...manifest} : manifest;
+const draft = (manifest, state) => state ? inheritJSON({...manifest}, manifest) : manifest;
 const produced = (ledger, text) => ({ledger, text, metadata: ledger.head.metadata,
 	root: ledger.head.root, revision: ledger.head.revision, complete: ledger.complete});
 function cooperate(state) {
@@ -104,7 +105,7 @@ function decode(bytes) { return new TextDecoder('utf-8', {fatal: true, ignoreBOM
 function entryCopy(file, entry, noteId) {
 	requireThat(validFile(file), 'A history event needs a note filename', 'file');
 	requireThat(record(entry) && entry.id === noteId && validId(noteId), 'Admit the note identity before recording history', 'identity');
-	return JSON.parse(canonicalIndex({version: 1, notes: {[file]: entry}})).notes[file];
+	return parseJSON(canonicalIndex({version: 1, notes: {[file]: entry}})).notes[file];
 }
 export function manifestName(noteId) {
 	requireThat(validId(noteId), 'A manifest needs an admitted note identity', 'identity');
@@ -184,7 +185,7 @@ function inspectManifest(raw, state) {
 	requireThat(raw.version === HISTORY_VERSION, 'Unsupported history version; keep its original bytes', 'unsupported');
 	const descriptors = Object.getOwnPropertyDescriptors(raw), declaration = descriptors.canonical;
 	requireThat(declaration && own(declaration, 'value') && declaration.enumerable, 'No canonical history declaration');
-	const projection = Object.create(Object.getPrototypeOf(raw), {...descriptors, canonical: {...declaration, value: null}});
+	const projection = inheritJSON(Object.create(Object.getPrototypeOf(raw), {...descriptors, canonical: {...declaration, value: null}}), raw);
 	const m = clone(projection);
 	requireThat(validId(m.noteId) && integer(m.next) && m.next > 0 && record(m.objects) && Array.isArray(m.versions) && Array.isArray(m.protected) && Array.isArray(m.thinned), 'Invalid history manifest shape');
 	const canonical = declaration.value === null ? null : admitLedger(state, declaration.value);
@@ -247,17 +248,34 @@ function orderManifest(state, manifest) {
  const canonical = admitted.canonical && {...admitted.canonical, ledger: ordered.canonical};
  return keepAdmission(state, ordered, canonical).manifest;
 }
-function manifestWrite(m) { return {name: manifestName(m.noteId), bytes: ENC.encode(JSON.stringify(m) + '\n'), immutable: false}; }
-export function serializeManifest(manifest) { return JSON.stringify(validateManifest(manifest)) + '\n'; }
+function manifestWrite(m) { return {name: manifestName(m.noteId), bytes: ENC.encode(stringifyJSON(m) + '\n'), immutable: false}; }
+export function serializeManifest(manifest) { return stringifyJSON(validateManifest(manifest)) + '\n'; }
+const MANIFEST_RECEIPT_FLOOR = 65536;
+const MANIFEST_RECEIPT_LIMIT = 256 * 1024;
+let lastLargeManifestReceipt = null;
+function retainedLargeManifest(state, exact, noteId) {
+	const kept = lastLargeManifestReceipt;
+	if (!state || !kept || kept.exact !== exact || kept.exact.length > MANIFEST_RECEIPT_LIMIT || kept.admitted.manifest.noteId !== noteId) return null;
+	return keepAdmission(state, kept.admitted.manifest, kept.admitted.canonical);
+}
+function retainLargeManifest(exact, admitted) {
+	if (exact.length <= MANIFEST_RECEIPT_FLOOR || exact.length > MANIFEST_RECEIPT_LIMIT) return;
+	lastLargeManifestReceipt = {exact, admitted};
+}
 function parseHistory(value, {noteId, now} = {}, state) {
 	manifestName(noteId); time(now);
 	if (value == null) return keepAdmission(state, emptyManifest(noteId), null);
 	const input = typeof value === 'string' ? ENC.encode(canonicalNote(value)) : bytesOf(value);
 	const bytes = !state || typeof SharedArrayBuffer === 'function' && input.buffer instanceof SharedArrayBuffer ? input.slice() : input;
 	try {
-		const exact = decode(bytes), admitted = state?.receipts.get(exact) || inspectManifest(JSON.parse(exact), state);
+		const exact = decode(bytes);
+		const cached = state && (state.receipts.get(exact) || retainedLargeManifest(state, exact, noteId));
+		const admitted = cached || inspectManifest(parseJSON(exact), state);
 		requireThat(admitted.manifest.noteId === noteId, 'The manifest belongs to another note');
-		if (state) state.receipts.set(exact, admitted);
+		if (state) {
+			state.receipts.set(exact, admitted);
+			retainLargeManifest(exact, admitted);
+		}
 		return admitted;
 	} catch (cause) {
 		const code = ['newer', 'unsupported'].includes(cause.code) ? cause.code : 'corrupt';
@@ -278,7 +296,7 @@ export function rekeyManifest(value, {from, to, now} = {}) {
 	const m = parseManifest(value, {noteId: from, now});
 	if (from === to) return {manifest: m, writes: [], moved: false};
 	m.noteId = to;
-	for (const v of m.versions) { v.entry = {...v.entry, id: to}; delete v.controls; }
+	for (const v of m.versions) { v.entry = inheritJSON({...v.entry, id: to}, v.entry); delete v.controls; }
 	const checked = validateManifest(m);
 	return {manifest: checked, writes: [manifestWrite(checked)], moved: true, was: manifestName(from)};
 }
@@ -468,7 +486,7 @@ export function thin(manifests, policy = DEFAULT_POLICY, {now, dayOf, complete =
 		for (const id of weekly) protectedIds.add(id);
 		const gone = m.versions.filter(v => !protectedIds.has(v.id)).map(v => ({id: v.id, hash: v.hash, time: v.time, reason: ages.get(v.id) < p.dailyDays ? 'daily' : 'weekly', ...(v.restoredFrom === undefined ? {} : {restoredFrom: v.restoredFrom})}));
 		if (!gone.length) { after.push(m); continue; }
-		const next = {...m, versions: m.versions.filter(v => protectedIds.has(v.id)), objects: {...m.objects}, thinned: [...m.thinned, {time: now, policy: p, removes: gone}]};
+		const next = inheritJSON({...m, versions: m.versions.filter(v => protectedIds.has(v.id)), objects: {...m.objects}, thinned: [...m.thinned, {time: now, policy: p, removes: gone}]}, m);
 		const live = new Set(next.versions.map(v => v.hash));
 		for (const hash of Object.keys(next.objects)) if (!live.has(hash)) delete next.objects[hash];
 		after.push(next); writes.push(manifestWrite(next));
@@ -621,6 +639,11 @@ function adoptCanonicalIn(state, manifest, ledger, text) {
  return canonicalResult(state, m, after, {act: after.revision ? canonicalAct(after.ledger.records.at(-1)) : null, unchanged: false});
 }
 export function adoptCanonical(manifest, ledger, text) { return adoptCanonicalIn(null, manifest, ledger, text); }
+export function restoreDepartureLedger(stored, text) {
+	requireThat(record(stored) && Array.isArray(stored.records) && record(stored.start) && stored.start.text === '' && typeof text === 'string',
+		'The unfinished note has no complete authored history.', 'notes_history_unavailable');
+	return readLedger(ledgerWithStart(stored, text), text).ledger;
+}
 function carryCanonicalIn(state, manifest, ledger, text) {
  const admitted = inspectManifest(manifest, state), m = draft(admitted.manifest, state), held = canonicalFrom(admitted), before = withoutInput(held), after = admitLedger(state, ledger, text);
  requireThat(after.complete && after.ledger.documentAuthority === before.documentAuthority &&
@@ -669,7 +692,7 @@ function appendCanonicalIn(state, manifest, {text, metadata, author, transport =
  }
  let root = before.root; for (const row of splices) root = rootAfter(root, row);
  const tx = {id: id ?? 'act:' + globalThis.crypto.randomUUID(), documentAuthority: before.documentAuthority,
-  baseRevision: before.revision, revision: before.revision + 1, actor: clone(author), transport, operation,
+  baseRevision: before.revision, revision: before.revision + 1, actor: clone({...author}), transport, operation,
   requestId, sourceTransactionId: inverse.length === 1 ? inverse[0] : null,
   ...(inverse.length > 1 ? {sourceTransactionIds: inverse} : {}),
   affectedBlockIds: [], parent: before.records.at(-1)?.transaction.id || null, reverts: null, reapplies: null,
@@ -687,7 +710,8 @@ function preparedManifestText(state, manifest) {
  const admitted = inspectManifest(manifest, state), m = admitted.manifest;
  let exact = state.serialized.get(m);
  if (exact === undefined) {
-  exact = JSON.stringify(m) + '\n'; state.serialized.set(m, exact); state.receipts.set(exact, admitted);
+  exact = stringifyJSON(m) + '\n'; state.serialized.set(m, exact); state.receipts.set(exact, admitted);
+  retainLargeManifest(exact, admitted);
  }
  return exact;
 }

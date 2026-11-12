@@ -88,15 +88,18 @@ function noteFromHtml(html, fallbackTitle, findByRef, warnings) {
 	return blocks.join('\n\n').replace(/\r\n?/g, '\n').replace(/[ \t\r\n\f]+$/, '') + '\n';
 }
 
-function decodeQuotedPrintable(s) {
-	const stripped = String(s).replace(/=\r?\n/g, '');
-	const bytes = [];
-	for (let i = 0; i < stripped.length; i++) {
-		const hex = stripped.slice(i + 1, i + 3);
-		if (stripped[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(hex)) { bytes.push(parseInt(hex, 16)); i += 2; }
-		else bytes.push(stripped.charCodeAt(i) & 0xFF);
+function decodeQuotedPrintable(source) {
+	const bytes = new Uint8Array(source.length); let length = 0;
+	for (let i = 0; i < source.length; i++) {
+		if (source[i] === 61) {
+			if (source[i + 1] === 10) { i++; continue; }
+			if (source[i + 1] === 13 && source[i + 2] === 10) { i += 2; continue; }
+			const hex = String.fromCharCode(source[i + 1], source[i + 2]);
+			if (/^[0-9A-Fa-f]{2}$/.test(hex)) { bytes[length++] = parseInt(hex, 16); i += 2; continue; }
+		}
+		bytes[length++] = source[i];
 	}
-	return new Uint8Array(bytes);
+	return bytes.subarray(0, length);
 }
 function headerValue(headers, name) {
 	const m = new RegExp('^' + name + '\\s*:[ \t]*(.*)$', 'im').exec(String(headers).replace(/\r?\n[ \t]+/g, ' '));
@@ -106,40 +109,59 @@ function headerParam(line, name) {
 	const m = new RegExp(name + '\\s*=\\s*"([^"]*)"|' + name + '\\s*=\\s*([^\\s;]+)', 'i').exec(line || '');
 	return m ? (m[1] ?? m[2]) : '';
 }
-function parseMht(text, warnings = []) {
-	const src = String(text);
-	const headEnd = src.search(/\r?\n\r?\n/);
-	const head = headEnd < 0 ? src : src.slice(0, headEnd);
+function parseMht(source, warnings = []) {
+	const raw = source instanceof Uint8Array ? source : source instanceof ArrayBuffer ? new Uint8Array(source) : new TextEncoder().encode(source);
+	const src = new TextDecoder('windows-1252').decode(raw), separator = /\r?\n\r?\n/g;
+	const opening = separator.exec(src);
+	if (!opening) return null;
+	const head = readImportText({bytes: raw.subarray(0, opening.index)}, warnings, 'MIME headers');
 	const ctype = headerValue(head, 'Content-Type');
 	const boundary = headerParam(ctype, 'boundary');
 	if (!boundary) return null;
 	const marker = '\n--' + boundary;
-	const rest = ('\n' + src.slice(headEnd < 0 ? 0 : headEnd)).replace(/\r\n/g, '\n');
-	const chunks = rest.split(marker).slice(1);
+	const nextBoundary = from => {
+		for (let at = src.indexOf(marker, from); at >= 0; at = src.indexOf(marker, at + marker.length)) {
+			const after = at + marker.length, newline = src.indexOf('\n', after);
+			const tail = src.slice(after, newline < 0 ? src.length : newline).replace(/\r$/, ''), closing = tail.startsWith('--');
+			if (/^[ \t]*$/.test(closing ? tail.slice(2) : tail)) return {at, start: newline < 0 ? src.length : newline + 1, closing};
+		}
+		return null;
+	};
 	const parts = [];
-	for (let chunk of chunks) {
-		if (/^(--)?\n?$/.test(chunk) || chunk.startsWith('--')) continue;
-		chunk = chunk.replace(/^\n/, '');
-		const sep = chunk.search(/\n\n/);
-		if (sep < 0) continue;
-		const headers = chunk.slice(0, sep), rawBody = chunk.slice(sep + 2);
+	let ordinal = 0;
+	for (let delimiter = nextBoundary(opening.index); delimiter && !delimiter.closing;) {
+		const start = delimiter.start; ordinal++;
+		delimiter = nextBoundary(start);
+		const at = delimiter?.at ?? -1;
+		const end = at < 0 ? raw.length : at - (src[at - 1] === '\r' ? 1 : 0);
+		if (!delimiter) warnings.push({code: 'mime_unterminated', name: 'the last MIME part',
+			message: 'The archive ends before its closing boundary; the last part was read to the end of the file.'});
+		const part = src.slice(start, end), leading = /^\r?\n/.exec(part), sep = leading ? {index: 0, 0: leading[0]} : /\r?\n\r?\n/.exec(part);
+		if (!sep) {
+			warnings.push({code: 'mime_part_malformed', name: 'MIME part ' + ordinal + ' (bytes ' + start + '–' + end + ')',
+				message: 'A MIME part has no break between its headers and its body and was not read; the parts beside it were still read.'});
+			continue;
+		}
+		const headers = leading ? '' : readImportText({bytes: raw.subarray(start, start + sep.index)}, warnings, 'MIME part headers');
+		const rawBody = raw.subarray(start + sep.index + sep[0].length, end);
 		const encoding = headerValue(headers, 'Content-Transfer-Encoding').toLowerCase();
 		const type = headerValue(headers, 'Content-Type');
 		const location = headerValue(headers, 'Content-Location');
 		const id = headerValue(headers, 'Content-ID').replace(/^<|>$/g, '');
 		let bytes;
 		try {
-			bytes = encoding === 'base64' ? Uint8Array.from(atob(rawBody.replace(/\s+/g, '')), c => c.charCodeAt(0))
+			bytes = encoding === 'base64' ? Uint8Array.from(atob(new TextDecoder().decode(rawBody).replace(/\s+/g, '')), c => c.charCodeAt(0))
 				: encoding === 'quoted-printable' ? decodeQuotedPrintable(rawBody)
-				: new TextEncoder().encode(rawBody);
+				: rawBody;
 		} catch (error) {
-			bytes = new TextEncoder().encode(rawBody);
+			bytes = rawBody;
 			warnings.push({code: 'mime_part_unreadable', name: location || id || type || 'a MIME part',
 				message: 'A ' + (encoding || 'plain') + ' MIME part could not be decoded and was kept as it was written; the parts beside it were still read.'});
 		}
 		parts.push({type: type.split(';')[0].trim().toLowerCase(), charset: headerParam(type, 'charset') || 'utf-8', location, id, bytes});
 	}
 	parts.start = headerParam(ctype, 'start').replace(/^<|>$/g, '');
+	parts.date = headerValue(head, 'Date');
 	return parts;
 }
 function textOfPart(part, warnings) {
@@ -180,7 +202,7 @@ export async function importHtml(entries, options) {
 		if (f.unreadable) { skipped.push({name: f.name, why: f.unreadable}); continue; }
 		const warnings = [];
 		let text;
-		try { text = readImportText(f, warnings); } catch (_) { if (detectKind(f.name)) skipped.push({name: f.name, why: 'no readable text or bytes'}); continue; }
+		try { text = detectKind(f.name) === 'mht' && f.bytes ? '' : readImportText(f, warnings); } catch (_) { if (detectKind(f.name)) skipped.push({name: f.name, why: 'no readable text or bytes'}); continue; }
 		const kind = detectKind(f.name, text);
 		if (!kind) continue;
 
@@ -202,7 +224,7 @@ export async function importHtml(entries, options) {
 				built.push({file, text: noteText, sourceName: f.name, rootId: f.rootId ?? '', warnings, entry: {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: '', ...dates}, created: dates.created ?? -Infinity});
 				continue;
 			}
-			const parts = parseMht(text, warnings);
+			const parts = parseMht(f.bytes ?? text, warnings);
 			if (!parts || !parts.length) { skipped.push({name: f.name, why: 'not a readable MIME container'}); continue; }
 			const htmlPart = (parts.start ? parts.find(p => p.id === parts.start && p.type === 'text/html') : parts.find(p => p.type === 'text/html')) || (!parts.start && parts.length === 1 ? parts[0] : null);
 			if (!htmlPart) { skipped.push({name: f.name, why: 'no HTML part found'}); continue; }
@@ -242,12 +264,12 @@ export async function importHtml(entries, options) {
 			}
 
 			const file = allocate(noteText);
-			const headDate = new Date(headerValue(text.slice(0, 2000), 'Date')).getTime();
+			const headDate = new Date(parts.date).getTime();
 			const mhtEntry = {order: '', pinned: false, skill: false, archived: false, trashed: false, colour: '', ...dates};
 			if (mhtEntry.modified === undefined && Number.isFinite(headDate)) { mhtEntry.modified = headDate; warnings.push({code: 'mime_date', message: 'The MIME archive date is used for this note. The export does not establish its original creation or edit time.'}); }
 			built.push({file, text: noteText, sourceName: f.name, rootId: f.rootId ?? '', warnings, entry: mhtEntry, created: dates.created ?? (Number.isFinite(headDate) ? headDate : -Infinity)});
 		} catch (_) {
-			built.push({...literalImportSource({...f, text, bytes: undefined}, pool, 'The HTML or MIME structure could not be converted.', warnings, kind === 'html' ? 'html' : 'text'), created: -Infinity});
+			built.push({...literalImportSource({...f, text: kind === 'mht' && f.bytes ? readImportText(f, warnings) : text, bytes: undefined}, pool, 'The HTML or MIME structure could not be converted.', warnings, kind === 'html' ? 'html' : 'text'), created: -Infinity});
 		}
 	}
 

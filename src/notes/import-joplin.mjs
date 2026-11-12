@@ -1,4 +1,4 @@
-import {audioMime, appendImportedRecording, recordingHref} from './audio.mjs';
+import {audioMime, createRecordingAppender, recordingHref} from './audio.mjs';
 import {noteFileName, orderAfter} from './model.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
 import {scanLinks, escapeLinkAttribute} from './links.mjs';
@@ -150,7 +150,8 @@ export async function importJoplin(entries, options) {
 	const noteTagsOf = new Map();
 	for (const pair of noteTagPairs) { if (!tags.has(pair.tag)) continue; if (!noteTagsOf.has(pair.note)) noteTagsOf.set(pair.note, []); noteTagsOf.get(pair.note).push(tags.get(pair.tag)); }
 
-	const attachments = [], pictures = [], audio = [], audioPool = [...(Array.isArray(options?.audioExisting) ? options.audioExisting : [])], sounds = new Map();
+	const attachments = [], pictures = [], audio = [], sounds = new Map();
+	const appendRecording = createRecordingAppender(Array.isArray(options?.audioExisting) ? options.audioExisting : []);
 	for (const [id, r] of resources) for (const source of resourceBytes.get(id) || []) {
 		const ext = r.ext ? '.' + r.ext.replace(/^\./, '') : '';
 		const mime = r.mime || IMAGE_MIME_BY_EXT[ext.replace(/^\./, '').toLowerCase()] || 'application/octet-stream';
@@ -207,9 +208,9 @@ export async function importJoplin(entries, options) {
 			const file = noteFileName(text + '\n', pool); pool.push(file);
 			const soundHrefs = new Map();
 			for (const {id, sound, append} of noteSounds) {
-				const mapped = appendImportedRecording(text, file, sound, audioPool);
+				const mapped = appendRecording(text, file, sound);
 				if (append) text = mapped.text.trimEnd();
-				audio.push(mapped.audio); audioPool.push(mapped.audio.name);
+				audio.push(mapped.audio);
 				soundHrefs.set(':/' + id, escapeLinkAttribute(recordingHref(mapped.audio.name)));
 			}
 			for (const link of scanLinks(text).reverse()) {

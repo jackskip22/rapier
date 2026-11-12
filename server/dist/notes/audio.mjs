@@ -16,15 +16,19 @@ export function audioMime(mime, name = '') {
 export function validRecordingName(name) {
 	return typeof name === 'string' && !!name && name !== '.' && name !== '..' && !/[\/\\\u0000-\u001f\u007f]/.test(name) && !name.startsWith('.');
 }
-export function recordingName(noteFile, existing = [], mime) {
-	const type = audioMime(mime), ext = TYPES[type] || (type.startsWith('audio/') ? 'bin' : '');
-	if (!ext) throw new Error('This recording container is not supported');
-	const base = noteFileName(String(noteFile || '').replace(/\.md$/i, '')).slice(0, -3);
-	const taken = new Set([...existing].map(n => String(n).toLowerCase()));
-	let n = 1, name;
-	do { name = base + '.' + n++ + '.' + ext; } while (taken.has(name.toLowerCase()));
-	return name;
+function recordingNames(existing) {
+	const taken = new Set([...existing].map(n => String(n).toLowerCase())), suffixes = new Map();
+	return (noteFile, mime) => {
+		const type = audioMime(mime), ext = TYPES[type] || (type.startsWith('audio/') ? 'bin' : '');
+		if (!ext) throw new Error('This recording container is not supported');
+		const base = noteFileName(String(noteFile || '').replace(/\.md$/i, '')).slice(0, -3), key = base.toLowerCase() + '\0' + ext;
+		let n = suffixes.get(key) || 1, name;
+		do { name = base + '.' + n++ + '.' + ext; } while (taken.has(name.toLowerCase()));
+		taken.add(name.toLowerCase()); suffixes.set(key, n);
+		return name;
+	};
 }
+export function recordingName(noteFile, existing = [], mime) { return recordingNames(existing)(noteFile, mime); }
 export function recordingHref(name) {
 	if (!validRecordingName(name)) throw new Error('This recording name is not a sibling file');
 	return siblingHref('audio', name);
@@ -61,6 +65,18 @@ export function recordingsOf(text, links = null) {
 	return out;
 }
 export function addRecordingLine(text, entry) { return addSiblingLinkLine(text, recordingLine(entry)); }
+export function bindRecordingStamps(text, stamp, name) {
+	let out = String(text ?? ''); const prefix = stamp + '-t=', href = recordingHref(name), seen = new Set();
+	for (const row of scanLinks(out).sort((a, b) => b.destStart - a.destStart)) {
+		if (row.image || row.unresolvedDecode || row.dest || !['inline', 'reference', 'html'].includes(row.kind)
+			|| !row.anchor.startsWith(prefix) || seen.has(row.destStart)) continue;
+		const seconds = row.anchor.slice(prefix.length), raw = '#' + prefix + seconds;
+		if (!/^\d+$/.test(seconds) || !out.startsWith(raw, row.destStart)) continue;
+		seen.add(row.destStart);
+		out = out.slice(0, row.destStart) + href + '#t=' + seconds + out.slice(row.destStart + raw.length);
+	}
+	return out;
+}
 export function removeRecordingLine(text, entry) {
 	const s = String(text ?? '');
 	const row = recordingsOf(s).find(r => r.name === entry.name && (entry.start == null || r.start === entry.start) && (entry.line == null || r.line === entry.line) && (entry.raw == null || r.raw === entry.raw));
@@ -86,20 +102,34 @@ export function recordingBytes(list) {
 	}
 	return total;
 }
-export function appendImportedRecording(text, noteFile, source, existing = []) {
-	const mime = audioMime(source.mime, source.name);
-	const name = recordingName(noteFile, existing, mime);
-	const audio = {name, bytes: source.bytes, mime, duration: source.duration ?? null, note: noteFile};
-	return {text: addRecordingLine(text, audio), audio};
+export function createRecordingAppender(existing = []) {
+	const allocate = recordingNames(existing);
+	return (text, noteFile, source) => {
+		const mime = audioMime(source.mime, source.name), name = allocate(noteFile, mime);
+		const audio = {name, bytes: source.bytes, mime, duration: source.duration ?? null, note: noteFile};
+		return {text: addRecordingLine(text, audio), audio};
+	};
 }
-export function findAudioAttachment(entries, note, path) {
+export function indexAudioAttachments(entries) {
 	const clean = s => String(s).replace(/\\/g, '/').replace(/^\.\//, '');
-	const wanted = clean(path), parent = clean(note.name).replace(/[^/]*$/, '');
-	const scope = entries.filter(e => e.bytes && (e.from || '') === (note.from || ''));
-	for (const name of [parent + wanted, wanted]) {
-		const found = scope.filter(e => clean(e.name) === name);
-		if (found.length) return found.length === 1 ? found[0] : null;
+	const scopes = new Map();
+	for (const entry of entries) if (entry.bytes) {
+		const archive = entry.from || '', name = clean(entry.name);
+		if (!scopes.has(archive)) scopes.set(archive, {paths: new Map(), basenames: new Map()});
+		const scope = scopes.get(archive);
+		for (const [map, key] of [[scope.paths, name], [scope.basenames, name.split('/').pop()]]) {
+			if (!map.has(key)) map.set(key, []);
+			map.get(key).push(entry);
+		}
 	}
-	const found = scope.filter(e => clean(e.name).split('/').pop() === wanted.split('/').pop());
-	return found.length === 1 ? found[0] : null;
+	return (note, path) => {
+		const wanted = clean(path), parent = clean(note.name).replace(/[^/]*$/, ''), scope = scopes.get(note.from || '');
+		if (!scope) return null;
+		for (const name of [parent + wanted, wanted]) {
+			const found = scope.paths.get(name);
+			if (found) return found.length === 1 ? found[0] : null;
+		}
+		const found = scope.basenames.get(wanted.split('/').pop());
+		return found?.length === 1 ? found[0] : null;
+	};
 }

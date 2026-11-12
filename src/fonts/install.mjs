@@ -4,7 +4,7 @@ import {admitFontFamily, FONT_CATALOG_LIMITS} from './catalog.mjs';
 // The browsing sheet supplies the existing progress/notice owners. Add has no document or selection authority.
 export function createFontLibrary({families, baseUrl, loader, fonts, progress, outcome}) {
 	if (!Array.isArray(families) || families.length > FONT_CATALOG_LIMITS.families || typeof loader?.data !== 'function' ||
-		typeof fonts?.add !== 'function' || typeof fonts?.installed !== 'function' || typeof fonts?.preview !== 'function' ||
+		typeof fonts?.add !== 'function' || typeof fonts?.remove !== 'function' || typeof fonts?.installed !== 'function' || typeof fonts?.preview !== 'function' ||
 		typeof progress !== 'function' || typeof outcome !== 'function') throw new TypeError('Font library owners are required.');
 	const catalog = new Map(), pending = new Map();
 	let tail = Promise.resolve();
@@ -77,6 +77,15 @@ export function createFontLibrary({families, baseUrl, loader, fonts, progress, o
 			return pending.get(id);
 		},
 		async installed(id) { const family = familyFor(id); return complete(family, await kept(family)); },
+		// Every face this family put on the shelf goes, whichever catalog version added it; a manual upload of another family stays.
+		async remove(id) {
+			const family = familyFor(id);
+			await pending.get(id)?.catch(() => {});
+			await fonts.ready;
+			const held = fonts.installed(family.id).filter(font => font.origin?.catalog === 'google-fonts' && font.origin.family === family.id);
+			if (held.length) await fonts.remove(held.map(font => font.id));
+			return Object.freeze({status: 'removed', family: family.id, fonts: held.length});
+		},
 		async licenses(id) { return licensesFor(await kept(familyFor(id))); },
 	});
 }

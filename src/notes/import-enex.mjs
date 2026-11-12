@@ -2,7 +2,7 @@ import {orderAfter} from './model.mjs';
 import {zipOversizeSkip} from './zip.mjs';
 import {scanLinks} from './links.mjs';
 import {htmlToMarkdown} from './html-md.mjs';
-import {audioMime, appendImportedRecording} from './audio.mjs';
+import {audioMime, createRecordingAppender} from './audio.mjs';
 import {expandImportZips, importTags, literalInline, literalDestination, importMetadata, importAlarm, uniquePictureName, importNames} from './import.mjs';
 import {readImportText, reportCharacterChange, finishImportCharacters} from './import-characters.mjs';
 
@@ -233,7 +233,8 @@ export async function importEnex(entries, options) {
 	const skipped = [], built = [], pool = existing.slice(), titles = new Map();
 	const allocate = importNames(pool);
 	const sections = [], seenSections = new Set();
-	const pictures = [], attachments = [], usedPictureNames = new Set(), audio = [], audioPool = [...(Array.isArray(options?.audioExisting) ? options.audioExisting : [])];
+	const pictures = [], attachments = [], usedPictureNames = new Set(), audio = [];
+	const appendRecording = createRecordingAppender(Array.isArray(options?.audioExisting) ? options.audioExisting : []);
 
 	for (const f of list) {
 		if (f?.oversize) { skipped.push(zipOversizeSkip(f)); continue; }
@@ -307,8 +308,8 @@ export async function importEnex(entries, options) {
 					const file = allocate(noteText);
 					for (const source of resources.values()) {
 						if (!audioMime(source.mime, source.name)) continue;
-						const mapped = appendImportedRecording(noteText, file, source, audioPool);
-						noteText = mapped.text; audio.push(mapped.audio); audioPool.push(mapped.audio.name);
+						const mapped = appendRecording(noteText, file, source);
+						noteText = mapped.text; audio.push(mapped.audio);
 					}
 					const tagNames = allChildren(note, 'tag').map(node => textOf(node)).filter(Boolean);
 					const labels = labelsOf(allChildren(note, 'tag'));

@@ -29,7 +29,12 @@ async function _rapierPartReady(id, said = '') {
 		await _rapierPartWait(id, said); return true;
 	}
 	catch (error) {
-		if (error?.cause?.code === 'part_not_carried') void _rapierFullEditorOnly(said || (id === 'drawing' ? 'Draw' : RapierParts.pin(id)?.label || id));
+		const noun = said || (id === 'drawing' ? 'Draw' : RapierParts.pin(id)?.label || id);
+		if (error?.cause?.code === 'part_not_carried') void _rapierFullEditorOnly(noun);
+		else if (error?.code === 'part_unavailable' && !error.started) {
+			if (await rapierConfirm({title: 'Couldn’t download ' + noun, message: _rapierErrorWords(error, 'Couldn’t download ' + noun + '. Try again.'),
+				confirmLabel: 'Retry', plain: true}) === true) return _rapierPartReady(id, said);
+		}
 		else showToast(_rapierErrorWords(error, 'Couldn’t load that part of Rapier.'), 'error');
 		return false;
 	}

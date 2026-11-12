@@ -245,7 +245,7 @@ async function _rapierRecorderStart() {
 	if (!d || d.phase !== 'idle') return;
 	const mime = _rapierRecorderModel().RECORDING_TYPES.find(type => MediaRecorder.isTypeSupported(type));
 	if (!mime) { d.fault = _rapierNotesWords().Device + ' cannot record audio in a form Notes can keep.'; _rapierRecorderRender(); return; }
-	d.phase = 'requesting'; d.fault = ''; d.refused = false; d.custody = ''; d.streamFault = ''; d.session = null; d.entry = null; d.saved = 0; d.held = []; d.pending = []; d.chunks = []; d.blob = null; _rapierRecorderRender();
+	d.phase = 'requesting'; d.fault = ''; d.refused = false; d.custody = ''; d.streamFault = ''; d.session = null; d.entry = null; d.saved = 0; d.pendingPrefix = 0; d.stamps = ''; d.held = []; d.pending = []; d.chunks = []; d.blob = null; _rapierRecorderRender();
 	try {
 		const stream = await navigator.mediaDevices.getUserMedia({audio: true});
 		if (R.draft !== d || d.phase !== 'requesting') { for (const t of stream.getTracks()) t.stop(); return; }
@@ -296,7 +296,7 @@ async function _rapierRecorderConclude(d, type) {
 	const R = _rapierRecorder;
 	const render = () => { if (R.draft === d) _rapierRecorderRender(); };
 	await _rapierRecorderVoiceSettled(d);
-	if (d.session && !d.streamFault) {
+	if (d.session) {
 		d.phase = 'stopping'; render();
 		await Promise.allSettled(d.pending);
 	}
@@ -315,14 +315,12 @@ async function _rapierRecorderConclude(d, type) {
 			render(); return;
 		}
 	}
-	let prefix = null;
-	if (d.session && d.saved) {
-		try { const bytes = await d.session.read(); prefix = bytes && bytes.length >= d.saved ? bytes.subarray(0, d.saved) : null; } catch (_) { prefix = null; }
-		if (!prefix) d.fault = 'Couldn’t read the start back. Notes offers it next time.';
-	}
-	d.blob = new Blob([...(prefix ? [prefix] : []), ...d.held, ...d.chunks], {type}); d.held = []; d.chunks = [];
-	d.phase = d.blob.size ? 'review' : 'idle';
-	if (!d.blob.size) { d.blob = null; d.fault = d.fault || 'No sound recorded.'; await _rapierRecorderDropSession(d, {abandon: true}); }
+	d.blob = new Blob([...d.held, ...d.chunks], {type}); d.held = []; d.chunks = [];
+	d.pendingPrefix = d.session ? d.saved : 0;
+	try { await _rapierRecorderReviewBytes(d); }
+	catch (_) { d.fault = 'Couldn’t read the start back. Notes offers it next time.'; }
+	d.phase = d.blob.size || d.pendingPrefix ? 'review' : 'idle';
+	if (d.phase === 'idle') { d.blob = null; d.fault = d.fault || 'No sound recorded.'; await _rapierRecorderDropSession(d, {abandon: true}); }
 	render();
 }
 async function _rapierRecorderDropSession(d, {abandon = false} = {}) {
@@ -378,9 +376,10 @@ function _rapierRecorderStamp() {
 	const seconds = Math.floor(_rapierRecorderElapsed(d) / 1000), words = _rapierRecorderModel().durationWords(seconds);
 	const node = getSelection()?.focusNode, host = node && (node.nodeType === 1 ? node : node.parentElement)?.closest('.block-edit');
 	if (!host?.isContentEditable) { showToast('Tap where the time goes, then tap the time.', 'info'); return; }
-	d.stamps = true;
-	if (typeof _rangeInsertHTML === 'function' && !host.closest('.block-wrapper--source-edit')) { _rangeInsertHTML('<a href="#t=' + seconds + '">' + words + '</a>'); document.execCommand('insertText', false, ' '); }
-	else document.execCommand('insertText', false, '[' + words + '](#t=' + seconds + ') ');
+	d.stamps ||= 'rapier-recording-' + (d.session?.stampId || crypto.randomUUID());
+	const href = '#' + d.stamps + '-t=' + seconds;
+	if (typeof _rangeInsertHTML === 'function' && !host.closest('.block-wrapper--source-edit')) { _rangeInsertHTML('<a href="' + href + '">' + words + '</a>'); document.execCommand('insertText', false, ' '); }
+	else document.execCommand('insertText', false, '[' + words + '](' + href + ') ');
 }
 function _rapierRecorderPlayAt(href) {
 	const m = /^(.*)#t=(\d+)$/.exec(String(href)), k = m && _rapierRecorderKeyOf(m[1]);
@@ -595,7 +594,10 @@ async function _rapierRecorderKeep() {
 	d.phase = 'saving'; d.fault = ''; _rapierRecorderRender();
 	let words = 'Recording kept';
 	try {
-		if (!d.name) d.name = d.entry ? d.entry.name : await _rapierNotesStore.createAudio(d.note, d.blob.type, d.blob);
+		if (!d.name) {
+			if (d.entry) d.name = d.entry.name;
+			else { const blob = await _rapierRecorderReviewBytes(d); d.name = await _rapierNotesStore.createAudio(d.note, blob.type, blob); }
+		}
 		const V = globalThis.RapierNotesVoice, said = _rapierRecorderVoiceLines(d);
 		if (d.fresh) {
 			d.request ||= 'recording-' + crypto.randomUUID();
@@ -607,7 +609,7 @@ async function _rapierRecorderKeep() {
 			if (_rapierNotes.current !== d.file) words = 'Recording kept in ' + String(d.file).replace(/\.md$/i, '');
 		} else {
 			await _rapierRecorderEdit(d.owner, text => {
-				if (d.stamps) text = text.replace(/\]\(#t=(\d+)\)/g, (m, at) => '](' + A.recordingHref(d.name) + '#t=' + at + ')');
+				if (d.stamps) text = A.bindRecordingStamps(text, d.stamps, d.name);
 				if (A.recordingsOf(text).some(r => r.name === d.name)) { d.linked = true; return text; }
 				d.linked = true; text = A.addRecordingLine(text, {name: d.name, duration: d.duration});
 				return said.length ? _rapierRecorderWordsBeneath(text, d.name, said) : text;
@@ -640,8 +642,8 @@ async function _rapierRecorderSaveFile() {
 	const d = _rapierRecorder.draft, A = _rapierRecorderModel();
 	if (!d) return;
 	try {
-		if (d.entry) { const bytes = await _rapierNotesStore.readRecording(d.entry); if (!bytes) throw new Error('Couldn’t read the recording.'); _rapierRecorderDownload(new Blob([bytes], {type: d.entry.mime || d.mime || ''}), d.entry.name); }
-		else _rapierRecorderDownload(d.blob, d.name || A.recordingName('Recording.md', [], d.blob?.type));
+		const blob = await _rapierRecorderReviewBytes(d);
+		_rapierRecorderDownload(blob, d.entry?.name || d.name || A.recordingName('Recording.md', [], blob?.type));
 	} catch (error) { showToast('Couldn’t save the recording.', 'error', null, error); }
 }
 function _rapierRecorderDownload(blob, name) {
@@ -1091,7 +1093,15 @@ function _rapierRecorderRelease(view) {
 	if (view.el.isConnected) _rapierRecorderPaintView(view);
 }
 async function _rapierRecorderReviewBytes(d) {
-	if (!d.entry) return d.blob;
+	if (!d.entry) {
+		const length = d.pendingPrefix;
+		if (length) {
+			const bytes = await d.session?.read();
+			if (!bytes || bytes.length < length) throw new Error('Couldn’t read the recording.');
+			if (d.pendingPrefix === length) { d.blob = new Blob([bytes.subarray(0, length), d.blob], {type: d.blob.type}); d.pendingPrefix = 0; }
+		}
+		return d.blob;
+	}
 	const bytes = await _rapierNotesStore.readRecording(d.entry);
 	if (!bytes) throw new Error('Couldn’t read the recording.');
 	return new Blob([bytes], {type: d.entry.mime || d.mime || ''});
@@ -1323,8 +1333,10 @@ async function _rapierRecorderOfferKeep(offer, row) {
 			if (state.current === file) await _rapierNotesFlush();
 			const text = (await _rapierNotesTexts([file])).get(file);
 			if (text == null) throw new Error('The note could not be read. The recording is kept; try again.');
-			if (!A.recordingsOf(text).some(r => r.name === entry.name)) {
-				const next = said.length ? _rapierRecorderWordsBeneath(A.addRecordingLine(text, line), entry.name, said) : A.addRecordingLine(text, line);
+			const bound = A.bindRecordingStamps(text, 'rapier-recording-' + entry.stampId, entry.name);
+			const next = A.recordingsOf(bound).some(r => r.name === entry.name) ? bound
+				: said.length ? _rapierRecorderWordsBeneath(A.addRecordingLine(bound, line), entry.name, said) : A.addRecordingLine(bound, line);
+			if (next !== text) {
 				if (state.current === file) { if (!await _rapierNotesApplyText(next, 'notes.recording', 'Recording', {settle: true})) throw new Error('The note changed while the recording was being added. The recording is kept; try again.'); await _rapierNotesFlush(); }
 				else await _rapierNotesSave(file, next);
 				_rapierNotesHold(file, next); if (typeof _rapierNotesLibraryTouch === 'function') _rapierNotesLibraryTouch(file);

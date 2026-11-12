@@ -5,9 +5,12 @@ import {packLinkProjection, unpackLinkProjection} from './links.mjs';
 
 const SEARCH_CACHE_VERSION = '__RAPIER_SEARCH_CACHE_VERSION__';
 export const SEARCH_CACHE_LIMITS = Object.freeze({bytes: 50_000 * 832, batchBytes: 256 * 832, batchRows: 256});
-const DATABASE = 'rapier-notes-search', STORE = 'rows', META = 'account';
+const DATABASE = 'rapier-notes-search', STORE = 'rows', META = 'account', CACHE_WAIT_MS = 1000, CACHE_SLICE = 32;
 const uint = n => Number.isSafeInteger(n) && n >= 0;
 const validFile = file => typeof file === 'string' && file.length > 0;
+function breathe() {
+	return new Promise(resolve => { if (typeof setTimeout === 'function') setTimeout(resolve, 0); else queueMicrotask(resolve); });
+}
 export function searchCacheRowBytes(row) {
 	return 2 * (JSON.stringify(row.key).length + row.scope.length + row.version.length + (row.contentId || '').length + (row.title || '').length + row.encoded.length) + 24;
 }
@@ -38,13 +41,15 @@ function scheduleWrite(run) {
 
 function connect(factory) {
 	return new Promise(resolve => {
-		let request, settled = false;
-		const finish = value => { if (!settled) { settled = true; resolve(value); } };
+		let request, timer, settled = false;
+		const finish = value => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
+		timer = setTimeout(() => finish(null), CACHE_WAIT_MS);
 		try {
 			const idb = typeof factory === 'function' ? factory() : factory;
 			if (!idb) { finish(null); return; }
 			request = idb.open(DATABASE, 1);
 			request.onupgradeneeded = () => {
+				if (settled) { try { request.transaction.abort(); } catch (_) {} return; }
 				try {
 					const rows = request.result.createObjectStore(STORE, {keyPath: 'key'});
 					rows.createIndex('scope', 'scope'); rows.createIndex('age', 'age');
@@ -61,7 +66,7 @@ function connect(factory) {
 }
 
 export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
-	factory = () => globalThis.indexedDB, schedule = scheduleWrite, limits = SEARCH_CACHE_LIMITS} = {}) {
+	factory = () => globalThis.indexedDB, schedule = scheduleWrite, limits = SEARCH_CACHE_LIMITS, contended} = {}) {
 	let db = null, active = validFile(scope) && /^[a-f0-9]{64}$/.test(version) &&
 		['bytes', 'batchBytes', 'batchRows'].every(k => uint(limits?.[k]) && limits[k] > 0 && limits[k] <= SEARCH_CACHE_LIMITS[k]);
 	const bound = {...limits}, pending = new Map(), waiters = [];
@@ -76,15 +81,18 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 	if (active) { db = await connect(factory); if (!db) active = false; }
 	if (db) { db.onversionchange = fail; db.onclose = fail; }
 
+	const inputPending = () => { try { return !!(typeof contended === 'function' && contended()); } catch (_) { return false; } };
 	const transaction = (mode, work) => new Promise(resolve => {
 		if (!active || !db) { resolve(null); return; }
-		let tx, result;
-		const broken = () => { fail(); resolve(null); };
+		let tx, result, timer, settled = false;
+		const finish = value => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
+		const broken = () => { fail(); finish(null); };
+		timer = setTimeout(() => { try { tx?.abort(); } catch (_) {} broken(); }, CACHE_WAIT_MS);
 		try {
 			tx = db.transaction(STORE, mode);
-			tx.onabort = broken; tx.onerror = () => fail();
-			tx.oncomplete = () => resolve(active ? {value: result} : null);
-			const guard = fn => (...args) => { try { fn(...args); } catch (_) { try { tx.abort(); } catch (_) {} broken(); } };
+			tx.onabort = broken; tx.onerror = broken;
+			tx.oncomplete = () => finish(active ? {value: result} : null);
+			const guard = fn => (...args) => { if (!settled) try { fn(...args); } catch (_) { try { tx.abort(); } catch (_) {} broken(); } };
 			work(tx.objectStore(STORE), value => { result = value; }, guard);
 		} catch (_) { try { tx?.abort(); } catch (_) {} broken(); }
 	});
@@ -159,28 +167,48 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 		pending.set(file, row); pendingBytes += charge; arm(); return active;
 	};
 	const drop = file => validFile(file) && queue({key: [scope, file], scope, encoded: null});
+	const keepRow = (row, found, bytes) => {
+		if (!row || row.scope !== scope || !Array.isArray(row.key) || row.key.length !== 2 || row.key[0] !== scope ||
+			!validFile(row.key[1]) || typeof row.encoded !== 'string' || !uint(row.age)) return bytes;
+		const stamp = stampFor(row), title = row.title;
+		if (row.version !== version || !stamp || !contentIdFor(row) || title !== null && typeof title !== 'string') { drop(row.key[1]); return bytes; }
+		bytes += searchCacheRowBytes(row);
+		if (bytes > bound.bytes) { fail(); return -1; }
+		found.set(row.key[1], {...stamp, projection: {encoded: row.encoded, ...(title === null ? {} : {title})}});
+		return bytes;
+	};
 	const read = async () => {
-		const read = await transaction('readonly', (rows, result, guard) => {
-			const account = rows.get(META);
-			account.onsuccess = guard(() => {
-				const head = account.result;
-				if (!head || head.version !== version || !uint(head.bytes) || !uint(head.clock)) { result([]); return; }
-				const request = rows.index('scope').getAll(scope);
-				request.onsuccess = guard(() => result(request.result));
-			});
-		});
 		const found = new Map();
-		if (!read) return found;
+		if (!active) return found;
 		try {
-			let bytes = 0;
-			for (const row of read.value) {
-				if (!row || row.scope !== scope || !Array.isArray(row.key) || row.key.length !== 2 || row.key[0] !== scope ||
-					!validFile(row.key[1]) || typeof row.encoded !== 'string' || !uint(row.age)) continue;
-				const stamp = stampFor(row), title = row.title;
-				if (row.version !== version || !stamp || !contentIdFor(row) || title !== null && typeof title !== 'string') { drop(row.key[1]); continue; }
-				bytes += searchCacheRowBytes(row);
-				if (bytes > bound.bytes) { fail(); return new Map(); }
-				found.set(row.key[1], {...stamp, projection: {encoded: row.encoded, ...(title === null ? {} : {title})}});
+			const head = await transaction('readonly', (rows, result, guard) => {
+				const account = rows.get(META);
+				account.onsuccess = guard(() => {
+					const value = account.result;
+					result(!!value && value.version === version && uint(value.bytes) && uint(value.clock));
+				});
+			});
+			if (!head?.value || !active) return new Map();
+			let bytes = 0, after = null;
+			for (;;) {
+				if (found.size >= CACHE_SLICE || inputPending()) {
+					do { await breathe(); if (!active) return new Map(); } while (inputPending());
+				}
+				const range = after == null ? globalThis.IDBKeyRange.bound([scope, ''], [scope, '\uffff']) : globalThis.IDBKeyRange.bound([scope, after], [scope, '\uffff'], true, false);
+				const batch = await transaction('readonly', (rows, result, guard) => {
+					const request = rows.openCursor(range), page = [];
+					request.onsuccess = guard(() => {
+						const cursor = request.result;
+						if (!cursor || page.length >= CACHE_SLICE) { result(page); return; }
+						page.push(cursor.value); cursor.continue();
+					});
+				});
+				const page = batch?.value;
+				if (!page?.length) break;
+				for (const row of page) { bytes = keepRow(row, found, bytes); if (bytes < 0) return new Map(); }
+				if (!active || page.length < CACHE_SLICE) break;
+				after = page[page.length - 1]?.key?.[1];
+				if (!after) break;
 			}
 			return active ? found : new Map();
 		} catch (_) { fail(); return new Map(); }
@@ -193,9 +221,13 @@ export async function openSearchCache({scope, version = SEARCH_CACHE_VERSION,
 			return projection;
 		},
 		async plan(folder) {
-			const plan = planIndexReuse(folder, await read());
-			for (const file of plan.drop) drop(file);
-			return plan;
+			const stored = active ? await read() : new Map();
+			if (!active) return planIndexReuse(folder, new Map());
+			const pause = async () => { do { await breathe(); if (!active) return; } while (inputPending()); };
+			const decided = await planIndexReuse(folder, stored, {slice: CACHE_SLICE, pause});
+			if (!active) return planIndexReuse(folder, new Map());
+			for (const file of decided.drop) drop(file);
+			return decided;
 		},
 		remember(file, projection, before, after, observedAt) {
 			if (!active || !validFile(file)) return false;

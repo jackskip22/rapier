@@ -123,7 +123,7 @@ export const DOORS = Object.freeze({
 			Object.freeze(['How it works', 'Rapier compares words, not just lines, then groups the edits into changes a person reads: a replaced word, an added sentence, a moved paragraph. It runs inside Rapier, one offline HTML file. Your browser reads each file; nothing is sent anywhere.']),
 			Object.freeze(['Use rapier-diff in your site or app', 'rapier-diff is the comparison engine inside Rapier: plain JavaScript, MIT licensed, no dependencies. Run npm install rapier-diff, then import {diff} from rapier-diff: diff(before, after) returns the exact edits and the changes they make.', Object.freeze([Object.freeze(['rapier-diff on GitHub', 'https://github.com/jackskip22/rapier-diff']), Object.freeze(['rapier-diff on npm', 'https://www.npmjs.com/package/rapier-diff'])])]),
 		])}),
-	'/convert': Object.freeze({name: 'Document converter', title: 'Markdown converter: PDF, Word and HTML to Markdown, free | Rapier',
+	'/convert': Object.freeze({name: 'Document converter', title: 'Convert PDF, Word and HTML to Markdown | Rapier',
 		description: 'Convert PDF, Word and HTML to Markdown ready for AI, pictures kept, or Markdown to Word, PDF and HTML. Free, offline, nothing uploaded.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Markdown converter', view: 'convert',
@@ -245,7 +245,7 @@ export const GUIDES = Object.freeze({
 });
 export const PAGES = Object.freeze({...DOORS, ...GUIDES});
 export const STANDALONE = Object.freeze({
-	'/gallery': Object.freeze({name: 'Gallery', file: 'gallery.html', title: 'Free vintage ornaments, borders and decorative letters | Rapier Gallery',
+	'/gallery': Object.freeze({name: 'Gallery', file: 'gallery.html', title: 'Free vintage page templates and drop letters in SVG | Rapier',
 		description: 'Thousands of free ornaments, page borders and decorative capital letters, traced from old books. Open any piece in Rapier or download it as SVG.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Gallery', lead: 'Borders, ornaments and decorative letters, free in Rapier: page borders and title frames; corners, dividers, flourishes, cartouches, rosettes and vignettes; illuminated, Gothic, Renaissance, Baroque and Art Nouveau initials. Every piece is public domain SVG, traced from old books.'}),

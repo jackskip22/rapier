@@ -131,6 +131,24 @@ const _rapierDocumentFonts = (() => {
 		if (accepted.length) _rapierApplyDocumentSettings();
 		return {fonts: accepted, refused};
 	}
+	async function resetDefault() {
+		const spec = RapierStorage.preferences[preference], host = globalThis.RapierPlatform?.preferences, absent = {};
+		if (host?.ownsStore === true) {
+			await host.write(spec.key, spec.fallback);
+			if (host.read(spec.key, absent) !== spec.fallback) throw Object.assign(new Error('font_default_not_reset'), {code: 'font_default_not_reset'});
+		} else {
+			localStorage.removeItem(spec.key);
+			if (localStorage.getItem(spec.key) !== null) throw Object.assign(new Error('font_default_not_reset'), {code: 'font_default_not_reset'});
+		}
+		await _rapierPersonalStore.set('preference/' + preference, null);
+	}
+	async function remove(ids) {
+		await _rapierPersonalStore.ready;
+		try {
+			if (ids.includes(RapierPreferences.read(preference))) await resetDefault();
+			for (const id of ids) await _rapierPersonalStore.removeAsset('font/' + id);
+		} finally { prunePreviews(); libraryRevision++; preferenceChanged(); _rapierApplyDocumentSettings(); renderSettings(); }
+	}
 	async function refresh(source) {
 		if (globalThis.__rapierServerRenderHost === true) return;
 		const key = documentKey();
@@ -247,7 +265,7 @@ const _rapierDocumentFonts = (() => {
 			queueMicrotask(() => { _rapierApplyDocumentSettings(); renderSettings(); });
 		});
 	}
-	return Object.freeze({add, fonts: available,
+	return Object.freeze({add, remove, fonts: available,
 		installed: (family = null) => shelf().filter(font => family === null || font.origin?.family === family).map(font => fonts.admitFonts([font])[0]),
 		ready: _rapierPersonalStore?.ready,
 		preview, refresh, materialize, prepare, isPrepared,
@@ -340,11 +358,11 @@ function _rapierPlanFont(raw, family, start, end, options = null) {
 const _rapierFontPicker = (() => {
 	let session = null;
 	const select = () => document.getElementById('font-picker-select');
-	const current = held => session === held && _rapierUi.picker === 'font' &&
-		_rapierMutationStampIsCurrent(held.stamp) && _rapierSourceText() === held.before &&
-		rapier.view.restoreToken === held.intent &&
-		!rapier.composition.block && !rapier.composition.source;
+	const chosen = held => session === held && _rapierMutationStampIsCurrent(held.stamp) && _rapierSourceText() === held.before &&
+		rapier.view.restoreToken === held.intent && !rapier.composition.block && !rapier.composition.source;
+	const current = held => chosen(held) && _rapierUi.picker === 'font';
 	function cancel() {
+		if (session?.busy) { session.closed = true; return; }
 		session = null;
 		const control = select();
 		if (control) { control.disabled = false; control.removeAttribute('aria-busy'); }
@@ -425,7 +443,7 @@ const _rapierFontPicker = (() => {
 		if (held.whole) try {
 			const candidate = globalThis.RapierMarkdownSpec.writeDocumentFontSetting(held.before, 'mainfont', family);
 			const portable = await _rapierDocumentFonts.materialize(candidate, {force: true});
-			if (!current(held) || fontState !== _rapierDocumentFonts.stateKey()) return false;
+			if (!chosen(held) || fontState !== _rapierDocumentFonts.stateKey()) return false;
 			_rapierUiClosePicker('font', false);
 			rapierFocusEditingHost();
 			if (held.range.startContainer?.isConnected) { const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(held.range); }
@@ -437,7 +455,7 @@ const _rapierFontPicker = (() => {
 			_rapierRestoreEditorViewport(held.viewport);
 			return true;
 		} catch (error) { if (_rapierMutationStampSharesDocument(held.stamp)) showToast(_rapierErrorWords(error, 'Couldn’t change the font.'), 'error'); return false; }
-		finally { if (session === held) { held.busy = false; control.disabled = false; control.removeAttribute('aria-busy'); } }
+		finally { held.busy = false; if (session === held && held.closed) session = null; if (!session?.busy) { control.disabled = false; control.removeAttribute('aria-busy'); } }
 		try {
 			const splices = [], spans = _rapierCurrentBodyBlockSpans();
 			for (let index = 0; index < held.segments.length; index++) {
@@ -454,7 +472,7 @@ const _rapierFontPicker = (() => {
 			const candidate = _rapierTransformSplices(held.before, splices);
 			const portable = await _rapierDocumentFonts.materialize(candidate, {force: true});
 			if (portable !== candidate) splices.push(_rapierPrefixSuffixDiff(candidate, portable));
-			if (!current(held) || fontState !== _rapierDocumentFonts.stateKey()) return false;
+			if (!chosen(held) || fontState !== _rapierDocumentFonts.stateKey()) return false;
 			const admitted = () => _rapierMutationStampIsCurrent(held.stamp) && _rapierSourceText() === held.before &&
 				rapier.view.restoreToken === held.intent &&
 				fontState === _rapierDocumentFonts.stateKey() && !rapier.composition.block && !rapier.composition.source;
@@ -469,7 +487,7 @@ const _rapierFontPicker = (() => {
 			}
 			return true;
 		} catch (error) { if (_rapierMutationStampSharesDocument(held.stamp)) showToast(_rapierErrorWords(error, 'Couldn’t change the font.'), 'error'); return false; }
-		finally { if (session === held) { held.busy = false; control.disabled = false; control.removeAttribute('aria-busy'); } }
+		finally { held.busy = false; if (session === held && held.closed) session = null; if (!session?.busy) { control.disabled = false; control.removeAttribute('aria-busy'); } }
 	}
 	return Object.freeze({open, choose, cancel, selectionChanged, ownsFocus: () => !!session && _rapierUi.picker === 'font' &&
 		current(session) && (session.busy || select() === document.activeElement)});
