@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 export const PDF_JS_VERSION = "6.3.289";
-export const PDF_READER_FILE = "rapier-pdf-reader-9d85862b9e4a6121.mjs";
-export const PDF_JS_DOWNLOAD_BYTES = 6103359;
-export const PDF_JS_RESOURCE_ROOT = "3vtpNrglkjKCDAYyCKqyEUk56qFmdcOrx5uEb+joHH4rp2l/LLMTQ4z48DIR+AX+";
+export const PDF_READER_FILE = "rapier-pdf-reader-95735f1cdc7a8bd8.mjs";
+export const PDF_JS_DOWNLOAD_BYTES = 6119078;
+export const PDF_JS_RESOURCE_ROOT = "XxnxP5h+9xJZA/npXoEEFLtp+dknt96RR6n2Vdi8p22BW7/ZLM6pVcuJxQ5KdzCX";
 export const pdfResourceRootText = entries => entries.map(([path, length, digest]) => path + '\n' + length + '\n' + digest + '\n').join('');
 export const PDF_JS_RESOURCE_MANIFEST = Object.freeze([
   ["LICENSE",10174],
@@ -201,5 +201,5 @@ export const PDF_JS_RESOURCE_MANIFEST = Object.freeze([
   ["wasm/jbig2_nowasm_fallback.js",145703],
   ["wasm/openjpeg.wasm",252032],
   ["wasm/openjpeg_nowasm_fallback.js",451590],
-  ["rapier-pdf-reader-9d85862b9e4a6121.mjs",67528],
+  ["rapier-pdf-reader-95735f1cdc7a8bd8.mjs",83247],
 ].map(Object.freeze));

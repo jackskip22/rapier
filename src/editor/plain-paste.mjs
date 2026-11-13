@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-const _RAPIER_PASTE_PROSE_TARGET = 3200;
-const _RAPIER_PASTE_PROSE_MAX    = 5200;
 
 function _rapierPlainPasteLineKind(line) {
 	const raw = String(line || '');
@@ -54,39 +52,9 @@ function _rapierPasteRunLooksCode(lines) {
 	return signals >= Math.max(2, Math.ceil(values.length * 0.30));
 }
 
-function _rapierSplitOversizeProseLine(line) {
-	const text = String(line || '');
-	if (text.length <= _RAPIER_PASTE_PROSE_MAX || !_rapierPasteLooksProse(text)) return [text];
-	const chunks = [];
-	let rest = text;
-	while (rest.length > _RAPIER_PASTE_PROSE_MAX) {
-		const floor = Math.min(_RAPIER_PASTE_PROSE_TARGET, rest.length - 1);
-		const ceiling = Math.min(_RAPIER_PASTE_PROSE_MAX, rest.length);
-		const windowText = rest.slice(0, ceiling);
-		let cut = -1;
-		const sentence = /[.!?…。！？]["'”’»）)\]}]*(?=\s+)/gu;
-		let match;
-		while ((match = sentence.exec(windowText))) {
-			const end = match.index + match[0].length;
-			if (end >= floor) cut = end;
-		}
-		if (cut < floor) {
-			const whitespace = windowText.lastIndexOf(' ', ceiling);
-			if (whitespace >= floor) cut = whitespace;
-		}
-		if (cut < floor) break;
-		chunks.push(rest.slice(0, cut));
-		rest = rest.slice(cut);
-	}
-	if (rest) chunks.push(rest);
-	return chunks.length ? chunks : [text];
-}
-
 function _rapierNormalizePlainTextPaste(markdown) {
 	const source = String(markdown || '').replace(/\r\n?|[\u2028\u2029]/g, '\n');
-	if (!source.includes('\n')) {
-		return _rapierSplitOversizeProseLine(source).join('\n\n');
-	}
+	if (!source.includes('\n')) return source;
 
 	const lines = source.split('\n');
 	const out = [];
@@ -162,28 +130,18 @@ function _rapierNormalizePlainTextPaste(markdown) {
 		const wrapLike = run.length >= 3 && median >= 55 && terminalRatio < 0.55 && lowerStarts >= Math.max(1, Math.floor((run.length - 1) * 0.25));
 		const independentLines = run.length >= 3 && !wrapLike && terminalRatio >= 0.60;
 
-		let paragraphChars = 0;
 		for (let r = 0; r < run.length; r++) {
-			const chunks = _rapierSplitOversizeProseLine(run[r]);
-			for (let c = 0; c < chunks.length; c++) {
-				const chunk = chunks[c];
-				if (out.length && out[out.length - 1] !== '') {
-					const previous = c > 0 ? chunks[c - 1] : (r > 0 ? run[r - 1] : '');
-					const sizeBoundary = paragraphChars > 0 &&
-						paragraphChars + chunk.length + 1 > _RAPIER_PASTE_PROSE_MAX;
-					const explicitParagraph = c > 0 || (!hardBreak.test(previous) && (sizeBoundary || independentLines || (
-						_rapierPasteEndsSentence(previous) &&
-						_rapierPasteStartsSentence(chunk) &&
-						!(wrapLike && previous.trim().length >= Math.max(45, median - 12))
-					)));
-					if (explicitParagraph) {
-						out.push('');
-						paragraphChars = 0;
-					}
-				}
-				out.push(chunk);
-				paragraphChars += chunk.length + (paragraphChars ? 1 : 0);
+			const line = run[r];
+			if (out.length && out[out.length - 1] !== '') {
+				const previous = r > 0 ? run[r - 1] : '';
+				const explicitParagraph = !hardBreak.test(previous) && (independentLines || (
+					_rapierPasteEndsSentence(previous) &&
+					_rapierPasteStartsSentence(line) &&
+					!(wrapLike && previous.trim().length >= Math.max(45, median - 12))
+				));
+				if (explicitParagraph) out.push('');
 			}
+			out.push(line);
 		}
 	}
 
@@ -268,4 +226,4 @@ function _rapierPasteOnOwnLines(inserted, before, after, converted = false) {
 	return (opens && before && !/[\r\n]$/.test(before) ? '\n' : '') + text + (closes && after && !/^[\r\n]/.test(after) ? '\n' : '');
 }
 
-export { _RAPIER_PASTE_PROSE_TARGET, _RAPIER_PASTE_PROSE_MAX, _rapierPlainPasteLineKind, _rapierPasteEndsSentence, _rapierPasteFirstCharacter, _rapierPasteStartsSentence, _rapierPasteLooksProse, _rapierPasteRunLooksCode, _rapierSplitOversizeProseLine, _rapierNormalizePlainTextPaste, _rapierPasteDecision, _rapierLooksLikeDiagramSource, _rapierPasteContent, _rapierPasteInsideFence, _rapierPasteOnOwnLines };
+export { _rapierPlainPasteLineKind, _rapierPasteEndsSentence, _rapierPasteFirstCharacter, _rapierPasteStartsSentence, _rapierPasteLooksProse, _rapierPasteRunLooksCode, _rapierNormalizePlainTextPaste, _rapierPasteDecision, _rapierLooksLikeDiagramSource, _rapierPasteContent, _rapierPasteInsideFence, _rapierPasteOnOwnLines };

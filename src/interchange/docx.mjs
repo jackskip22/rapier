@@ -202,6 +202,16 @@ const foldRotationDegrees = degrees => {
 };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[character]));
 const attributeText = value => escape(value).replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;');
+const turnMatrix = (degrees, flipH, flipV) => {
+  const r = degrees * Math.PI / 180, c = Math.cos(r), s = Math.sin(r), h = flipH ? -1 : 1, v = flipV ? -1 : 1;
+  return [c * h, -s * v, s * h, c * v];
+};
+const multiplyTurns = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3]];
+const rightAngles = m => {
+  const mirrored = m[0] * m[3] - m[1] * m[2] < 0, n = mirrored ? multiplyTurns(m, [-1, 0, 0, 1]) : m;
+  const rotation = ((Math.round(Math.atan2(n[2], n[0]) * 2 / Math.PI) * 90) % 360 + 360) % 360;
+  return {rotation, flipH: mirrored, flipV: false};
+};
 const fail = (message, code = 'docx_invalid') => { const error = new Error(message); error.code = code; throw error; };
 const alphaOpacity = value => {
   if (value == null) return 100;
@@ -1456,7 +1466,36 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return {html: account((title ? '<p>' + importedText(title) + '</p>' : '') + '<table><thead><tr>' + cell('th', '') + series.map(row => cell('th', row.name)).join('') +
       '</tr></thead><tbody>' + rows.join('') + '</tbody></table>'), block: true, semantic: true};
   };
-  const picture = async (node, context) => {
+  const groupPictures = node => {
+    const group = is(node, 'w', 'drawing') && [...descendants(node, 'wpg', 'wgp')][0];
+    const members = group ? [...descendants(group, 'pic', 'pic')] : [];
+    if (members.length < 2 || [...descendants(group, 'w', 'txbxContent')].length) return null;
+    const scale = (node, attribute) => {
+      let factor = 1;
+      for (let at = node.parentNode; at; at = at.parentNode) {
+        if (is(at, 'wpg', 'wgp') || is(at, 'wpg', 'grpSp')) {
+          const box = child(child(at, 'wpg', 'grpSpPr'), 'a', 'xfrm');
+          const outer = integer(child(box, 'a', 'ext')?.getAttribute(attribute), null, 1, 27273042316900), inner = integer(child(box, 'a', 'chExt')?.getAttribute(attribute), null, 1, 27273042316900);
+          if (outer && inner) factor *= outer / inner;
+        }
+        if (at === group) break;
+      }
+      return factor;
+    };
+    const turn = node => {
+      const levels = [];
+      for (let at = node.parentNode; at; at = at.parentNode) {
+        if (is(at, 'wpg', 'wgp') || is(at, 'wpg', 'grpSp')) {
+          const box = child(child(at, 'wpg', 'grpSpPr'), 'a', 'xfrm'), on = name => ['1', 'true', 'on'].includes(box?.getAttribute(name));
+          levels.unshift(turnMatrix(integer(box?.getAttribute('rot'), 0, -2147483647) / 60000, on('flipH'), on('flipV')));
+        }
+        if (at === group) break;
+      }
+      return levels.reduce(multiplyTurns, [1, 0, 0, 1]);
+    };
+    return members.map(member => ({member, scaleX: scale(member, 'cx'), scaleY: scale(member, 'cy'), matrix: turn(member)}));
+  };
+  const picture = async (node, context, grouped = null) => {
     const boxes = [...descendants(node, 'w', 'txbxContent')].filter(box => {
       for (let parent = box.parentNode; parent && parent !== node; parent = parent.parentNode)
         if (is(parent, 'w', 'txbxContent')) return false;
@@ -1474,7 +1513,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       const drawing = child(node, 'wp', 'inline') || child(node, 'wp', 'anchor');
       const graphic = child(drawing, 'a', 'graphic'), data = child(graphic, 'a', 'graphicData');
       const wsp = child(data, 'wps', 'wsp') || [...descendants(data || node, 'wps', 'wsp')][0];
-      let image = child(data, 'pic', 'pic') || [...descendants(data || node, 'pic', 'pic')][0];
+      let image = grouped?.member || child(data, 'pic', 'pic') || [...descendants(data || node, 'pic', 'pic')][0];
       if (!image && wsp) {
         const spPr = child(wsp, 'wps', 'spPr'), geom = child(spPr, 'a', 'prstGeom')?.getAttribute('prst');
         if (geom === 'line' || geom === 'straightConnector1') return {rule: true, semantic: true};
@@ -1489,6 +1528,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       for (const [source, target] of [['l','left'], ['t','top'], ['r','right'], ['b','bottom']]) transform.crop[target] = cropFraction(crop?.getAttribute(source));
       transform.rotation = ((integer(drawingTransform?.getAttribute('rot'), 0, -2147483647) / 60000) % 360 + 360) % 360;
       for (const name of ['flipH','flipV']) transform[name] = ['1','true','on'].includes(drawingTransform?.getAttribute(name));
+      if (grouped) Object.assign(transform, rightAngles(multiplyTurns(grouped.matrix, turnMatrix(transform.rotation, transform.flipH, transform.flipV))));
       const fix = child(blip, 'a', 'alphaModFix');
       if (children(blip, 'a').some(effect => effect.localName !== 'extLst' && effect !== fix))
         return fail('DOCX picture color or transparency effects are not supported.');
@@ -1511,7 +1551,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       id = plain && attr(vectors[0], 'r', 'embed') || plain && kept?.kind === 'image' && !kept.external && entries.has(kept.path) && original || attr(blip, 'r', 'embed');
       if (!id && attr(blip, 'r', 'link')) { warn('Linked pictures were not imported; their files are not inside the document.'); return {html: ''}; }
       if (!id) return fail('DOCX contains a linked picture without self-contained image bytes.');
-      const properties = child(drawing, 'wp', 'docPr'), nonVisual = image ? child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPr') : child(wsp, 'wps', 'cNvPr');
+      const properties = grouped ? null : child(drawing, 'wp', 'docPr'), nonVisual = image ? child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPr') : child(wsp, 'wps', 'cNvPr');
       alt = properties?.getAttribute('descr') ?? nonVisual?.getAttribute('descr') ?? properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
       title = properties?.getAttribute('title') ?? nonVisual?.getAttribute('title') ?? null;
       lock = !!image && ['1', 'true'].includes(child(child(child(image, 'pic', 'nvPicPr'), 'pic', 'cNvPicPr'), 'a', 'picLocks')?.getAttribute('noMove'));
@@ -1524,7 +1564,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       }
       extent = integer(child(drawing, 'wp', 'extent')?.getAttribute('cx'), null, 1, 27273042316900);
       extentHeight = integer(child(drawing, 'wp', 'extent')?.getAttribute('cy'), null, 1, 27273042316900);
-      if (is(drawing, 'wp', 'anchor')) {
+      if (grouped) {
+        const own = child(drawingTransform, 'a', 'ext');
+        extent = Math.round(integer(own?.getAttribute('cx'), 0, 0, 27273042316900) * grouped.scaleX) || null;
+        extentHeight = Math.round(integer(own?.getAttribute('cy'), 0, 0, 27273042316900) * grouped.scaleY) || null;
+      } else if (is(drawing, 'wp', 'anchor')) {
         const position = child(drawing, 'wp', 'positionH'), value = child(position, 'wp', 'align')?.textContent;
         if (['left','center','right'].includes(value)) align = value;
         const vertical = child(drawing, 'wp', 'positionV'), square = child(drawing, 'wp', 'wrapSquare');
@@ -1599,6 +1643,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       if (!readablePictures.get(path)) { warn('Pictures Rapier cannot read were not imported.'); return {html: ''}; }
     }
     alt ??= name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+    const altSource = grouped && extent ? alt.replace(/[\\[\]|]/g, '\\$&') + '|' + Math.max(1, Math.round(extent / 9525)) : null;
     let width = extent ? Math.max(0.01, Math.min(100, Math.round(extent / context.width * 10000) / 100)) : null;
     if (width !== null && !Object.values(transform.crop).some(Boolean)) {
       if (!naturalWidths.has(path)) {
@@ -1619,7 +1664,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         displayWidth: extent, displayHeight: extentHeight}});
       converted.set(key, reference); stats.uniqueImages++;
     }
-    return {image: project ? account('<img data-rapier-asset="' + converted.get(key) + '" alt="' + attributeText(alt) + '"' + (title === null ? '' : ' title="' + attributeText(title) + '"') + '>') : '<img>', width: lines ? null : width, align, rotate, opacity, wrap, x, y, lines, lock};
+    return {image: project ? account('<img data-rapier-asset="' + converted.get(key) + '" alt="' + attributeText(alt) + '"' + (altSource ? ' data-rapier-image-alt-source="' + attributeText(altSource) + '" width="' + altSource.slice(altSource.lastIndexOf('|') + 1) + '"' : '') + (title === null ? '' : ' title="' + attributeText(title) + '"') + '>') : '<img>', width: lines ? null : width, align, rotate, opacity, wrap, x, y, lines, lock};
   };
   const noteParts = new Map(), notes = new Map();
   const notePart = async (kind, required = true) => {
@@ -1805,7 +1850,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     const kind = (tokens[0] || '').toUpperCase();
     if (['REF', 'PAGEREF', 'NOTEREF'].includes(kind)) {
       const target = tokens.slice(1).find(tok => !tok.startsWith('\\'))?.replace(/^["']|["']$/g, '');
-      const href = target ? bookmarkTargets.get(target) || ('#' + encodeURIComponent(_rapierHeadingSlugBase(target))) : null;
+      const slug = target && _rapierHeadingSlugBase(target);
+      const href = target ? bookmarkTargets.get(target) || (headingList.some(heading => heading.slug === slug) ? '#' + encodeURIComponent(slug) : null) : null;
       return {kind, href, internal: true, fallbackText: (target && bookmarkTexts.get(target)) || (kind === 'PAGEREF' ? '1' : target || '')};
     }
     if (kind === 'SEQ') {
@@ -1940,7 +1986,18 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
         }
       } else if (is(node, 'w', 'noBreakHyphen')) pieces.push(fieldText('\u2011'));
       else if (is(node, 'w', 'softHyphen')) pieces.push(fieldText('\u00ad'));
-      else if (is(node, 'w', 'drawing') || is(node, 'w', 'pict') || is(node, 'w', 'object')) pieces.push(await picture(node, context));
+      else if (is(node, 'w', 'drawing') || is(node, 'w', 'pict') || is(node, 'w', 'object')) {
+        const members = groupPictures(node);
+        if (members && is(child(node, 'wp', 'anchor'), 'wp', 'anchor')) warn('Floating pictures became normal-flow images in source order.');
+        if (!members) pieces.push(await picture(node, context));
+        else {
+          const shown = [];
+          for (const grouped of members) shown.push(await picture(node, context, grouped));
+          const images = shown.filter(piece => piece.image);
+          if (images.some(piece => piece.rotate || piece.opacity < 100 || piece.lock)) pieces.push(...images);
+          else if (images.length) pieces.push({image: images.map(piece => piece.image).join(' '), width: null, align: null, rotate: 0, opacity: 100, wrap: null, x: null, y: null, lines: null, lock: false});
+        }
+      }
       else if (is(node, 'w', 'hyperlink')) {
         const relation = (await relationships(context.path)).get(attr(node, 'r', 'id'));
         const anchor = attr(node, 'w', 'anchor');
@@ -5902,6 +5959,14 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       '" Target="' + escape(row.target) + '"' + (row.external ? ' TargetMode="External"' : '') + '/>').join('') +
     '</Relationships>';
 
+  let recovery = null;
+  if (carrySource && !native) {
+    try { recovery = await wordRecoveryRecord((bom ? '\uFEFF' : '') + canonical, work, equations); }
+    catch (error) { if (error?.code !== 'docx_recovery_limit') throw error; }
+    const pictures = media.reduce((sum, row) => sum + row.bytes.length, 0);
+    if (recovery && pictures + utf8.encode(canonical).length + recovery.length * 2 + documentXml.length + 1024 * 1024 > ARCHIVE_LIMITS.bytes) recovery = null;
+  }
+  const carryRecovery = recovery !== null;
   const mainRels = [
     {id: stylesRid, type: 'styles', target: 'styles.xml'},
     {id: numberingRid, type: 'numbering', target: 'numbering.xml'},
@@ -5913,7 +5978,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
     ...(footerId ? [{id: footerId, type: 'footer', target: 'footer1.xml'}] : []),
     ...(commentsXml ? [{id: nextRid(), type: 'comments', target: 'comments.xml'},
       {id: nextRid(), type: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended', target: 'commentsExtended.xml'}] : []),
-    ...(carrySource ? [{id: nextRid(), type: 'customXml', target: '../customXml/item1.xml'}] : []),
+    ...(carryRecovery ? [{id: nextRid(), type: 'customXml', target: '../customXml/item1.xml'}] : []),
     ...rels
   ];
   const types = ['png', 'jpeg', 'svg', 'gif'].filter(ext => media.some(row => row.name.endsWith('.' + ext)));
@@ -5940,8 +6005,8 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   const packageRels = relXml([{id: 'rIdDoc', type: 'officeDocument', target: 'word/document.xml'}])
     .replace('</Relationships>', (coreXml ? '<Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' : '') +
       '<Relationship Id="rIdApp" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>' +
-      (carrySource ? '<Relationship Id="rIdRapierSource" Type="' + DOCX_SOURCE.relationship + '" Target="' + DOCX_SOURCE.path + '"/>' +
-        '<Relationship Id="rIdRapierMarkdown" Type="' + NS.r[0] + '/custom-properties" Target="docProps/custom.xml"/>' : '') + '</Relationships>');
+      (carrySource ? '<Relationship Id="rIdRapierSource" Type="' + DOCX_SOURCE.relationship + '" Target="' + DOCX_SOURCE.path + '"/>' : '') +
+      (carryRecovery ? '<Relationship Id="rIdRapierMarkdown" Type="' + NS.r[0] + '/custom-properties" Target="docProps/custom.xml"/>' : '') + '</Relationships>');
   const entries = [
     {name: '[Content_Types].xml', bytes: await encodeXml(contentTypesXml)},
     {name: '_rels/.rels', bytes: await encodeXml(packageRels)},
@@ -5991,9 +6056,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   if (coreXml) entries.push({name: 'docProps/core.xml', bytes: await encodeXml(coreXml)});
   entries.push({name: 'docProps/app.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Rapier</Application></Properties>')});
-  if (carrySource && !native) {
-    const source = (bom ? '\uFEFF' : '') + canonical;
-    const recovery = await wordRecoveryRecord(source, work, equations);
+  if (carryRecovery) {
     entries.push({name: 'customXml/item1.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8"?><rapier:recovery xmlns:rapier="' + NS.rapier[0] + '">' + escape(recovery) + '</rapier:recovery>')});
     entries.push({name: 'customXml/itemProps1.xml', bytes: await encodeXml('<?xml version="1.0" encoding="UTF-8"?><ds:datastoreItem ds:itemID="{269337D1-9D12-4B7F-AD04-DDBBD639D277}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"><ds:schemaRefs><ds:schemaRef ds:uri="' + NS.rapier[0] + '"/></ds:schemaRefs></ds:datastoreItem>')});
     entries.push({name: 'customXml/_rels/item1.xml.rels', bytes: await encodeXml(relXml([{id: 'rIdProps', type: 'customXmlProps', target: 'itemProps1.xml'}]))});

@@ -58,7 +58,8 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
         return false;
       }
     };
-    if (schema.oneOf && schema.oneOf.filter(matches).length !== 1) invalid('expected exactly one supported variant');
+    const shapes = branches => branches.every(branch => branch.required?.length) ? '; use one of ' + branches.map(branch => '{' + branch.required.join(', ') + '}').join(', ') : '';
+    if (schema.oneOf && schema.oneOf.filter(matches).length !== 1) invalid('expected exactly one supported variant' + shapes(schema.oneOf));
     if (schema.anyOf && !schema.anyOf.some(matches)) invalid('expected a supported variant');
     if (schema.not && matches(schema.not)) invalid('forbidden field combination');
     if (schema.allOf) for (const branch of schema.allOf) if (!matches(branch)) invalid('invalid field combination');
@@ -89,7 +90,7 @@ export function validateInput(schema, value, path = 'arguments', agent = false) 
           const field = visit(properties[key], value[key], path + '.' + key, depth + 1, key);
           if (admitted !== value) admitted[key] = field;
         }
-        else if (required.includes(key)) invalid('missing ' + key);
+        else if (required.includes(key)) invalid('missing ' + key + (properties[key].description ? ' (' + properties[key].description + ')' : ''));
       }
       for (const key of required) if (!Object.hasOwn(properties, key) && !Object.hasOwn(value, key)) invalid('missing ' + key);
       for (const key of keys) if (!Object.hasOwn(properties, key)) {

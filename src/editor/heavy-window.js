@@ -176,7 +176,7 @@ const _rapierHeavyRuntime = Object.seal({
 });
 const _RAPIER_HEAVY_TYPING_LINES = 4000;
 function _rapierHeavyBuffer() {
-	return (rapier.stats.lines | 0) >= _RAPIER_HEAVY_TYPING_LINES;
+	return (_rapierStatsCurrent().lines | 0) >= _RAPIER_HEAVY_TYPING_LINES;
 }
 const _RAPIER_HW_SIDE_CHARS       = 4 * 1024;
 const _RAPIER_HW_EDGE_GUARD_CHARS = 1024;

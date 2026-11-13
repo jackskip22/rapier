@@ -411,7 +411,7 @@
 <!-- The agent's line beside the circle: who, then one sentence; tapped to open the panel it belongs to, with Undo when the
 		 agent has finished. It stands in the DOM from boot so what it says is announced where it already was, and it is
 		 `hidden` with nothing to say. -->
-<div class="agent-note" id="agent-note" hidden role="status" aria-live="polite" aria-atomic="true"><button type="button" class="agent-note__open" id="agent-note-open"><span class="agent-note__who"></span><span class="agent-note__said"></span></button><button type="button" class="agent-note__undo" id="agent-note-undo" hidden>undo</button><button type="button" class="agent-note__undo" id="agent-note-go" hidden>see it</button></div>
+<div class="agent-note" id="agent-note" hidden role="status" aria-live="polite" aria-atomic="true"><button type="button" class="agent-note__open" id="agent-note-open"><span class="agent-note__who"></span><span class="agent-note__said"></span></button><button type="button" class="agent-note__undo" id="agent-note-paint" hidden>paint</button><button type="button" class="agent-note__undo" id="agent-note-undo" hidden>undo</button><button type="button" class="agent-note__undo" id="agent-note-go" hidden>see it</button></div>
 <!-- ════════ -->
 <div class="settings-overlay" id="settings-overlay" inert aria-hidden="true">
 
@@ -996,7 +996,7 @@
 				</button>
 			</div>
 			<template data-rapier-later><div class="licenses-app privacy-words">
-				<p>Rapier needs no account signup and uses no analytics or advertising. Your files stay on your device
+				<p>Free and open source. Works offline with no install. No account, no tracking, no ads. Your files stay on your device
 					until you save, share, back up or sync them. Sync writes plain files to the storage you
 					choose. You keep or delete local files; Delete forever removes notes and their history.</p>
 				<p>When you send feedback, your report is recorded to help improve Rapier. Please avoid sensitive information.</p>

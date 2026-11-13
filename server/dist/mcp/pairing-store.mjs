@@ -50,6 +50,14 @@ export class PairingStore {
     }
     return removed;
   }
+  waiting(now, limit = 8) {
+    const rows = [];
+    for (const [, held] of this.kv.list({prefix: this.prefix('waiting'), start: this.prefix('waiting') + timeKey(now + 1), limit})) {
+      const row = this.row(held.secretHash);
+      if (row && !row.confirmedAt && row.expiresAt > now) rows.push(row);
+    }
+    return rows;
+  }
   summary() {
     const waiting = first(this.kv.list({prefix: this.prefix('waiting'), reverse: true, limit: 1}))?.[1];
     const confirmed = first(this.kv.list({prefix: this.prefix('confirmed'), reverse: true, limit: 1}))?.[1];

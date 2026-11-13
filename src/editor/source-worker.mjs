@@ -147,49 +147,7 @@ export function installSourceWorker(scope) {
 }
 
 function blockParser(md, work) {
-  let budget = null, completed = null;
-  const refuse = (reason, observed, limit) => {
-    throw Object.assign(new Error(reason), {rapierProjectionRefusal: true, reason, observed, limit});
-  };
-  const spend = (dimension, amount, reason, counted = false) => {
-    if (!budget) return;
-    budget.used[dimension] += amount;
-    budget.used.nodes += amount;
-    if (counted) return;
-    if (budget.used[dimension] > budget.limits[dimension]) refuse(reason, budget.used[dimension], budget.limits[dimension]);
-    if (budget.used.nodes > budget.limits.nodes) refuse('wysiwyg_node_limit', budget.used.nodes, budget.limits.nodes);
-  };
-  const BlockState = md.block.State, InlineState = md.inline.State;
-  md.block = Object.create(md.block); md.inline = Object.create(md.inline);
-  md.block.State = class extends BlockState {};
-  md.inline.State = class extends InlineState {};
-  const blockState = md.block.State.prototype, inlineState = md.inline.State.prototype;
-  const blockPush = blockState.push;
-  blockState.push = function (...args) {
-    const token = blockPush.apply(this, args);
-    spend('tokens', 1, 'wysiwyg_token_limit', true);
-    return token;
-  };
-  let inlineDepth = 0;
-  for (const name of ['push', 'pushPending']) {
-    const original = inlineState[name];
-    inlineState[name] = function (...args) {
-      const outer = inlineDepth++ === 0, before = outer ? this.tokens.length : 0;
-      try {
-        const token = original.apply(this, args);
-        if (outer) spend('inlineCandidates', this.tokens.length - before, 'wysiwyg_inline_limit');
-        return token;
-      } finally { inlineDepth--; }
-    };
-  }
-  md.core.ruler.before('inline', 'rapier_projection_block_budget', state => {
-    if (!budget) return;
-    const blocks = state.tokens.reduce((count, token) => count + (token.level === 0 && token.nesting !== -1 && token.map ? 1 : 0), 0);
-    budget.used.blocks = blocks;
-    if (blocks > budget.limits.blocks) refuse('wysiwyg_block_limit', blocks, budget.limits.blocks);
-    if (budget.used.tokens > budget.limits.tokens) refuse('wysiwyg_token_limit', budget.used.tokens, budget.limits.tokens);
-    if (budget.used.nodes > budget.limits.nodes) refuse('wysiwyg_node_limit', budget.used.nodes, budget.limits.nodes);
-  });
+  let completed = null;
   const split = (markdown, env, tokens, lineOffsets) => _splitByTokenStream(markdown, md, env, tokens, lineOffsets);
   const coordinates = source => {
     const lines = [0];
@@ -259,9 +217,7 @@ function blockParser(md, work) {
     const positions = coordinates(source);
     return {source, tokens, env, references, positions, groups: groups(source, tokens, positions)};
   };
-  const resetBudget = () => { if (budget) budget.used = {blocks: 0, tokens: 0, inlineCandidates: 0, nodes: 0}; };
   const fullParse = async (source, references, key, reuse) => {
-    resetBudget();
     const env = {references: {...references}};
     const tokens = await parseMarkdownWork(md, source, env, work);
     reuse.parsedChars += source.length; reuse.windows++;
@@ -295,7 +251,6 @@ function blockParser(md, work) {
       const oldStop = until === prior.length ? old.source.length : prior[until].start;
       const fragment = source.slice(start, stop);
       if (old.source.slice(start, oldStop).includes(']:') || fragment.includes(']:')) return full('definitions');
-      resetBudget();
       const env = {...old.env, references: {...old.env.references}, __rapierInlineCandidates: []};
       if (old.env.abbreviations) env.abbreviations = {...old.env.abbreviations};
       const parsed = await parseMarkdownWork(md, fragment, env, work);
@@ -367,12 +322,7 @@ function blockParser(md, work) {
       scope.postMessage({reqId, headings: scanned.buffer, headingsTotal: scanned.total}, [scanned.buffer]);
       return;
     }
-    let markdown = data.markdown || '', blocks = [], error = null, refusal = null;
-    const limits = data.limits || {};
-    budget = {limits: Object.fromEntries(['blocks', 'tokens', 'inlineCandidates', 'nodes'].map(name => {
-      const limit = Number(limits[name]);
-      return [name, Number.isFinite(limit) ? limit : Infinity];
-    })), used: {blocks: 0, tokens: 0, inlineCandidates: 0, nodes: 0}};
+    let markdown = data.markdown || '', blocks = [], error = null;
     const timing = {received: performance.now(), parseMs: 0, blockOnlyMs: 0, twoPhase: data.twoPhase === true};
     const reuse = {blocks: 0, parsedChars: 0, windows: 0, invalidation: null};
     const references = data.references || Object.create(null), referenceKey = JSON.stringify(references);
@@ -396,19 +346,9 @@ function blockParser(md, work) {
         timing.blockOnlyTokens = state.tokens.length;
       }
     } catch (err) {
-      if (err?.rapierProjectionRefusal) refusal = {reason: String(err.reason || err.message), observed: Number(err.observed || 0), limit: Number(err.limit || 0)};
-      else error = String(err?.message || err);
+      error = String(err?.message || err);
     }
-    budget = null;
-    if (refusal) { scope.postMessage({reqId, refusal}); return; }
     const metrics = {...blocks._rapierProjectionMetrics || {blocks: blocks.length, tokens: 0, inlineCandidates: 0, nodes: blocks.length}, timing};
-    const exceeded = [
-      ['wysiwyg_block_limit', metrics.blocks, limits.blocks],
-      ['wysiwyg_token_limit', metrics.tokens, limits.tokens],
-      ['wysiwyg_inline_limit', metrics.inlineCandidates, limits.inlineCandidates],
-      ['wysiwyg_node_limit', metrics.nodes, limits.nodes],
-    ].find(row => Number.isFinite(row[2]) && row[1] > row[2]);
-    if (exceeded) { scope.postMessage({reqId, refusal: {reason: exceeded[0], observed: exceeded[1], limit: exceeded[2]}}); return; }
     if (parsed && !error) completed = parsed;
     const blockTypes = [], typeIndexes = Object.create(null), blockSpans = new Int32Array(blocks.length * 3);
     blocks.forEach((block, index) => {
@@ -426,8 +366,7 @@ function blockParser(md, work) {
       const t2 = performance.now();
       const parsed = await parseCompleted(markdown, references, referenceKey, reuse);
       const full = split(markdown, parsed.env, parsed.tokens);
-      const counts = full._rapierProjectionMetrics;
-      if (counts && ['blocks', 'tokens', 'inlineCandidates', 'nodes'].every(name => !Number.isFinite(limits[name]) || counts[name] <= limits[name])) completed = parsed;
+      completed = parsed;
       scope.postMessage({reqId, phase: 2, facts: full._rapierFacts || [], metrics: {timing: {inlineMs: performance.now() - t2, reuse}}});
     } catch (err) {
       scope.postMessage({reqId, phase: 2, facts: null, error: String(err?.message || err)});

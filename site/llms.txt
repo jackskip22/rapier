@@ -2,11 +2,11 @@
 
 > Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant.
 
-For people, Rapier is a free online Markdown editor and viewer and a notes app, on Android ([Google Play](https://play.google.com/store/apps/details?id=app.rapier)), on the web at https://rapier.website, on Windows and on Linux. You write on the formatted page or in the Markdown source; there is no split preview. It works offline, with no account, ads or tracking.
+For people, Rapier is a free online Markdown editor and viewer and a notes app, on Android ([Google Play](https://play.google.com/store/apps/details?id=app.rapier)), on the web at https://rapier.website, on Windows and on Linux. You write on the formatted page or in the Markdown source; there is no split preview. Free and open source. Works offline with no install. No account, no tracking, no ads.
 
 Connect an MCP client to `https://mcp.rapier.website/door/mcp` (Streamable HTTP, anonymous, without OAuth) and call `open`. No account needed. Read the `rapier://guide` resources if your host supports MCP resources; otherwise use the [agent guide](https://rapier.website/agents) and the tool schemas. Your host's own tool approval rules still apply.
 
-Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.jackskip22%2Frapier/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `io.github.jackskip22/rapier`.
+Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/website.rapier%2Fmarkdown-editor-draw-paint-jpeg-xl/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `website.rapier/markdown-editor-draw-paint-jpeg-xl`.
 
 ## What you can do
 
@@ -30,7 +30,12 @@ Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/
 ```js
 import {Rapier} from 'rapier-embed';
 // element needs a height, for example style="height: 70vh"
-const reader = Rapier.mount(element, {build: 'reader', load: {content, filename: 'brief.md', revision: 1}});
+let revision = 1;
+const editor = Rapier.mount(element, {
+  load: {content: '# Notes\n', filename: 'notes.md', revision},
+  async save({content}) { await myStore.put('notes.md', content); return {revision: ++revision}; },
+});
+// Read only: Rapier.mount(element, {build: 'reader', load: {content, filename: 'brief.md', revision: 1}});
 ```
 
 ## Example requests

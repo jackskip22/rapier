@@ -242,7 +242,6 @@ async function _rapierAppendImportedImageAssets(source, pending, work) {
       if (previous.href !== asset.url || (previous.title || '') !== (asset.title || '')) throw new Error('image_label_conflict');
       continue;
     }
-    if (existing.assets.size + additions.size >= owner.IMAGE_LIMITS.assets) throw new Error('image_asset_count_limit');
     blocks.push(owner.serializeAsset(asset));
     additions.set(asset.id, {href: asset.url, title: asset.title || ''});
     identities.add(identity);

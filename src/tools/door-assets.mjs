@@ -16,49 +16,56 @@ export async function readGuides(docs, transform = text => text) {
 		[path, transform(await readFile(join(docs, guide.file), 'utf8'), guide.file)])));
 }
 
-async function removeDoorAssets(directory, keep = null) {
+async function removeDoorAssets(directory, keep = []) {
 	await unobservedBuildIO(async () => {
-		const runtimes = (await readdir(directory)).filter(name => SITE_RUNTIME_FILE.test(name) && name !== keep);
+		const runtimes = (await readdir(directory)).filter(name => SITE_RUNTIME_FILE.test(name) && !keep.includes(name));
 		await Promise.all(['index.html', ...DOOR_ASSET_NAMES, ...GUIDE_ASSET_NAMES, ...runtimes].map(name => rm(join(directory, name), {force: true})));
 	});
 }
 
-export const SITE_RUNTIME_IDS = Object.freeze(['lib-markdownit', 'lib-gpu-lexer', 'rapier-editor-runtime', 'lib-acorn', 'rapier-jxl-worker']);
+export const SITE_RUNTIME_GROUPS = Object.freeze([
+	Object.freeze(['lib-markdownit', 'lib-gpu-lexer', 'rapier-editor-runtime', 'lib-acorn']),
+	Object.freeze(['rapier-jxl-worker']),
+]);
 export const SITE_RUNTIME_FILE = /^rapier-editor-[0-9a-f]{16}\.txt$/;
-const RUNTIME_META = /<meta name="rapier-runtime-file" content="(rapier-editor-[0-9a-f]{16}\.txt) (sha384-[A-Za-z0-9+/=]+) ([a-z -]+)">\n/;
-export function siteRuntimeFile(text) { return RUNTIME_META.exec(text)?.[1] ?? null; }
-export function siteRuntimePin(text) {
-	const match = RUNTIME_META.exec(text);
-	return match ? {file: match[1], integrity: match[2]} : null;
+const RUNTIME_META = /<meta name="rapier-runtime-file" content="(rapier-editor-[0-9a-f]{16}\.txt) (sha384-[A-Za-z0-9+/=]+) ([a-z -]+)">\n/g;
+export function siteRuntimePins(text) {
+	return [...String(text).matchAll(RUNTIME_META)].map(match => ({file: match[1], integrity: match[2]}));
 }
+export function siteRuntimeFiles(text) { return siteRuntimePins(text).map(pin => pin.file); }
 export function splitSitePage(text) {
-	if (RUNTIME_META.test(text)) throw new Error('The site page is already split');
-	let page = text, body = '';
-	for (const id of SITE_RUNTIME_IDS) {
-		const element = new RegExp('<script type="(?:application/rapier-runtime|application/rapier-jxl-worker|text/rapier-vendor)" id="' + id + '">[^<]*</script>\n', 'g');
-		const found = page.match(element);
-		if (found?.length !== 1) throw new Error('The site page needs exactly one ' + id + ' element');
-		body += found[0];
-		page = page.replace(element, '');
+	if (siteRuntimePins(text).length) throw new Error('The site page is already split');
+	let page = text, metas = '';
+	const files = [];
+	for (const ids of SITE_RUNTIME_GROUPS) {
+		let body = '';
+		for (const id of ids) {
+			const element = new RegExp('<script type="(?:application/rapier-runtime|application/rapier-jxl-worker|text/rapier-vendor)" id="' + id + '">[^<]*</script>\n', 'g');
+			const found = page.match(element);
+			if (found?.length !== 1) throw new Error('The site page needs exactly one ' + id + ' element');
+			body += found[0];
+			page = page.replace(element, '');
+		}
+		const bytes = Buffer.from(body);
+		const name = 'rapier-editor-' + createHash('sha256').update(bytes).digest('hex').slice(0, 16) + '.txt';
+		metas += '<meta name="rapier-runtime-file" content="' + name + ' sha384-' + createHash('sha384').update(bytes).digest('base64') + ' ' + ids.join(' ') + '">\n';
+		files.push({name, bytes});
 	}
-	const bytes = Buffer.from(body);
-	const name = 'rapier-editor-' + createHash('sha256').update(bytes).digest('hex').slice(0, 16) + '.txt';
-	const integrity = 'sha384-' + createHash('sha384').update(bytes).digest('base64');
 	const charset = '<meta charset="UTF-8">\n';
 	if (page.split(charset).length !== 2) throw new Error('The site page needs its one charset');
-	page = page.replace(charset, () => charset + '<meta name="rapier-runtime-file" content="' + name + ' ' + integrity + ' ' + SITE_RUNTIME_IDS.join(' ') + '">\n');
-	return {page, file: {name, bytes}};
+	page = page.replace(charset, () => charset + metas);
+	return {page, files};
 }
 
 export async function writeDoorAssets(directory, page, guides = null, firstPaint = null, firstScreen = null) {
-	let bytes = page instanceof Uint8Array ? page : new Uint8Array(page), runtime = null;
+	let bytes = page instanceof Uint8Array ? page : new Uint8Array(page), runtimes = null;
 	{
-		const text = new TextDecoder().decode(bytes), named = siteRuntimeFile(text);
-		if (named) runtime = {name: named, bytes: null};
+		const text = new TextDecoder().decode(bytes), named = siteRuntimeFiles(text);
+		if (named.length) runtimes = named.map(name => ({name, bytes: null}));
 		else {
 			const split = splitSitePage(text);
 			bytes = new TextEncoder().encode(split.page);
-			runtime = split.file;
+			runtimes = split.files;
 		}
 	}
 	const produced = [];
@@ -96,10 +103,10 @@ export async function writeDoorAssets(directory, page, guides = null, firstPaint
 		const body = doorPage(bytes, path, guideSection(guides[path], path));
 		if (body !== bytes) produced.push([doorAssetPath(path).slice(1), await sitePage(body, path)]);
 	}
-	await removeDoorAssets(directory, runtime.name);
+	await removeDoorAssets(directory, runtimes.map(runtime => runtime.name));
 	if (produced.length !== DOOR_ASSET_NAMES.length + (guides ? GUIDE_ASSET_NAMES.length : 0)) return [];
 	try {
-		if (runtime.bytes) await writeFile(join(directory, runtime.name), runtime.bytes);
+		for (const runtime of runtimes) if (runtime.bytes) await writeFile(join(directory, runtime.name), runtime.bytes);
 		for (const [name, body] of produced) await writeFile(join(directory, name), body);
 		await writeFile(join(directory, 'index.html'), await sitePage(bytes, '/'));
 	} catch (error) {

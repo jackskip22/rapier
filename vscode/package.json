@@ -97,7 +97,7 @@
         "toolReferenceName": "rapier-read",
         "displayName": "Read Rapier",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines; a drawing's block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines; a drawing's block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -232,7 +232,7 @@
         "toolReferenceName": "rapier-edit",
         "displayName": "Edit Rapier",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this to change a document the person is working on in Rapier: the change shows at once, marked as yours, and undoes alone. Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -430,7 +430,7 @@
         "toolReferenceName": "rapier-undo",
         "displayName": "Undo Rapier work",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Undo one act or one turn (act or turn_id, not both), preserving later work. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this when the person wants a change of yours in Rapier taken back. Undo one act or one turn (act or turn_id, not both), preserving later work. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -462,7 +462,7 @@
         "toolReferenceName": "rapier-show",
         "displayName": "Show or ask in Rapier",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired; only paired confirms pairing. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this to point the person to a place in their Rapier document, ask them something there, or pair their browser with a 4-letter code. Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired; only paired confirms pairing. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {

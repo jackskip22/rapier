@@ -79,7 +79,7 @@
 				"kind": "empty",
 				"reason": "state.preview.innerHTML = '' clears the live drag preview."
 			},
-			"_rapierDrawUpdateHandles": {
+			"_rapierDrawUpdateHandlesNow": {
 				"count": 3,
 				"kind": "static-template",
 				"reason": "layer.innerHTML is either cleared ('' when no selection, L2085) or built from _rapierDrawFmt-formatted numeric coordinates and constant handle labels (L2120, L2156); no document text is interpolated."

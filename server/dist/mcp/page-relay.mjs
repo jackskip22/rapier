@@ -13,6 +13,15 @@ const unavailable = {outcome: 'refused', reason: 'editor_unavailable'};
 const ZERO_HASH = '0'.repeat(64);
 const STATE_FREE = new Set(['document.rotate_capability', 'document.delete']);
 
+const PAINTS = /rapier-(?:water|paint)\b|"(?:kind|recognized)"\s*:\s*"paint"/;
+const paints = value => typeof value === 'string' ? PAINTS.test(value) : !!value && typeof value === 'object' && Object.values(value).some(paints);
+export function pendingTurnAnswer(operation, args) {
+  const painting = operation === 'edit' && paints(args);
+  return {outcome: 'pending', reason: 'editor_unavailable', ...(painting ? {painting: true} : {}),
+    retry: painting ? 'Still painting in the editor. Send the same call with the same operation_id to receive the finished painting.'
+      : 'Send the same call with the same operation_id once the editor is open; it answers what the page decided.'};
+}
+
 export class PageRelay {
   constructor(owner, bind) {
     this.owner = owner; this.bind = bind;
@@ -193,8 +202,7 @@ export class PageRelay {
   async turn(socket, input, head, signal) {
     const ack = await this.exchange(socket, input, head, signal);
     if (ack.unsent) return this.bind.envelope(input.operation, unavailable, head);
-    if (ack.pending) return this.bind.envelope(input.operation, {outcome: 'pending', reason: 'editor_unavailable',
-      retry: 'Send the same call with the same operation_id once the editor is open; it answers what the page decided.'}, head);
+    if (ack.pending) return this.bind.envelope(input.operation, pendingTurnAnswer(input.operation, input.args), head);
     if (ack.refused) return this.bind.envelope(input.operation, {outcome: 'refused', reason: ack.refused}, head);
     this.memory = {rev: ack.rev, hash: ack.hash};
     await this.renew(head);

@@ -285,7 +285,6 @@ function _rapierFontRuns(raw, options = null) {
 
 function _rapierPlanTypography(raw, patch, start, end, options = null) {
 	const source = String(raw || ''), spec = globalThis.RapierMarkdownSpec, typed = spec.typography;
-	if (source.length > RAPIER_EXACT_MARK_RAW_LIMIT) return null;
 	let wanted;
 	try { wanted = typed.normalize(patch, true); } catch (_) { return null; }
 	const before = _rapierTypographyRuns(source, options), keys = Object.keys(wanted);

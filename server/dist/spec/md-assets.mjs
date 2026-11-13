@@ -4,7 +4,7 @@ import {isWordSidecarBlock} from './word-sidecar.mjs';
 import {tuneMarkdownEngine} from './md-engine.mjs';
 import {sourceFacts, sourceView, sourceEdit} from '../kit/ledger/source.mjs';
 
-export const IMAGE_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, sourceChars: 64 * 1024 * 1024, dimension: 16384, pixels: 24000000, assets: 1024});
+export const IMAGE_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, sourceChars: 64 * 1024 * 1024, dimension: 16384, pixels: 24000000});
 const parsers = new WeakMap();
 const cached = [];
 let preparedDefinitions = [];
@@ -141,12 +141,21 @@ export function* blockWindows(source, bodyOffset, parser, env, keepNul = false) 
 
 const INVALID_PERCENT_PAYLOAD = /[^A-Za-z0-9._~:\/?@+$,;=%-]/;
 const isHexUnit = code => code >= 48 && code <= 57 || code >= 65 && code <= 70 || code >= 97 && code <= 102;
-let lastScan = null;
+const scanned = new Map();
+let scannedChars = 0;
 export function dataImage(url) {
   if (typeof url !== 'string' || url.length < 15 || (url.charCodeAt(0) | 32) !== 0x64 || url.charCodeAt(4) !== 0x3a || url.length > IMAGE_LIMITS.sourceChars) return null;
   if (url.length > 4096) {
-    if (lastScan?.url !== url) lastScan = {url, image: scanDataImage(url)};
-    return lastScan.image && {...lastScan.image};
+    let image = scanned.get(url);
+    if (image === undefined) {
+      image = scanDataImage(url);
+      while (scanned.size && (scanned.size >= 256 || scannedChars + url.length > 16e6)) {
+        const oldest = scanned.keys().next().value;
+        scanned.delete(oldest); scannedChars -= oldest.length;
+      }
+      if (url.length <= 16e6) { scanned.set(url, image); scannedChars += url.length; }
+    }
+    return image && {...image};
   }
   return scanDataImage(url);
 }
@@ -221,7 +230,6 @@ function* assetSteps(source, factory = configured || globalThis.markdownit, body
     yield;
   }
   const references = env.references || Object.create(null);
-  if (assets.size > IMAGE_LIMITS.assets) for (const asset of assets.values()) asset.status = 'asset_count_limit';
   let appendixStart = source.length;
   for (let index = blocks.length - 1; index >= 0; index--) {
     const block = blocks[index];
@@ -329,7 +337,6 @@ export function blockwiseAssets(source, rows, parse = raw => parseAssets(raw), b
     for (const label of labels) seen.add(label);
   }
   if (source.slice(cursor).includes(']:')) return null;
-  if (assets.size > IMAGE_LIMITS.assets) for (const asset of assets.values()) asset.status = 'asset_count_limit';
   let appendixStart = source.length;
   for (let index = blocks.length - 1; index >= 0; index--) {
     const block = blocks[index];
@@ -653,7 +660,6 @@ export function appendAssetText(source, asset, lineEnding, {preserveLabel = fals
     if (previous.href !== asset.url || (previous.title || '') !== title) return fail('image_label_conflict');
     return {source, id: asset.id, reference: asset.label, added: false, suffix: ''};
   }
-  if (parsed.assets.size >= IMAGE_LIMITS.assets) return fail('image_asset_count_limit');
   const eol = lineEnding || /\r\n|\n|\r/.exec(source)?.[0] || '\n', tail = /(?:\r\n?|\n)[ \t]*$/.exec(source);
   const separator = !source || tail && /[\r\n][ \t]*$/.test(source.slice(0, tail.index)) ? '' : tail ? eol : eol + eol;
   const suffix = separator + block + eol, nextSource = source + suffix;

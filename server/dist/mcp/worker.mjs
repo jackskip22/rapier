@@ -23,6 +23,7 @@ import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, guideResult, PROMPTS, pro
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap, portableNeeds } from '../skills/rapier-html/wrap.mjs';
 import {exportTemplate} from './export-template.mjs';
+import {withWaterEditorLink} from './water-refusal.mjs';
 import {browserWhere} from './browser-where.mjs';
 import {meter, routeClass, personOf, callerOf, takeDailyShare} from './governor.mjs';
 import { parseFlowchart } from '../spec/flowchart.mjs';
@@ -525,7 +526,7 @@ function drawingTurn(value) {
     .filter(field => value[field] !== undefined).map(field => [field, value[field]])) : null;
 }
 
-function materialWait(value, editorUrl, named = true) {
+function materialWait(value, editorUrl, named = true, apps = false) {
   const seconds = MATERIAL_LIMITS.lifetimeMs / 1000;
   const retry = named ? 'retry this exact call with the same operation_id'
     : 'read the document (this call had no operation_id, so retrying it would paint again; when the painting is in the text it is done)';
@@ -535,6 +536,8 @@ function materialWait(value, editorUrl, named = true) {
     : pairing === 'code_shown' ? 'An editor is open but not paired; ask for its code and send show {target:"pair", code}' + then
     : pairing === 'awaiting_allow' || pairing === 'owner_approval_required' ? 'An editor is pairing. ' + value.pairing.next.replace(/\.$/, '') + then
     : pairing === 'paired' ? 'The paired editor is not reporting; ask the person to bring it to the front' + then
+    : apps ? 'No editor is open yet. Rapier\'s view in this chat paints it once it shows: ask the person to keep it on screen; then ' + retry +
+      ' within ' + seconds + ' seconds. Give editor_url only when read {state:true} shows human.water "unavailable" or no view shows.'
     : 'No editor is open. ' + (editorUrl ? 'The person opens editor_url (or an MCP Apps host shows the editor)' : 'An MCP Apps host shows the editor') + ' within ' + seconds +
       ' seconds to finish this paint; then ' + retry + '. After that it expires and nothing is drawn.'};
 }
@@ -709,7 +712,7 @@ async function resource(request, env, uri) {
   const endpoint = new URL(request.url).origin;
   const domain = configuredOrigin(env.UI_ORIGIN || endpoint, 'UI_ORIGIN', true);
   const fileOrigins = configuredFileOrigins(env);
-  const connectDomains = [...new Set([endpoint, endpoint.replace(/^http/, 'ws'), 'https://cdn.jsdelivr.net', ...fileOrigins.map(fileConnectDomain)])];
+  const connectDomains = [...new Set([endpoint, endpoint.replace(/^http/, 'ws'), 'https://cdn.jsdelivr.net', ...fileOrigins.flatMap(fileConnectDomains)])];
   const prepared = uiPages.get(env.ASSETS) || new Map(), preparedKey = JSON.stringify([endpoint, fileOrigins, domain]);
   uiPages.set(env.ASSETS, prepared);
   let contents = prepared.get(preparedKey);
@@ -741,12 +744,18 @@ const deepFreeze = value => {
   return value;
 };
 
+export const FILE_HOST_REGIONS = Object.freeze(['australiaeast', 'brazilsouth', 'centralindia', 'centralus', 'denmarkeast', 'eastus', 'eastus2', 'eastus3',
+  'italynorth', 'japaneast', 'koreacentral', 'northcentralus', 'northeu', 'northeurope', 'polandcentral', 'southcentralus', 'southeastus3', 'ukwest',
+  'westcentralus', 'westus', 'westus2', 'westus3']);
 const FILE_ORIGIN_PATTERN = /^https:\/\/([a-z0-9]{3,40})\*\.((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})$/;
 function configuredFileOrigins(env) {
   return [...new Set((env.FILE_DOWNLOAD_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)
     .map(value => FILE_ORIGIN_PATTERN.test(value) ? value : configuredOrigin(value, 'FILE_DOWNLOAD_ORIGINS')))];
 }
-const fileConnectDomain = entry => entry.replace(FILE_ORIGIN_PATTERN, 'https://*.$2');
+const fileConnectDomains = entry => {
+  const pattern = FILE_ORIGIN_PATTERN.exec(entry);
+  return pattern ? FILE_HOST_REGIONS.map(region => 'https://' + pattern[1] + region + '.' + pattern[2]) : [entry];
+};
 
 function configuredOrigin(value, name, local = false) {
   let url;
@@ -948,12 +957,14 @@ function observeToolOutcome(observation, result) {
   if (result.resultType === 'task') { observation.outcome('task_accepted'); return; }
   const value = result.structuredContent;
   if (!plain(value)) return;
+  if (Object.hasOwn(value, 'chars')) observation.size(value.chars);
   if (value.receipt?.status === 'waiting' || value.hydration && value.hydration.status !== 'complete') { observation.outcome('unknown'); return; }
   if (value.receipt?.status === 'declined') { observation.outcome('tool_error', 'permission'); return; }
   if (value.outcome === 'uncertain') { observation.outcome('unknown', 'unavailable'); return; }
   if (value.outcome === 'pending') { observation.outcome('unknown'); return; }
   if (value.outcome === 'cancelled') { observation.outcome('cancelled', 'cancellation'); return; }
   if (result.isError) {
+    observation.errorCode?.(value.code ?? value.reason);
     let errorClass = value.outcome === 'conflict' ? 'conflict' : value.outcome === 'invalid' ? 'validation' : 'other';
     switch (value.code ?? value.reason) {
       case 'REVISION_CONFLICT': errorClass = 'conflict'; break;
@@ -970,7 +981,7 @@ function observeToolOutcome(observation, result) {
 }
 
 async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null, toolAdmission = null, observation = null) {
-  const invalidInput = error => { observation?.outcome('tool_error', 'validation'); return inputErrorResult(error); };
+  const invalidInput = error => { observation?.outcome('tool_error', 'validation'); observation?.errorCode?.(error?.code); return inputErrorResult(error); };
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
     const descriptor = TOOL_BY_NAME.get(name);
@@ -1042,7 +1053,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
   }
   if (!page && name === 'convert') {
-    const answered = convertOnDoor(args, unpassed);
+    const answered = convertOnDoor(args, unpassed, observation?.family?.());
+    observation?.pictures?.(args.files, answered.reply.pictures, answered.reply.unpassed, args.quality, args.effort);
     observation?.feature('convert'); observation?.dispatched();
     return envelope(answered.reply);
   }
@@ -1154,6 +1166,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
         : 'Share editor_url with the person; if they read you a code, send show {target:"pair", code}. ') +
         (name === 'read' ? 'Without an editor, read the text.' : 'Without an editor, export markdown, html or txt.')};
   }
+  if (!page && (authority.source !== 'server' || env.LOCAL_EDITOR_PAGE === true) && result.structuredContent?.reason === 'water_webgpu_unavailable')
+    result.structuredContent = withWaterEditorLink(result.structuredContent, new URL('/d/' + pageId(documentAddress), request.url).href);
   if (result.isError) return result;
   const writer = authority.scopes?.includes('rapier:write') === true;
   if ((authority.source === 'server' || env.LOCAL_EDITOR_PAGE === true || !writer || env.ACCESS_PROFILE === true && authority.access?.kind !== 'browser') && result._meta?.rapier) delete result._meta.rapier.live;
@@ -1576,6 +1590,7 @@ async function exportResource(response, uri) {
 
 async function handleRequest(request, env, authority, observation = null) {
   const refuseRpc = (id, code, message, status = 200, details, errorClass) => {
+    observation?.rpcError?.(code);
     observation?.outcome(code === REQUEST_CANCELLED ? 'cancelled' : status === 401 || status === 403 ? 'auth_refused' : 'protocol_error',
       errorClass || (code === REQUEST_CANCELLED ? 'cancellation' : status === 401 || status === 403 ? 'permission'
         : status === 413 ? 'limit' : [-32600, -32602, -32700, HEADER_MISMATCH, UNSUPPORTED_VERSION].includes(code) ? 'validation'
@@ -1786,7 +1801,11 @@ async function handleRequest(request, env, authority, observation = null) {
   if (!plain(message) || Object.keys(message).some(key => !['jsonrpc', 'id', 'method', 'params'].includes(key)) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' || (message.params !== undefined && !plain(message.params)) || (Object.hasOwn(message, 'id') && id === undefined)) return refuseRpc(id, -32600, 'Expected one JSON-RPC 2.0 request or notification.', 400);
   observation?.parsed(message.method);
   const params = message.params || {};
-  if (message.method === 'tools/call') observation?.attempted(params.name);
+  if (message.method === 'tools/call') {
+    observation?.attempted(params.name);
+    const schema = typeof params.name === 'string' && TOOL_BY_NAME.has(params.name) ? TOOL_BY_NAME.get(params.name).inputSchema : null;
+    observation?.args?.(params.arguments, schema?.properties ? Object.keys(schema.properties) : [], schema?.required || []);
+  }
   if (door === '/editor' && (message.method !== 'tools/call' || !authority?.editorDocument || params.arguments?.document !== authority.editorDocument))
     return refuseRpc(id, -32601, 'This editor transport is bound to one document.', 403);
   if (Object.hasOwn(message, 'id') && ['resources/read', 'skills/get'].includes(message.method) &&
@@ -1798,6 +1817,7 @@ async function handleRequest(request, env, authority, observation = null) {
   let appsClient, hostAgent = null;
   if (modern) {
     const requested = meta[META_VERSION];
+    observation?.protocol?.(requested, 'modern', meta[META_CLIENT]);
     if (typeof requested !== 'string') return refuseRpc(id ?? null, -32602, `${META_VERSION} must be a string in every request's _meta.`, 400);
     if (!plain(meta[META_CLIENT])) return refuseRpc(id ?? null, -32602, `${META_CLIENT} must be an object in every request's _meta.`, 400);
     if (header !== requested) return refuseRpc(id ?? null, HEADER_MISMATCH, `Header mismatch: MCP-Protocol-Version header value '${header}' does not match body value '${requested}'.`, 400);
@@ -1819,6 +1839,7 @@ async function handleRequest(request, env, authority, observation = null) {
     }
     appsClient = declaresAppsUi({ capabilities: meta[META_CLIENT] });
   } else {
+    if (message.method !== 'initialize' && header !== null) observation?.protocol?.(header, 'legacy');
     if (message.method !== 'initialize' && header !== null && !LEGACY_VERSIONS.includes(header)) return refuseRpc(id ?? null, -32600, `MCP-Protocol-Version must be one of ${LEGACY_VERSIONS.join(', ')}.`, 400);
     const session = request.headers.get('Mcp-Session-Id');
     appsClient = session ? await clientSessionApps(editorSecret(env), session, clientSessionBinding(request, authority, door)) : false;
@@ -1868,6 +1889,7 @@ async function handleRequest(request, env, authority, observation = null) {
         if (modern) return refuseRpc(id, -32601, 'Method not found.', 404);
         if (typeof params.protocolVersion !== 'string' || !plain(params.capabilities) || !plain(params.clientInfo) || typeof params.clientInfo.name !== 'string' || typeof params.clientInfo.version !== 'string') return refuseRpc(id, -32602, 'initialize requires protocolVersion, capabilities, and clientInfo.');
         observation?.client(clientFamily(params.clientInfo.name));
+        observation?.protocol?.(params.protocolVersion, 'legacy', params.capabilities);
         result = { protocolVersion: LEGACY_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSION, capabilities: INITIALIZE_CAPABILITIES, serverInfo: serverInfo(env), instructions };
         headers['Mcp-Session-Id'] = await mintClientSession(editorSecret(env), declaresAppsUi(params), clientSessionBinding(request, authority, door));
         break;
@@ -1907,7 +1929,7 @@ async function handleRequest(request, env, authority, observation = null) {
         if (typeof params.name !== 'string' || (params.arguments !== undefined && !plain(params.arguments))) return refuseRpc(id, -32602, 'tools/call requires name and an arguments object.');
         if (params.name === 'show' && plain(params.arguments) && params.arguments.target === undefined)
           params.arguments = {...params.arguments, target: showTarget(params.arguments)};
-        if (!TOOL_BY_NAME.has(params.name) || !['page', '/editor'].includes(door) && !TOOLS.some(tool => tool.name === params.name)) throw failure('UNKNOWN_TOOL', 'Unknown tool.');
+        if (!TOOL_BY_NAME.has(params.name) || !['page', '/editor'].includes(door) && !TOOLS.some(tool => tool.name === params.name)) throw failure('UNKNOWN_TOOL', 'Unknown tool ' + JSON.stringify(String(params.name).slice(0, 64)) + '. Tools: ' + TOOLS.map(tool => tool.name).join(', ') + '.');
         if (TOOL_BY_NAME.has(params.name)) {
           const reads = TOOL_BY_NAME.get(params.name).annotations.readOnlyHint || params.name === 'open' &&
             (params.arguments?.document !== undefined || params.arguments?.url !== undefined) && params.arguments.note === undefined;
@@ -1915,6 +1937,7 @@ async function handleRequest(request, env, authority, observation = null) {
           if (refusal) return challenged(refusal);
         }
         const hostedTask = modern && door !== 'page' && taskTool(params.name, params.arguments) && plain(meta[META_CLIENT]?.extensions?.[TASK_EXTENSION]) && taskHosting(env, authority);
+        observation?.mode?.(!!hostedTask, appsClient, modern ? 'modern' : 'legacy');
         if (hostedTask && authority.grantUnchecked && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(authorityRequest, env));
         const admission = await takeToolBudget(request, env, authority, params.name, params.arguments || {}, door, meta['rapier/editorKey'], {deferOAuth: !hostedTask});
         if (admission && !admission.deferred) throw failure('TOOL_INVOCATION_ADMISSION', 'Tool invocation admission refused.', admission);
@@ -1993,6 +2016,7 @@ async function handleRequest(request, env, authority, observation = null) {
     if ((TASK_METHODS.has(message.method) || message.method === 'tools/call') && Number.isSafeInteger(error?.code)) return refuseRpc(id, error.code, error.message, 200, error.data);
     if (error?.[PUBLIC_FAILURE] && error.code === 'TOOL_INVOCATION_ADMISSION') {
       const admission = error.details;
+      observation?.errorCode?.(admission?.code);
       observation?.outcome(admission.status === 429 ? 'budget_refused' : admission.status === 401 || admission.status === 403 ? 'auth_refused' : 'unknown',
         admission.status === 429 ? 'limit' : admission.status === 401 || admission.status === 403 ? 'permission' : 'unavailable');
       return json({error: {code: admission.code, message: admission.message,
@@ -2010,6 +2034,10 @@ async function handleRequest(request, env, authority, observation = null) {
   }
   if (message.method === 'tools/call') observeToolOutcome(observation, result);
   else observation?.outcome(TASK_METHODS.has(message.method) ? 'unknown' : 'succeeded');
+  if (message.method === 'tools/call' && appsClient && door !== '/muse' && result.structuredContent?.outcome === 'pending' &&
+      result.structuredContent.pending?.requirements?.kind === 'material' && typeof result.structuredContent.next === 'string')
+    result.structuredContent = {...result.structuredContent, next: materialWait(result.structuredContent, result.structuredContent.editor_url,
+      typeof params.arguments?.operation_id === 'string' && params.arguments.operation_id !== '', true).next};
   if (message.method === 'tools/call' && result.resultType !== 'task') result = publicToolResult(params.name, result, door, {workspaceNotes: env.ACCESS_PROFILE === true, appsClient});
   if (door === '/muse' && message.method === 'tools/call' && result.resultType !== 'task' && params.name === 'export' && params.arguments?.format === 'markdown' && parseReply(result.content[0].text).outcome === 'ok') {
     const link = result.content.find(item => item.type === 'resource_link');
@@ -2193,7 +2221,7 @@ async function pairStatus(request, env, page, args, cookies) {
   if (/^[A-Za-z0-9_-]{43}$/.test(held || '')) {
     const status = await ask({action: args.decision || 'status', secretHash: await digest(held)});
     if (status.status === 'absent') return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unknown, deleted or expired.'));
-    if (status.status === 'waiting') return envelope({outcome: 'waiting', paired: false, pairingCode: status.code, codeExpiresAt: new Date(status.expiresAt).toISOString()});
+    if (status.status === 'waiting') return envelope({outcome: 'waiting', paired: false, pairingCode: status.code, codeExpiresAt: new Date(status.expiresAt).toISOString(), ...(status.inChat === true ? {inChat: true} : {})});
     if (status.status === 'owner-required') return envelope({outcome: 'owner_confirmation_required', paired: false,
       owner_approval_url: new URL('/editor/' + page.id + '?pair=' + await digest(held), request.url).href});
     if (status.status === 'confirmation_required') return envelope({outcome: 'confirmation_required', paired: false});
@@ -2212,7 +2240,7 @@ async function pairStatus(request, env, page, args, cookies) {
   if (started.status === 'absent') return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unknown, deleted or expired.'));
   if (!started.code) return envelope({outcome: 'refused', reason: 'busy', paired: false});
   cookies.push(...setCookies(page.id, pendingCookie(page.id), secret, Math.ceil(PAIR_CODE_MS * 3 / 1000)));
-  return envelope({outcome: 'waiting', paired: false, pairingCode: started.code, codeExpiresAt: new Date(started.expiresAt).toISOString()});
+  return envelope({outcome: 'waiting', paired: false, pairingCode: started.code, codeExpiresAt: new Date(started.expiresAt).toISOString(), ...(started.inChat === true ? {inChat: true} : {})});
 }
 
 export default { fetch: handleMcp };
@@ -3067,6 +3095,7 @@ export class RapierDocument {
       : !head.bearer && authority.ownerKey === head.ownerKey && authority.pairEpoch === undefined;
   }
 
+  inChat(now) { return this.viewReportedAt > now - 600000 ? {inChat: true} : {}; }
   async savePairing(head, change) {
     const store = new PairingStore(this.ctx.storage.kv, head.pairEpoch || 0), now = Date.now();
     this.ctx.storage.transactionSync(() => {
@@ -3111,7 +3140,7 @@ export class RapierDocument {
         }
         const ownerRequired = row.confirmedAt && !head.bearer && !row.ownerApprovedAt;
         if (body.action === 'status') return json(ownerRequired ? {status: 'owner-required'} : row.confirmedAt
-          ? {status: 'confirmation_required'} : {status: 'waiting', code: row.code, expiresAt: row.expiresAt});
+          ? {status: 'confirmation_required'} : {status: 'waiting', code: row.code, expiresAt: row.expiresAt, ...this.inChat(now)});
         if (body.action === 'allow' && !row.confirmedAt) return json({status: 'not_ready'});
         if (body.action === 'allow' && ownerRequired) return json({status: 'owner-required'});
         if (body.action === 'allow') head.pairedAt = now;
@@ -3119,12 +3148,12 @@ export class RapierDocument {
         return json(body.action === 'allow' ? {status: 'paired', epoch: head.pairEpoch || 0} : {status: 'cancelled'});
       }
       if (body.action !== 'start' || !Array.isArray(body.codes)) return new Response(null, { status: 400 });
-      if (row) return json({status: 'waiting', code: row.code, expiresAt: row.expiresAt});
+      if (row) return json({status: 'waiting', code: row.code, expiresAt: row.expiresAt, ...this.inChat(now)});
       const code = body.codes.find(value => PAIR_CODE.test(value) && !store.code(value, now));
       if (!code) return json({ status: 'busy' });
       const where = typeof body.where === 'string' && body.where.length <= 120 ? {where: body.where} : {};
       await this.savePairing(head, pairs => pairs.put({code, secretHash: body.secretHash, expiresAt: now + PAIR_CODE_MS, ...where}, now));
-      return json({ status: 'waiting', code, expiresAt: now + PAIR_CODE_MS });
+      return json({ status: 'waiting', code, expiresAt: now + PAIR_CODE_MS, ...this.inChat(now) });
     } catch { return new Response(null, { status: 503 }); }
   }
 
@@ -3781,6 +3810,7 @@ export class RapierDocument {
       return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document capability is unknown, deleted or expired. Open a new workspace from an exported copy.'));
     }
     if (head.agentAccess === false && input.editorAuthorized !== true) return toolError(failure('DOCUMENT_UNAVAILABLE', 'Agent access to this workspace is disconnected. The person can share it again from the editor.'));
+    if (input.editorAuthorized === true && !input.page && typeof input.requestKey === 'string') this.viewReportedAt = Date.now();
     const retainedTask = this.readTaskResult(input, head);
     if (retainedTask) return retainedTask;
     const principal = 'remote:' + capabilityHash;
@@ -3860,14 +3890,33 @@ export class RapierDocument {
       this.editorWaiter?.wait.finish({...this.editorWaiter.request, receipt: {id: this.editorWaiter.id, status: 'unavailable', reason: 'document_changed'}});
       return envelope({ outcome: 'rotated', rotated: true, rotations: head.rotations, rotatedAt: new Date(head.rotatedAt).toISOString() }, head);
     }
+    if (operation === 'document.pair_pending' || operation === 'document.pair_confirm') {
+      if (input.editorAuthorized !== true) return toolError(failure('HUMAN_AUTHORITY_REQUIRED', "This is the editor's own operation."));
+      const store = new PairingStore(this.ctx.storage.kv, head.pairEpoch || 0);
+      if (operation === 'document.pair_pending') return envelope({outcome: 'ok', pending: store.waiting(Date.now()).map(row =>
+        ({requestId: row.secretHash, code: row.code, expiresAt: new Date(row.expiresAt).toISOString()}))}, head);
+      await this.assertAuthority(input);
+      const now = Date.now(), waiting = store.waiting(now), row = store.current(String(args.requestId), now);
+      const refuse = (reason, message) => envelope({outcome: 'refused', reason, paired: false, message}, head);
+      if (!row || row.confirmedAt) return refuse('pairing_request_gone', 'That browser is no longer waiting. Open the link again to get a new code.');
+      if (row.code !== args.code) return refuse('pairing_request_changed', 'That browser now shows another code.');
+      if (waiting.length !== 1) return refuse('pairing_requests_several', 'More than one browser is waiting. Tell your assistant the code your browser shows.');
+      const confirmed = {...row, confirmedAt: now, confirmedBy: 'editor', expiresAt: now + 2 * PAIR_CODE_MS};
+      await this.savePairing(head, pairs => pairs.put(confirmed, now));
+      return envelope({outcome: 'confirmation_required', paired: false, ...(head.bearer
+        ? {message: 'The browser showing that code can now choose ALLOW or CANCEL.'}
+        : {ownerApprovalId: row.secretHash, message: 'Approve this browser as its owner, then choose ALLOW on the page showing the code.'})}, head);
+    }
     if (operation === PAIR_BROWSER) {
-      const now = Date.now(), code = String(args.code || '').toUpperCase();
-      const attempts = head.pairingAttempts?.expiresAt > now ? head.pairingAttempts : {misses: 0, expiresAt: now + PAIR_CODE_MS};
+      const code = String(args.code || '').toUpperCase();
       const locked = () => envelope({outcome: 'refused', reason: 'pairing_locked', paired: false, message: 'Pairing is locked for this code window. Try again after the window ends.'}, head);
+      const windowAt = at => head.pairingAttempts?.expiresAt > at ? head.pairingAttempts : {misses: 0, expiresAt: at + PAIR_CODE_MS};
+      if (windowAt(Date.now()).misses >= DOOR_LIMITS.pairingMissesPerWindow) return locked();
+      await this.assertAuthority(input);
+      const now = Date.now(), attempts = windowAt(now);
       if (attempts.misses >= DOOR_LIMITS.pairingMissesPerWindow) return locked();
       const store = new PairingStore(this.ctx.storage.kv, head.pairEpoch || 0), found = store.code(code, now);
       const row = found?.confirmedAt ? null : found;
-      await this.assertAuthority(input);
       if (!row) {
         head.pairingAttempts = {...attempts, misses: attempts.misses + 1};
         this.ctx.storage.transactionSync(() => this.ctx.storage.kv.put('head', head));
@@ -3936,7 +3985,7 @@ export class RapierDocument {
       paint: (strokes, options = {}) => paintAgentStrokes(strokes, options.seed, options.target, options),
       material: request => {
         if (material?.results.has(request.job)) return material.results.get(request.job);
-        if (material?.failure) return {...materialDescription(request), outcome: 'refused', reason: material.failure};
+        if (material?.failure) return {...materialDescription(request), outcome: 'refused', reason: material.failure, ...(HINTS[material.failure] ? {hint: HINTS[material.failure]} : {})};
         if (material) material.request = request;
         return null;
       },

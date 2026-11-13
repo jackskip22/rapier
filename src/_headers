@@ -59,6 +59,20 @@
   ! Cache-Control
   Cache-Control: public, max-age=300
 
+/.well-known/mcp.json
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/.well-known/mcp-registry-auth
+  Content-Type: text/plain; charset=utf-8
+  ! Cache-Control
+  Cache-Control: public, max-age=300
+
+/AGENTS.md
+  Content-Type: text/markdown; charset=utf-8
+
 /.well-known/ai-catalog.json
   Content-Type: application/ai-catalog+json
   Access-Control-Allow-Origin: *

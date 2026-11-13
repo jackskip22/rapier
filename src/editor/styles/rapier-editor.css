@@ -603,8 +603,7 @@ body.light:not(.rapier-notes-mode) .block-wrapper--editing .block-edit { backgro
 	user-select: text;
 	-webkit-user-select: text;
 }
-.block-wrapper--source-edit .block-edit,
-pre.block-source-only {
+.block-wrapper--source-edit .block-edit {
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	tab-size: 2;
@@ -612,7 +611,6 @@ pre.block-source-only {
 	font-size: var(--text-sm);
 	line-height: 1.35;
 }
-pre.block-source-only { margin: 0; background: none; padding: 0; }
 .block-wrapper--source-edit .block-edit,
 .block-wrapper--math-source .block-edit {
 	overflow-y: auto;

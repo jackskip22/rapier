@@ -913,6 +913,15 @@ function _tableRawFromEdit(blockId) {
 	return _tableRawFromDom(blockId, editDiv ? editDiv.querySelector('table') : null);
 }
 
+function _rapierTableCellUnchanged(live, source) {
+	if (typeof live.isEqualNode !== 'function' || !live.attributes || !live.classList) return false;
+	if (live.isEqualNode(source)) return true;
+	if (live.tagName !== source.tagName || live.innerHTML !== source.innerHTML) return false;
+	const own = cell => [...cell.attributes].filter(row => row.name !== 'class' && row.name !== 'data-rapier-hint').map(row => row.name + '=' + row.value).sort().join('\n') +
+		'\n' + [...cell.classList].filter(name => !name.startsWith('rapier-cell--')).sort().join(' ');
+	return own(live) === own(source);
+}
+
 function _tableRawFromDom(blockId, table) {
 	if (!table) return null;
 	const original = rapier.document.blocks.find(block => block.id === blockId);
@@ -932,36 +941,37 @@ function _tableRawFromDom(blockId, table) {
 		}
 		return _rapierHtmlTableSource(copy);
 	}
-	const readRows = root => Array.from(root.querySelectorAll('tr')).map(tr =>
-		Array.from(tr.children)
-			.filter(cell => /^(TD|TH)$/.test(cell.tagName))
-			.map(_rapierTableCellMarkdown)
-	).filter(row => row.length);
-	const rows = readRows(table);
-	if (!rows.length) return null;
-	const cols = Math.max(1, ...rows.map(row => row.length));
-	const normalised = rows.map(row => row.concat(Array(Math.max(0, cols - row.length)).fill('')));
+	const cellsOf = root => Array.from(root.querySelectorAll('tr')).map(tr =>
+		Array.from(tr.children).filter(cell => /^(TD|TH)$/.test(cell.tagName))).filter(row => row.length);
+	const liveRows = cellsOf(table);
+	if (!liveRows.length) return null;
+	const read = new Map(), markdownOf = cell => { if (!read.has(cell)) read.set(cell, _rapierTableCellMarkdown(cell)); return read.get(cell); };
+	const rowOf = cells => cells.map(markdownOf);
+	const cols = Math.max(1, ...liveRows.map(row => row.length));
 	const block = rapier.document.blocks.find(candidate => candidate.id === blockId);
 	const info = block ? _tableInfo(block.raw) : null;
 	const alignments = info ? info.alignments : [];
 	const lineOf = info ? info.rowLines : [];
-	if (info && info.cols === cols && lineOf.length === rows.length) {
+	if (info && info.cols === cols && lineOf.length === liveRows.length) {
 		const projected = _rapierRenderedMarkProbe(block.raw, 'bold')?.root.querySelector('table');
-		const beforeRows = projected && readRows(projected), lines = _tableLf(block.raw).split('\n');
+		const beforeRows = projected && cellsOf(projected), lines = _tableLf(block.raw).split('\n');
 		const spans = lineOf.map(at => Number.isInteger(at) ? _rapierTableCellSpans(lines[at]) : []);
-		if (beforeRows?.length === rows.length && spans.every((row, index) => Number.isInteger(lineOf[index]) && row.length <= cols &&
-				rows[index].length === cols && beforeRows[index].length === cols)) {
-			for (let row = 0; row < rows.length; row++) {
-				const at = lineOf[row], changed = rows[row].flatMap((cell, col) => cell === beforeRows[row][col] ? [] : [col]);
-				if (changed.some(col => col >= spans[row].length)) { lines[at] = _tableBuildRow(rows[row]) + (lines[at].endsWith('\r') ? '\r' : ''); continue; }
+		if (beforeRows?.length === liveRows.length && spans.every((row, index) => Number.isInteger(lineOf[index]) && row.length <= cols &&
+				liveRows[index].length === cols && beforeRows[index].length === cols)) {
+			for (let row = 0; row < liveRows.length; row++) {
+				const at = lineOf[row], changed = liveRows[row].flatMap((cell, col) => _rapierTableCellUnchanged(cell, beforeRows[row][col]) ||
+					markdownOf(cell) === markdownOf(beforeRows[row][col]) ? [] : [col]);
+				if (changed.some(col => col >= spans[row].length)) { lines[at] = _tableBuildRow(rowOf(liveRows[row])) + (lines[at].endsWith('\r') ? '\r' : ''); continue; }
 				for (const col of changed.reverse()) {
 					const [from, to] = spans[row][col];
-					lines[at] = lines[at].slice(0, from) + _tableEscapeCell(rows[row][col]) + lines[at].slice(to);
+					lines[at] = lines[at].slice(0, from) + _tableEscapeCell(markdownOf(liveRows[row][col])) + lines[at].slice(to);
 				}
 			}
 			return lines.join('\n');
 		}
 	}
+	const rows = liveRows.map(rowOf);
+	const normalised = rows.map(row => row.concat(Array(Math.max(0, cols - row.length)).fill('')));
 	const rowLine = (row, index) => {
 		const built = _tableBuildRow(row);
 		const line = Number.isInteger(lineOf[index]) ? info.lines[lineOf[index]] : null;

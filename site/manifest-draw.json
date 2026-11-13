@@ -2,7 +2,7 @@
   "id": "./draw",
   "name": "Rapier Draw",
   "short_name": "Draw",
-  "description": "Free Markdown editor and notes app for Android and the web. Write on the formatted page, draw and paint, and work offline. No account, ads or tracking.",
+  "description": "Free Markdown editor and notes app for Android and the web. Write on the formatted page, draw and paint, and work offline. No account, no tracking, no ads.",
   "start_url": "./draw",
   "scope": "./",
   "display": "standalone",

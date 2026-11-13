@@ -13,10 +13,10 @@
   color: var(--color-text); font: 600 0.9rem 'Geist Mono', monospace;
   text-transform: uppercase; cursor: pointer;
 }
-#feedback-overlay .feedback-kinds input:checked + span {
+#feedback-overlay .feedback-kinds label:has(> input:checked) > span {
   background: var(--color-text); color: var(--color-bg);
 }
-#feedback-overlay .feedback-kinds input:focus-visible + span {
+#feedback-overlay .feedback-kinds label:has(> input:focus-visible) > span {
   text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: .2em;
 }
 #feedback-overlay .feedback-label {

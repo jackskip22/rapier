@@ -76,14 +76,13 @@ let _rapierRuntimeReady, _rapierCodecsReady, _rapierCodecsSource;
 let _rapierUnpackWorker = null, _rapierUnpackSerial = 0, _rapierUnpackIdle = 0;
 const _rapierUnpackRequests = new Map();
 const _rapierStoredVendorsPending = new Map();
-const _rapierRuntimeFile = (() => {
-  const meta = document.querySelector('meta[name="rapier-runtime-file"]');
-  if (!meta) return null;
-  meta.remove();
-  const [file, integrity, ...ids] = meta.content.split(' ');
+const _rapierRuntimeFiles = (() => {
+  const metas = [...document.querySelectorAll('meta[name="rapier-runtime-file"]')];
+  if (!metas.length) return null;
+  for (const meta of metas) meta.remove();
   const parsed = document.readyState === 'loading' ? new Promise(done => document.addEventListener('DOMContentLoaded', done, {once: true})) : null;
   let begin;
-  const begun = new Promise(done => { begin = after => Promise.resolve(after).catch(() => {}).then(() => new Promise(painted => {
+  const begun = new Promise(done => { begin = after => Promise.resolve(after).catch(() => {}).then(shown => shown && new Promise(painted => {
     const shownAt = performance.now();
     let observer = null;
     const go = () => { observer?.disconnect(); painted(); };
@@ -94,11 +93,7 @@ const _rapierRuntimeFile = (() => {
     setTimeout(go, 500);
   })).then(done); });
   const RELOADED = 'rapier:runtime-reload';
-  const get = () => fetch(file, {integrity}).then(response => {
-    if (!response.ok) throw new Error(file, {cause: new Error('Packed resource is missing')});
-    return response.text();
-  }).then(read);
-  const reload = async error => {
+  const reload = file => async error => {
     let tried = null;
     try { tried = sessionStorage.getItem(RELOADED); } catch (_) { throw error; }
     if (tried !== null || navigator.onLine === false) throw error;
@@ -108,7 +103,7 @@ const _rapierRuntimeFile = (() => {
     location.reload();
     return new Promise(() => {});
   };
-  const read = async text => {
+  const read = (file, ids) => async text => {
     const element = /<script type="(application\/rapier-runtime|application\/rapier-jxl-worker|text\/rapier-vendor)" id="([a-z-]+)">([^<]*)<\/script>\n/y, elements = [];
     while (element.lastIndex < text.length) {
       const match = element.exec(text);
@@ -121,11 +116,22 @@ const _rapierRuntimeFile = (() => {
     await parsed;
     const descriptor = document.querySelector('body > script[type="application/speedracer-app+json"]');
     if (descriptor) descriptor.before(...elements); else document.body.append(...elements);
-    try { sessionStorage.removeItem(RELOADED); } catch (_) {}
   };
-  const arrived = begun.then(() => get().catch(() => new Promise(again => setTimeout(again, 1000)).then(get))).catch(reload);
-  arrived.catch(() => {});
-  return {ids, arrived, begin};
+  let after = begun;
+  const files = metas.map((meta, index) => {
+    const [file, integrity, ...ids] = meta.content.split(' ');
+    const get = () => fetch(file, {integrity}).then(response => {
+      if (!response.ok) throw new Error(file, {cause: new Error('Packed resource is missing')});
+      return response.text();
+    }).then(read(file, ids));
+    const retried = () => get().catch(() => new Promise(again => setTimeout(again, 1000)).then(get));
+    const arrived = after.then(() => index ? retried() : retried().catch(reload(file)));
+    arrived.catch(() => {});
+    after = arrived;
+    return {ids, arrived};
+  });
+  files[0].arrived.then(() => { try { sessionStorage.removeItem(RELOADED); } catch (_) {} }, () => {});
+  return {files, begin};
 })();
 
 function _rapierLoadCodecs() {
@@ -221,7 +227,8 @@ function _rapierRuntimeComplete(id) {
 }
 function _rapierWhenRuntime(id) {
   if (_rapierRuntimeComplete(id)) return Promise.resolve();
-  if (_rapierRuntimeFile?.ids.includes(id)) return _rapierRuntimeFile.arrived.then(() => {
+  const file = _rapierRuntimeFiles?.files.find(row => row.ids.includes(id));
+  if (file) return file.arrived.then(() => {
     if (!_rapierRuntimeComplete(id)) throw new Error(id, {cause: new Error('Packed resource is incomplete')});
   });
   if (document.readyState !== 'loading') return Promise.reject(new Error(id, {cause: new Error('Packed resource is incomplete')}));
@@ -360,6 +367,7 @@ document.addEventListener('compositionend', event => {
 
 (async () => {
   _rapierKeepPortableTemplate();
+  if (!_rapierFirstPaintEligible) _rapierRuntimeFiles?.begin(false);
   let publishRuntime;
   _rapierRuntimeReady = new Promise(resolve => { publishRuntime = resolve; });
   try {
@@ -401,7 +409,7 @@ function _rapierExecuteBootSource({name, source, bytes}, mountInterface) {
   return new Promise((resolve, reject) => {
     const element = document.createElement('script');
     element._rapierExecuted = false;
-    const url = URL.createObjectURL(new Blob([bytes, '\n;document.currentScript._rapierExecuted = true;\n//# sourceURL=' + name], {type: 'text/javascript;charset=utf-8'}));
+    const url = URL.createObjectURL(new Blob(['//# allFunctionsCalledOnLoad\n', bytes, '\n;document.currentScript._rapierExecuted = true;\n//# sourceURL=' + name], {type: 'text/javascript;charset=utf-8'}));
     let thrown = null;
     const caught = event => {
       if (document.currentScript === element || event.filename === name || event.filename === url)
@@ -592,6 +600,7 @@ async function _rapierShowFirstPaint(fonts) {
   addEventListener('resize', leave);
   document.body.append(host);
   try { performance.mark('rapier-first-paint'); } catch (_) {}
+  return true;
 }
 
 async function _rapierStartRuntime() {
@@ -608,7 +617,7 @@ async function _rapierStartRuntime() {
     const shown = document.getElementById('rapier-first-early')
       ? _rapierShowFirstEarly(fonts).catch(error => console.warn('[rapier] early first screen skipped', error))
       : _rapierShowFirstPaint(fonts).catch(error => console.warn('[rapier] first picture skipped', error));
-    _rapierRuntimeFile?.begin(shown);
+    _rapierRuntimeFiles?.begin(shown);
     const editor = await editorPending;
     if (editor.length !== 3 || editor[0].name !== 'rapier-ui.html' || editor[1].name !== 'rapier-shared.js' || editor[2].name !== 'rapier-editor.js')
       throw new Error('Editor runtime records are invalid');

@@ -1174,7 +1174,7 @@ const _rapierImageFlow = (() => {
     const raw = String(block.raw || '');
     let facts = neighbourFacts.get(block);
     if (facts?.raw === raw) return facts;
-    if (block.type === 'paragraph' && !_rapierBlockRenderBudgetExceeded(raw) &&
+    if (block.type === 'paragraph' &&
       /^[A-Za-z][A-Za-z0-9 .,\t]*(?:\r?\n[A-Za-z][A-Za-z0-9 .,\t]*)*(?:\r?\n)?$/.test(raw)) {
       facts = {raw, prose: true, picture: false, empty: false, layoutImage: false};
       neighbourFacts.set(block, facts); return facts;
@@ -1200,14 +1200,19 @@ const _rapierImageFlow = (() => {
     return read ? !!textOf(read) : readFactsOf(wrapper)?.prose === true;
   }
 
+  function imageless(wrapper) {
+    const raw = _rapierBoundBlock(wrapper)?.raw;
+    return typeof raw === 'string' && !raw.includes('![') && !raw.includes('<');
+  }
+
   function hasLayoutImage(wrapper) {
     const read = readOf(wrapper);
-    return read ? !!read.querySelector('img[data-rapier-image-layout]') : readFactsOf(wrapper)?.layoutImage === true;
+    return read ? !!read.querySelector('img[data-rapier-image-layout]') : !imageless(wrapper) && readFactsOf(wrapper)?.layoutImage === true;
   }
 
   function pictureOnly(wrapper) {
     const read = readOf(wrapper);
-    if (!read) return readFactsOf(wrapper)?.picture === true;
+    if (!read) return !imageless(wrapper) && readFactsOf(wrapper)?.picture === true;
     const paragraph = read?.children.length === 1 && read.firstElementChild.tagName === 'P' ? read.firstElementChild : null;
     return !!paragraph && !paragraph.textContent.trim() && paragraph.querySelectorAll('img').length === 1;
   }
@@ -3231,7 +3236,7 @@ const _rapierImageFlow = (() => {
     .rapier-image-fade-seek::before{left:0;width:max(0px,calc(var(--seek) - 14px));background:var(--color-text)}
     .rapier-image-fade-seek::after{left:min(100%,calc(var(--seek) + 14px));right:0;background:color-mix(in srgb,var(--color-text) 28%,transparent)}
     .rapier-image-fade-seek svg{position:absolute;left:var(--seek);top:50%;width:32px;height:32px;transform:translate(-50%,-50%);fill:none;stroke:var(--color-text);stroke-width:1.5;pointer-events:none}
-    .rapier-image-fade-seek input:active+svg{fill:var(--color-text)}
+    .rapier-image-fade-seek:has(>input:active)>svg{fill:var(--color-text)}
     .rapier-image-fade-seek input{position:absolute;left:0;top:0;width:100%;height:100%;margin:0;-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;touch-action:none}
     .rapier-image-fade-seek input::-webkit-slider-runnable-track{height:100%;background:transparent}
     .rapier-image-fade-seek input::-webkit-slider-thumb{-webkit-appearance:none;width:44px;height:56px;border:0;background:transparent}

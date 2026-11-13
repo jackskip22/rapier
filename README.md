@@ -17,7 +17,7 @@ Everything is plain Markdown. Pictures, drawings and paintings are embedded insi
 ## Get Rapier
 
 - **Android:** [Google Play](https://play.google.com/store/apps/details?id=app.rapier). About 3 MB, no internet permission,
-  no ads or tracking.
+  no tracking, no ads.
 - **Web:** [rapier.website](https://rapier.website). Add it to your home screen and it works offline.
 - **One HTML file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) is the whole editor, and
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html) just reads. Open either in a browser.

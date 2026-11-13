@@ -91,7 +91,8 @@ export class WaterSurface {
  async endStroke(checkpoint,cancel=false){
   await this.ready;if(checkpoint!==this._transaction)throw waterError('WATER_INPUT','The Water checkpoint is not current.');
   if(!cancel)await this._finishContact();
-  await this.gpu.endTransaction(checkpoint.gpu,cancel);this._transaction=null;this.gpu.painting=false;
+  try{await this.gpu.endTransaction(checkpoint.gpu,cancel);}finally{this.gpu.painting=false;}
+  this._transaction=null;
   if(cancel){const f=checkpoint.frame;this.width=f.width;this.height=f.height;this.origin=f.origin.slice();this.scale=f.scale/3;this.paperId=f.paper;this.toothOX=this.origin[0];this.toothOY=this.origin[1];this.tick=checkpoint.tick;this.revision=checkpoint.revision;this._bounds=checkpoint.bounds;this._actions=checkpoint.actions;this._bytes=checkpoint.bytes;this._actionStart=checkpoint.start;this._restoreTips(checkpoint.tips);this._brush=null;this._pendingDt=0;this._dirty={x0:0,y0:0,x1:this.width-1,y1:this.height-1};}
   this._sync();return true;
  }
@@ -103,7 +104,8 @@ export class WaterSurface {
   this.gpu._age(elapsed);
   this._appendFrame(brush,elapsed,count,finish);
   this.gpu.painting=true;
-  if(finish)contact.finish();contact.frame(elapsed);await this.gpu.step(elapsed);this.tick++;this.revision++;this._pendingDt=0;brush.loadFuel=contact.loadFuel;this._sync();
+  try{if(finish)contact.finish();contact.frame(elapsed);await this.gpu.step(elapsed);}catch(error){this.gpu.painting=false;throw error;}
+  this.tick++;this.revision++;this._pendingDt=0;brush.loadFuel=contact.loadFuel;this._sync();
   if(finish){brush.lastDirection=contact.lastDirection.slice();brush.contact=null;brush.action=null;this._brush=null;this.gpu.painting=false;}
   return true;
  }

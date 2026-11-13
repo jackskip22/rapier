@@ -18,7 +18,7 @@
 .info-action-overlay .icon-button{width:var(--control-target);height:var(--control-target);display:grid;place-items:center;color:var(--color-text);cursor:pointer;flex:none;}
 .info-action-body{margin:8px 0 2px;color:var(--color-text);font:var(--fw-regular) var(--text-sm)/1.55 var(--font-sans);}
 .info-action-body ul{margin:0;padding-left:1.2em;list-style:disc;}
-.info-action-body li+li{margin-top:8px;}
+.info-action-body li:not(:first-child){margin-top:8px;}
 .info-action-body .settings-action-btn{margin-top:16px;}
 body:not(.light) .info-action-body{color:#fff;}
 body.light .info-action-body{color:#000;}

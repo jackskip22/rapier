@@ -1,5 +1,6 @@
 const _rapierEmbeddedImages = (() => {
   const assets = globalThis.RapierImageAssets;
+  const DIMENSION_CACHE = 1024;
   const cache = new Map(), pending = new Map(), dimensions = new Map(), presented = new WeakMap(), watched = new Set(), revealing = new Map();
   const presentationURLs = new Set();
   let queue = Promise.resolve(), rasterQueue = Promise.resolve(), index = null;
@@ -518,7 +519,7 @@ const _rapierEmbeddedImages = (() => {
     if (known) return known;
     const size = assets.imagePlaceholderDimensions(url);
     const row = {...size, signature: url};
-    if (dimensions.size >= assets.IMAGE_LIMITS.assets) dimensions.delete(dimensions.keys().next().value);
+    if (dimensions.size >= DIMENSION_CACHE) dimensions.delete(dimensions.keys().next().value);
     dimensions.set(url, row);
     return row;
   }
@@ -762,7 +763,7 @@ const _rapierEmbeddedImages = (() => {
     if (suspended || !host.contains(image) || !_rapierRenderModule('render-markdown')._rapierApplyImageGeometry(image)) return;
     const url = image.getAttribute('src');
     if (!/^(?:data:image\/|blob:)/i.test(url || '')) return;
-    if (dimensions.size >= assets.IMAGE_LIMITS.assets && !dimensions.has(url)) dimensions.delete(dimensions.keys().next().value);
+    if (dimensions.size >= DIMENSION_CACHE && !dimensions.has(url)) dimensions.delete(dimensions.keys().next().value);
     dimensions.set(url, {width: image.naturalWidth, height: image.naturalHeight, signature: url});
   }
   async function prepareView(isCurrent = () => true, layout = () => globalThis.RapierImageFlow?.layoutNow()) {

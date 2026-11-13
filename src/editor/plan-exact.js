@@ -152,7 +152,7 @@ const _rapierOutsideRunsPreserved = (beforeOutside, afterRuns, start, end) => {
 function _rapierPlanExactMark(raw, selectedText, mark, targetStart, targetEnd, options = null) {
 	const source = String(raw || ''), spec = RAPIER_EXACT_MARKS[mark];
 	const selected = String(selectedText || '').replace(/\u2060/g, '\n');
-	if (!spec || !selected || targetEnd <= targetStart || source.length > RAPIER_EXACT_MARK_RAW_LIMIT) return null;
+	if (!spec || !selected || targetEnd <= targetStart) return null;
 	const before = _rapierRenderedMarkProbe(source, mark);
 	if (!before || before.text.slice(targetStart, targetEnd) !== selected) return null;
 	const on = (options && options.forceOff) ? false : !_rapierMarkCovers(before.runs, targetStart, targetEnd);
@@ -633,7 +633,7 @@ function _rapierPlanExactNestedLink(live, range, beforeRaw, url) {
 function _rapierPlanExactUnlink(raw, visibleText, start, end, href, options = null) {
 	const source = String(raw || '');
 	if (typeof visibleText !== 'string' || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
-			start < 0 || start > end || end > visibleText.length || source.length > RAPIER_EXACT_MARK_RAW_LIMIT) return null;
+			start < 0 || start > end || end > visibleText.length) return null;
 	const text = visibleText.slice(start, end);
 
 	const base = _rapierCutSemantics(source, options);

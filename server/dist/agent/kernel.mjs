@@ -3,7 +3,7 @@ import {htmlFence, htmlRemoved, retiredPosterSplices} from '../spec/html-blocks.
 import {sha256, sha256Parts} from '../kit/ledger/hash.mjs';
 import {sourceFacts as textFacts} from '../kit/ledger/source.mjs';
 import {dataOmissions} from '../spec/md-assets.mjs';
-import {jsonText, jsonValueParts, admitOwnedJson, isOwnedJson, sameJsonData, keptJsonData} from './json-value.mjs';
+import {jsonText, jsonByteLength, jsonValueParts, admitOwnedJson, isOwnedJson, sameJsonData, keptJsonData} from './json-value.mjs';
 import {readBase} from '../kit/ledger/carried.mjs';
 import {agentActorId} from '../kit/ledger/format.mjs';
 import {transportInterval, transportTouchedInterval} from '../kit/ledger/merge.mjs';
@@ -180,6 +180,7 @@ export const HINTS = {
   revision_unknown: 'This document has not reached that revision; pass revision exactly as your latest read or open returned it.',
   paint_strokes_invalid: 'Read the paint guide. A paint figure uses kind, id and seed with strokes, or mode water with paper and actions; geometry belongs in path points, not figure x/y/w/h.',
   paint_kept_recipe_changed: 'Read the current block and keep its native material markers. To continue a layer, use shapes.replace with its id and new strokes or Water actions; shapes.add starts a new layer.',
+  material_busy: 'Another painting in this document still waits for its editor. Check read {state:true}; paint again once it is committed or has expired.',
   material_request_expired: 'The material request expired without commitment. Once a visible editor is available, reread the target and use a new operation_id; Water also needs WebGPU.',
   paint_history_full: 'This layer has reached its editable history limit. Continue on a new layer with shapes.add.',
   paint_layer_full: 'This layer has reached its image size limit. Continue on a new layer with shapes.add.',
@@ -188,7 +189,7 @@ export const HINTS = {
   paint_too_large_for_server: 'This painting is larger than Rapier\'s server can open (about 2 megapixels). The person\'s editor opens it; ask them to work on it there. The drawing is unchanged.',
   paint_sample_unavailable: 'Material sampling is unavailable in this editor. Read the drawing recipe for its pigment and paper settings.',
   paint_sample_invalid: 'Sample an existing Paint or Water layer at a point in its drawing coordinates.',
-  water_webgpu_unavailable: 'Water needs WebGPU in the active editor. The drawing is unchanged.',
+  water_webgpu_unavailable: 'Water needs WebGPU, and the browser running this editor has none. The drawing is unchanged. Do not paint it another way: give the person editor_url and ask them to open it in a browser with WebGPU on (such as current Chrome or Edge) and paint the Water there.',
   water_pro_unavailable: 'Specialty pigments, Pro papers and Trace are only in the Android app, which agents cannot reach. Use the standard pigments and papers. The drawing is unchanged.',
   WATER_BUDGET: 'This Water operation exceeds the live material budget. Use a smaller stroke or a new layer; the drawing is unchanged.',
   WATER_REPLAY_BUDGET: 'This Water journal is full. Continue on a new layer; the drawing is unchanged.',
@@ -810,7 +811,7 @@ const keptSizes = [];
 function disclosedRecipeText(recipe) {
   const known = rememberedFor(keptSizes, recipe);
   if (known) return {bytes: known.bytes};
-  const size = bytes(jsonText(Array.isArray(recipe?.shapes) ? disclosedRecipe(recipe) : recipe));
+  const size = jsonByteLength(Array.isArray(recipe?.shapes) ? disclosedRecipe(recipe) : recipe) ?? 0;
   remember(keptSizes, {recipe: keptJsonData(recipe), bytes: size});
   return {bytes: size};
 }
@@ -1252,11 +1253,12 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       .sort((a, b) => b.updatedAt - a.updatedAt);
     const target = targets.find(row => row.selection || row.focus) || targets[0];
     const view = contexts.filter(row => row.view).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.view;
+    const water = contexts.filter(row => row.water).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.water;
     const editing = contexts.some(row => row.editing);
     const drawing = drawingSummary();
     const objects = contexts.filter(row => row.objects && row.revision === state.revision).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.objects;
     const presence = contexts.length ? { active: true, editing, ...(objects ? {objects: clone(objects)} : {}),
-      ...(view ? {view} : {}),
+      ...(view ? {view} : {}), ...(water ? {water} : {}),
       revision: target?.revision ?? state.revision,
       selection: target?.selection ? clone(target.selection) : null,
       focus: target?.focus ? clone(target.focus) : null,
@@ -1288,6 +1290,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
         typeof input.visible !== 'boolean' || typeof input.editing !== 'boolean' ||
         input.view != null && !['formatted', 'source', 'notes'].includes(input.view) ||
         input.navigationSequence != null && !safeInt(input.navigationSequence) ||
+        input.water != null && !['verified', 'unavailable', 'unknown'].includes(input.water) ||
         input.drawingReceipts != null && !Array.isArray(input.drawingReceipts) ||
         input.objects != null && !(Array.isArray(input.objects) && input.objects.length <= 64 && input.objects.every(row => safeInt(row?.start) && typeof row.playing === 'boolean'))) return stamp(failure('human_context_invalid', 'invalid'));
     expireCollaboration();
@@ -1326,7 +1329,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     if (referencedRecipe) drawing.recipe = referencedRecipe;
     if (!prior && Object.keys(state.humanContexts).length >= LIMITS.humanContexts) return stamp(failure('human_context_limit'));
     state.humanContexts[key] = { owner: ownerOf(who), contextId: input.contextId, navigationSequence: input.navigationSequence || 0, sequence: input.sequence, revision: input.expectedRevision,
-      ...(input.view ? {view: input.view} : {}),
+      ...(input.view ? {view: input.view} : {}), ...(input.water ? {water: input.water} : {}),
       visible: true, editing: input.editing, selection, focus, drawing, updatedAt: time, expiresAt: time + presenceMs,
       ...(input.objects?.length ? {objects: input.objects.filter(row => safeBoundary(state.text, row.start)).map(({start, playing}) => ({start, playing}))} : {}) };
     for (const receipt of normalizeDrawingReceipts([...(input.drawingReceipts || []), ...(drawing?.receipts || [])])) {
@@ -4605,7 +4608,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     const paintCore = {available: !!paint, ...(paint?.modes ? {modes: paint.modes} : {}),
       needs: {paint: 'open editor', water: 'open editor with WebGPU'},
       renderer: {status: typeof host.material === 'function' ? (drawingPresentationBinding() ? 'attached' : 'unavailable')
-        : typeof host.paint === 'function' ? 'local' : 'unavailable', water: 'unprobed'},
+        : typeof host.paint === 'function' ? 'local' : 'unavailable', water: pointing?.water || 'unprobed'},
       guide: {resource: 'rapier://guide/water'}};
     const paintBrief = paint && facets.has('capabilities') ? {...paintCore,
       brushSizes: Object.fromEntries(paint.modes.map(mode => [mode,
@@ -4616,7 +4619,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       human: pointing ? {active: pointing.active === true, editing: pointing.editing === true, revision: pointing.revision,
         open: pointing.drawing?.open ? (pointing.drawing.tool === 'water' ? 'water' : pointing.drawing.tool === 'paint' ? 'paint' : 'draw') : pointing.view || 'document',
         ...(pointing.drawing?.open && typeof pointing.drawing.tool === 'string' ? {tool: pointing.drawing.tool} : {}),
-        ...(pointing.view ? {view: pointing.view} : {}), ...(pointing.objects ? {objects: objectFacts(pointing.objects)} : {}), expiresAt: pointing.expiresAt} : {status: 'unobserved'},
+        ...(pointing.view ? {view: pointing.view} : {}), ...(pointing.water ? {water: pointing.water} : {}),
+        ...(pointing.objects ? {objects: objectFacts(pointing.objects)} : {}), expiresAt: pointing.expiresAt} : {status: 'unobserved'},
       ...(typeof host.notesForeground === 'function' ? {foreground: host.notesForeground()} : {}),
       focus: focus ? {ref: focus.id, start: focus.start, end: focus.end} : null,
       selection: selection ? {ref: selection.id, start: selection.start, end: selection.end,

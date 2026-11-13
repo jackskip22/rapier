@@ -2589,10 +2589,20 @@ function _rapierDrawUnionView(recipe) {
 	if (recipe.effect?.strength) return effectBounds(recipe.effect, _rapierDrawEffectFrame(recipe));
 	let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 	for (const shape of recipe.shapes) {
-		const box = _rapierDrawShapePaintedBBoxIn(shape, recipe);
+		const box = _rapierDrawKeptPaintedBox(shape, recipe);
 		minX = Math.min(minX, box.minX); minY = Math.min(minY, box.minY); maxX = Math.max(maxX, box.maxX); maxY = Math.max(maxY, box.maxY);
 	}
 	return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+const PAINTED_BOXES = new WeakMap();
+function _rapierDrawKeptPaintedBox(shape, recipe) {
+	const pts = shape?.recognized === 'ink' && KEPT_SHAPES.has(shape) ? recipe.strokes?.[shape.stroke]?.pts : null;
+	if (!pts || !KEPT_POINTS.has(pts)) return _rapierDrawShapePaintedBBoxIn(shape, recipe);
+	const row = PAINTED_BOXES.get(shape);
+	if (row && row.pts === pts && row.nib === recipe.nib && row.smooth === recipe.smooth) return row.box;
+	const box = _rapierDrawShapePaintedBBoxIn(shape, recipe);
+	PAINTED_BOXES.set(shape, {pts, nib: recipe.nib, smooth: recipe.smooth, box: Object.freeze({...box})});
+	return box;
 }
 
 function _rapierDrawInkView(recipe, measured) {
@@ -3737,7 +3747,7 @@ export function _rapierDrawUndoRecipe(live, before, after, later = []) {
 	return _rapierDrawMergeAgentRecipe(live, after, before, {undo: true, later});
 }
 
-const ADMITTED_POINTS = new WeakSet(), KEPT_POINTS = new WeakSet();
+const ADMITTED_POINTS = new WeakSet(), KEPT_POINTS = new WeakSet(), BUILT_POINTS = new WeakSet();
 function _rapierDrawFreezePoints(pts, admitted = true) {
 	for (const p of pts) Object.freeze(p);
 	KEPT_POINTS.add(Object.freeze(pts));
@@ -3761,7 +3771,7 @@ export function _rapierDrawPointsText(pts) {
 	let text = POINTS_TEXT.get(pts);
 	if (text !== undefined) return text;
 	if (!KEPT_POINTS.has(pts)) return null;
-	text = _rapierDrawImmutableNumbers(pts, false) ? JSON.stringify(pts) : null;
+	text = BUILT_POINTS.has(pts) || _rapierDrawImmutableNumbers(pts, false) ? JSON.stringify(pts) : null;
 	POINTS_TEXT.set(pts, text);
 	return text;
 }
@@ -3814,6 +3824,61 @@ function _rapierDrawSameOrderedData(a, b) {
 	return keys.length === other.length && keys.every((key, i) => key === other[i] && _rapierDrawSameOrderedData(a[key], b[key]));
 }
 export function _rapierDrawSameShapeData(kept, live) { return KEPT_SHAPES.has(kept) && _rapierDrawSameOrderedData(kept, live); }
+export function _rapierDrawKeepable(shape) {
+	return !!shape && typeof shape === 'object' && shape.recognized !== 'paint' && shape.effect === undefined &&
+		!((shape.recognized === 'line' || shape.recognized === 'arrow') && (shape.bind || shape.route === 'auto'));
+}
+const THAWED = new WeakMap();
+export function _rapierDrawThawShape(shape) {
+	if (!KEPT_SHAPES.has(shape)) return shape;
+	const thaw = value => {
+		if (!value || typeof value !== 'object' || KEPT_POINTS.has(value)) return value;
+		if (Array.isArray(value)) return value.map(thaw);
+		const copy = {};
+		for (const key of Object.keys(value)) Object.defineProperty(copy, key, {value: thaw(value[key]), enumerable: true, writable: true, configurable: true});
+		return copy;
+	};
+	const copy = thaw(shape);
+	THAWED.set(copy, shape);
+	return copy;
+}
+export function _rapierDrawWritableShape(recipe, index) {
+	const shape = recipe.shapes[index];
+	return KEPT_SHAPES.has(shape) ? (recipe.shapes[index] = _rapierDrawThawShape(shape)) : shape;
+}
+export function _rapierDrawWriteShape(recipe, index, write) {
+	const shape = recipe.shapes[index];
+	if (!KEPT_SHAPES.has(shape)) { write(shape); return shape; }
+	const copy = _rapierDrawThawShape(shape);
+	write(copy);
+	return _rapierDrawSameOrderedData(shape, copy) ? shape : (recipe.shapes[index] = copy);
+}
+export function _rapierDrawKeepShapes(recipe) {
+	if (!Array.isArray(recipe?.shapes)) return recipe;
+	const seen = new Set();
+	for (let i = 0; i < recipe.shapes.length; i++) {
+		const shape = recipe.shapes[i];
+		if (!shape || typeof shape.id !== 'string' || seen.has(shape.id)) continue;
+		seen.add(shape.id);
+		if (KEPT_SHAPES.has(shape) || !_rapierDrawKeepable(shape)) continue;
+		const origin = THAWED.get(shape), kept = origin && _rapierDrawSameOrderedData(origin, shape) ? origin : _rapierDrawKeepShape(shape);
+		if (kept) recipe.shapes[i] = kept;
+	}
+	return recipe;
+}
+const ADMITTED_SHAPES = new WeakSet();
+export function _rapierDrawRenumberShape(shape, stroke) {
+	if (!KEPT_SHAPES.has(shape) || !Number.isInteger(stroke) || shape.stroke == null) return {...shape, stroke};
+	const copy = {};
+	for (const key of Object.keys(shape)) Object.defineProperty(copy, key, {value: key === 'stroke' ? stroke : shape[key], enumerable: true, writable: true, configurable: true});
+	Object.freeze(copy);
+	KEPT_SHAPES.add(copy);
+	RENUMBERED.set(copy, shape);
+	if (ADMITTED_SHAPES.has(shape)) ADMITTED_SHAPES.add(copy);
+	return copy;
+}
+const RENUMBERED = new WeakMap();
+export function _rapierDrawRenumberedFrom(shape) { return RENUMBERED.get(shape) || null; }
 function _rapierDrawTestBudget(name, fallback) {
 	const value = typeof globalThis !== 'undefined' ? globalThis[name] : null;
 	return Number.isInteger(value) && value > 0 ? value : fallback;
@@ -3821,10 +3886,19 @@ function _rapierDrawTestBudget(name, fallback) {
 const _rapierDrawKnownKind = kind => ['ink', 'circle', 'ellipse', 'triangle', 'line', 'arrow', 'arc', 'parabola', 'text', 'paint', 'ornament'].includes(kind) || Object.hasOwn(RAPIER_DRAW_POLYGONS, kind) || RAPIER_DRAW_BOXES.has(kind);
 export function refractionSourceFault(recipe, sourceCounts) {
 	const shapes = Array.isArray(recipe?.shapes) ? recipe.shapes : [];
-	const counts = sourceCounts || new Map();
-	if (!sourceCounts) for (const shape of shapes) if (typeof shape?.id === 'string') counts.set(shape.id, (counts.get(shape.id) || 0) + 1);
-	for (const [effect, field] of [[recipe?.effect, 'effect'], ...shapes.map((shape, i) => [shape?.effect, 'shapes[' + i + '].effect'])])
-		for (const {key, id} of refractionSourceReferences(effect)) if (counts.get(id) !== 1) return {field: field + '.' + key};
+	let counts = null;
+	const count = id => {
+		if (!counts) {
+			counts = typeof sourceCounts === 'function' ? sourceCounts() : sourceCounts || new Map();
+			if (!sourceCounts) for (const shape of shapes) if (typeof shape?.id === 'string') counts.set(shape.id, (counts.get(shape.id) || 0) + 1);
+		}
+		return counts.get(id);
+	};
+	for (let i = -1; i < shapes.length; i++) {
+		const effect = i < 0 ? recipe?.effect : shapes[i]?.effect;
+		if (effect === undefined || effect === null) continue;
+		for (const {key, id} of refractionSourceReferences(effect)) if (count(id) !== 1) return {field: (i < 0 ? 'effect' : 'shapes[' + i + '].effect') + '.' + key};
+	}
 	return null;
 }
 export function refractionSourceShapes(recipe, choice) {
@@ -3837,7 +3911,7 @@ export function refractionSourceShapes(recipe, choice) {
 	return shape.recognized === 'paint' && shape.paint?.group
 		? recipe.shapes.filter(row => row.recognized === 'paint' && row.paint?.group === shape.paint.group) : [shape];
 }
-function _rapierDrawAdmitRecipe(input, keepRasters = false) {
+function _rapierDrawAdmitRecipe(input, keepRasters = false, keep = false) {
 	const shapeBudget = _rapierDrawTestBudget('__rapierDrawTestMaxShapes', 2048), strokeBudget = _rapierDrawTestBudget('__rapierDrawTestMaxStrokes', 2048);
 	if (!input || typeof input !== 'object' || input.version !== RAPIER_DRAW_VERSION || !Array.isArray(input.shapes) || !Array.isArray(input.strokes) || input.shapes.length > shapeBudget || input.strokes.length > strokeBudget) return null;
 	const finite = n => typeof n === 'number' && Number.isFinite(n), spatial = _rapierDrawSpatial;
@@ -3858,16 +3932,33 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	}
 	if (input.view && ['x', 'y', 'w', 'h'].every(k => spatial(input.view[k])) && input.view.w > 0 && input.view.h > 0) out.view = { x: input.view.x, y: input.view.y, w: input.view.w, h: input.view.h };
 	if (input.frame && ['x', 'y', 'w', 'h'].every(k => spatial(input.frame[k])) && input.frame.w >= 1 && input.frame.h >= 1 && input.frame.w <= 65536 && input.frame.h <= 65536) out.frame = { x: Math.round(input.frame.x), y: Math.round(input.frame.y), w: Math.round(input.frame.w), h: Math.round(input.frame.h) };
-	const reserved = new Set(input.shapes.map(s => typeof s?.id === 'string' && _RAPIER_DRAW_ID.test(s.id) ? s.id : '').filter(Boolean));
-	const ids = new Set(), sourceIds = new Map(), duplicates = new Set();
-	let seq = 0, points = 0, textUnits = 0, rasterUnits = 0, ornamentUnits = 0;
-	for (const raw of input.shapes) {
+	let reserved = null;
+	const reserves = () => reserved ||= new Set(input.shapes.map(s => typeof s?.id === 'string' && _RAPIER_DRAW_ID.test(s.id) ? s.id : '').filter(Boolean));
+	const ids = new Set(), duplicates = new Set();
+	let sourceIds = null, seq = 0, points = 0, textUnits = 0, rasterUnits = 0, ornamentUnits = 0;
+	for (let at = 0; at < input.shapes.length; at++) {
+		const raw = input.shapes[at];
 		if (!raw || typeof raw !== 'object') return null;
-		let id = typeof raw.id === 'string' && _RAPIER_DRAW_ID.test(raw.id) ? raw.id : '';
-		if (id && ids.has(id)) duplicates.add(id);
-		if (!id || ids.has(id)) { do { id = 's' + (++seq); } while (reserved.has(id) || ids.has(id)); }
+		let id = typeof raw.id === 'string' && (ADMITTED_SHAPES.has(raw) || _RAPIER_DRAW_ID.test(raw.id)) ? raw.id : '';
+		const taken = !!id && ids.has(id);
+		if (taken) duplicates.add(id);
+		if (!id || taken) {
+			const known = reserves();
+			do { id = 's' + (++seq); } while (known.has(id) || ids.has(id));
+			if (!sourceIds) { sourceIds = new Map(); for (let k = 0; k < at; k++) { const before = input.shapes[k]; if (!sourceIds.has(before.id)) sourceIds.set(before.id, before.id); } }
+		}
 		ids.add(id);
-		if (typeof raw.id === 'string' && !sourceIds.has(raw.id)) sourceIds.set(raw.id, id);
+		if (sourceIds && typeof raw.id === 'string' && !sourceIds.has(raw.id)) sourceIds.set(raw.id, id);
+		if (ADMITTED_SHAPES.has(raw) && id === raw.id) {
+			const pts = raw.stroke == null ? null : raw.stroke === out.strokes.length && input.strokes[raw.stroke]?.pts;
+			if (pts !== false && (pts === null || ADMITTED_POINTS.has(pts))) {
+				if (pts) { if ((points += pts.length) > 262144) return null; out.strokes.push({ pts }); }
+				if ((textUnits += raw.label?.length || 0) > 262144) return null;
+				if (raw.ornament && (ornamentUnits += raw.ornament.d.length + (raw.ornament.layers || []).reduce((sum, layer) => sum + layer.d.length, 0)) > 4000000) return null;
+				out.shapes.push(raw);
+				continue;
+			}
+		}
 		let kind = raw.recognized, geom = null;
 		const polygon = Object.hasOwn(RAPIER_DRAW_POLYGONS, kind), frame = RAPIER_DRAW_BOXES.has(kind) || kind === 'paint' || kind === 'ornament' || polygon;
 		if (!_rapierDrawKnownKind(kind)) return null;
@@ -3900,7 +3991,10 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 			else if (!Array.isArray(pts) || pts.length < 2 || pts.length > 16384 || (points += pts.length) > 262144 || !pts.every(p => Array.isArray(p) && p.length >= 2 && p.length <= 4 && spatial(p[0]) && spatial(p[1]) && (p.length < 3 || finite(p[2]) && p[2] >= 0) && (p.length < 4 || finite(p[3]) && p[3] >= 0 && p[3] <= 1))) return null;
 			stroke = out.strokes.length;
 			const kept = ADMITTED_POINTS.has(pts) || KEPT_POINTS.has(pts) && pts.every(p => p.length >= 3 && Object.is(p[2] || 0, p[2]));
-			out.strokes.push({ pts: kept ? (ADMITTED_POINTS.add(pts), pts) : _rapierDrawFreezePoints(pts.map(p => [p[0], p[1], p[2] || 0].concat(p.length > 3 ? [p[3]] : []))) });
+			let written = pts;
+			if (kept) ADMITTED_POINTS.add(pts);
+			else BUILT_POINTS.add(written = _rapierDrawFreezePoints(pts.map(p => [p[0], p[1], p[2] || 0].concat(p.length > 3 ? [p[3]] : []))));
+			out.strokes.push({ pts: written });
 		}
 		if (kind === 'ink' && stroke === null) return null;
 		const line = kind === 'line' || kind === 'arrow';
@@ -4016,10 +4110,11 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 		}
 		out.shapes.push(shape);
 	}
-	if (refractionSourceFault(out, new Map([...sourceIds.keys()].map(id => [id, duplicates.has(id) ? 2 : 1])))) return null;
+	const sourceOf = sourceIds ? id => sourceIds.get(id) : id => ids.has(id) ? id : undefined;
+	if (refractionSourceFault(out, () => new Map([...(sourceIds ? sourceIds.keys() : ids)].map(id => [id, duplicates.has(id) ? 2 : 1])))) return null;
 	for (const shape of out.shapes) if (shape.bind) {
 		for (const end of ['start', 'end']) {
-			const a = shape.bind[end], to = a && sourceIds.get(a.to);
+			const a = shape.bind[end], to = a && sourceOf(a.to);
 			if (!a) continue;
 			if (!to || duplicates.has(a.to) || to === shape.id) delete shape.bind[end]; else a.to = to;
 		}
@@ -4027,7 +4122,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	}
 	const groupCount = new Map();
 	for (const shape of out.shapes) if (shape.group) groupCount.set(shape.group, (groupCount.get(shape.group) || 0) + 1);
-	for (const shape of out.shapes) if (shape.group && groupCount.get(shape.group) < 2) delete shape.group;
+	for (let i = 0; i < out.shapes.length; i++) if (out.shapes[i].group && groupCount.get(out.shapes[i].group) < 2) delete _rapierDrawWritableShape(out, i).group;
 	try {
 		const fonts = admitFonts(input.fonts, new Set(out.shapes.map(shape => shape.textFont).filter(id => id?.startsWith('f'))));
 		if (fonts.length) out.fonts = fonts;
@@ -4048,10 +4143,23 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false) {
 	}
 	for (let i = 0; i < out.shapes.length; i++) {
 		const raw = input.shapes[i];
-		if (KEPT_SHAPES.has(raw) && _rapierDrawSameOrderedData(raw, out.shapes[i])) out.shapes[i] = raw;
+		if (out.shapes[i] === raw) continue;
+		const kept = KEPT_SHAPES.has(raw) ? raw : THAWED.get(raw);
+		if (!kept || out.shapes[i] === kept || !_rapierDrawSameOrderedData(kept, out.shapes[i])) continue;
+		out.shapes[i] = kept;
+		if (_rapierDrawKeepable(kept)) ADMITTED_SHAPES.add(kept);
+	}
+	if (keep) for (let i = 0; i < out.shapes.length; i++) {
+		const shape = out.shapes[i];
+		if (KEPT_SHAPES.has(shape) || !_rapierDrawKeepable(shape)) continue;
+		const kept = _rapierDrawKeepShape(shape);
+		if (!kept) continue;
+		ADMITTED_SHAPES.add(kept);
+		out.shapes[i] = kept;
 	}
 	return out;
 }
+export function _rapierDrawProvedShape(shape) { return ADMITTED_SHAPES.has(shape); }
 
 function _rapierDrawTextFrame(shape, recipe) {
 	if (shape.recognized === 'text') return null;

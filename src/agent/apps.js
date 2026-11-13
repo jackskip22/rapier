@@ -238,6 +238,7 @@
       }
       const result = own && !pairedId ? await editorCall(params, timeout) : await request('tools/call', params, timeout);
       rememberEditorKey(result, args?.document);
+      if (name !== 'document.pair_pending' && name !== 'document.pair_confirm') notePairing(result);
       return result;
     };
     return !own && host?.trackInvocation ? host.trackInvocation(name, args, run, crypto.randomUUID()) : run();
@@ -249,8 +250,34 @@
     current?.();
   }
 
+  let hostWorkPaints = false;
+  const paintsIn = params => { try { return /rapier-(?:water|paint)\b|\\?"(?:kind|recognized)\\?"\s*:\s*\\?"paint/.test(JSON.stringify(params?.arguments ?? null)); } catch (_) { return false; } };
+  function streamHostWork(params) {
+    if (hostWork && (hostWorkPaints || !paintsIn(params))) return;
+    beginHostWork(params);
+  }
+
+  let waterProbe = 'unknown', waterProbing = null;
+  function waterState() {
+    if (!waterProbing) waterProbing = (async () => {
+      const gpu = globalThis.navigator?.gpu;
+      if (!gpu) return 'unavailable';
+      const adapter = await gpu.requestAdapter({powerPreference: 'high-performance'});
+      if (!adapter) return 'unavailable';
+      const info = adapter.info || {};
+      const software = info.isFallbackAdapter === true || adapter.isFallbackAdapter === true ||
+        /swiftshader|llvmpipe|lavapipe|softpipe|microsoft basic render|\bwarp\b/i.test([info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(' '));
+      if (software && globalThis.__rapierWaterSoftwareTest !== true) return 'unavailable';
+      const device = await adapter.requestDevice();
+      device.destroy();
+      return 'verified';
+    })().catch(() => 'unavailable').then(value => { waterProbe = value; contextChanged(); return value; });
+    return waterProbe;
+  }
+
   function beginHostWork(params) {
     finishHostWork();
+    hostWorkPaints = paintsIn(params);
     if (!host?.trackInvocation || !token || params?.arguments?.document !== token) return;
     const done = new Promise(resolve => { hostWork = resolve; });
     void host.trackInvocation('agent', params.arguments,
@@ -338,6 +365,8 @@
       .rapier-app-pair-code{font:var(--fw-medium) 3.5rem/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase}
       .rapier-jxl-view__bar>.navigator-close{margin-inline-start:auto;margin-right:0}
       .rapier-jxl-view__bar>.rapier-app-fullscreen{flex:none;width:48px;height:48px;margin-right:calc(-1 * var(--space-2))}
+      @media (max-width:599px){.rapier-draw-head-end:has(>.rapier-app-fullscreen) .rapier-draw-head-clear{padding-right:0}.rapier-draw-head-end:has(>.rapier-app-fullscreen) .rapier-draw-btn--clear{min-width:0;padding:0 6px}.rapier-draw-head-end:has(>.rapier-app-fullscreen) .rapier-draw-btn--done{padding:0 6px}}
+      @media (min-width:375px) and (max-width:599px){.rapier-draw-head-end:has(>.rapier-app-fullscreen) .rapier-draw-head-clear{container-type:normal}.rapier-draw-head-end:has(>.rapier-app-fullscreen) .rapier-draw-btn--clear{font-size:var(--text-sm)}}
       html{height:var(--rapier-app-height,560px);overflow:hidden;scroll-behavior:auto}
       body{height:100%;min-height:0;overflow:hidden}
       .editor-area,.compare-mode{min-height:0;overscroll-behavior-y:auto;margin-block-end:max(var(--native-inset-bottom,0px),var(--rapier-keyboard-occlusion,0px))}
@@ -358,12 +387,26 @@
     const toolSize = new ResizeObserver(() => { updateFrameLayout(); notifySize(); });
     const toolBars = () => {
       for (const bar of document.querySelectorAll('.rapier-jxl-view__bar')) if (!bar.querySelector('.rapier-app-fullscreen')) bar.append(modeButton());
+      const drawHead = document.querySelector('#rapier-draw-surface .rapier-draw-head-end');
+      if (drawHead && !drawHead.querySelector('.rapier-app-fullscreen')) {
+        const made = modeButton();
+        made.className = 'rapier-draw-btn rapier-draw-btn--icon rapier-app-fullscreen';
+        drawHead.append(made);
+      }
       toolSize.disconnect();
       for (const part of document.querySelectorAll('.rapier-jxl-view__panel > *')) toolSize.observe(part);
       updateFrameLayout(); notifySize();
     };
     new MutationObserver(toolBars).observe(document.body, {childList: true});
     toolBars();
+    let firstTouchRefused = false, firstTouchAsking = false;
+    document.addEventListener('pointerdown', event => {
+      if (!event.isTrusted || firstTouchRefused || firstTouchAsking || closed || pairedId || context.displayMode === 'fullscreen') return;
+      if (event.target.closest?.('.rapier-jxl-view, .rapier-app-fullscreen, .rapier-app-pop')) return;
+      firstTouchAsking = true;
+      void requestDisplayMode('fullscreen').then(granted => { if (!granted) firstTouchRefused = true; })
+        .finally(() => { firstTouchAsking = false; });
+    }, {capture: true, signal: listeners.signal});
     const quiet = document.createElement('style');
     quiet.textContent = '.rapier-live-bar{display:none!important}';
     document.head.append(quiet);
@@ -556,6 +599,7 @@
         sequence: ++contextSequence, visible: active, editing: busy};
       if (active && captured?.documentId === source.documentId && ['formatted', 'source', 'notes'].includes(captured?.context?.view)) args.view = captured.context.view;
       if (active && captured?.documentId === source.documentId && Number.isSafeInteger(captured?.context?.navigationSequence)) args.navigationSequence = captured.context.navigationSequence;
+      if (active) args.water = waterState();
       if (active && exact) {
         const receipts = new Map((captured?.context?.drawingReceipts || []).map(row => [row.transactionId, row]));
         for (const row of pendingDrawingReceipts.values()) if (row.documentId === source.documentId) receipts.set(row.transactionId, row);
@@ -2721,7 +2765,8 @@
     if (value.method === 'ui/notifications/host-context-changed') updateContext(value.params);
     else if (value.method === 'notifications/resources/updated' &&
         typeof value.params?.uri === 'string' && value.params.uri === activeFile()?.file.resourceUri) void refreshHostFile();
-    else if (value.method === 'ui/notifications/tool-result') { finishHostWork(); void receive(value.params).catch(failed); }
+    else if (value.method === 'ui/notifications/tool-result') { finishHostWork(); notePairing(value.params); void receive(value.params).catch(failed); }
+    else if (value.method === 'ui/notifications/tool-input-partial') streamHostWork(value.params);
     else if (value.method === 'ui/notifications/tool-input') {
       rememberChatLinks(value.params?.arguments);
       if (!token && validToken(value.params?.arguments?.document)) token = value.params.arguments.document;
@@ -2792,14 +2837,71 @@
     return outcome === 'confirmation_required' ? 10000 : 2000;
   }
 
+  let pairOffer = null, pairLooking = false, pairLookedAt = 0;
+  const pairDeclined = new Set();
+  function notePairing(result) { if (result?.structuredContent?.pairing?.status === 'code_shown') lookForPairing(); }
+  function lookForPairing() {
+    if (pairedId || closed || pairOffer || pairLooking || !token || !initialized || Date.now() - pairLookedAt < 5000) return;
+    pairLooking = true; pairLookedAt = Date.now();
+    void call('document.pair_pending', {document: token}).then(answer => {
+      const pending = answer?.structuredContent?.pending;
+      if (!Array.isArray(pending) || pending.length !== 1 || pairDeclined.has(pending[0].requestId) || pairOffer || closed) return;
+      offerPairing(pending[0]);
+    }).catch(() => {}).finally(() => { pairLooking = false; });
+  }
+  function offerPairing(row) {
+    const pop = housePop('rapier-app-pair-offer-title', 'Allow this browser?', 'rapier-app-pair-offer');
+    const code = document.createElement('p');
+    code.className = 'rapier-app-pair-code';
+    code.textContent = row.code;
+    const words = document.createElement('p');
+    words.textContent = 'This code should match the one in your browser. Allow it to edit this document for a day.';
+    let settled = false;
+    const finish = () => { if (settled) return; settled = true; pop.overlay.remove(); pairOffer = null; };
+    const allow = popButton('allow', 'affirm', async event => {
+      if (event?.isTrusted !== true) return;
+      allow.disabled = later.disabled = true;
+      let answer = null;
+      try { answer = (await call('document.pair_confirm', {document: token, requestId: row.requestId, code: row.code}))?.structuredContent; } catch (_) {}
+      if (answer?.outcome === 'confirmation_required') {
+        words.textContent = answer.ownerApprovalId ? 'Approve it as the owner first; your browser shows how. Then choose Allow there.' : 'Now choose Allow on your browser.';
+        allow.hidden = true; later.textContent = 'done'; later.disabled = false;
+        globalThis._rapierPopArrange?.(pop.row);
+        return;
+      }
+      words.textContent = answer?.message || 'That browser could not be allowed. Tell your assistant the code your browser shows.';
+      allow.hidden = true; later.textContent = 'close'; later.disabled = false;
+      globalThis._rapierPopArrange?.(pop.row);
+    });
+    const later = popButton('cancel', 'cancel', () => { pairDeclined.add(row.requestId); finish(); });
+    pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { pairDeclined.add(row.requestId); finish(); } }, {signal: listeners.signal});
+    pop.row.append(allow, later);
+    pairOffer = pop.overlay;
+    pop.show(code, words);
+  }
+
   async function pair() {
     const pop = housePop('rapier-app-pair-title', 'Pair this browser', 'rapier-app-pairing');
     const lead = document.createElement('p');
     lead.textContent = 'Tell your assistant this code.';
-    const code = document.createElement('p');
+    const code = document.createElement('p'), codeText = document.createElement('span');
     code.className = 'rapier-app-pair-code';
     code.setAttribute('aria-live', 'polite');
-    code.textContent = '····';
+    codeText.textContent = '····';
+    const copy = document.createElement('button'), svgNS = 'http://www.w3.org/2000/svg';
+    copy.type = 'button'; copy.className = 'fence-copy'; copy.setAttribute('aria-label', 'copy the code'); copy.title = 'copy the code';
+    copy.style.cssText = 'position:static;background:transparent;flex:none';
+    const glyph = (name, child) => {
+      const svg = document.createElementNS(svgNS, 'svg');
+      for (const [key, value] of [['class', 'fence-copy__' + name], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'],
+        ['stroke-width', '2'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(key, value);
+      svg.append(child); return svg;
+    };
+    const use = document.createElementNS(svgNS, 'use'), check = document.createElementNS(svgNS, 'polyline');
+    use.setAttribute('href', '#i-copy'); check.setAttribute('points', '20 6 9 17 4 12');
+    copy.append(glyph('copy', use), glyph('done', check));
+    code.style.cssText = 'display:flex;align-items:center;gap:var(--space-2)';
+    code.append(codeText, copy);
     const words = document.createElement('p');
     words.textContent = 'The page will guide you through approving this browser for a day. A code works once and changes every minute.';
     const ownerApproval = document.createElement('p'), ownerLink = document.createElement('a');
@@ -2829,7 +2931,16 @@
     const allow = popButton('allow', 'affirm', () => { void decide('allow'); });
     const cancel = popButton('cancel', 'cancel', () => { void decide('cancel'); });
     const again = popButton('new code', 'affirm', () => { again.hidden = true; touched(); wake?.(); });
-    allow.hidden = again.hidden = true;
+    let copiedTimer = 0;
+    copy.addEventListener('click', async () => {
+      touched();
+      try { await navigator.clipboard.writeText(codeText.textContent); } catch (_) { getSelection()?.selectAllChildren(codeText); return; }
+      copy.setAttribute('data-copied', ''); clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => copy.removeAttribute('data-copied'), 1500);
+    }, {signal: listeners.signal});
+    const offerCopy = offer => { copy.style.display = offer ? '' : 'none'; };
+    const showCode = value => { codeText.textContent = value; offerCopy(/^[A-Z]{4}$/.test(value)); };
+    allow.hidden = again.hidden = true; offerCopy(false);
     pop.row.append(allow, again, cancel);
     pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); void decide('cancel'); } }, {signal: listeners.signal});
     pairDialog = pop.overlay;
@@ -2843,8 +2954,9 @@
       const delay = pairDelay(last?.outcome, Date.now() - activeAt);
       if (delay === null) {
         allow.hidden = true;
-        code.textContent = '';
+        showCode('');
         lead.textContent = 'This code has expired.';
+        words.hidden = false;
         words.textContent = 'Get a new code when you are ready to tell it to your assistant.';
         if (again.hidden) { again.hidden = false; globalThis._rapierPopArrange?.(pop.row); }
         await rest(null);
@@ -2855,9 +2967,9 @@
       const value = last = await poll;
       if (!open) return;
       if (deciding) continue;
-      ownerApproval.hidden = true;
+      ownerApproval.hidden = true; words.hidden = false;
       if (value?.outcome === 'owner_confirmation_required') {
-        allow.hidden = true;
+        allow.hidden = true; offerCopy(false);
         lead.textContent = 'Approve this browser with Rapier.';
         words.textContent = 'Open the approval link in the browser where you connected Rapier. Return here once approved.';
         try {
@@ -2867,6 +2979,7 @@
           }
         } catch (_) {}
       } else if (value?.outcome === 'confirmation_required') {
+        offerCopy(false);
         lead.textContent = 'Allow this browser to edit the document?';
         words.textContent = 'This browser stays connected for a day. Disconnect agents in the document to stop agent access.';
         if (allow.hidden) {
@@ -2876,17 +2989,21 @@
         }
       } else if (value?.outcome === 'waiting' && /^[A-Z]{4}$/.test(value.pairingCode)) {
         allow.hidden = true;
-        code.textContent = value.pairingCode;
-        lead.textContent = 'Tell your assistant this code.';
-        words.textContent = 'The page will guide you through approving this browser for a day. A code works once and changes every minute.';
+        showCode(value.pairingCode);
+        if (value.inChat === true) { offerCopy(false); lead.textContent = 'This code should match the one in the chat.'; words.hidden = true; }
+        else {
+          words.hidden = false;
+          lead.textContent = 'Tell your assistant this code.';
+          words.textContent = 'The page will guide you through approving this browser for a day. A code works once and changes every minute.';
+        }
       }
       else if (value?.reason === 'busy') {
         allow.hidden = true;
-        code.textContent = '';
+        showCode('');
         lead.textContent = 'Pairing is busy. Try again in a minute.';
       }
       else if (value?.code === 'DOCUMENT_UNAVAILABLE') {
-        code.textContent = '';
+        showCode('');
         lead.textContent = 'This document is no longer available.';
         words.textContent = 'It was deleted or expired. Ask your assistant for a new one.';
         return;
@@ -2932,6 +3049,7 @@
     document.addEventListener('compositionend', event => { if (event.isTrusted) { clearTimeout(composeTimer); composing = false; humanEdit(); } }, options);
     document.addEventListener('visibilitychange', () => {
       contextChanged();
+      if (visible()) lookForPairing();
       if (visible()) quietSyncs = 0;
       if (visible()) schedule(0);
       else { cancelEditorRequests('editor_unavailable', {waitingOnly: true}); pauseMaterial(); cancelExport('editor_unavailable'); clearTimeout(timer); void publishHumanContext(true); void flush(); }

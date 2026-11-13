@@ -589,21 +589,41 @@ function _rapierReplaceAllOccurrences(text, query, replacement, markdown = true,
 	return { value: value + source.slice(cursor), count: plan.splices.length, ...plan };
 }
 
-async function _rapierReplaceCanonicalText(beforeText, afterText, guard) {
+const _RAPIER_RECORD_SPLICES = 64;
+function _rapierReplacementSpans(source, rows) {
+	if (rows.length <= _RAPIER_RECORD_SPLICES) return rows;
+	const gaps = [];
+	for (let at = 1; at < rows.length; at++) gaps.push({at, size: rows[at].pos - (rows[at - 1].pos + rows[at - 1].removed.length)});
+	const cut = new Set(gaps.sort((a, b) => b.size - a.size || a.at - b.at).slice(0, _RAPIER_RECORD_SPLICES - 1).map(gap => gap.at));
+	const out = [];
+	let group = [rows[0]];
+	const close = () => {
+		const first = group[0], last = group[group.length - 1], end = last.pos + last.removed.length;
+		let inserted = '', cursor = first.pos;
+		for (const row of group) { inserted += source.slice(cursor, row.pos) + row.inserted; cursor = row.pos + row.removed.length; }
+		out.push({pos: first.pos, removed: source.slice(first.pos, end), inserted});
+	};
+	for (let at = 1; at < rows.length; at++) {
+		if (cut.has(at)) { close(); group = [rows[at]]; } else group.push(rows[at]);
+	}
+	close();
+	return out;
+}
+
+async function _rapierReplaceCanonicalText(beforeText, splices, guard) {
 	if (rapier.view.mode !== 'source') _leaveAllEditingBlocks();
 	if (!_rapierMutationStampIsCurrent(guard) || guard.mode !== String(rapier.view.mode || '')) return false;
-	const live = _rapierSourceText();
-	if (live !== String(beforeText || '')) return false;
-	const diff = _rapierPrefixSuffixDiff(String(beforeText || ''), String(afterText || ''));
-	if (!diff.removed.length && !diff.inserted.length) return false;
-	return !!await _rapierApplyCanonicalSplices([diff], {
+	if (_rapierSourceText() !== String(beforeText || '')) return false;
+	const rows = _rapierReplacementSpans(String(beforeText), splices.filter(row => row.removed !== row.inserted));
+	if (!rows.length) return false;
+	const first = rows[0], last = rows[rows.length - 1];
+	const shift = rows.reduce((sum, row) => sum + row.inserted.length - row.removed.length, 0);
+	const end = last.pos + last.inserted.length + shift - (last.inserted.length - last.removed.length);
+	return !!await _rapierApplyCanonicalSplices(rows.slice().reverse(), {
 		operation: 'document.replace-source-range',
 		keepSourceMode: rapier.view.mode === 'source',
-		selectionBefore: { start: diff.pos, end: diff.pos + diff.removed.length },
-		selectionAfter: {
-			start: diff.pos + diff.inserted.length,
-			end: diff.pos + diff.inserted.length,
-		},
+		selectionBefore: { start: first.pos, end: last.pos + last.removed.length },
+		selectionAfter: { start: end, end },
 	});
 }
 
@@ -647,7 +667,7 @@ async function rapierReplaceAll(currentOnly = false) {
 		try {
 			replacement = await _rapierWithCompoundTransaction(
 				{ operation: currentOnly ? 'document.replace-one' : 'document.replace-all' },
-				async () => _rapierReplaceCanonicalText(before, result.value, guard),
+				async () => _rapierReplaceCanonicalText(before, result.splices, guard),
 			);
 		} catch (error) {
 			try { console.warn('[rapier] Replace All transaction failed', error); } catch (_) {}

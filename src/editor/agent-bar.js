@@ -104,7 +104,7 @@ const _rapierAgentBar = Object.seal({
 	running: 0, invocations: new Set(), symbol: null, renderFrame: 0,
 	work: null, workAuthority: '', workEpoch: 0, workTimer: 0,
 	connectedUntil: 0, connectedAuthority: '', connectedEpoch: 0, connectedTimer: 0,
-	acornUntil: 0, acornLast: '', acornTimer: 0, acornAuthority: '', acornEpoch: 0,
+	acornUntil: 0, acornLast: '', acornTimer: 0, acornAuthority: '', acornEpoch: 0, painting: false,
 });
 const _RAPIER_ACORN_LINGER_MS = 4000;
 const _RAPIER_AGENT_CONNECTED_MS = 1800000;
@@ -273,6 +273,30 @@ function _rapierAgentBarInvocationStructural(operation, input) {
 	return operation === 'document.outline' || operation === 'document.read' ||
 		operation === 'document.edit';
 }
+function _rapierAgentBarInvocationPaints(operation, input) {
+	if (!['edit', 'document.edit', 'agent'].includes(operation) || !input || typeof input !== 'object') return false;
+	const paint = /rapier-(?:water|paint)\b|"(?:kind|recognized)"\s*:\s*"paint"/, seen = new Set();
+	const look = value => typeof value === 'string' ? paint.test(value) : !!value && typeof value === 'object' && !seen.has(value) &&
+		(seen.add(value), Object.values(value).some(look));
+	return look(input);
+}
+function _rapierAgentPaintedId(input) {
+	let id = '';
+	const look = value => { if (typeof value === 'string') { for (const match of value.matchAll(/```rapier-(?:water|paint|draw)\b[^\n]*?\bid=([A-Za-z0-9_-]+)/g)) id = match[1]; }
+		else if (value && typeof value === 'object') Object.values(value).forEach(look); };
+	look(input);
+	return id;
+}
+function _rapierAgentPaintedPicture(id) {
+	if (!id) return null;
+	const blocks = rapier.document.blocks, marker = '<!-- rapier-block:' + id + ' ';
+	const at = blocks.findIndex(block => typeof block.raw === 'string' && block.raw.includes(marker));
+	for (let index = Math.max(at, 0); at >= 0 && index < Math.min(blocks.length, at + 3); index++) {
+		const image = _rapierBlockWrapperById(blocks[index].id)?.querySelector('[data-rapier-markdown-image]');
+		if (image) return { block: blocks[index], image };
+	}
+	return null;
+}
 function _rapierAgentBarInvocationBlocks(operation, input) {
 	const request = input && typeof input === 'object' ? input : {};
 	const words = [request.text, ...(Array.isArray(request.changes) ? request.changes.flatMap(change => [change?.old, change?.after, change?.before]) : [])]
@@ -363,14 +387,17 @@ function _rapierAgentPresence(target, word, acorn, location, active, reading = f
 function _rapierAgentPresenceLine(word) {
 	const line = document.getElementById('agent-note');
 	if (!line) return;
-	const said = word || _rapierAgentSpell.kind === 'invite' ? _rapierAgentNoteText() : '';
+	const painting = !!_rapierAgentBar.painting;
+	const said = painting ? 'Painting' : word || _rapierAgentSpell.kind === 'invite' ? _rapierAgentNoteText() : '';
 	if (!said) _rapierAgentNoteRetire();
 	const saidNode = line.querySelector('.agent-note__said');
 	if (saidNode.textContent !== said) saidNode.textContent = said;
 	_rapierAgentWho(line.querySelector('.agent-note__who'));
-	const undo = document.getElementById('agent-note-undo'), undoHidden = !(_rapierAgentSpell.kind === 'finished' && _rapierAgentSpell.undo.length);
+	const undo = document.getElementById('agent-note-undo'), undoHidden = painting || !(_rapierAgentSpell.kind === 'finished' && _rapierAgentSpell.undo.length);
 	if (undo.hidden !== undoHidden) undo.hidden = undoHidden;
-	const go = document.getElementById('agent-note-go'), goHidden = _rapierAgentSpell.kind !== 'invite';
+	const paint = document.getElementById('agent-note-paint'), paintHidden = undoHidden || !_rapierAgentPaintedPicture(_rapierAgentSpell.painted);
+	if (paint && paint.hidden !== paintHidden) paint.hidden = paintHidden;
+	const go = document.getElementById('agent-note-go'), goHidden = painting || _rapierAgentSpell.kind !== 'invite';
 	if (go.hidden !== goHidden) go.hidden = goHidden;
 	if (line.hidden !== !said) line.hidden = !said;
 	_rapierAgentNotePlace(line);
@@ -412,6 +439,7 @@ function _rapierAgentBarRender(presence = null) {
 	const executing = [..._rapierAgentBar.invocations].filter(invocation =>
 		!invocation.ask && !(parked && invocation.operation === 'document.wait_for_user') &&
 		invocation.documentAuthority === authority && invocation.documentEpoch === epoch);
+	_rapierAgentBar.painting = executing.some(invocation => invocation.painting);
 	const connected = _rapierAgentConnected();
 	const work = bar.workAuthority === authority && bar.workEpoch === epoch ? bar.work : null;
 	const pointing = !!work?.pointers?.some(pointer => pointer.status === 'shown' && pointer.expiresAt > Date.now());
@@ -505,7 +533,7 @@ function _rapierAgentBarRender(presence = null) {
 		'document.read': 'read a declaration', 'document.edit': 'edited and re-parsed',
 	};
 
-	const doing = executing.length === 1 ? (_RAPIER_AGENT_DOING[executing[0].operation] || _RAPIER_AGENT_DOING['document.' + executing[0].operation] || 'Working') : (working ? 'Working' : pointing ? 'Pointing' : '');
+	const doing = executing.length === 1 ? (executing[0].painting ? 'Painting' : _RAPIER_AGENT_DOING[executing[0].operation] || _RAPIER_AGENT_DOING['document.' + executing[0].operation] || 'Working') : (working ? 'Working' : pointing ? 'Pointing' : '');
 
 	const where = parkedMessage ? ''
 		: doing ? (usingAcorn ? 'Using Acorn · ' : '') + doing + (heading ? ' under ' + heading : (symbol ? ' in ' + symbol : ''))

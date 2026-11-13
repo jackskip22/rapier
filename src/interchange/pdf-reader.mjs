@@ -665,8 +665,169 @@ function renderBlocks(blocks, styles) {
   return output.join('\n');
 }
 
-async function pagePictures(page, viewport, api, operators, ids, {embedImage, step, checkpoint, limits, stats, setRender}) {
-  const pictures=[],stack=[],marks=[],ops=api.OPS;let matrix=identity(), invisible=false;
+const pdfIndexes = new WeakMap();
+const latin = bytes => { let out = ''; for (let at = 0; at < bytes.length; at += 32768) out += String.fromCharCode(...bytes.subarray(at, at + 32768)); return out; };
+function pdfDictionary(pdf, at) {
+  while (at < pdf.length && /\s/.test(String.fromCharCode(pdf[at]))) at++;
+  if (pdf[at] !== 60 || pdf[at + 1] !== 60) return null;
+  let depth = 0;
+  for (let p = at; p < Math.min(pdf.length, at + 65536); p++) {
+    if (pdf[p] === 60 && pdf[p + 1] === 60) { depth++; p++; }
+    else if (pdf[p] === 62 && pdf[p + 1] === 62) { depth--; p++; if (!depth) return {text: latin(pdf.subarray(at, p + 1)), end: p + 1}; }
+    else if (pdf[p] === 40) return null;
+  }
+  return null;
+}
+function streamStart(pdf, at) {
+  while (at < pdf.length && /[ \t\r\n\f\0]/.test(String.fromCharCode(pdf[at]))) at++;
+  if (latin(pdf.subarray(at, at + 6)) !== 'stream') return -1;
+  at += 6;
+  if (pdf[at] === 13) at++;
+  if (pdf[at] !== 10 && pdf[at - 1] !== 13) return -1;
+  return pdf[at] === 10 ? at + 1 : at;
+}
+const keyOf = (num, gen) => num + 'R' + (gen ? gen : '');
+async function inflate(bytes) {
+  const out = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+  return out;
+}
+async function pdfCrossReference(pdf) {
+  const tail = latin(pdf.subarray(Math.max(0, pdf.length - 1024)));
+  const start = /startxref\s+(\d+)\s+%%EOF\s*$/.exec(tail);
+  if (!start) return null;
+  const offsets = new Map(), seen = new Set();
+  let encrypted = false;
+  for (let at = Number(start[1]), rounds = 0; Number.isSafeInteger(at) && at >= 0 && at < pdf.length && rounds < 64; rounds++) {
+    if (seen.has(at)) return null;
+    seen.add(at);
+    let next = null;
+    const head = latin(pdf.subarray(at, at + 64));
+    if (/^\s*xref\b/.test(head)) {
+      const end = latin(pdf.subarray(at, pdf.length)).indexOf('trailer');
+      if (end < 0) return null;
+      const lines = latin(pdf.subarray(at, at + end)).trim().split(/\r\n|\r|\n/).map(line => line.trim()).filter(Boolean).slice(1);
+      for (let line = 0; line < lines.length;) {
+        const section = /^(\d+)\s+(\d+)$/.exec(lines[line++]);
+        if (!section) return null;
+        for (let n = 0; n < Number(section[2]); n++) {
+          const entry = /^(\d{10})\s(\d{5})\s([nf])$/.exec(lines[line++] || '');
+          if (!entry) return null;
+          const key = keyOf(Number(section[1]) + n, Number(entry[2]));
+          if (!offsets.has(key)) offsets.set(key, entry[3] === 'n' ? Number(entry[1]) : null);
+        }
+      }
+      const trailer = pdfDictionary(pdf, at + end + 7);
+      if (!trailer) return null;
+      if (/\/Encrypt\b/.test(trailer.text)) encrypted = true;
+      const stream = /\/XRefStm\s+(\d+)/.exec(trailer.text), prev = /\/Prev\s+(\d+)/.exec(trailer.text);
+      if (stream) { const own = await xrefStream(pdf, Number(stream[1]), offsets); if (!own) return null; encrypted ||= own.encrypted; }
+      next = prev ? Number(prev[1]) : null;
+    } else {
+      const own = await xrefStream(pdf, at, offsets);
+      if (!own) return null;
+      encrypted ||= own.encrypted; next = own.prev;
+    }
+    if (next === null) return {offsets, encrypted};
+    at = next;
+  }
+  return null;
+}
+async function xrefStream(pdf, at, offsets) {
+  const head = /^\s*(\d+)\s+(\d+)\s+obj\b/.exec(latin(pdf.subarray(at, at + 64)));
+  if (!head) return null;
+  const dict = pdfDictionary(pdf, at + head[0].length);
+  if (!dict || !/\/Type\s*\/XRef\b/.test(dict.text)) return null;
+  const length = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(dict.text), widths = /\/W\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s*\]/.exec(dict.text);
+  const size = /\/Size\s+(\d+)/.exec(dict.text), index = /\/Index\s*\[([\d\s]+)\]/.exec(dict.text);
+  const filter = /\/Filter\s*\[?\s*\/(\w+)\s*\]?/.exec(dict.text), predictor = /\/Predictor\s+(\d+)/.exec(dict.text), columns = /\/Columns\s+(\d+)/.exec(dict.text);
+  const first = streamStart(pdf, dict.end);
+  if (!length || !widths || !size || first < 0 || first + Number(length[1]) > pdf.length || filter && filter[1] !== 'FlateDecode') return null;
+  let data = pdf.subarray(first, first + Number(length[1]));
+  try { if (filter) data = await inflate(data); } catch (_) { return null; }
+  const w = widths.slice(1).map(Number), row = w[0] + w[1] + w[2];
+  if (!row || w.some(value => value > 8)) return null;
+  if (predictor && Number(predictor[1]) >= 10) {
+    const width = Number(columns?.[1] || 1), out = new Uint8Array(Math.floor(data.length / (width + 1)) * width);
+    for (let r = 0; r * (width + 1) < data.length - width; r++) {
+      const kind = data[r * (width + 1)];
+      for (let c = 0; c < width; c++) {
+        const raw = data[r * (width + 1) + 1 + c], up = r ? out[(r - 1) * width + c] : 0, left = c ? out[r * width + c - 1] : 0, corner = r && c ? out[(r - 1) * width + c - 1] : 0;
+        const p = left + up - corner, paeth = Math.abs(p - left) <= Math.abs(p - up) && Math.abs(p - left) <= Math.abs(p - corner) ? left : Math.abs(p - up) <= Math.abs(p - corner) ? up : corner;
+        out[r * width + c] = (raw + [0, left, up, (left + up) >> 1, paeth][kind]) & 255;
+        if (kind > 4) return null;
+      }
+    }
+    data = out;
+  } else if (predictor && Number(predictor[1]) !== 1) return null;
+  const ranges = (index ? index[1].trim().split(/\s+/).map(Number) : [0, Number(size[1])]);
+  const number = (at, width) => { let value = 0; for (let n = 0; n < width; n++) value = value * 256 + data[at + n]; return value; };
+  let cursor = 0;
+  for (let r = 0; r + 1 < ranges.length; r += 2) for (let n = 0; n < ranges[r + 1]; n++, cursor += row) {
+    if (cursor + row > data.length) return null;
+    const type = w[0] ? number(cursor, w[0]) : 1, second = number(cursor + w[0], w[1]), third = number(cursor + w[0] + w[1], w[2]);
+    const key = type === 1 ? keyOf(ranges[r] + n, third) : keyOf(ranges[r] + n, 0);
+    if (!offsets.has(key)) offsets.set(key, type === 1 ? second : null);
+  }
+  const prev = /\/Prev\s+(\d+)/.exec(dict.text);
+  return {prev: prev ? Number(prev[1]) : null, encrypted: /\/Encrypt\b/.test(dict.text)};
+}
+export async function pdfJpeg(pdf, ref, width, height) {
+  const at = /^(\d+)R(\d*)$/.exec(String(ref || ''));
+  if (!at || !(pdf instanceof Uint8Array)) return null;
+  if (!pdfIndexes.has(pdf)) pdfIndexes.set(pdf, pdfCrossReference(pdf).catch(() => null));
+  const index = await pdfIndexes.get(pdf);
+  if (!index || index.encrypted) return null;
+  const num = Number(at[1]), gen = Number(at[2] || 0), offset = index.offsets.get(keyOf(num, gen));
+  if (!Number.isSafeInteger(offset)) return null;
+  const head = /^\s*(\d+)\s+(\d+)\s+obj\b/.exec(latin(pdf.subarray(offset, offset + 64)));
+  if (!head || Number(head[1]) !== num || Number(head[2]) !== gen) return null;
+  const dict = pdfDictionary(pdf, offset + head[0].length);
+  if (!dict) return null;
+  const text = dict.text, number = key => { const m = new RegExp('/' + key + '\\s+(\\d+)(?!\\s+\\d+\\s+R)').exec(text); return m ? Number(m[1]) : null; };
+  if (!/\/Subtype\s*\/Image\b/.test(text) || !/\/Filter\s*(?:\/DCTDecode|\[\s*\/DCTDecode\s*\])/.test(text) ||
+      /\/(?:SMask|Mask|Decode|ImageMask|ColorTransform|SMaskInData)\b/.test(text) || /\/DeviceCMYK|\/Indexed|\/Separation|\/DeviceN|\/Lab\b/.test(text) ||
+      number('Width') !== width || number('Height') !== height || number('BitsPerComponent') !== 8) return null;
+  let length = number('Length');
+  const indirect = /\/Length\s+(\d+)\s+(\d+)\s+R/.exec(text);
+  if (length === null && indirect) {
+    const where = index.offsets.get(keyOf(Number(indirect[1]), Number(indirect[2])));
+    const value = Number.isSafeInteger(where) && /^\s*(\d+)\s+(\d+)\s+obj\s+(\d+)\s+endobj/.exec(latin(pdf.subarray(where, where + 64)));
+    if (value && value[1] === indirect[1] && value[2] === indirect[2]) length = Number(value[3]);
+  }
+  const first = streamStart(pdf, dict.end);
+  if (!Number.isSafeInteger(length) || first < 0 || first + length > pdf.length) return null;
+  let last = first + length;
+  while (last > first + 2 && [10, 13, 32, 0].includes(pdf[last - 1])) last--;
+  const jpeg = pdf.subarray(first, last);
+  if (jpeg.length < 4 || jpeg[0] !== 0xFF || jpeg[1] !== 0xD8 || jpeg[jpeg.length - 2] !== 0xFF || jpeg[jpeg.length - 1] !== 0xD9) return null;
+  for (let p = 2; p + 9 < jpeg.length;) {
+    if (jpeg[p] !== 0xFF) return null;
+    const marker = jpeg[p + 1], segment = (jpeg[p + 2] << 8) | jpeg[p + 3];
+    if (marker >= 0xC0 && marker <= 0xCF && ![0xC4, 0xC8, 0xCC].includes(marker)) {
+      const h = (jpeg[p + 5] << 8) | jpeg[p + 6], w = (jpeg[p + 7] << 8) | jpeg[p + 8], components = jpeg[p + 9];
+      return w === width && h === height && (components === 1 || components === 3) ? jpeg.slice() : null;
+    }
+    if (marker === 0xD8 || marker >= 0xD0 && marker <= 0xD7) { p += 2; continue; }
+    if (segment < 2) return null;
+    p += 2 + segment;
+  }
+  return null;
+}
+async function pictureDigest(image){
+  let data=image?.data;
+  if(!data&&image?.bitmap&&typeof OffscreenCanvas==='function'){
+    const w=image.bitmap.width,h=image.bitmap.height;
+    if(!(w>0&&h>0))return null;
+    const canvas=new OffscreenCanvas(w,h),context=canvas.getContext('2d');
+    try{if(context){context.drawImage(image.bitmap,0,0);data=context.getImageData(0,0,w,h).data;}}
+    finally{canvas.width=canvas.height=0;}
+  }
+  if(!data?.length||!globalThis.crypto?.subtle)return null;
+  const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',data));
+  return Array.from(digest,byte=>byte.toString(16).padStart(2,'0')).join('')+'.'+data.length;
+}
+async function pagePictures(page, viewport, api, operators, ids, {embedImage, step, checkpoint, limits, stats, setRender, runs = [], seen = new Set(), source = null}) {
+  const pictures=[],paths=[],stack=[],marks=[],ops=api.OPS;let matrix=identity(), invisible=false;
   for(let i=0;i<operators.fnArray.length;i++){
     await checkpoint();
     const op=operators.fnArray[i],args=operators.argsArray[i]||[];
@@ -678,31 +839,90 @@ async function pagePictures(page, viewport, api, operators, ids, {embedImage, st
     if(op===ops.beginMarkedContent||op===ops.beginMarkedContentProps){marks.push({id:ids.get(args[1]),artifact:(args[0]?.name||args[0])==='Artifact'});continue;}
     if(op===ops.endMarkedContent){marks.pop();continue;}
     if(op===ops.setTextRenderingMode && args[0]===3)invisible=true;
+    if(op===ops.constructPath){
+      const minMax=args[2];
+      if(args[0]!==ops.endPath&&minMax&&!marks.some(m=>m.artifact)&&minMax.every(Number.isFinite))
+        paths.push(rectangle(multiply(viewport.transform,matrix),minMax[0],minMax[1],minMax[2],minMax[3]));
+      continue;
+    }
     const ref=op===ops.paintImageXObject||op===ops.paintImageXObjectRepeat;
     if(!ref && op!==ops.paintInlineImageXObject)continue;
-    if(marks.some(m=>m.artifact))continue;
+    const artifact=marks.some(m=>m.artifact);
     const image=ref?await step(new Promise(resolve=>(String(args[0]).startsWith('g_')?page.commonObjs:page.objs).get(args[0],resolve)),'decode a picture'):args[0];
     const transforms=op===ops.paintImageXObjectRepeat?Array.from({length:args[3].length/2},(_,n)=>multiply(matrix,[args[1],0,0,args[2],args[3][n*2],args[3][n*2+1]])):[matrix];
-    for(const transform of transforms)pictures.push({image,matrix:multiply(viewport.transform,transform),id:marks.findLast(m=>m.id)?.id});
+    for(const transform of transforms){
+      const placed=multiply(viewport.transform,transform);
+      if(artifact){
+        const box=rectangle(placed,0,0,1,1);
+        if(box.w*box.h>=viewport.width*viewport.height*.25)continue;
+        const digest=await step(pictureDigest(image),'read a picture'),key=digest&&image.width+'x'+image.height+'@'+Math.round(box.w)+'x'+Math.round(box.h)+':'+digest;
+        if(key&&seen.has(key))continue;
+        if(key)seen.add(key);
+      }
+      pictures.push({image,matrix:placed,id:marks.findLast(m=>m.id)?.id,artifact});
+    }
   }
   const groups=[];
   for(const picture of pictures){
     const box=rectangle(picture.matrix,0,0,1,1);
     if(invisible && box.w*box.h>=viewport.width*viewport.height*.8)continue;
-    let group={...box,members:[picture],id:picture.id};
+    let group={...box,members:[picture],id:picture.id,artifact:picture.artifact};
     for(let i=groups.length-1;i>=0;i--){
       const other=groups[i];
+      if(group.artifact||other.artifact)continue;
       if(group.id&&group.id===other.id || overlaps({...group,x:group.x-3,y:group.y-3,w:group.w+6,h:group.h+6},other)){
         const b=bounds([group,other]);group={x:b.x,y:b.y,w:b.right-b.x,h:b.bottom-b.y,members:[...other.members,...group.members],id:group.id===other.id?group.id:null};groups.splice(i,1);
       }
     }
     groups.push(group);
   }
+  const area=viewport.width*viewport.height,near=(a,b,d=2)=>overlaps({x:a.x-d,y:a.y-d,w:a.w+2*d,h:a.h+2*d},b)>0||
+    a.x-d<=b.x+b.w&&b.x<=a.x+a.w+d&&a.y-d<=b.y+b.h&&b.y<=a.y+a.h+d;
+  const pieces=[];
+  for(const run of runs.filter(r=>String(r.str||'').trim()).sort((a,b)=>(a.baseline??a.y)-(b.baseline??b.y)||a.x-b.x)){
+    const last=pieces.at(-1),h=Math.max(run.h||0,4);
+    if(last&&Math.abs((last.baseline??last.y)-(run.baseline??run.y))<h*.5&&run.x-(last.x+last.w)<h*1.5&&run.x>=last.x){
+      const b=bounds([last,run]);Object.assign(last,{x:b.x,y:b.y,w:b.right-b.x,h:b.bottom-b.y,text:last.text+' '+String(run.str).trim()});
+    } else pieces.push({x:run.x,y:run.y,w:run.w,h:run.h,baseline:run.baseline,text:String(run.str).trim()});
+  }
+  const words=pieces.filter(p=>p.text.length>30);
+  const covers=box=>words.some(r=>overlaps(box,r)>r.w*r.h*.5),union=rows=>{const b=bounds(rows);return {x:b.x,y:b.y,w:b.right-b.x,h:b.bottom-b.y};};
+  const drawn=paths.length>8000||groups.length>256?[]:paths.filter(p=>p.w>=2&&p.h>=2&&p.w*p.h<area*.5&&!covers(p));
+  const used=new Set();
+  for(const group of groups){
+    group.picture={x:group.x,y:group.y,w:group.w,h:group.h};
+    for(let grew=!group.artifact,pass=0;grew&&pass<64;pass++){
+      grew=false;
+      for(let i=0;i<drawn.length;i++){
+        if(used.has(i)||!near(group,drawn[i]))continue;
+        const grown=union([group,drawn[i]]);if(covers(grown)&&!covers(group))continue;
+        used.add(i);grew=group.grown=true;Object.assign(group,grown);
+      }
+      await checkpoint();
+    }
+  }
+  for(let merged=true;merged;){
+    merged=false;
+    for(let i=0;i<groups.length&&!merged;i++)for(let j=i+1;j<groups.length&&!merged;j++){
+      const a=groups[i],b=groups[j];
+      if(!(a.grown||b.grown)||a.artifact||b.artifact||!near(a,b))continue;
+      if(covers(union([a,b]))&&!covers(a)&&!covers(b))continue;
+      const box=bounds([a,b]),picture=bounds([a.picture,b.picture]);
+      groups[i]={x:box.x,y:box.y,w:box.right-box.x,h:box.bottom-box.y,members:[...a.members,...b.members],id:a.id===b.id?a.id:null,grown:true,
+        picture:{x:picture.x,y:picture.y,w:picture.right-picture.x,h:picture.bottom-picture.y}};
+      groups.splice(j,1);merged=true;
+    }
+  }
+  const labels=pieces.filter(p=>p.text.length<=8);
+  for(const group of groups)if(group.grown)for(const run of labels)if(near(group,run,Math.max(6,run.h||0))){
+    const b=bounds([group,run]);Object.assign(group,{x:b.x,y:b.y,w:b.right-b.x,h:b.bottom-b.y});
+  }
+  for(const group of groups)group.drawn=!!group.grown&&group.w*group.h>group.picture.w*group.picture.h*1.1;
   const result=[];
   for(const group of groups){
     await checkpoint();
     if(!embedImage)continue;
-    const picture=group.members[0],image=picture.image,box=group,composite=group.members.length>1;
+    const picture=group.members[0],image=picture.image,composite=group.members.length>1||group.drawn,box=composite?group:group.picture;
     const scale=Math.min(2,(limits.pageSide-1)/Math.max(box.w,box.h),Math.sqrt((limits.pagePixels-limits.pageSide*2)/(box.w*box.h)));
     const width=composite?Math.ceil(box.w*scale):image?.width,height=composite?Math.ceil(box.h*scale):image?.height;
     if(!Number.isSafeInteger(width*height)||width<1||height<1||width*height>limits.sourceImagePixels)
@@ -733,11 +953,12 @@ async function pagePictures(page, viewport, api, operators, ids, {embedImage, st
       const pixels=new Uint32Array(context.getImageData(0,0,width,height).data.buffer);
       let uniform=true;for(let p=1;p<pixels.length&&uniform;p++){uniform=pixels[p]===pixels[0];if(!(p%1048576))await checkpoint();}
       if(uniform&&box.w*box.h>=viewport.width*viewport.height*.5)continue;
-      const blob=await step(canvas.convertToBlob({type:'image/png'}),'encode a picture');
-      if(!blob.size||blob.size>limits.rasterBytes)throw failure('The PDF picture exceeds its image memory limit.','PDF_RASTER_SIZE');
       const m=multiply(picture.matrix,[1,0,0,-1,0,1]);
       const turned=composite?0:Math.round(Math.atan2(m[1],m[0])*1800/Math.PI)/10,rotate=turned===-180?180:turned,flipV=!composite&&m[0]*m[3]-m[1]*m[2]<0;
-      const reference=await step(embedImage({bytes:new Uint8Array(await blob.arrayBuffer()),name:'picture-'+(stats.images+1)+'.png',mime:'image/png',
+      const jpeg=!composite&&!flipV&&image?.ref&&source?await step(pdfJpeg(source,image.ref,width,height),'read a picture'):null;
+      const bytes=jpeg||await step(canvas.convertToBlob({type:'image/png'}),'encode a picture').then(async blob=>new Uint8Array(await blob.arrayBuffer()));
+      if(!bytes.length||bytes.length>limits.rasterBytes)throw failure('The PDF picture exceeds its image memory limit.','PDF_RASTER_SIZE');
+      const reference=await step(embedImage({bytes,name:'picture-'+(stats.images+1)+(jpeg?'.jpg':'.png'),mime:jpeg?'image/jpeg':'image/png',
         alt:'',displayWidth:box.w,displayHeight:box.h,transform:flipV?{flipV}:null}),'embed a picture');
       if(typeof reference!=='string'||!/^[a-z0-9-]+$/i.test(reference))throw new Error('The PDF picture did not return an image reference.');
       result.push({x:box.x,y:box.y,w:box.w,h:box.h,type:'image',id:group.id,reference,alt:'',composite,...(rotate?{rotate}:{})});stats.images++;stats.pixels+=width*height;
@@ -762,6 +983,7 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
       yielded = performance.now(); check();
     }
   };
+  const furniture = new Set();
   const stats = {pages: 0, pagesWithText: 0, images: 0, pixels: 0, reducedPages: 0,
     textItems: 0, inputBytes: blob.size, outputBytes: 0};
   let session = null, loading = null, pdf = null, render = null, textReader = null, page = null, finished = false, destroying = null;
@@ -844,12 +1066,14 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
     });
     session = await step(starting, 'start the reader');
     const data = new Uint8Array(await step(blob.arrayBuffer(), 'read the file'));
+    let sourceBytes = mode === 'text' ? data.slice() : null;
     loading = session.api.getDocument({data, worker: session.worker, ...session.options,
       stopAtErrors: true, disableFontFace: true, useSystemFonts: false, enableXfa: false,
       disableAutoFetch: true, disableRange: true, disableStream: true,
       maxImageSize: PDF_LIMITS.sourceImagePixels, canvasMaxAreaInBytes: PDF_LIMITS.temporaryCanvasPixels * 4,
       CanvasFactory: BoundedCanvasFactory, verbosity: 0});
     pdf = await step(loading.promise, 'open');
+    if (sourceBytes && (await step(pdf.getMetadata(), 'read the file')).info?.EncryptFilterName) sourceBytes = null;
     stats.pages = pdf.numPages;
     const pageLimit = mode === 'text' ? PDF_LIMITS.textPages : PDF_LIMITS.imagePages;
     if (!Number.isSafeInteger(stats.pages) || stats.pages < 1 || stats.pages > pageLimit)
@@ -914,7 +1138,7 @@ export async function readPdf(blob, {mode = 'text', embedImage, checkCurrent = (
           run.carrier = isCarrier(run);
         }
         const pictures = await pagePictures(page, viewport, session.api, operators, ids,
-          {embedImage, step, checkpoint, limits: PDF_LIMITS, stats, setRender:value=>{render=value;}});
+          {embedImage, step, checkpoint, limits: PDF_LIMITS, stats, setRender:value=>{render=value;}, runs, seen: furniture, source: sourceBytes});
         const words=runs.filter(r=>!pictures.some(p=>p.composite&&overlaps(p,r)>r.w*r.h*.8));
         pages.push({runs: linkRuns(words, annotations, viewport, annotations.some(a=>a.subtype==='Link')?glyphStops(operators, session.api, viewport):[]), tree, pictures, annotations, ref:page.ref,
           transform:viewport.transform, width: viewport.width, height: viewport.height});

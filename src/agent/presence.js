@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const _RAPIER_AGENT_MARKS = Object.freeze(['', 'feather', 'star', 'moon', 'sun', 'zap', 'anchor', 'compass', 'coffee']);
-const _rapierAgentSpell = Object.seal({ name: '', greeted: '', acts: [], undo: [], labels: new Map(), timer: 0, noteTimer: 0, wrote: null, near: new Set(), kind: '', pending: false });
+const _rapierAgentSpell = Object.seal({ name: '', greeted: '', acts: [], undo: [], labels: new Map(), timer: 0, noteTimer: 0, wrote: null, near: new Set(), kind: '', pending: false, painted: '' });
 
 function _rapierAgentSelf() {
 	try {
@@ -124,6 +124,7 @@ function _rapierAgentSpellBegin(authority) {
 	const spell = _rapierAgentSpell;
 	clearTimeout(spell.timer);
 	if (_rapierAgentSpell.kind === 'finished') { _rapierAgentNoteRetire(); _rapierAgentNoteQuiet(); }
+	if (!spell.acts.length) spell.painted = '';
 	if (spell.greeted === authority) return;
 	spell.greeted = authority;
 	_rapierAgentNoteSet('Joined', 'arrived');
@@ -187,6 +188,14 @@ document.getElementById('agent-note-open')?.addEventListener('click', () => {
 	if (reply && !reply.disabled) reply.focus({ preventScroll: true });
 });
 document.getElementById('agent-note-undo')?.addEventListener('click', () => { void _rapierAgentUndoSpell(); });
+document.getElementById('agent-note-paint')?.addEventListener('click', () => {
+	const found = _rapierAgentPaintedPicture(_rapierAgentSpell.painted);
+	_rapierAgentNoteRetire();
+	_rapierAgentNoteQuiet();
+	_rapierAgentBarRender();
+	if (!found || !_rapierSelectImage(found.block, found.image)) { showToast('Drawing not found.', 'info'); return; }
+	document.querySelector('.rapier-image-tools [data-image-act="draw"]')?.click();
+});
 document.getElementById('agent-row-who')?.addEventListener('click', event => {
 	const panel = document.getElementById('agent-self');
 	panel.hidden = !panel.hidden;

@@ -1,6 +1,6 @@
 # Privacy and terms
 
-Rapier needs no account signup and uses no analytics or advertising. Your files stay on your device until you save, share, back up or sync them. Sync writes plain files to the storage you choose. You keep or delete local files; Delete forever removes notes and their history.
+Free and open source. Works offline with no install. No account, no tracking, no ads. Your files stay on your device until you save, share, back up or sync them. Sync writes plain files to the storage you choose. You keep or delete local files; Delete forever removes notes and their history.
 
 When you send feedback, your report is recorded to help improve Rapier. Please avoid sensitive information.
 

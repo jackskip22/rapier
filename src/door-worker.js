@@ -10,7 +10,7 @@ const END = '<!-- RAPIER_SEO_END -->';
 const HEAD_WINDOW = 65536;
 const WINDOW = 1024 * 1024;
 
-const free = 'Yes. Rapier is free and open source, with no account, ads or tracking.';
+const free = 'Yes. Free and open source. Works offline with no install. No account, no tracking, no ads.';
 const offline = 'Yes, once the page has loaded. Add it to your home screen to open it like an app, or keep the whole editor as one HTML file.';
 const local = 'No. Rapier works in your browser. Local editing uploads nothing.';
 const saved = 'Yes. Press Done to download it as JPEG XL, PNG or layers (OpenRaster), or add it to your document';
@@ -62,7 +62,7 @@ export const DOORS = Object.freeze({
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
 			Object.freeze(['Do I need to download an app?', 'No. It runs in your browser. On Android you can also install Rapier from Google Play.']),
-			Object.freeze(['Can kids use it?', 'Yes. There are no ads, accounts or tracking.']),
+			Object.freeze(['Can kids use it?', 'Yes. No account, no tracking, no ads.']),
 			Object.freeze(['Can I save my painting?', saved + '.']),
 		])}),
 	'/jxl': Object.freeze({name: 'JPEG XL converter', title: 'Free JPEG XL converter and animated JXL maker: PNG, JPG, GIF, video | Rapier',

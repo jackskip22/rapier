@@ -31,7 +31,7 @@ const WINDOW = 1024 * 1024;
 // and the pages next to it (`related`; `/` is the editor itself, the home page); `howTo` is one [heading, steps] or a list of them,
 // and `features` the application's feature list, each shown in the guide. It is the free web application at its own address (WebApplication data).
 // `view` names what the address opens (the engine, draw/door.js, notes/door.js).
-const free = 'Yes. Rapier is free and open source, with no account, ads or tracking.';
+const free = 'Yes. Free and open source. Works offline with no install. No account, no tracking, no ads.';
 const offline = 'Yes, once the page has loaded. Add it to your home screen to open it like an app, or keep the whole editor as one HTML file.';
 const local = 'No. Rapier works in your browser. Local editing uploads nothing.';
 const saved = 'Yes. Press Done to download it as JPEG XL, PNG or layers (OpenRaster), or add it to your document';
@@ -88,7 +88,7 @@ export const DOORS = Object.freeze({
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
 			Object.freeze(['Do I need to download an app?', 'No. It runs in your browser. On Android you can also install Rapier from Google Play.']),
-			Object.freeze(['Can kids use it?', 'Yes. There are no ads, accounts or tracking.']),
+			Object.freeze(['Can kids use it?', 'Yes. No account, no tracking, no ads.']),
 			Object.freeze(['Can I save my painting?', saved + '.']),
 		])}),
 	// /jxl answers the JPEG XL searches: what goes in, what comes out, and the steps. Each claim is the

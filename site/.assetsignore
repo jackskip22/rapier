@@ -42,10 +42,13 @@
 !/sitemap.xml
 !/llms.txt
 !/llms-full.txt
+!/AGENTS.md
 !/docs/
 !/docs/**
 !/.well-known/
 !/.well-known/ai-catalog.json
+!/.well-known/mcp.json
+!/.well-known/mcp-registry-auth
 !/.well-known/assetlinks.json
 !/drive-picker.html
 !/sync-return.html

@@ -115,7 +115,36 @@ export function keptJsonData(value) {
   for (const key of Object.keys(value)) copy[key] = keptJsonData(value[key]);
   return copy;
 }
-export function* jsonValueParts(value, canonical = false, unescaped = false, frozen = true) {
+function utf8Length(text) {
+  let bytes = text.length;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) continue;
+    if (code < 0x800) { bytes += 1; continue; }
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) { bytes += 2; i++; continue; }
+    }
+    bytes += 2;
+  }
+  return bytes;
+}
+const FROZEN_BYTES = [new WeakMap(), new WeakMap()];
+function frozenBytes(value, canonical) {
+  const kept = FROZEN_BYTES[canonical ? 1 : 0];
+  let bytes = kept.get(value);
+  if (bytes === undefined) { bytes = utf8Length(frozenText(value, canonical)); kept.set(value, bytes); }
+  return bytes;
+}
+export function jsonByteLength(value, canonical = false) {
+  let bytes = 0;
+  for (const part of jsonValueParts(value, canonical, false, true, true)) {
+    if (part === undefined) return undefined;
+    bytes += typeof part === 'number' ? part : utf8Length(part);
+  }
+  return bytes;
+}
+export function* jsonValueParts(value, canonical = false, unescaped = false, frozen = true, measured = false) {
   const prepare = (value, key) => !canonical && value && typeof value.toJSON === 'function' ? value.toJSON(key) : value;
   const missing = value => value === undefined || typeof value === 'function' || typeof value === 'symbol';
   const frames = [{value: prepare(value, ''), index: -1}], active = new Set();
@@ -205,6 +234,11 @@ export function* jsonValueParts(value, canonical = false, unescaped = false, fro
       }
       continue;
     } else if (frozen && !unescaped && plainPrototypes && child && typeof child === 'object' && Object.isFrozen(child) && frozenText(child, canonical) !== null) {
+      if (measured) {
+        if (chunk) { yield chunk; chunk = ''; }
+        yield frozenBytes(child, canonical);
+        continue;
+      }
       const encoded = frozenText(child, canonical);
       if (encoded.length >= LONG_STRING) {
         if (chunk) { yield chunk; chunk = ''; }
