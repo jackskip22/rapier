@@ -57,11 +57,26 @@ const DOCUMENT_STYLE_PROPERTIES = new Set([...DIAGRAM_LABEL_CSS, ...('background
 	+ 'fill-opacity fill-rule clip-rule clip-path filter stop-color stop-opacity text-anchor dominant-baseline alignment-baseline '
 	+ 'paint-order vector-effect shape-rendering color-interpolation color-interpolation-filters').split(' ')]);
 
+const INLINE_TAGS = new Set('a abbr b bdi bdo big cite code data del dfn em font i ins kbd mark q s samp small span strike strong sub sup time tt u var'.split(' '));
+const FLOW_TAGS = new Set(('div p blockquote section article aside header footer main nav figure figcaption li ul ol dl dt dd pre '
+	+ 'h1 h2 h3 h4 h5 h6 details summary address center label').split(' '));
+const INLINE_EDGE = /^(?:padding(?:-top|-bottom)?|border(?:-top|-bottom)?(?:-width)?)$/;
+function inlineEdgeSmall(body) {
+	if (/\b(?:calc|min|max|clamp|var|env|attr)\s*\(/i.test(body)) return false;
+	return body.replace(/[a-z-]+\([^()]*\)/gi, ' ').trim().split(/\s+/).every(word => {
+		if (!/^[-+]?[\d.]/.test(word)) return word.toLowerCase() !== 'thick';
+		if (/^0*\.?0+[a-z%]*$/i.test(word)) return true;
+		const size = Number.parseFloat(word), unit = word.replace(/^[\d.]+/, '').toLowerCase();
+		return /^[\d.]+[a-z]+$/i.test(word) && (unit === 'px' ? size <= 4 : unit === 'pt' ? size <= 3 : /^r?em$/.test(unit) && size <= .25);
+	});
+}
+
 function cleanDocumentStyle(tag, value, context, classes = '') {
 	if (context === 'raw' && tag === 'span') return typography.style(typography.parseStyle(value));
 	const names = classes.split(/\s+/), diagram = tag === 'svg' && names.includes('pele') &&
 		(context === 'diagram' || ['render', 'export', 'source'].includes(context) && names.includes('rapier-diagram'));
 	const kept = [];
+	const inline = INLINE_TAGS.has(tag) && !/(?:^|;)\s*display\s*:\s*(?!inline\s*(?:;|$))/i.test(value);
 	let start = 0, quote = '', depth = 0;
 	const take = end => {
 		const part = value.slice(start, end), colon = part.indexOf(':');
@@ -71,9 +86,13 @@ function cleanDocumentStyle(tag, value, context, classes = '') {
 		if (!DOCUMENT_STYLE_PROPERTIES.has(property) && !/^--md-[a-z0-9-]+$/.test(property) && !diagramProperty && !(diagram && property === 'font')) return;
 		if (!body || /[\u0000-\u0008\u000b\u000e-\u001f{}@]|\/\*|\*\//.test(body) ||
 			/["'\\]/.test(body.replace(/"(?:[^"\\\n\r\f]|\\["\\])*"|'(?:[^'\\\n\r\f]|\\['\\])*'/g, ''))) return;
+		const flow = FLOW_TAGS.has(tag) || INLINE_TAGS.has(tag);
+		if (!diagram && /^margin(?:-|$)/.test(property) && /(?:^|[^a-z0-9_-])-(?:[\d.]|[a-z(])|\b(?:var|calc|min|max|clamp|env)\s*\(/i.test(body)) return;
+		if (inline && INLINE_EDGE.test(property) && !inlineEdgeSmall(body)) return;
+		if (flow && (property === 'max-height' || property === 'filter' && /\b(?:drop-shadow|blur)\s*\(/i.test(body))) return;
 		const withoutLocal = body.replace(/\burl\(\s*(['"]?)#[a-z0-9_.:-]+\1\s*\)/gi, '');
 		if (/(?:url|image|image-set|-webkit-image-set|element|paint|attr|expression)\s*\(/i.test(withoutLocal)) return;
-		kept.push(part.trim());
+		kept.push(flow && property === 'height' ? 'min-height:' + body : part.trim());
 	};
 	for (let at = 0; at <= value.length; at++) {
 		const ch = value[at];

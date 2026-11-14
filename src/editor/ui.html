@@ -2329,41 +2329,43 @@ SOFTWARE.</pre>
 			<div class="export-choice-list">
 				<div class="export-choice-card">
 					<button type="button" class="export-choice" data-action="share-choice" data-value="web">
-						<span class="export-choice__label">HTML page</span>
-						<span class="export-choice__description">opens anywhere, offline, printable; your document stays inside it</span>
+						<span class="export-choice__label">HTML page <span class="export-choice__ext">(.html)</span></span>
+						<span class="export-choice__description">Opens in any browser offline.</span>
 					</button>
 					<button type="button" class="export-choice-toggle" data-action="share-image-compat" data-ledger-choice="authorship" aria-pressed="false">
-						<span>Who wrote what</span><span class="export-choice-toggle__state">OFF</span>
+						<span class="export-choice-toggle__label">Authors: <span class="export-choice-toggle__state">OFF</span></span>
 					</button>
 					<button type="button" class="export-choice-toggle" data-action="share-image-compat" data-ledger-choice="history" aria-pressed="false">
-						<span>The whole history</span><span class="export-choice-toggle__state">OFF</span>
+						<span class="export-choice-toggle__label">History: <span class="export-choice-toggle__state">OFF</span></span>
 					</button>
 					<p id="share-ledger-authors" class="export-choice__description"></p>
-					<p class="export-choice__description">History includes deleted text. Both choices are off for each new share.</p>
 					<button type="button" class="export-choice-toggle" id="share-image-compat-toggle"
 									data-action="share-image-compat" aria-pressed="false">
 						<span class="export-choice-toggle__text">
-							<span class="export-choice-toggle__label">image compatibility mode</span>
-							<span class="export-choice-toggle__hint">much larger file size</span>
+							<span class="export-choice-toggle__label">Image compatibility mode: <span class="export-choice-toggle__state">OFF</span></span>
+							<span class="export-choice-toggle__hint">(much larger files)</span>
 						</span>
-						<span class="export-choice-toggle__state">OFF</span>
 					</button>
 				</div>
 				<button type="button" class="export-choice" data-action="share-choice" data-value="source">
-					<span class="export-choice__label">Markdown</span>
-					<span class="export-choice__description">just your document as you wrote it, for any other app</span>
+					<span class="export-choice__label">Markdown <span class="export-choice__ext">(.md)</span></span>
+					<span class="export-choice__description">Opens in any Markdown app.</span>
 				</button>
 				<button type="button" class="export-choice" data-action="share-choice" data-value="editor">
-					<span class="export-choice__label">HTML editor</span>
-					<span class="export-choice__description">the document and Rapier together in one editable offline .rapier.html file</span>
-				</button>
-				<button type="button" class="export-choice" id="share-quote-card" data-action="share-choice" data-value="card" hidden>
-					<span class="export-choice__label">Quote card</span>
-					<span class="export-choice__description">the words you selected as a picture on paper, ready to post</span>
+					<span class="export-choice__label">Portable editor <span class="export-choice__ext">(.rapier.html)</span></span>
+					<span class="export-choice__description">Rapier with your document inside, in one file. Opens in any browser offline.</span>
 				</button>
 				<button type="button" class="export-choice" id="share-live-document">
-					<span class="export-choice__label">live document</span>
-					<span class="export-choice__description">write together through a private link</span>
+					<span class="export-choice__label">Collaborate live</span>
+					<span class="export-choice__description" id="share-live-description">Write or draw together with a private link.</span>
+				</button>
+				<button type="button" class="export-choice" id="share-quote-card" data-action="share-choice" data-value="card" aria-disabled="true">
+					<span class="export-choice__label">Quote card <span class="export-choice__ext">(.png)</span></span>
+					<span class="export-choice__description">Turns selected text into a picture.</span>
+				</button>
+				<button type="button" class="export-choice" id="share-agent" data-action="share-choice" data-value="agent">
+					<span class="export-choice__label">Your agent</span>
+					<span class="export-choice__description">Share document with your AI assistant.</span>
 				</button>
 				<button type="button" class="export-choice" id="share-send-back" data-action="share-choice" data-value="return" hidden>
 					<span class="export-choice__label">Send back</span>

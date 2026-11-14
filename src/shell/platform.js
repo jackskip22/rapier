@@ -434,6 +434,7 @@ const RapierStorage = Object.freeze({
 		...globalThis.RapierPreferenceDefinitions.PREFERENCE_DEFINITIONS,
 		notesPersistAsked: Object.freeze({ key: 'rapier:preference:notes-persist-asked', fallback: false }),
 		jxlNoticeShown: Object.freeze({ key: 'rapier:preference:jxl-notice-shown', fallback: '' }),
+		androidOfferShown: Object.freeze({ key: 'rapier:preference:android-offer-shown', fallback: false }),
 	}),
 	webFileHandlesDb: 'rapier:file-handles' + RAPIER_STORAGE_SCOPE,
 	webGenerationPrefix: 'web:',
@@ -490,7 +491,7 @@ const RapierWriterPromotion = (function () {
 			var name = key();
 			if (channel && channelKey !== name) { try { channel.close(); } catch (_) {} channel = null; }
 			channelKey = name;
-			return channel || (channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(name) : null);
+			return channel || (channel = new BroadcastChannel(name));
 		}
 		catch (_) { return null; }
 	}
@@ -515,7 +516,6 @@ const RapierDocumentClaim = (function () {
 	function open() {
 		if (channel) return channel;
 		try {
-			if (typeof BroadcastChannel !== 'function') return null;
 			channel = new BroadcastChannel(channelName);
 			channel.onmessage = function (event) { answer(event.data); };
 		} catch (_) { channel = null; }
@@ -725,6 +725,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	const _nativePlatformId = hasNative
 		? String(window.__RAPIER_NATIVE_PLATFORM_ID || 'native').toLowerCase()
 		: 'web';
+	const _nativeAppId = hasNative && ['rapier', 'watercolor', 'converter'].includes(window.__RAPIER_NATIVE_APP) ? window.__RAPIER_NATIVE_APP : '';
+	const _nativeStoreRapier = hasNative && _nativePlatformId === 'windows' && _nativeAppId === 'rapier' && window.__RAPIER_NATIVE_STORE === true;
 	const _nativeHostRuntime = Object.seal({
 		sequence: 0,
 		pending: new Map(),
@@ -1876,6 +1878,13 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		});
 	}
 
+	function _webPickWritableFile(filename) {
+		return _webPickSaveDestination(filename).then(function (selected) {
+			if (selected === _WEB_PICKER_UNAVAILABLE) return { unavailable: true };
+			return selected && selected.handle && typeof selected.handle.createWritable === 'function' ? { handle: selected.handle } : selected ? { unavailable: true } : null;
+		});
+	}
+
 	function _documentHandleKey(options) {
 		var authority = options && String(options.documentAuthority || '').trim();
 		return authority ? 'authority:' + authority : null;
@@ -2430,7 +2439,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	}
 	function _nativeProAuthority() {
 		var id = String(_nativeHostRuntime.state.platformId || _nativePlatformId).toLowerCase();
-		return !!(hasNative && (id === 'android' || id === 'native'));
+		return !!(hasNative && (id === 'android' || id === 'native' || id === 'windows' && _nativeStoreRapier));
 	}
 
 	function _normalizeProState(raw) {
@@ -3359,6 +3368,8 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		var environment = Object.freeze({
 			get id() { return String(raw.id || 'unknown').toLowerCase(); },
 			get android() { return environment.id === 'android'; },
+			get app() { return raw.app === 'rapier' || raw.app === 'watercolor' || raw.app === 'converter' ? raw.app : ''; },
+			get paints() { return environment.app !== 'rapier'; },
 			get native() { return raw.native === true; },
 			get network() { return raw.native !== true || raw.network === true; },
 			get here() { return environment.id === 'web' ? 'This browser' : 'This app'; },
@@ -3488,6 +3499,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			}; },
 			get exportArtifact() { return method('exportArtifact'); },
 			get prepareExportArtifact() { return method('prepareExportArtifact'); },
+			get pickWritableFile() { return method('pickWritableFile'); },
 			get takeBoot() { return method('takeBootDocument'); },
 			get hasPendingBoot() { return method('hasPendingBootDocument'); },
 			get finishBoot() { return method('finishBoot'); },
@@ -3630,6 +3642,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			observeFileGeneration: _webFileGeneration,
 			saveAs: _webSaveAs,
 			prepareExportArtifact: _hasFsaSave ? _webPrepareExportArtifact : null,
+			pickWritableFile: _hasFsaSave ? _webPickWritableFile : null,
 			saveInPlace: _webSaveInPlace,
 		};
 	}
@@ -3799,6 +3812,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				});
 				return preferencesReady;
 			},
+			app: _nativeAppId,
 			ownsPreferenceStore: false,
 			get ownsRecoveryStore() { return _nativeCapability('lockedNotes'); },
 			get binaryRecoveryStore() { return _nativeCapability('binaryRecovery') ? binaryRecovery ||= _nativeBinaryRecoveryStore() : null; },

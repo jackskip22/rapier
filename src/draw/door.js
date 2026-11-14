@@ -8,6 +8,7 @@ const RAPIER_DRAW_DOOR_AT_BIRTH = (() => { try {
 	if (/^#v\/notes\/?$/.test(RAPIER_HASH_AT_BIRTH)) return null;
 	const path = /^\/(draw|watercolor|paint)\/?$/.exec(String(location.pathname || ''))?.[1];
 	if (path) return path;
+	if (_rapierBareLaunch() && window.RapierPlatform?.environment?.app === 'watercolor') return 'watercolor';
 	return _rapierBareLaunch() && RapierPreferences.read('startIn') === 'paint' ? 'paint' : null;
 } catch (_) { return null; } })();
 const RAPIER_DRAW_START_IN_PAINT = (() => { try {

@@ -7,7 +7,7 @@ description: "Make a .rapier.html file: the whole Rapier editor with your Markdo
 
 ## Start here
 
-Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the helper installed with this skill (below) when Node 22, a supported file surface and a Rapier `.html` page to build on are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.62 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
+Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the helper installed with this skill (below) when Node 22, a supported file surface and a Rapier `.html` page to build on are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.69 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
@@ -82,7 +82,7 @@ node cli.mjs notes.md --editor page.html out.html                       # a name
 
 It never overwrites: an existing output is refused, so pick a new name. Write the Markdown as Self-contained Markdown
 first (`rapier-markdown`) so pictures, layout and color travel inside the page. On their own computer, the person can
-make the same pages with the published package: `npx -- rapier-html@1.2.62 notes.md`, with the options above and no
+make the same pages with the published package: `npx -- rapier-html@1.2.69 notes.md`, with the options above and no
 `--editor`.
 
 ## When to use it

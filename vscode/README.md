@@ -2,6 +2,8 @@
 
 Write your Markdown files in [Rapier](https://rapier.website) inside VS Code: the same editor as the site.
 
+Rapier is also a free [Android app](https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Dvscode-rapier).
+
 - **Formatted or source.** Write in the formatted view; Ctrl+/ shows the source.
 - **Everything in the file.** Tables, checklists, math, Mermaid diagrams, comments, find and replace, compare.
 - **The file is unchanged except for your edits.** VS Code saves it. Line endings, the byte order mark and the final

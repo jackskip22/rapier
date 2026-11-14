@@ -121,7 +121,7 @@ const _rapierPictureFind = (() => {
 				if (!entry.reading) continue;
 				if (entry.query !== query) {
 					entry.query = query;
-					entry.matches = _rapierOcrModule().pictureMarks(entry.reading, query, undefined, _RAPIER_FIND_MATCH_LIMIT + 1).map((quad, ordinal) =>
+					entry.matches = _rapierOcrModule().pictureMarks(entry.reading, query).map((quad, ordinal) =>
 						({surface: 'picture', blockId: entry.blockId, entry, quad, ordinal, order: entry.order, range: null}));
 				}
 				for (const match of entry.matches) { match.order = entry.order; records.push(match); }
@@ -148,8 +148,6 @@ const _rapierPictureFind = (() => {
 					(a.entry?.raw && b.entry?.raw ? a.entry.imageIndex - b.entry.imageIndex : 0) || (a.ordinal || 0) - (b.ordinal || 0);
 			});
 		}
-		overflow ||= records.length > _RAPIER_FIND_MATCH_LIMIT;
-		records.length = Math.min(records.length, _RAPIER_FIND_MATCH_LIMIT);
 		return {records, overflow};
 	}
 	function refresh() {
@@ -175,14 +173,7 @@ const _rapierPictureFind = (() => {
 		const kept = result.records.findIndex(row => row === selected || selected && selected.surface !== 'picture' &&
 			row.surface === selected?.surface && row.blockId === selected.blockId && row.start === selected.start && row.end === selected.end);
 		rapier.find.current = kept >= 0 ? kept : Math.min(rapier.find.current, Math.max(0, result.records.length - 1));
-		if (CSS.highlights) {
-			const ranges = result.records.filter(row => row.surface !== 'picture' && row.range).map(row => row.range);
-			if (ranges.length) CSS.highlights.set('rapier-find-all', new Highlight(...ranges));
-			else CSS.highlights.delete('rapier-find-all');
-			const current = result.records[rapier.find.current];
-			if (current?.surface !== 'picture' && current?.range) CSS.highlights.set('rapier-find-current', new Highlight(current.range));
-			else CSS.highlights.delete('rapier-find-current');
-		}
+		_rapierSyncFindHighlights();
 		_setFindCount(result.records.length ? rapier.find.current + 1 : 0, _rapierFindTotalLabel());
 		_findScheduleOverlay();
 	}

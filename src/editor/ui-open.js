@@ -145,7 +145,7 @@ function _rapierUiOpenIconColour() {
 	renderSwitch(_rapierUi.refs.iconSwatches, _rapierUiPro.launcherIcon);
 	sheet.focus({preventScroll: true});
 }
-function _rapierUiOpenInterchange(overlay) {
+function _rapierUiOpenInterchange(overlay, onEscape = null) {
 	if (overlay === _rapierUi.refs.shareOverlay && !_rapierEmbedFeatureAllowed('share')) return false;
 	const refs = _rapierUi.refs;
 	if (overlay === refs.shareOverlay) _rapierShareLedgerReset();
@@ -153,5 +153,5 @@ function _rapierUiOpenInterchange(overlay) {
 	closeDialog(refs.exportOverlay);
 	closeDialog(refs.copyOverlay);
 	closeDialog(refs.shareOverlay);
-	openDialog(overlay, { panel: '.settings-panel' });
+	openDialog(overlay, { panel: '.settings-panel', onEscape });
 }

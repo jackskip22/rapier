@@ -1,4 +1,6 @@
 .tok, .source-highlight code { color: var(--color-text); background: transparent; }
+.tok-part { display: block; position: relative; font-family: monospace; }
+.tok-part > .tok-text { font-family: var(--md-font-mono, monospace); }
 
 .source-mode--prose .source-highlight code,
 .source-mode--prose .source-highlight code * {

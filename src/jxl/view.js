@@ -86,14 +86,18 @@
 		const scene = make('section', 'rapier-jxl-view__more'), sceneTitle = make('h2', 'rapier-jxl-view__title', C.SCENE.title), stage = make('div', 'rapier-jxl-scene__stage');
 		sceneTitle.id = 'rapier-jxl-scene'; scene.setAttribute('aria-labelledby', sceneTitle.id);
 		scene.append(sceneTitle, make('p', 'rapier-jxl-view__note', C.SCENE.note), stage);
-		const example = make('section', 'rapier-jxl-view__more'), exampleTitle = make('h2', 'rapier-jxl-view__title', C.EXAMPLE.title), exampleSlot = make('div', 'rapier-jxl-view__example rapier-jxl-view__example--full');
-		const exampleNote = make('p', 'rapier-jxl-view__note');
-		exampleTitle.id = 'rapier-jxl-example'; example.setAttribute('aria-labelledby', exampleTitle.id);
-		exampleNote.classList.add('rapier-jxl-view__note--center');
-		example.append(exampleTitle, exampleSlot, exampleNote, localNote(), make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center', C.EXAMPLE.credit));
-		_rapierJxlMakerPart.tabs(body, [fold, example, more, scene, _rapierToolAlso('/jxl')]);
+		const clipBlock = spec => {
+			const section = make('section', 'rapier-jxl-view__more'), title = make('h2', 'rapier-jxl-view__title', spec.title), slot = make('div', 'rapier-jxl-view__example rapier-jxl-view__example--full'), note = make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center');
+			title.id = spec.id; section.setAttribute('aria-labelledby', title.id);
+			section.append(title, slot, note);
+			if (spec.local !== false) section.append(localNote());
+			if (spec.credit) section.append(make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center', spec.credit));
+			return {spec, section, slot, note, shown: null, near: null};
+		};
+		const example = clipBlock({...C.EXAMPLE, id: 'rapier-jxl-example'}), clip = clipBlock({...C.CLIP, id: 'rapier-jxl-clip'});
+		_rapierJxlMakerPart.tabs(body, [fold, example.section, more, scene, clip.section, _rapierToolAlso('/jxl')]);
 		root.append(bar, body);
-		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, example, exampleSlot, exampleNote, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
+		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, clips: [example, clip], rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
 	}
 
 	function paint(row) {
@@ -355,7 +359,7 @@
 		root.addEventListener('drop', event => { if (!event.dataTransfer?.files.length) return; event.preventDefault(); view.pick.removeAttribute('data-over'); add([...event.dataTransfer.files]); });
 		root.addEventListener('paste', event => { const files = [...event.clipboardData?.files || []].filter(file => /^(image|video)\//.test(file.type)); if (files.length) { event.preventDefault(); add(files); } });
 		sceneWhenNear(view);
-		exampleWhenNear(view);
+		for (const block of view.clips) clipWhenNear(view, block);
 		overall();
 		view.pick.querySelector('input').focus({preventScroll: true});
 		if (view.chosen?.length) { const chosen = view.chosen; view.chosen = null; view.input.value = ''; add(chosen); }
@@ -371,35 +375,35 @@
 		}, {root: self.stage.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
 		self.near.observe(self.stage);
 	}
-	function exampleWhenNear(self) {
-		if (!_rapierPartAvailable('jxlexample')) { self.example.hidden = true; return; }
-		const near = new IntersectionObserver(entries => {
+	function clipWhenNear(self, block) {
+		const {spec} = block;
+		if (!_rapierPartAvailable(spec.part)) { block.section.hidden = true; return; }
+		block.near = new IntersectionObserver(entries => {
 			if (!entries.some(entry => entry.isIntersecting)) return;
-			near.disconnect();
-			RapierParts.check('jxlexample').catch(() => {}).then(() => RapierParts.need('jxlexample')).then(() => {
-				if (view !== self || self.exampleShown) return;
-				const E = globalThis.RapierJxlExample, bytes = Uint8Array.from(atob(E.JXL), c => c.charCodeAt(0));
-				self.exampleShown = C.showMade(new Blob([bytes], {type: 'image/jxl'}), 'rapier-jxl-view__media', 'Earth from the International Space Station, animated JPEG XL');
-				self.exampleSlot.replaceChildren(self.exampleShown.node);
-				self.exampleNote.textContent = 'GIF ' + size(E.GIF_BYTES) + ' → JPEG XL ' + size(bytes.length) + ' · ' + percent({size: bytes.length, before: E.GIF_BYTES});
+			block.near.disconnect();
+			RapierParts.check(spec.part).catch(() => {}).then(() => RapierParts.need(spec.part)).then(() => {
+				if (view !== self || block.shown) return;
+				const E = globalThis[spec.global], bytes = Uint8Array.from(atob(E.JXL), c => c.charCodeAt(0));
+				block.shown = C.showMade(new Blob([bytes], {type: 'image/jxl'}), 'rapier-jxl-view__media', spec.alt);
+				block.slot.replaceChildren(block.shown.node);
+				block.note.textContent = spec.caption ?? 'GIF ' + size(E.GIF_BYTES) + ' → JPEG XL ' + size(bytes.length) + ' · ' + percent({size: bytes.length, before: E.GIF_BYTES});
 			}, error => {
 				if (view !== self) return;
-				if (error?.cause?.code === 'part_not_carried') self.example.hidden = true;
-				else self.exampleSlot.replaceChildren(make('p', 'rapier-jxl-view__note', C.EXAMPLE.missing));
+				if (error?.cause?.code === 'part_not_carried') block.section.hidden = true;
+				else block.slot.replaceChildren(make('p', 'rapier-jxl-view__note', spec.missing));
 			});
-		}, {root: self.example.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
-		near.observe(self.example);
-		self.exampleNear = near;
+		}, {root: block.section.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
+		block.near.observe(block.section);
 	}
 	function close() {
 		if (!view) return;
 		view.controller?.abort();
-		view.near?.disconnect(); view.exampleNear?.disconnect(); view.mounted?.unmount();
+		view.near?.disconnect(); for (const block of view.clips) block.near?.disconnect(); view.mounted?.unmount();
 		const done = view;
 		view = null;
 		done.follow?.popup.end();
 		for (const row of done.rows) { row.shown?.end(); row.results.clear(); row.result = null; }
-		done.exampleShown?.end();
+		for (const block of done.clips) block.shown?.end();
 		if (done.notices?.root.parentElement === done.root) done.notices.home.append(done.notices.root);
 		done.maker?.unbind();
 		done.root.remove();

@@ -91,6 +91,39 @@ function rememberFlowchartLayout(source, recipe, graph = null, nextSource = null
   return state;
 }
 
+const PLACE_LINE = /(^|[\n\r])([ \t]*)(%% rapier-at(?:[ \t]+[^\n\r]*)?)(?=[\n\r]|$)/;
+const PLACE = /^([A-Za-z0-9_-]{1,64})=(0|[1-9]\d{0,5}),(0|[1-9]\d{0,5})$/;
+function flowchartPlaceLine(source) {
+  const match = typeof source === 'string' ? PLACE_LINE.exec(source) : null;
+  if (!match) return null;
+  const start = match.index + match[1].length + match[2].length, places = new Map();
+  for (const word of match[3].slice('%% rapier-at'.length).trim().split(/[ \t]+/)) {
+    const place = PLACE.exec(word);
+    if (place) places.set(place[1], {x: Number(place[2]), y: Number(place[3])});
+  }
+  return {start, text: match[3], places};
+}
+const flowchartPlaces = source => flowchartPlaceLine(source)?.places || new Map();
+
+function moveFlowchartBox(source, id, x, y) {
+  const parsed = parseFlowchart(source);
+  if (!parsed.ok) return parsed;
+  if (!parsed.graph.nodes.some(node => node.id === id) || !Number.isFinite(x) || !Number.isFinite(y)) return {ok: false, code: 'edit_target', reason: 'That box is not in this flowchart.'};
+  const found = flowchartPlaceLine(source), places = new Map(found?.places || []), ids = new Set(parsed.graph.nodes.map(node => node.id));
+  places.set(id, {x: Math.max(0, Math.min(999999, Math.round(x))), y: Math.max(0, Math.min(999999, Math.round(y)))});
+  const line = '%% rapier-at ' + [...places].filter(([name]) => ids.has(name)).map(([name, at]) => name + '=' + at.x + ',' + at.y).join(' ');
+  if (found && found.text === line) return {ok: true, source, splice: null};
+  let splice;
+  if (found) splice = {pos: found.start, removed: found.text, inserted: line};
+  else {
+    const end = source.replace(/\s+$/, '').length, eol = /\r\n|\n|\r/.exec(source)?.[0] || '\n';
+    const last = source.slice(0, end).split(/\r\n|\n|\r/).at(-1), indent = /^[ \t]*/.exec(last)[0];
+    splice = {pos: end, removed: '', inserted: eol + indent + line};
+  }
+  const next = source.slice(0, splice.pos) + splice.inserted + source.slice(splice.pos + splice.removed.length);
+  return parseFlowchart(next).ok ? {ok: true, source: next, splice} : {ok: false, code: 'edit_target', reason: 'That box is not in this flowchart.'};
+}
+
 function lowerFlowchart(graph, options = null) {
   const maxFigures = Math.max(FLOWCHART_LIMITS?.figures || 0, FLOWCHART_LAYOUT_LIMITS.figures);
   const maxObstacles = Math.max(FLOWCHART_LIMITS?.obstacles || 0, FLOWCHART_LAYOUT_LIMITS.obstacles);
@@ -132,12 +165,13 @@ function lowerFlowchart(graph, options = null) {
         .replace(/\|[^|\n]*\|/g, ' ').replace(/\[[^\]\n]*\]|\([^)\n]*\)|\{[^}\n]*\}/g, ' ');
       for (const match of bare.matchAll(/[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*/g)) if (nodes.has(match[0]) && !written.has(match[0])) written.set(match[0], written.size);
     }
+    const places = new Map([...flowchartPlaces(graph._source)].filter(([id]) => nodes.has(id)));
     const lay = prior => _rapierDrawNormalizeAgentRecipe({
       figures,
       direction: FLOWCHART_DIRECTIONS[graph.direction],
       ...(prior ? {prior} : {})
-    }, {flowchart: true, written});
-    let recipe = (autoPrior && lay(autoPrior)) || lay(null);
+    }, {flowchart: true, written, ...(places.size ? {places} : {})});
+    let recipe = (autoPrior && lay(autoPrior)) || (autoPrior && places.size ? null : lay(null));
     if (recipe) for (const group of graph.groups) {
       const title = recipe.shapes.find(shape => shape.group === group.id && shape.recognized === 'text');
       if (title) { labels[title.id] = {kind: 'group', id: group.id}; parts[title.id] = {kind: 'group', id: group.id}; }
@@ -189,21 +223,30 @@ function editFlowchartLabel(source, target, value, ...rest) {
   return result;
 }
 
-const drawable = (edit, keepLayout = true) => (source, ...args) => {
+const drawable = (edit, keepLayout = true, keeps = null) => (source, ...args) => {
   const result = edit(source, ...args);
   if (!result.ok || result.splice === null) return result;
   const baseKey = normSource(source), nextKey = normSource(result.source);
   const prior = keepLayout && baseKey ? _renderedLayouts.get(baseKey) : null;
+  if (prior) { _renderedLayouts.delete(baseKey); _renderedLayouts.set(baseKey, prior); }
   if (prior && nextKey) _editLineage.set(nextKey, prior);
   const parsed = parseFlowchart(result.source);
   const lowered = lowerFlowchart(parsed.graph, prior ? {prior} : null);
   if (lowered.ok && nextKey) rememberFlowchartLayout(result.source, lowered.recipe, parsed.graph);
+  if (lowered.ok && keeps && !keeps(lowered.recipe, ...args)) return {ok: false, code: 'flowchart_place', reason: 'A box cannot stand on another box.'};
   return lowered.ok ? result : {ok: false, code: lowered.code, reason: lowered.reason};
+};
+const clearOfBoxes = (recipe, id) => {
+  const boxes = recipe.shapes.filter(shape => !['line', 'arrow', 'text'].includes(shape.recognized) && shape.geom);
+  const box = shape => _rapierDrawShapeBBoxIn(shape, recipe), mine = boxes.find(shape => shape.id === id);
+  if (!mine) return true;
+  const a = box(mine);
+  return boxes.every(shape => shape === mine || (b => a.maxX <= b.minX || b.maxX <= a.minX || a.maxY <= b.minY || b.maxY <= a.minY)(box(shape)));
 };
 const flowchartEdits = Object.freeze({addBox: drawable(addFlowchartBox), connect: drawable(connectFlowchartBoxes), deleteBox: drawable(deleteFlowchartBox),
   deleteEdge: drawable(deleteFlowchartEdge), shape: drawable(setFlowchartShape), direction: drawable(setFlowchartDirection, false), edgeLabel: drawable(setFlowchartEdgeLabel),
   addGroup: drawable(addFlowchartSubgraph, false), deleteGroup: drawable(deleteFlowchartSubgraph, false),
-  groupLabel: drawable(renameFlowchartSubgraph), moveGroup: drawable(moveFlowchartBoxes, false)});
+  groupLabel: drawable(renameFlowchartSubgraph), moveGroup: drawable(moveFlowchartBoxes, false), move: drawable(moveFlowchartBox, true, clearOfBoxes)});
 
 function raiseFlowchart(recipe, options = null) {
   const directions = options?.direction ? [options.direction] : ['TD', 'LR', 'BT', 'RL'];
@@ -233,4 +276,4 @@ function raiseFlowchart(recipe, options = null) {
   return fallback || {ok: false, code: 'flowchart_not_representable'};
 }
 
-export {indexMermaid, editMermaid, annotateMermaidSVG, parseFlowchart, editFlowchartLabel, lowerFlowchart, renderFlowchart, raiseFlowchart, flowchartEdits, nextFlowchartId};
+export {indexMermaid, editMermaid, annotateMermaidSVG, parseFlowchart, editFlowchartLabel, lowerFlowchart, renderFlowchart, raiseFlowchart, flowchartEdits, flowchartPlaces, nextFlowchartId};

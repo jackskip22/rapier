@@ -27,7 +27,7 @@ const _rapierEmbeddedImages = (() => {
     if (authority === next) return;
     epoch++; closeCodecs();
     for (const request of pending.values()) request.controller.abort(cancelled());
-    visibility?.disconnect(); seen?.disconnect(); watched.clear();
+    visibility.disconnect(); seen.disconnect(); watched.clear();
     clearPresentations(); pending.clear(); dimensions.clear(); portableCache.clear();
     globalThis.RapierImageInspection.close();
     primed = null; index = null; currentSource = ''; rootId = ''; authority = next; warned = false; damagedWarned = false;
@@ -77,9 +77,12 @@ const _rapierEmbeddedImages = (() => {
     const createCodec = await loadCodecEntry();
     assertCurrent(stamp, identity);
     if (codecs.has(name)) return codecs.get(name);
-    const url = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));
+    const classic = location.protocol === 'file:' || globalThis.origin === 'null'
+      ? '(function () {"use strict";\n' + source.replaceAll('import.meta.url', 'self.location.href') + '\n}).call(undefined);' : null;
+    const type = classic && !classic.includes('import.meta') ? 'classic' : 'module';
+    const url = URL.createObjectURL(new Blob([type === 'classic' ? classic : source], {type: 'text/javascript'}));
     const room = name === 'rapier-jxl' ? {maxPixels: 268435456, maxPendingBytes: 268435456 * 4} : {};
-    const held = {codec: createCodec({module: name, ...room, workerFactory: () => new Worker(url, {type: 'module'})}), url, idle: 0};
+    const held = {codec: createCodec({module: name, ...room, workerFactory: () => new Worker(url, {type})}), url, idle: 0};
     codecs.set(name, held);
     return held;
   }
@@ -339,7 +342,7 @@ const _rapierEmbeddedImages = (() => {
       if (native) {
         if (native.width !== dimensions.width || native.height !== dimensions.height) throw new Error('Embedded image dimensions do not match its record');
       } else {
-        if (record.codec === 'image/jxl') {
+        if (record.codec === 'image/jxl' || type === 'image/svg+xml' && !jxlDisplayable() && nestedJxl({type, url})) {
           await jxlProbed;
           damaged = containerDamaged || prepared.damaged === true || ['JXL_DECODE', 'JXL_INPUT'].includes(fallbackFailure?.code) || !prepared.playbackUnavailable && jxlDisplayable();
           releaseURL(displayUrl);
@@ -391,21 +394,21 @@ const _rapierEmbeddedImages = (() => {
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
       '<rect width="' + w + '" height="' + h + '" fill="#d4d4d4"/>' + text + mark + '</svg>'));
   }
-  const seen = typeof IntersectionObserver === 'function' ? new IntersectionObserver(rows => {
+  const seen = new IntersectionObserver(rows => {
     for (const row of rows) if (row.isIntersecting) {
       seen.unobserve(row.target);
       if (host.contains(row.target) && row.target.isConnected) notifyStale(row.target._rapierJxlNotice);
     }
-  }) : null;
+  });
   function noticeWhenSeen(image, signature) {
     if (warned) return;
     image._rapierJxlNotice = signature;
-    if (seen) seen.observe(image); else notifyStale(signature);
+    seen.observe(image);
   }
   function notifyStale(signature) {
     if (warned) return;
     warned = true;
-    seen?.disconnect();
+    seen.disconnect();
     let mark = 2166136261;
     for (let at = 0, text = String(signature || ''); at < text.length; at++) mark = Math.imul(mark ^ text.charCodeAt(at), 16777619);
     mark = (mark >>> 0).toString(36);
@@ -625,6 +628,17 @@ const _rapierEmbeddedImages = (() => {
     for (const image of host.querySelectorAll('img[data-rapier-asset-state="held"]')) image.removeAttribute('data-rapier-asset-state');
     schedule();
   }
+  async function shown(image, signal) {
+    try { await image.decode(); }
+    catch (error) {
+      if (!image.complete && !signal.aborted) await new Promise(done => {
+        const stop = new AbortController(), end = () => { stop.abort(); done(); };
+        for (const [target, name] of [[image, 'load'], [image, 'error'], [signal, 'abort']]) target.addEventListener(name, end, {signal: stop.signal});
+      });
+      if (signal.aborted) throw new DOMException('The picture was replaced.', 'AbortError');
+      if (!(image.complete && image.naturalWidth > 0)) throw error;
+    }
+  }
   const originalViewHidden = () => rapier.view.mode === 'source' || document.body.classList.contains('rapier-notes-open');
   async function reveal(image) {
     const id = imageKey(image);
@@ -652,7 +666,7 @@ const _rapierEmbeddedImages = (() => {
         if (typeof _rapierDrawPrimeImageRecipe === 'function') _rapierDrawPrimeImageRecipe(image, row.signature, row.recipe, row.recipeError, row.resources);
         image.src = presentUrl(row);
         _rapierRenderModule('render-markdown')._rapierApplyImageGeometry(image, row);
-        if (image.decode) await image.decode();
+        if (image.decode) await shown(image, controller.signal);
         if (suspended || controller.signal.aborted || !image.isConnected || presented.get(image) !== ticket || stamp !== rapier.identity.authority || imageKey(image) !== id) return;
         if (recordFor(id, documentIndex().index)?.url !== row.signature) { image.removeAttribute('data-rapier-asset-state'); schedule(); return; }
         if (row.animated) image.setAttribute('data-rapier-animation', row.signature); else image.removeAttribute('data-rapier-animation');
@@ -673,12 +687,12 @@ const _rapierEmbeddedImages = (() => {
     })();
     return request.done;
   }
-  const visibility = typeof IntersectionObserver === 'function' ? new IntersectionObserver(rows => {
+  const visibility = new IntersectionObserver(rows => {
     for (const row of rows) if (row.isIntersecting && watched.delete(row.target)) {
       visibility.unobserve(row.target);
       if (host.contains(row.target) && row.target.dataset.rapierAssetState === 'waiting') void reveal(row.target);
     }
-  }, {root: host, rootMargin: '500px'}) : null;
+  }, {root: host, rootMargin: '500px'});
   function schedule() {
     if (frame || suspended) return;
     frame = requestAnimationFrame(refresh);
@@ -728,7 +742,7 @@ const _rapierEmbeddedImages = (() => {
       const id = imageKey(image), previous = presented.get(image), record = recordFor(id, current.index);
       if (globalThis.RapierPlatform?.files.relativeCandidate?.(id)) {
         if (originalViewHidden()) {
-          visibility?.unobserve(image); watched.delete(image); presented.delete(image);
+          visibility.unobserve(image); watched.delete(image); presented.delete(image);
           if (image.dataset.rapierAssetState !== 'held') image.dataset.rapierAssetState = 'held';
           if (image.getAttribute('src') !== placeholder) image.src = placeholder;
           continue;
@@ -737,7 +751,7 @@ const _rapierEmbeddedImages = (() => {
           image.removeAttribute('data-rapier-asset-state');
       }
       if (previous && (previous.authority !== authority || previous.signature !== record?.url)) {
-        areaNow(); visibility?.unobserve(image); watched.delete(image); image.removeAttribute('data-rapier-asset-state');
+        areaNow(); visibility.unobserve(image); watched.delete(image); image.removeAttribute('data-rapier-asset-state');
       }
       const state = image.dataset.rapierAssetState;
       if (state === 'waiting' && !watched.has(image) || state === 'loading' && !revealing.has(image)) { areaNow(); image.removeAttribute('data-rapier-asset-state'); }
@@ -754,7 +768,7 @@ const _rapierEmbeddedImages = (() => {
       image.dataset.rapierAssetState = 'waiting';
       image.loading = 'eager';
       const bounds = image.getBoundingClientRect();
-      if (!visibility || bounds.bottom >= area.top - 500 && bounds.top <= area.bottom + 500) void reveal(image);
+      if (bounds.bottom >= area.top - 500 && bounds.top <= area.bottom + 500) void reveal(image);
       else { watched.add(image); visibility.observe(image); }
     }
     for (const image of host.querySelectorAll('img[data-rapier-image-geometry]:not([data-rapier-asset]):not([data-rapier-image-url])')) nativeGeometry(image);
@@ -781,7 +795,7 @@ const _rapierEmbeddedImages = (() => {
         const bounds = image.getBoundingClientRect();
         if (!image.getClientRects().length || bounds.bottom < area.top - 500 || bounds.top > area.bottom + 500) continue;
         if (imageKey(image) && !['ready', 'error', 'held'].includes(image.dataset.rapierAssetState)) {
-          visibility?.unobserve(image); watched.delete(image);
+          visibility.unobserve(image); watched.delete(image);
           jobs.push(reveal(image));
           continue;
         }
@@ -795,7 +809,15 @@ const _rapierEmbeddedImages = (() => {
     }
     return false;
   }
-  const observer = new MutationObserver(schedule);
+  function codePaint(record) {
+    const mark = Symbol.for('rapier.codePaint'), target = record.target;
+    if (!target || target[mark] !== true) return false;
+    if (record.type === 'attributes') return record.attributeName === 'class' && target.className === 'tok-part tok';
+    return record.type === 'childList' && record.addedNodes.length > 0 &&
+        Array.prototype.every.call(record.addedNodes, node => node[mark] === true) &&
+      Array.prototype.every.call(record.removedNodes, node => node[mark] === true || node.nodeType === 3);
+  }
+  const observer = new MutationObserver(records => { if (records.some(record => !codePaint(record))) schedule(); });
   observer.observe(host, {childList: true, subtree: true});
   host.addEventListener('load', event => nativeGeometry(event.target), true);
   window.addEventListener('pagehide', () => {
@@ -805,7 +827,7 @@ const _rapierEmbeddedImages = (() => {
     for (const request of pending.values()) request.controller.abort(cancelled());
     pending.clear(); clearPresentations(); dimensions.clear(); portableCache.clear(); primed = null;
     globalThis.RapierImageInspection.close();
-    visibility?.disconnect(); watched.clear();
+    visibility.disconnect(); watched.clear();
     for (const image of host.querySelectorAll('img[data-rapier-asset-state]'))
       image.removeAttribute('data-rapier-asset-state');
   });
@@ -850,7 +872,7 @@ const _rapierEmbeddedImages = (() => {
     else {
       if (row.type === 'image/jxl') {
         let restored = null;
-        try { restored = await codec('restore', assets.decodeDataImage(row.url)); } catch (error) { if (error?.code !== 'JXL_RECONSTRUCTION') throw error; }
+        try { restored = await codec('restore', assets.decodeDataImage(row.url)); } catch (error) { if (error?.code !== 'JXL_RECONSTRUCTION' && error?.code !== 'JXL_WORKER') throw error; }
         if (restored) result = {...row, type: 'image/jpeg', url: 'data:image/jpeg;base64,' + RapierBundleIO.toBase64(restored), undisplayable: false};
       }
       if (!result && !row.undisplayable) {

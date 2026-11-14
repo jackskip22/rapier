@@ -29,15 +29,6 @@ const scopes = {drive: DRIVE_SCOPES, dropbox: DROPBOX_SCOPES, onedrive: ONEDRIVE
 const tokenString = value => typeof value === 'string' && value.length > 0 && !/[\x00-\x20\x7f]/.test(value);
 const sameConnection = (a, b) => !!a && !!b && ['provider', 'place', 'device', 'connectionId', 'destination'].every(key => a[key] === b[key]);
 const publicConnection = value => value ? Object.freeze({provider: value.provider, place: value.place, connectionId: value.connectionId, destination: value.destination}) : null;
-export function verificationReturn(url, proof, search, config = CLOUDFLARE_SYNC, now = Date.now()) {
- try {
-  const pending = JSON.parse(proof), callback = new URL(url), params = new URLSearchParams(search);
-  return pending.verification === true && pending.clientId === config.clientId && pending.redirectUri === config.redirectUri &&
-   callback.origin + callback.pathname === config.redirectUri && !callback.username && !callback.password &&
-   pending.at <= now && now - pending.at <= PENDING_MS && params.getAll('state').length === 1 &&
-   params.get('state') === pending.state && typeof pending.state === 'string' && pending.state.length >= 16;
- } catch { return false; }
-}
 
 export function createProviderSession({folder, fetch: fetchFn, pendingStorage, pendingKey = 'rapier:provider:pending',
  provider = null, mode = provider ? 'provider' : 'oauth', config = CLOUDFLARE_SYNC, registrations = OTHER_SYNC,

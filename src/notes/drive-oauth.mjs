@@ -4,7 +4,6 @@ export const AUTHORIZE_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 export const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
 export const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-export const RETURNS_TOKEN = true;
 export function authorizeUrl(options = {}) {
 	return AUTHORIZE_ENDPOINT + '?' + tokenAuthorizeParams(options, SCOPES);
 }

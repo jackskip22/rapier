@@ -713,7 +713,7 @@ if(typeof globalThis.WorkerGlobalScope==='function'&&globalThis instanceof globa
 const pngCodec = createPaintPNGCodec();
 export async function encodePaintRaster(pixels,options={}) {
 	if(options.picture==='png') {
-		const url=typeof CompressionStream==='function'?await pngCodec.compressed(pixels):pngCodec.encode(pixels);
+		const url=await pngCodec.compressed(pixels);
 		cancelled(options.signal); return url;
 	}
 	cancelled(options.signal);

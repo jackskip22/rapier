@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
-const srgbOf = c => c <= .0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - .055;
 const hash = (x, y, s) => { let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 1442695041); n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967295; };
 const vnoise = (x, y, s) => {
 	const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
@@ -97,5 +96,4 @@ export function shadeOil(surface, out, box, byte) {
 		}
 	}
 }
-export {srgbOf as oilSrgb};
 

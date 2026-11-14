@@ -47,7 +47,7 @@ const usageStorage = value => {
 };
 
 export function createWorkspaceNotes({url = globalThis.location?.href, fetch: send = globalThis.fetch?.bind(globalThis),
-	channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('rapier-notes') : null,
+	channel = new BroadcastChannel('rapier-notes'),
 	token = () => crypto.randomUUID(), clock = () => Date.now(), timers = globalThis,
 	beforeStep = async () => {}, afterStep = async () => {}} = {}) {
 	const origin = new URL(url);

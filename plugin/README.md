@@ -18,7 +18,7 @@ Rapier accesses only the document or configured store you share. It cannot searc
 - “Turn this Markdown report into a Rapier HTML file my friend can read and edit offline, with no Markdown app installed.”
 
 Open the returned editor link and keep it visible while painting. A queued painting is not finished: Claude checks
-that it committed before handing you the brush. If Water is unavailable, use regular brushes or an editable diagram.
+that it committed before handing you the brush. If Water needs WebGPU your browser lacks, open the link in one that has it.
 Later marks on the same paint surface can make an undo conflict; Rapier reports it rather than discarding your work.
 Live collaboration needs an internet connection; downloaded files remain yours to edit offline.
 

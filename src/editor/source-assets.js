@@ -209,17 +209,6 @@ globalThis.RapierSourceAssets = (() => {
     }
     admitted = null;
   }
-  function unfoldFoldedAppendix(source) {
-    const ta = document.getElementById('source-textarea');
-    if (!ta || !_rapierDocumentCommitAdmissionCurrent()) return;
-    const start = _rapierAbsPos(ta.selectionStart), end = _rapierAbsPos(ta.selectionEnd);
-    const scrollTop = ta.scrollTop;
-    expanded = true;
-    _rapierCancelViewRestore();
-    rapier.selection.scope = 'window';
-    _rapierHeavyWindowReset();
-    _rapierHeavyWindowMountFromString(source, start, end, {scrollTop, preserveAssets: true});
-  }
   function refresh() {
     identity();
     if (_rapierHeavyRuntime.composing || rapier.view.mode !== 'source' || rapier.document.docKind !== 'markdown') return;

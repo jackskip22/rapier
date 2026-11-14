@@ -806,19 +806,6 @@ export function bindMedia(ledger, rows = [], file, content, names, {close = fals
  if (row) { next.set(mediaKey(latest), {...row, end: latest.acts.at(-1)}); changed = true; }
  return changed ? sortedMedia([...next.values()]) : rows;
 }
-export function unboundMedia(ledger, rows = [], names) {
- return new Set(mediaStretches(ledger, rows, names).all.filter(stretch => !stretch.row).map(stretch => stretch.file));
-}
-export function joinMedia(lists) {
- const out = new Map();
- for (const rows of lists) for (const row of rows || []) {
-  const key = mediaKey(row), prior = out.get(key);
-  if (prior && (prior.content !== row.content || prior.end !== undefined && row.end !== undefined && prior.end !== row.end))
-   throw fault('notes_media_conflict', 'One stretch of a note\'s history names two different files');
-  if (!prior || row.end !== undefined) out.set(key, {...row});
- }
- return sortedMedia([...out.values()]);
-}
 export async function checkInverseMedia(manifest, ledger, {names, digest, inverse = null, relocate, recover}) {
  const before = validateManifest(manifest), held = new Set(before.canonical?.records.map(row => row.transaction.id) || []);
  let records = ledger.records;

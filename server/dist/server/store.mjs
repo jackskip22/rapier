@@ -115,6 +115,12 @@ class WorkspaceStorage {
       get:key=>structuredClone(this.values.get(key)),
       put:(key,value)=>{if(typeof key !== 'string' || value === undefined) throw new TypeError('A state key/value is required'); this.values.set(key,structuredClone(value));},
       delete:key=>this.values.delete(key),
+      list:({prefix='',start,startAfter,end,reverse=false,limit=Infinity}={})=>{
+        const keys=[...this.values.keys()].filter(key=>key.startsWith(prefix) && (start===undefined || key>=start) &&
+          (startAfter===undefined || key>startAfter) && (end===undefined || key<end)).sort();
+        if(reverse)keys.reverse();
+        return keys.slice(0,limit).map(key=>[key,structuredClone(this.values.get(key))]);
+      },
     };
   }
   transactionSync(fn) {

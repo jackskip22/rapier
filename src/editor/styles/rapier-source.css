@@ -843,9 +843,28 @@ body.light .compare-mark--add { background: color-mix(in srgb, var(--color-succe
 }
 #share-overlay .export-choice-card .export-choice-toggle { padding-top: var(--space-2); }
 #share-overlay .export-choice { min-height: 96px; }
-#share-overlay .export-choice[data-value="web"] .export-choice__label { font-size: var(--text-xl, 1.35rem); }
 #share-overlay .export-choice[data-value="source"] { min-height: 76px; }
-#share-overlay .export-choice[data-value="source"] .export-choice__label { font-size: var(--text-base, 1rem); }
+#share-overlay .export-choice__label {
+	font: 550 20px/1.3 var(--font-mono);
+	letter-spacing: var(--track-caps);
+	text-transform: uppercase;
+}
+#share-overlay .export-choice__ext {
+	font: var(--fw-regular) 14px var(--font-mono);
+	text-transform: lowercase;
+}
+#share-overlay .export-choice-toggle { justify-content: flex-start; }
+#share-overlay .export-choice-toggle__label {
+	font: var(--fw-regular) 14px var(--font-mono);
+	letter-spacing: var(--track-caps);
+	text-transform: uppercase;
+}
+#share-overlay .export-choice-toggle__state { font: inherit; letter-spacing: inherit; color: inherit; }
+#share-overlay .export-choice-toggle[aria-pressed="true"] .export-choice-toggle__state { color: var(--color-accent); }
+#share-overlay .export-choice[aria-disabled="true"],
+#share-overlay .export-choice[aria-disabled="true"]:focus-visible { background: color-mix(in srgb, var(--color-surface-2) 42%, var(--color-surface)); cursor: default; }
+#share-overlay .export-choice[aria-disabled="true"] > * { opacity: .42; }
+@media (hover:hover) and (pointer:fine){ #share-overlay .export-choice[aria-disabled="true"]:hover { background: color-mix(in srgb, var(--color-surface-2) 42%, var(--color-surface)); } }
 #share-overlay .navigator-title-row { align-items: center; margin-bottom: var(--space-3); }
 #share-overlay .navigator-title-row .settings-info-btn { margin-right: auto; }
 .export-choice-list { display: grid; gap: var(--space-3); }

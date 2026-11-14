@@ -80,13 +80,22 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Does it work on a phone?', 'Yes. Paint with your finger or a stylus. Watercolor needs WebGPU; without it, Rapier paints with Brushes.']),
 			Object.freeze(['Can I save my painting?', saved + ' as an editable drawing.']),
 		])}),
-	'/paint': Object.freeze({name: 'Paint', title: 'Free painting app online, no download | Rapier Paint',
-		description: 'Paint in your browser with oil, bristle, pencil, pen and watercolor brushes. Use a finger, mouse or pen. Free, no download, no account.',
+	// /paint answers "paint online" with Watercolor first: the page opens on Watercolor where the device runs it, on Brushes
+	// where it cannot (draw/draw.js, Draw's door).
+	'/paint': Object.freeze({name: 'Paint', title: 'Paint online free: watercolor and brushes | Rapier Paint',
+		description: 'Paint online with watercolor that flows: pigment spreads and dries on textured paper. Oil, pencil and pen too. Free on a phone or computer, no account.',
 		image: 'og-paint.png', imageSize: [1200, 630], imageAlt: 'Rapier Paint: paint on your phone',
-		h1: 'Free painting app online', view: 'paint', related: ['/watercolor', '/draw', '/jxl', '/notes'],
-		lead: 'This page opens a canvas with real brushes: oil, bristle, scumble, pencil and pen from MyPaint, and watercolor that flows. Paint with your finger, then smudge, erase and undo. Nothing to download or sign up for.',
+		h1: 'Paint online for free', view: 'paint', related: ['/watercolor', '/draw', '/jxl', '/notes'],
+		lead: 'This page opens a watercolor canvas. Wet pigment flows across textured paper, blends and dries with darker edges. Paint with a finger on a phone, or a mouse or pen on a computer. Brushes adds oil, bristle, scumble, pencil and pen from MyPaint. Nothing to download or sign up for.',
+		howTo: Object.freeze(['How to paint online with watercolor', Object.freeze([
+			'Open this page. Watercolor is ready where your device has WebGPU; without it, Brushes opens.',
+			'Choose a pigment and a brush size, then paint. Add another color while the first is wet to blend them.',
+			'For oil, pencil or pen, tap Watercolor at the top left, then Brushes.',
+			'Press Done to download the painting or add it to your document.'])]),
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
+			Object.freeze(['Can I paint with watercolor online?', 'Yes. This page opens on Watercolor. It needs WebGPU; without it, Rapier paints with Brushes.']),
+			Object.freeze(['Does it work on a phone?', 'Yes. Paint with your finger or a stylus.']),
 			Object.freeze(['Do I need to download an app?', 'No. It runs in your browser. On Android you can also install Rapier from Google Play.']),
 			Object.freeze(['Can kids use it?', 'Yes. No account, no tracking, no ads.']),
 			Object.freeze(['Can I save my painting?', saved + '.']),
@@ -95,7 +104,7 @@ export const DOORS = Object.freeze({
 	// converter's (jxl/convert.mjs, jxl/frames.mjs, jxl/png.mjs); the sizes are its own results for the card's painting (og-card.mjs).
 	'/jxl': Object.freeze({name: 'JPEG XL converter', title: 'Free JPEG XL converter and animated JXL maker: PNG, JPG, GIF, video | Rapier',
 		description: 'Convert PNG, JPG, GIF and video to JPEG XL (JXL), or make an animated JXL from GIFs, videos and pictures. Free, in your browser, offline.',
-		image: 'og-jxl-flowers.png', imageSize: [1200, 630], imageAlt: 'Watercolor flowers painted in Rapier. flowers.png: 710 KB to 428 KB, lossless. flowers.jpg: 152 KB to 125 KB, restores the JPEG exactly.',
+		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Free JPEG XL converter', view: 'jxl', encoder: Object.freeze({name: 'rapier-jxl', repository: 'https://github.com/jackskip22/rapier-jxl', package: 'https://www.npmjs.com/package/rapier-jxl'}), related: ['/paint', '/draw', '/notes'],
 		features: Object.freeze(['JPG, PNG, GIF, WebP, AVIF and APNG to JPEG XL', 'MP4, WebM and MOV to animated JPEG XL', 'Animated JPEG XL maker: GIFs, videos and pictures in one frame strip; reorder, skip, copy, reverse, boomerang; delays and loops', 'Lossless, High or Medium quality', 'Exact JPEG recompression', 'Keeps transparency, 16-bit PNG, color profiles and HDR', 'Runs offline on your device', 'Many files at once, zip download']),
 		lead: 'Convert PNG, JPG, GIF and video to JPEG XL (JXL), free. Files are made on your device, offline; nothing is uploaded. Choose the quality: Lossless, High or Medium. Under Lossless a JPEG gets smaller and the original restores exactly.',
@@ -279,8 +288,8 @@ export const DOORS = Object.freeze({
 // The site's documents, each a page of its own: the page's guide is the document (tools/seo-page.mjs guideSection), and the
 // editor opens the same document from the site's /docs/ (editor/engine.js _rapierGuideStarter). `file` is its name in docs/.
 export const GUIDES = Object.freeze({
-	'/agents': Object.freeze({name: 'Rapier for agents', file: 'agents.md', title: 'Rapier for AI agents: MCP server, tools and skills',
-		description: 'Connect Claude, Cursor, ChatGPT or any MCP client to Rapier with no account. Read and edit one live document with a person, draw, paint and export.',
+	'/agents': Object.freeze({name: 'Rapier for agents', file: 'agents.md', title: 'Rapier MCP server for AI agents: Markdown editor, JPEG XL, drawing, watercolor',
+		description: 'Free Markdown editor and MCP server for AI agents. Edit documents, notes, drawings and watercolor with a person, export files and convert pictures to JPEG XL. No account.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo'}),
 });
 // Every page the site serves from a door file, with its head.

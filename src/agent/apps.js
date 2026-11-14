@@ -43,7 +43,7 @@
   let withheld = false;
   const pairedId = window.parent === window && typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string' &&
     /^ws_[A-Za-z0-9_-]{43}$/.test(globalThis.RAPIER_PAIRED_DOCUMENT) ? globalThis.RAPIER_PAIRED_DOCUMENT : null;
-  let shareable = '', pairDialog = null;
+  let shareable = '', pairDialog = null, pairEscape = null;
   let agentAccess = null;
   let strandedDrafts = [];
   const viewed = new Set();
@@ -2518,19 +2518,6 @@
     return element;
   }
 
-  function confirmSheet(heading, body, verb) {
-    return new Promise(resolve => {
-      const pop = housePop('rapier-app-confirm-title', heading);
-      const text = document.createElement('p');
-      text.textContent = body;
-      let settled = false;
-      const finish = outcome => { if (settled) return; settled = true; pop.overlay.remove(); resolve(outcome); };
-      pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') finish(false); }, {signal: listeners.signal});
-      pop.row.append(popButton('cancel', 'cancel', () => finish(false)), popButton(verb, 'destructive', () => finish(true)));
-      pop.show(text);
-    });
-  }
-
   async function sendPassageRequest(target, question) {
     const available = () => initialized && !closed && !closing && !switching && !withheld &&
       !!base && target.document === token && target.documentId === base.documentId && object(capabilities.message);
@@ -2909,7 +2896,7 @@
     ownerLink.target = '_blank'; ownerLink.rel = 'noopener noreferrer';
     ownerApproval.append(ownerLink); ownerApproval.hidden = true;
     let open = true, deciding = false, poll = null, activeAt = Date.now(), wake = null;
-    const close = () => { open = false; wake?.(); pop.overlay.remove(); pairDialog = null; setStatus('unpaired'); };
+    const close = () => { open = false; wake?.(); pop.overlay.remove(); pairDialog = null; pairEscape = null; setStatus('unpaired'); };
     const touched = () => { activeAt = Date.now(); };
     const rest = ms => new Promise(resolve => { const timer = ms === null ? 0 : setTimeout(resolve, ms); wake = () => { clearTimeout(timer); wake = null; resolve(); }; });
     document.addEventListener('visibilitychange', () => { if (visible()) { touched(); wake?.(); } }, {signal: listeners.signal});
@@ -2942,7 +2929,7 @@
     const showCode = value => { codeText.textContent = value; offerCopy(/^[A-Z]{4}$/.test(value)); };
     allow.hidden = again.hidden = true; offerCopy(false);
     pop.row.append(allow, again, cancel);
-    pop.overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); void decide('cancel'); } }, {signal: listeners.signal});
+    pairEscape = () => { void decide('cancel'); };
     pairDialog = pop.overlay;
     pop.show(lead, code, words, ownerApproval);
     document.body.prepend(pop.overlay);
@@ -3031,11 +3018,16 @@
     updateSafeArea();
     const blockBeforeOpen = event => {
       if (base && !switching) return;
+      const own = notice.contains(event.target) || pairDialog?.contains(event.target) ||
+        homeDialog?.overlay.contains(event.target) || fileDialog?.overlay.contains(event.target);
       if (event.type === 'keydown' && (event.key === 'Tab' ||
-          ((notice.contains(event.target) || pairDialog?.contains(event.target) || homeDialog?.contains(event.target) || fileDialog?.contains(event.target)) &&
-            !event.ctrlKey && !event.metaKey && ['Enter', ' '].includes(event.key)))) return;
+          (own && !event.ctrlKey && !event.metaKey && ['Enter', ' ', 'Escape'].includes(event.key)))) {
+        if (event.key !== 'Escape' || !pairDialog?.contains(event.target)) return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (event.type === 'keydown' && event.key === 'Escape' && !event.repeat && !event.isComposing && pairEscape &&
+          !homeDialog?.overlay.contains(event.target) && !fileDialog?.overlay.contains(event.target)) pairEscape();
     };
     for (const type of ['keydown', 'beforeinput', 'cut', 'paste', 'drop']) {
       window.addEventListener(type, blockBeforeOpen, {capture: true, signal: listeners.signal});

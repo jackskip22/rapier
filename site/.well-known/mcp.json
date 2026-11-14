@@ -3,7 +3,7 @@
   "name": "website.rapier/markdown-editor-draw-paint-jpeg-xl",
   "title": "Rapier - Markdown Editor & Art",
   "description": "Markdown editor for notes, diagrams, drawing and painting with your AI, and a JPEG XL converter.",
-  "version": "1.2.69",
+  "version": "1.2.70",
   "websiteUrl": "https://rapier.website/agents",
   "repository": {
     "url": "https://github.com/jackskip22/rapier-plugins",

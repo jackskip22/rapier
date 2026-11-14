@@ -23,7 +23,10 @@ export function createTypography() {
   const own = paragraph => [paragraph, ...[...paragraph.querySelectorAll('*')].filter(element => !element.closest(flowFloat))];
 
   function paragraphs(root, selector = candidates) {
-    return [...(root?.matches?.(selector) ? [root] : []), ...(root?.querySelectorAll?.(selector) || [])];
+    const found = root?.matches?.(selector) ? [root] : [];
+    if (typeof root?.getElementsByTagName !== 'function') return found;
+    for (const paragraph of root.getElementsByTagName('p')) if (paragraph.matches(selector)) found.push(paragraph);
+    return found;
   }
 
   function runs(paragraph, hard = null) {

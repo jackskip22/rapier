@@ -143,11 +143,9 @@ function _rapierOcrMarks(img, reading, needles, live) {
 	};
 	place();
 	requestAnimationFrame(() => requestAnimationFrame(() => { if (layer.isConnected) place(); }));
-	if (typeof ResizeObserver === 'function') {
-		const watch = new ResizeObserver(() => { if (layer.isConnected && img.isConnected) place(); else watch.disconnect(); });
-		watch.observe(img); watch.observe(parent);
-		layer._rapierOcrWatch = watch;
-	}
+	const watch = new ResizeObserver(() => { if (layer.isConnected && img.isConnected) place(); else watch.disconnect(); });
+	watch.observe(img); watch.observe(parent);
+	layer._rapierOcrWatch = watch;
 	img.addEventListener('load', place, {once: true});
 	layer._rapierOcrUnbind = () => img.removeEventListener('load', place);
 	for (const quad of quads) {

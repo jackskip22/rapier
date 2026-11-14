@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {crc32, ZIP_READ_MAX_BYTES, ZIP_WRITE_METADATA_BYTES} from './zip.mjs';
-import {dosDateTime, localHeader, centralHeader, dataDescriptor, endRecord, commentBytes} from './zip-records.mjs';
+import {dosDateTime, localRecord, centralRecord, descriptorRecord, endRecords, localRecordSize, centralRecordSize, descriptorRecordSize, endRecordsSize, commentBytes} from './zip-records.mjs';
 import {exactBytes, sha256, sha256State} from './integrity.mjs';
 import {BACKUP_CHUNK_BYTES, backupLimitError, check as checkAbort} from './backup-folder.mjs';
 import {BACKUP_MANIFEST_FILE, BACKUP_INDEX_MAX_BYTES, backupManifestHeader} from './restore.mjs';
@@ -8,10 +8,23 @@ import {attachmentSizeWords} from './size-words.mjs';
 import {backupManifestBytes} from './backup-format.mjs';
 
 const MAX_INDEX_BYTES = BACKUP_INDEX_MAX_BYTES, MAX_METADATA_BYTES = ZIP_WRITE_METADATA_BYTES;
+export const BACKUP_MAX_BYTES = Number.MAX_SAFE_INTEGER, BACKUP_MEMBER_MAX_BYTES = ZIP_READ_MAX_BYTES;
+const boundOk = maxBytes => maxBytes === BACKUP_MAX_BYTES || Number.isSafeInteger(maxBytes) && maxBytes >= 22 && maxBytes <= ZIP_READ_MAX_BYTES;
+function archiveBytes(rows, manifestBytes, commentLength, enc) {
+	let offset = 0, central = 0;
+	const member = (nameLength, size, descriptor) => {
+		const at = offset;
+		offset += localRecordSize(nameLength, size, at) + size + (descriptor ? descriptorRecordSize(size, at) : 0);
+		central += centralRecordSize(nameLength, size, at);
+	};
+	for (const row of rows) member(enc.encode(row.name).length, row.size, true);
+	member(enc.encode(BACKUP_MANIFEST_FILE).length, manifestBytes, false);
+	return offset + central + endRecordsSize(rows.length + 1, central, offset) + commentLength;
+}
 
-export function preflightBackup(inventory, {indexText, appVersion, stamp, comment = '', maxBytes = ZIP_READ_MAX_BYTES, manifestHeader, maxIndexBytes = MAX_INDEX_BYTES} = {}) {
+export function preflightBackup(inventory, {indexText, appVersion, stamp, comment = '', maxBytes = BACKUP_MAX_BYTES, manifestHeader, maxIndexBytes = MAX_INDEX_BYTES} = {}) {
 	const enc = new TextEncoder(), names = inventory.map(row => row.name), seen = new Set();
-	if (!Number.isSafeInteger(maxBytes) || maxBytes < 22 || maxBytes > ZIP_READ_MAX_BYTES) throw new Error('backup byte bound is outside the reader limit');
+	if (!boundOk(maxBytes)) throw new Error('backup byte bound is outside the reader limit');
 	if (!Number.isSafeInteger(maxIndexBytes) || maxIndexBytes < 0) throw new Error('backup index byte bound is invalid');
 	if (inventory.length > 65533) throw backupLimitError(names, 'have too many files for the backup manifest');
 	let metadata = 0;
@@ -30,7 +43,11 @@ export function preflightBackup(inventory, {indexText, appVersion, stamp, commen
 	const declaration = row => ({name: row.name, bytes: row.size, sha256: '0'.repeat(64)});
 	const weight = row => row ? row.size + 92 + 2 * enc.encode(row.name).length : 0;
 	const fixed = 22 + commentBytes(comment, enc).length + 76 + 2 * enc.encode(BACKUP_MANIFEST_FILE).length;
-	let kept = inventory.slice(), groups = [kept];
+	let kept = inventory.filter(row => {
+		if (row === sidecar || row.size <= BACKUP_MEMBER_MAX_BYTES) return true;
+		omitted.push({name: row.name, bytes: row.size, reason: 'This file is larger than the ' + BACKUP_MEMBER_MAX_BYTES.toLocaleString('en') + ' bytes one backup member can hold.'});
+		return false;
+	}), groups = [kept];
 	const manifestOf = (number = groups.length) => ({...header, files: kept.map(declaration).sort(order),
 		...(omitted.length ? {omitted: omitted.map(row => ({...row}))} : {}),
 		...(groups.length > 1 ? {set: {id: '0'.repeat(64), count: groups.length, part: number,
@@ -64,7 +81,7 @@ export function preflightBackup(inventory, {indexText, appVersion, stamp, commen
 	const manifest = manifestOf(1), parts = groups.map((rows, i) => {
 		const manifestBytes = encodedSize(manifestOf(i + 1));
 		return {number: i + 1, names: rows.map(row => row.name), files: rows.length + 1,
-			bytes: fixed + manifestBytes + rows.reduce((n, row) => n + weight(row), 0),
+			bytes: archiveBytes(rows, manifestBytes, commentBytes(comment, enc).length, enc),
 			payloadBytes: manifestBytes + rows.reduce((n, row) => n + row.size, 0)};
 	});
 	return {files: kept.length + 1, bytes: parts.reduce((n, part) => n + part.bytes, 0), payloadBytes: parts.reduce((n, part) => n + part.payloadBytes, 0), maxBytes, parts, omitted, manifest};
@@ -79,7 +96,7 @@ function fileName(name, seen) {
 	seen.add(name);
 }
 
-export async function writeBackupStream(source, sink, {appVersion, stamp, assertCurrent, signal, subtle, onProgress, maxBytes = ZIP_READ_MAX_BYTES, maxIndexBytes = MAX_INDEX_BYTES, maxMetadataBytes = MAX_METADATA_BYTES, comment = '', manifest: suppliedManifest} = {}) {
+export async function writeBackupStream(source, sink, {appVersion, stamp, assertCurrent, signal, subtle, onProgress, maxBytes = BACKUP_MAX_BYTES, maxIndexBytes = MAX_INDEX_BYTES, maxMetadataBytes = MAX_METADATA_BYTES, comment = '', manifest: suppliedManifest} = {}) {
 	if (!sink || typeof sink.write !== 'function' || typeof sink.close !== 'function' || typeof sink.abort !== 'function') throw new TypeError('backup needs a staging sink with write, close and abort');
 	let offset = 0, rawBytes = 0, centralBytes = 0, inputFiles = 0, metadataBytes = 0;
 	const seen = new Set(), central = [], records = [], digests = [], enc = new TextEncoder();
@@ -95,13 +112,13 @@ export async function writeBackupStream(source, sink, {appVersion, stamp, assert
 		if (!Number.isFinite(modified)) throw new Error('backup modified time is not finite');
 		const date = new Date(modified);
 		if (!Number.isFinite(date.getTime())) throw new Error('backup modified time is out of range');
-		const f = {nameBytes, size: data.length, crc: crc32(data), ...dosDateTime(modified)};
-		const finalSize = offset + 30 + nameBytes.length + data.length + centralBytes + 46 + nameBytes.length + 22 + commentData.length;
+		const f = {nameBytes, size: data.length, crc: crc32(data), ...dosDateTime(modified)}, at = offset;
+		const record = centralRecord(f, at), end = offset + localRecordSize(nameBytes.length, data.length, at) + data.length;
+		const finalSize = end + centralBytes + record.length + endRecordsSize(inputFiles + 1, centralBytes + record.length, end) + commentData.length;
 		if (finalSize > maxBytes || rawBytes + data.length > maxBytes) throw new Error('backup archive exceeds its byte bound');
-		const at = offset;
-		await put(localHeader(f)); await put(nameBytes); await put(data);
+		await put(localRecord(f, at)); await put(data);
 		await sink.endMember?.(data.length);
-		central.push(centralHeader(f, at), nameBytes); centralBytes += 46 + nameBytes.length; rawBytes += data.length;
+		central.push(record); centralBytes += record.length; rawBytes += data.length;
 	};
 	const streamed = async file => {
 		const {name, size, modified = stamp} = file, nameBytes = enc.encode(name);
@@ -109,10 +126,11 @@ export async function writeBackupStream(source, sink, {appVersion, stamp, assert
 		if (name === 'notes.json' && size > maxIndexBytes) throw new Error('backup notes.json exceeds its index byte bound');
 		if (nameBytes.length > 65535) throw new Error('backup file name is too long');
 		if (!Number.isFinite(modified) || !Number.isFinite(new Date(modified).getTime())) throw new Error('backup modified time is not finite or is out of range');
-		if (offset + 30 + nameBytes.length + size + 16 + centralBytes + 46 + nameBytes.length + 22 + commentData.length > maxBytes) throw new Error('backup archive exceeds its byte bound');
-		const index = name === 'notes.json' ? new Uint8Array(size) : null;
 		const f = {nameBytes, size, crc: 0, descriptor: true, ...dosDateTime(modified)}, at = offset;
-		await put(localHeader(f)); await put(nameBytes);
+		const end = offset + localRecordSize(nameBytes.length, size, at) + size + descriptorRecordSize(size, at), centralSize = centralRecordSize(nameBytes.length, size, at);
+		if (end + centralBytes + centralSize + endRecordsSize(inputFiles + 1, centralBytes + centralSize, end) + commentData.length > maxBytes) throw new Error('backup archive exceeds its byte bound');
+		const index = name === 'notes.json' ? new Uint8Array(size) : null;
+		await put(localRecord(f, at));
 		const hash = sha256State(); let length = 0;
 		for await (const chunk of file.chunks()) {
 			checkAbort(signal);
@@ -124,13 +142,14 @@ export async function writeBackupStream(source, sink, {appVersion, stamp, assert
 			onProgress?.({phase: 'Preparing backup', files: inputFiles - 1, bytes: rawBytes + length});
 		}
 		if (length !== size) throw new Error('backup source changed size: ' + name);
-		await put(dataDescriptor(f));
+		await put(descriptorRecord(f, at));
 		await sink.endMember?.(size);
-		central.push(centralHeader(f, at), nameBytes); centralBytes += 46 + nameBytes.length; rawBytes += size;
+		const record = centralRecord(f, at);
+		central.push(record); centralBytes += record.length; rawBytes += size;
 		return {digest: hash.finish(), index};
 	};
 	try {
-		if (!Number.isSafeInteger(maxBytes) || maxBytes < 22 || maxBytes > ZIP_READ_MAX_BYTES) throw new Error('backup byte bound is outside the reader limit');
+		if (!boundOk(maxBytes)) throw new Error('backup byte bound is outside the reader limit');
 		if (![maxIndexBytes, maxMetadataBytes].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error('backup metadata bounds must be nonnegative safe integers');
 		if (typeof appVersion !== 'string' || !appVersion || !Number.isFinite(stamp)) throw new Error('a backup manifest needs the app version and snapshot stamp');
 		if (typeof assertCurrent !== 'function') throw new TypeError('backup needs a snapshot certification callback');
@@ -169,7 +188,7 @@ export async function writeBackupStream(source, sink, {appVersion, stamp, assert
 		await entry(BACKUP_MANIFEST_FILE, manifestBytes, stamp);
 		const start = offset;
 		for (const bytes of central) await put(bytes);
-		await put(endRecord(inputFiles + 1, offset - start, start, commentData.length));
+		await put(endRecords(inputFiles + 1, offset - start, start, commentData.length));
 		await put(commentData);
 		onProgress?.({phase: 'Checking folder'});
 		if (await assertCurrent() !== true) throw new Error('the folder snapshot changed before backup completion');

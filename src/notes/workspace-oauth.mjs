@@ -6,8 +6,6 @@ const SUFFIX = '/cdn-cgi/access/oauth/';
 const text = value => typeof value === 'string' && value.length > 0 && value.length <= 16384 && !/[\x00-\x20\x7f]/.test(value);
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 export const WORKSPACE_SIGNIN_QUALIFICATION = Object.freeze({browser: false});
-export const WORKSPACE_ACCESS_ROUTES = Object.freeze(['/workspace/files', '/workspace/lease']);
-
 export function workspaceOrigin(value) {
 	let url;
 	try { if (typeof value !== 'string' || value !== value.trim()) throw 0; url = new URL(value); } catch { refuse('workspace-address', 'Enter the HTTPS origin of your workspace.'); }

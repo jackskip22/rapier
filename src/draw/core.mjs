@@ -3234,6 +3234,19 @@ function _rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction
 				if (g.p) g.p.forEach(p => { p[1] += dy; }); else if (g.cy != null) g.cy += dy; else { g.y1 += dy; g.y2 += dy; }
 			}
 		}
+		if (options?.places?.size) for (const node of nodes) {
+			const at = options.places.get(node.id);
+			if (!at) continue;
+			const b = _rapierDrawShapeBBoxIn(node.shape, scene);
+			options.unmoved?.set(node.shape, b);
+			_rapierDrawFigureGeometry(node.shape, Math.max(8, at.x - node.w / 2), Math.max(8, at.y - node.h / 2), node.w, node.h);
+		}
+		if (options?.places?.size) for (const group of groups) {
+			if (!group.members.some(id => options.places.has(id))) continue;
+			const member = group.members.map(id => _rapierDrawShapeBBoxIn(nodeMap.get(id).shape, scene)), minX = Math.min(...member.map(b => b.minX)), maxX = Math.max(...member.map(b => b.maxX));
+			group.title.geom = {...group.title.geom, cx: minX + layoutText(group.title).width / 2};
+			group.rule.geom = {...group.rule.geom, x1: minX, x2: maxX};
+		}
 		_rapierDrawFaceFigureBindings(shapes.filter(shape => shape.bind && (!nodeMap.has(shape.bind.start?.to) || !nodeMap.has(shape.bind.end?.to))), scene);
 		_rapierDrawRerouteBoundArrows(scene);
 		try {
@@ -3272,9 +3285,9 @@ function _rapierDrawDiagramDress(shapes, automatic, groups, captionSize) {
 	return steps;
 }
 
-function _rapierDrawDiagramSet(shapes, steps, direction) {
+function _rapierDrawDiagramSet(shapes, steps, direction, unmoved = null) {
 	const across = direction === 'across' || direction === 'back', reverse = direction === 'up' || direction === 'back', scene = {shapes, strokes: []};
-	const at = shape => { const b = _rapierDrawShapeBBoxIn(shape, scene); return across ? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2] : [(b.minY + b.maxY) / 2, (b.minX + b.maxX) / 2]; };
+	const at = shape => { const b = unmoved?.get(shape) || _rapierDrawShapeBBoxIn(shape, scene); return across ? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2] : [(b.minY + b.maxY) / 2, (b.minX + b.maxX) / 2]; };
 	steps.slice().sort((a, b) => { const p = at(a), q = at(b); return Math.abs(p[0] - q[0]) > 1 ? (p[0] - q[0]) * (reverse ? -1 : 1) : p[1] - q[1]; }).forEach((shape, index) => { shape.step = index + 1; });
 	return shapes;
 }
@@ -3413,7 +3426,8 @@ function _rapierDrawLowerFiguresOrFault(figures, existing = [], direction = 'dow
 	}
 	if (automatic.length || groups.length) {
 		const steps = _rapierDrawDiagramDress(shapes, automatic, groups, captionSize);
-		try { return {shapes: _rapierDrawDiagramSet(_rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact, options), steps, direction)}; }
+		const placed = options?.places?.size ? {...options, unmoved: new Map()} : options;
+		try { return {shapes: _rapierDrawDiagramSet(_rapierDrawLayoutFigures(shapes, automatic, groups, existing, direction, captionSize, compact, placed), steps, direction, placed?.unmoved)}; }
 		catch (error) { if (/^drawing_(?:geometry_limit|work_limit|route_blocked)/.test(error.code || '')) return fault(-1, 'figures', 'a diagram within the drawing geometry and routing limits'); throw error; }
 	}
 	_rapierDrawFaceFigureBindings(shapes.filter(shape => shape.bind), {shapes: [...existing, ...shapes], strokes: []});

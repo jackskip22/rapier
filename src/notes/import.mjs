@@ -19,7 +19,7 @@ export async function openBackupFiles(files) {
 	for (const file of files) {
 		if (!/\.zip$/i.test(file?.name || '')) throw new Error('Choose only backup ZIP files. Nothing was restored.');
 		const entries = [];
-		for await (const entry of zipEntries(file)) {
+		for await (const entry of zipEntries(file, {ranged: true, maxBytes: Number.MAX_SAFE_INTEGER})) {
 			if (entry.oversize) {
 				if (typeof entry.source !== 'function') throw new Error('This backup member cannot be read whole: ' + entry.name);
 				entries.push({...entry, read: async () => { const source = await entry.source(); return source.read(0, entry.size); }});
@@ -33,7 +33,7 @@ export async function openBackupFiles(files) {
 const backupSetImports = new WeakSet();
 export async function openBackupSetForImport(files) {
 	const parts = await openBackupFiles(files), groups = new Map();
-	let hasSet = false, hasOther = false;
+	let hasSet = false, hasOther = false, single = false;
 	for (let i = 0; i < parts.length; i++) {
 		const marker = parts[i].entries.find(entry => entry.name === BACKUP_MANIFEST_FILE);
 		let manifest = null;
@@ -42,12 +42,13 @@ export async function openBackupSetForImport(files) {
 			manifest = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(await marker.read()));
 		}
 		if (manifest?.set) hasSet = true; else hasOther = true;
+		if (manifest && !manifest.set && parts.length === 1 && files[0].size > IMPORT_MAX_BYTES) single = true;
 		const key = manifest?.set ? 'set:' + manifest.set.id : 'pick:' + i;
 		if (!groups.has(key)) groups.set(key, []);
 		groups.get(key).push(parts[i]);
 	}
-	if (!hasSet) return null;
-	if (hasOther) throw new Error('Choose backup parts without other archives. Add ordinary archives separately. Nothing was imported.');
+	if (!hasSet && !single) return null;
+	if (hasSet && hasOther) throw new Error('Choose backup parts without other archives. Add ordinary archives separately. Nothing was imported.');
 	for (const selected of groups.values()) await verifyBackupStream({parts:selected}, {partial:true});
 	const out = [];
 	for (let i = 0; i < parts.length; i++) for (let j = 0; j < parts[i].entries.length; j++) {

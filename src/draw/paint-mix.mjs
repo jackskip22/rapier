@@ -120,11 +120,8 @@ export function mixLinear(ar, ag, ab, br, bg, bb, t, out) {
 	return mixColor(za, out);
 }
 
-const srgbToLinear = x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4;
 const linearToSrgb = x => x <= .0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - .055;
-const parseHex = h => [1, 3, 5].map(i => srgbToLinear(parseInt(h.slice(i, i + 2), 16) / 255));
 export const linearToHex = c => '#' + Array.from(c, x => Math.round(linearToSrgb(clamp01(x)) * 255).toString(16).padStart(2, '0')).join('');
-export function mixHex(a, b, t) { return linearToHex(mixLinear(...parseHex(a), ...parseHex(b), t, [0, 0, 0])); }
 
 const wgslArray = (name, values) => `const ${name} = array<f32, ${values.length}>(${values.map(v => v.toFixed(9)).join(', ')});`;
 export const PAINT_MIX_WGSL = `

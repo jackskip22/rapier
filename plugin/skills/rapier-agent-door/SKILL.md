@@ -106,9 +106,9 @@ WebGPU. Android Pro's pigments, papers, Trace, and other Water features are unav
 Every painting `edit` needs an `operation_id`: retry the same call with it to collect the result, because a
 retry without it starts a new job. A good first painting is a small watercolor sunset over the sea, with room for
 the person to add a boat. Once it commits, keep its act or turn id for a requested undo, keep the person's later
-marks and report conflicts. Without WebGPU, explain why and offer regular brushes or an editable diagram. After one
-Water refusal or `material_request_expired`, read the current revision first: keep a painting that already committed.
-Otherwise don't send Water again: paint with the Paint brushes (a `rapier-paint` fence) instead and say why. A software WebGPU adapter can accept Water and never finish it.
+marks and report conflicts. After one Water refusal or `material_request_expired`, read the current revision first:
+keep a painting that already committed. If Water is refused for WebGPU, never paint it another way: give the person
+editor_url to open in a browser with WebGPU on (such as current Chrome or Edge) and paint there. A software WebGPU adapter can accept Water and never finish it.
 
 ## Notes and delivery
 

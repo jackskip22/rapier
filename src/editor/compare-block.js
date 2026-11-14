@@ -45,7 +45,7 @@ function _rapierComparePlaceMarks(box, ground) {
 		let run = '';
 		const flush = () => {
 			if (!run) return;
-			if (inside && run.trim()) fragment.appendChild(_rapierCompareTextNode('span', 'compare-mark compare-mark--' + ground, run));
+			if (inside && run.trim()) fragment.appendChild(_rapierTextElement('span', 'compare-mark compare-mark--' + ground, run));
 			else fragment.appendChild(document.createTextNode(run));
 			run = '';
 		};
@@ -78,7 +78,7 @@ function _rapierCompareBlockBody(side, block, marks = []) {
 	let box = marked == null ? null : _rapierCompareBlockMarkup(marked);
 	if (!box || !_rapierComparePlaceMarks(box, side === 'before' ? 'remove' : 'add')) {
 		const html = _rapierMarkdownPreview(literal(source), references);
-		box = html == null ? _rapierCompareTextNode('div', '', source) : _rapierCompareBlockMarkup(html);
+		box = html == null ? _rapierTextElement('div', '', source) : _rapierCompareBlockMarkup(html);
 	}
 	box.className = 'md-render compare-block__body';
 	return box;
@@ -90,7 +90,7 @@ function _rapierCompareBlockContext(block) {
 }
 function _rapierCompareBlockFold(item) {
 	const holder = document.createElement('div');
-	const button = _rapierCompareTextNode('button', 'compare-omitted', '⋯ ' + _rapierCountNoun(item.blocks.length, 'unchanged block'));
+	const button = _rapierTextElement('button', 'compare-omitted', '⋯ ' + _rapierCountNoun(item.blocks.length, 'unchanged block'));
 	button.type = 'button';
 	let at = 0;
 	button.addEventListener('click', () => {

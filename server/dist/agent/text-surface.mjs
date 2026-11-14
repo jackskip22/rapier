@@ -84,10 +84,6 @@ function headingOutline(text) {
   }
   return outline;
 }
-export function textOutline(text) {
-  const outline = headingOutline(text);
-  return outline.titles.map((_, row) => outline.row(row));
-}
 const TARGET_CACHE = new Map();
 const TARGET_ENTRY_MAX = 2 * 1024 * 1024, TARGET_TOTAL_MAX = 4 * 1024 * 1024, TARGET_ENTRY_MAX_COUNT = 16;
 let targetCacheChars = 0, targetCacheParser = null;

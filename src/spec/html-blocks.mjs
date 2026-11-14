@@ -5,6 +5,14 @@ import {sha256} from '../kit/ledger/hash.mjs';
 import {formatLayout, parseLayout, validLayout, imageStyle, objectHeight} from './md-layout.mjs';
 
 export const HTML_ELEMENTS = Object.freeze('a abbr address article aside b bdi bdo blockquote br button caption circle clipPath code col colgroup dd defs del details dfn div dl dt ellipse em fieldset figcaption figure filter feBlend feColorMatrix feComponentTransfer feComposite feFlood feFuncA feFuncB feFuncG feFuncR feGaussianBlur feMerge feMergeNode feOffset footer g h1 h2 h3 h4 h5 h6 header hr i image img input kbd label legend li line linearGradient main mark mask meter nav ol optgroup option p path pattern picture polygon polyline pre progress q radialGradient rect s samp section select small source span stop strong style sub summary sup svg table tbody td text textarea th thead time title tr tspan u ul use var animate animateTransform animateMotion set mpath'.toLowerCase().split(' '));
+function _rapierHtmlCodePaint(record) {
+  const mark = Symbol.for('rapier.codePaint'), target = record.target;
+  if (!target || target[mark] !== true) return false;
+  if (record.type === 'attributes') return record.attributeName === 'class' && target.className === 'tok-part tok';
+  return record.type === 'childList' && record.addedNodes.length > 0 &&
+    Array.prototype.every.call(record.addedNodes, node => node[mark] === true) &&
+    Array.prototype.every.call(record.removedNodes, node => node[mark] === true || node.nodeType === 3);
+}
 const VOID = new Set('area base br col embed hr img input link meta source track wbr'.split(' '));
 
 export function htmlRemoved(body) {
@@ -266,7 +274,7 @@ function htmlFrameRuntime(config, media, win) {
 }
 
 export function htmlRuntimeSource() {
-  return '{const HTML_ELEMENTS=' + JSON.stringify(HTML_ELEMENTS) + ';(' + mountHtmlBlocks.toString() + ')(document,{media:(' + createMediaPlayback.toString() + ')(window,' + inspectGIF.toString() + '),frameRuntime:' + htmlFrameRuntime.toString() + ',heightOf:' + objectHeight.toString() + '});}';
+  return '{const HTML_ELEMENTS=' + JSON.stringify(HTML_ELEMENTS) + ';' + _rapierHtmlCodePaint.toString() + ';(' + mountHtmlBlocks.toString() + ')(document,{media:(' + createMediaPlayback.toString() + ')(window,' + inspectGIF.toString() + '),frameRuntime:' + htmlFrameRuntime.toString() + ',heightOf:' + objectHeight.toString() + '});}';
 }
 
 export function objectPosterLabel(image, width = 640) {
@@ -595,7 +603,7 @@ export function mountHtmlBlocks(doc, options = {}) {
   const shown = () => {scan(); for (const row of owned.values()) {const box = row.image.getBoundingClientRect();
     row.visible = box.bottom > 0 && box.top < win.innerHeight && box.right > 0 && box.left < win.innerWidth; applyPlayback(row);}};
   const changedMotion = () => {if (reduced.matches) for (const row of owned.values()) {row.paused = true; applyPlayback(row);}};
-  const observer = new win.MutationObserver(records => {if (records.some(record => record.type === 'childList' || record.target.matches?.('img[data-rapier-html],img[data-rapier-animation]'))) scan();});
+  const observer = new win.MutationObserver(records => {if (records.some(record => record.type === 'childList' && !_rapierHtmlCodePaint(record) || record.target.matches?.('img[data-rapier-html],img[data-rapier-animation]'))) scan();});
   observer.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-rapier-html','data-rapier-animation','style']});
   win.addEventListener('message', receive); win.addEventListener('resize', schedule); doc.addEventListener('scroll', schedule, true);
   doc.addEventListener('visibilitychange', changedVisibility); reduced.addEventListener('change', changedMotion);

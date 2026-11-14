@@ -121,17 +121,6 @@ export function assertModernSources(sources) {
   return files;
 }
 
-export function reviewedBrowserHostBranches(scanned, resource) {
-  if (resource?.id !== 'rapier-ocr-jxl' || resource.url !== 'https://cdn.jsdelivr.net/npm/@jsquash/jxl@1.3.0/codec/dec/jxl_dec.js' ||
-      resource.sri !== 'OVUtDrf9Am51biP6vZWJC1BeSlKKo6nQQPjlB+KF9eWNuazANiijG+IBV4RDRUMA' ||
-      scanned.bytes !== 36091 || scanned.sha256 !== '418c583da1f045926cf58fba58bb9ab323bde2552ce6a8e37b839c5c8b52434f') return [];
-  return scanned.findings.filter(row => row.line === 8 && row.column === 579 && row.kind === 'native-global-patch' &&
-    row.detail === 'assignment to globalThis.ImageData').map(row => ({...row, id: resource.id, sha256: scanned.sha256,
-      reason: 'Published Node/Cloudflare host adapter; predicate false in the supported browser worker; native ImageData remains unchanged.',
-      review: 'mail/engine-foundations/20261021-1441Z-lead-jsquash.md',
-      probe: 'tools/probes/foundation-jxl-decoder.mjs'}));
-}
-
 export async function checkModernFoundations({root = ROOT} = {}) {
   const paths = [];
   async function visit(directory) {
@@ -166,7 +155,7 @@ export async function checkModernFoundations({root = ROOT} = {}) {
   const inventory = await pluginPackFiles({root});
   const executable = inventory.filter(file => /\.[cm]?js$/.test(new URL(file.url).pathname));
   const byPath = new Map(files.map(file => [resolve(root, file.path), file]));
-  const plugins = [], acceptedHostBranches = [];
+  const plugins = [];
   for (const resource of executable) {
     let bytes, remote = false;
     try { ({bytes} = await readPluginFile(resource, resource.path ? null : join(root, 'dist/plugin-cache', resource.id))); }
@@ -187,18 +176,14 @@ export async function checkModernFoundations({root = ROOT} = {}) {
     }
     plugins.push({id: resource.id, url: resource.url, bytes: bytes.length, sri: resource.sri,
       sha256: scanned.sha256, scannedPath: scanned.path});
-    acceptedHostBranches.push(...reviewedBrowserHostBranches(scanned, resource));
   }
-  const findings = files.flatMap(file => file.findings).filter(row => !acceptedHostBranches.some(accepted =>
-    accepted.path === row.path && accepted.line === row.line && accepted.column === row.column && accepted.kind === row.kind));
-  return {ok: findings.length === 0, files, plugins, acceptedHostBranches, runtimeEntryClosure: [...runtimeEntries].sort(),
+  const findings = files.flatMap(file => file.findings);
+  return {ok: findings.length === 0, files, plugins, runtimeEntryClosure: [...runtimeEntries].sort(),
     resourceInventory: {total: inventory.length, javascript: executable.length, nonJavaScript: inventory.length - executable.length}, findings};
 }
 
 export async function assertModernFoundations(root = ROOT) {
   const report = await checkModernFoundations({root});
-  for (const row of report.acceptedHostBranches) console.log('Modern foundations: reviewed host branch ' + row.path + ':' + row.line +
-    ' SHA-256 ' + row.sha256 + ' — ' + row.reason);
   if (!report.ok) throw new Error('Modern JavaScript foundations: ' + report.findings.map(row =>
     row.path + ':' + row.line + ' ' + row.kind + ' (' + row.detail + ')').join('; '));
   return report;
@@ -212,9 +197,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (json) console.log(JSON.stringify(report, null, 2));
   else {
     for (const row of report.findings) console.error(row.path + ':' + row.line + ' ' + row.kind + ': ' + row.detail);
-    for (const row of report.acceptedHostBranches || []) console.log('Reviewed host branch: ' + row.path + ':' + row.line + ' ' + row.sha256 + ' — ' + row.reason);
-    console.log('Modern foundations: ' + report.files.length + ' files, ' + report.findings.length + ' refusals, ' +
-      (report.acceptedHostBranches?.length || 0) + ' reviewed nonbrowser host branches');
+    console.log('Modern foundations: ' + report.files.length + ' files, ' + report.findings.length + ' refusals');
   }
   process.exitCode = report.ok ? 0 : 1;
 }

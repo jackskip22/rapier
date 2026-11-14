@@ -65,6 +65,7 @@
 /sync/dropbox /sync-return.html 200
 /sync/onedrive /sync-return.html 200
 /sync/cloudflare /sync-return.html 200
+/sync/workspace /sync-return.html 200
 /reader /rapier-reader.html 308
 /feedback/ /feedback 308
 /feedback /feedback.html 200

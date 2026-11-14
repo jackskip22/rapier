@@ -88,7 +88,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '', {quiet
   if (!kind) throw new Error('Choose a DOCX, PDF or TextPack document.');
   if (file instanceof Blob && !file.size) throw new Error('This document is empty.');
   if (!(file instanceof Blob) || file.size > RapierImageArchive.ARCHIVE_LIMITS.bytes)
-    throw new Error('Choose a document smaller than 25 MiB.');
+    throw new Error('Choose a document smaller than 128 MiB.');
   if (_rapierDocumentImport.active) throw new Error('Another document is still being imported.');
   const settled = await _rapierWithSettledExternalDocument(() => Object.freeze(_rapierMutationStamp()), {quiet: true});
   if (!settled.settled) throw new Error('Finish the current edit, then import the document again.');
@@ -203,7 +203,7 @@ async function _rapierReadImportedDocument(file, name = file?.name || '', {quiet
           embeddedChars += normalized.asset.block.length;
         }
         if (embeddedChars > RapierImageArchive.ARCHIVE_LIMITS.bytes)
-          throw new Error('The embedded pictures exceed the 25 MiB document limit.');
+          throw new Error('The embedded pictures exceed 128 MiB.');
       }
       const normalized = converted.get(key);
       if (image.displayWidth > 0 && image.displayHeight > 0 &&

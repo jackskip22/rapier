@@ -238,6 +238,46 @@ function _rapierComposerCommands() {
 	];
 }
 function _rapierOpenJxlPart() { if (_rapierPartAvailable('jxl')) void _rapierPartReady('jxl').then(ready => { if (ready) _rapierJxlPart.open(); }); }
+function _rapierJxlShareId(id) { return /^jxl-[^:]+:/.test(String(id || '')); }
+const _rapierJxlHanded = new Map(), _rapierJxlRefused = new Set();
+let _rapierJxlShares = Promise.resolve(true);
+globalThis.rapierJxlReceiveShares = function rapierJxlReceiveShares() {
+	return _rapierJxlShares = _rapierJxlShares.catch(() => {}).then(async () => {
+		const host = globalThis.RapierPlatform?.host;
+		if (!host?.shareInbox || !host.readShared) return false;
+		let items;
+		try {
+			const inbox = await host.shareInbox('list', {});
+			items = (Array.isArray(inbox?.items) ? inbox.items : []).filter(entry => _rapierJxlShareId(entry?.id) && !_rapierJxlRefused.has(entry.id + '|' + entry.digest));
+		} catch (error) { showToast('Couldn’t open the shared pictures. Share them again.', 'error', null, error); return false; }
+		if (!items.length) return true;
+		if (!_rapierPartAvailable('jxl') || !await _rapierPartReady('jxl')) return false;
+		const view = _rapierJxlPart;
+		view.open();
+		if (!view.state.open) return false;
+		const key = entry => entry.id + '|' + entry.digest, unread = [], fresh = [];
+		for (const entry of items) {
+			const held = _rapierJxlHanded.get(key(entry));
+			if (held && view.has(held)) continue;
+			try { fresh.push([entry, new File([await host.readShared(entry)], String(entry.name || 'picture'), {type: String(entry.mime || '')})]); }
+			catch (error) { unread.push(String(entry.name || 'picture')); _rapierJxlRefused.add(key(entry)); console.warn('[rapier] shared picture', error); }
+		}
+		if (view.state.open && fresh.length) view.add(fresh.map(([, file]) => file));
+		for (const [entry, file] of fresh) if (view.has(file)) _rapierJxlHanded.set(key(entry), file);
+		let kept = true;
+		for (const entry of items) {
+			const held = _rapierJxlHanded.get(key(entry));
+			if (!held || !view.has(held)) { if (!_rapierJxlRefused.has(key(entry))) kept = false; continue; }
+			try {
+				const ack = await host.shareInbox('ack', {id: entry.id, digest: entry.digest});
+				if (ack?.acknowledged !== true) throw new Error('The shared picture was not acknowledged.');
+				_rapierJxlHanded.delete(key(entry));
+			} catch (error) { kept = false; console.warn('[rapier] shared picture receipt', error); }
+		}
+		if (unread.length) showToast('Couldn’t read ' + unread.join(', ') + '. Share ' + (unread.length > 1 ? 'them' : 'it') + ' again.', 'error');
+		return kept && !unread.length;
+	});
+};
 function _rapierPartCommands() {
 	return [
 	{ id: 'insert.draw', label: 'Draw', group: 'insert', icon: 'pen-tool', glyph: '✎',

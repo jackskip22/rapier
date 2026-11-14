@@ -2,7 +2,6 @@
 import {fail, isProviderRefusal, refuse} from './provider-http.mjs';
 import {plainConflict, plainName, plainBytes} from './plain-store.mjs';
 
-export const PLAIN_CAPABILITY = 'plain.files';
 const CHUNK = 128 * 1024, MAX_BYTES = 150000000;
 const ID = /^[a-f0-9]{32}$/, REV = /^[\x21-\x7e]{1,256}$/;
 const hex = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');

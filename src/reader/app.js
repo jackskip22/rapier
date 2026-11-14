@@ -1204,7 +1204,7 @@ function readerOpenOutline() {
 }
 
 
-const READER_FIND_LIMIT = 2048;
+const READER_FIND_LIMIT = Infinity;
 function readerSetFindCount(current, total) {
 	const count = $('find-count');
 	const label = Number(total) === 0 ? 'No matches' : 'Match ' + current + ' of ' + total;
@@ -1675,10 +1675,11 @@ function readerPageKeys(event) {
 	else host.scrollBy({top: back * (Math.abs(step) < 1 ? step * host.clientHeight : step)});
 }
 
-// one on top, when it is a question Escape may answer (licences, privacy, deleting a plug-in). On a plug-in prompt, Escape answers "not now".
+// Escape may answer (licences, privacy, deleting a plug-in). On a plug-in prompt, Escape answers "not now".
 function readerEscape() {
 	const open = id => readerDialogs.some(row => row.overlay.id === id);
 	if (READER_ANSWER_ONLY.has(readerDialogs.at(-1)?.overlay.id)) return readerCloseTop();
+	if (readerDialogs.length > 1 && ['copy-overlay', 'share-overlay'].includes(readerDialogs.at(-1).overlay.id)) return readerCloseTop();
 	const top = ['math-plugin-overlay', 'mermaid-plugin-overlay', 'ocr-plugin-overlay', 'pdf-plugin-overlay', 'plugin-delete-overlay', 'copy-overlay', 'share-overlay', 'licenses-overlay', 'privacy-overlay', 'navigator-overlay', 'settings-overlay'].find(open);
 	if (!top) return false;
 	let closed = false;
@@ -2396,14 +2397,14 @@ async function readerCarriedDocument(text, filename) {
 	const carriers = template.content.querySelectorAll('#rapier-document');
 	if (start < 0 || open < 0 || end < 0 || carriers.length !== 1 || carriers[0].tagName !== 'SCRIPT' ||
 			carriers[0].type !== 'text/markdown' || carriers[0].textContent !== text.slice(open + 1, end))
-		throw new Error('This HTML editor file has no complete editable document.');
+		throw new Error('This portable editor file has no complete editable document.');
 	const carrier = carriers[0], name = carrier.getAttribute('data-name') || 'document.md';
 	const kind = carrier.getAttribute('data-kind') || _classifyDocKind(name);
 	if (!_rapierDocumentNameIsAdmissible(filename) || !_rapierDocumentNameIsAdmissible(name) || !['markdown', 'text', 'code'].includes(kind))
-		throw new Error('This HTML editor file has invalid document metadata.');
+		throw new Error('This portable editor file has invalid document metadata.');
 	const source = _rapierDecodeCarried(carrier.textContent), bom = source.charCodeAt(0) === 0xFEFF;
 	if (RapierTextCodec.normalizeDocument(source) !== (bom ? source.slice(1) : source))
-		throw new Error('This HTML editor file has invalid source text.');
+		throw new Error('This portable editor file has invalid source text.');
 	return {source, filename: name, kind, bom};
 }
 

@@ -4,12 +4,6 @@ const _RAPIER_COMPOSER_INKS = Object.freeze([
 	['red', '#b32034'], ['orange', '#c2410c'], ['gold', '#865818'], ['green', '#1c7547'], ['teal', '#0f766e'], ['blue', '#175dc4'],
 	['indigo', '#4338ca'], ['purple', '#7924d7'], ['pink', '#be185d'], ['gray', '#57606a']]);
 
-function _rapierComposerEl(tag, className, text) {
-	const element = document.createElement(tag);
-	if (className) element.className = className;
-	if (text != null) element.textContent = text;
-	return element;
-}
 function _rapierComposerHex(color) {
 	const context = document.createElement('canvas').getContext('2d');
 	context.fillStyle = '#121212';
@@ -17,26 +11,26 @@ function _rapierComposerHex(color) {
 	return /^#[0-9a-f]{6}$/.test(context.fillStyle) ? context.fillStyle : '#121212';
 }
 function _rapierComposerOpen(title, fill, onClose) {
-	const overlay = _rapierComposerEl('div', 'link-dialog__overlay');
+	const overlay = _rapierTextElement('div', 'link-dialog__overlay');
 	overlay.id = 'rapier-composer';
-	const panel = _rapierComposerEl('div', 'link-dialog rapier-composer');
+	const panel = _rapierTextElement('div', 'link-dialog rapier-composer');
 	panel.setAttribute('role', 'dialog');
 	panel.setAttribute('aria-modal', 'true');
 	panel.setAttribute('aria-label', title);
 	const state = _rapierBeginEngineDialog(overlay, onClose);
-	const actions = _rapierComposerEl('div', 'link-dialog__actions');
-	const cancel = _rapierComposerEl('button', 'link-dialog__btn', 'cancel');
+	const actions = _rapierTextElement('div', 'link-dialog__actions');
+	const cancel = _rapierTextElement('button', 'link-dialog__btn', 'cancel');
 	cancel.type = 'button';
 	cancel.addEventListener('click', () => state.cancel(true));
 	actions.append(cancel);
-	panel.append(_rapierComposerEl('div', 'link-dialog__title', title), ...fill(state, panel), actions);
+	panel.append(_rapierTextElement('div', 'link-dialog__title', title), ...fill(state, panel), actions);
 	overlay.append(panel);
 	overlay.addEventListener('click', event => { if (event.target === overlay) state.cancel(true); });
 	requestAnimationFrame(() => (panel.querySelector('.rapier-composer__card, .rapier-composer__swatch') || cancel).focus({preventScroll: true}));
 	return state;
 }
 
-const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.69/';
+const RAPIER_ORNAMENTS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.70/';
 const _rapierOrnamentDoor = {providers: new Map(), allowed: new Set(), held: new Map(), bringing: new Map(), hubs: new Map(), plugins: new Map()};
 const RAPIER_ORNAMENT_FORMAT = 1;
 const _RAPIER_ORNAMENT_KINDS = Object.freeze({
@@ -201,7 +195,6 @@ function _rapierGalleryNoteUse(id) {
 	try { window.dispatchEvent(new CustomEvent('rapier:plugin-update', {detail: {key: id, noun: _RAPIER_GALLERY_PLUGINS[id].name, plural: true, version: providers.map(provider => provider.version).join('|'), bytes}})); } catch (_) {}
 }
 async function _rapierOrnamentInflate(zipped, pin) {
-	if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot unpack the download.');
 	const reader = new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
 	const parts = []; let length = 0;
 	try {
@@ -273,21 +266,21 @@ function _rapierOrnamentDrain() {
 	}
 	if (_rapierOrnamentWaiting.size) _rapierOrnamentFrame = requestAnimationFrame(_rapierOrnamentDrain);
 }
-const _rapierOrnamentSeen = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => {
+const _rapierOrnamentSeen = new IntersectionObserver(entries => {
 	for (const entry of entries) {
 		if (!entry.target.isConnected) { _rapierOrnamentWaiting.delete(entry.target); _rapierOrnamentSeen.unobserve(entry.target); }
 		else if (entry.isIntersecting) _rapierOrnamentWaiting.set(entry.target, entry.boundingClientRect);
 		else _rapierOrnamentWaiting.delete(entry.target);
 	}
 	if (_rapierOrnamentWaiting.size && !_rapierOrnamentFrame) _rapierOrnamentFrame = requestAnimationFrame(_rapierOrnamentDrain);
-}, {rootMargin: '200px'}) : null;
-function _rapierOrnamentWatch(image) { if (_rapierOrnamentSeen) _rapierOrnamentSeen.observe(image); else image._rapierDraw(); }
+}, {rootMargin: '200px'});
+function _rapierOrnamentWatch(image) { _rapierOrnamentSeen.observe(image); }
 const _RAPIER_ORNAMENT_PAINT = 'onmessage=async({data:{id,d,box,tiles,ink,width,height}})=>{try{' +
 	'const canvas=new OffscreenCanvas(width,height),context=canvas.getContext("2d"),path=new Path2D(d),[x,y,w,h]=box,scale=Math.min(width/(w*tiles),height/h);' +
 	'context.translate((width-w*tiles*scale)/2,(height-h*scale)/2);context.scale(scale,scale);context.translate(-x,-y);context.fillStyle=ink;' +
 	'for(let i=0;i<tiles;i++){context.fill(path,"evenodd");context.translate(w,0);}' +
 	'postMessage({id,blob:await canvas.convertToBlob({type:"image/png"})});}catch(error){postMessage({id,error:String(error&&error.message||error)});}};';
-const _rapierOrnamentPainter = {worker: null, broken: typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function' || typeof Path2D !== 'function', pending: new Map(), next: 1};
+const _rapierOrnamentPainter = {worker: null, broken: false, pending: new Map(), next: 1};
 const _rapierOrnamentSVG = image => { image.src = 'data:image/svg+xml;base64,' + btoa(image._rapierPiece.svg()); };
 function _rapierOrnamentPaint(image, rect, done) {
 	const piece = image._rapierPiece, ratio = Math.min(3, window.devicePixelRatio || 1), painter = _rapierOrnamentPainter;
@@ -318,7 +311,7 @@ function _rapierOrnamentPaint(image, rect, done) {
 	painter.worker.postMessage({id, d: piece.d, box: piece.box, tiles: piece.tiles, ink: piece.ink, width, height});
 }
 function _rapierOrnamentTile(piece, className, watched = true) {
-	const image = _rapierComposerEl('img', className);
+	const image = _rapierTextElement('img', className);
 	image.alt = ''; image.draggable = false; image.decoding = 'async';
 	image._rapierPiece = piece;
 	image.dataset.draw = '1';
@@ -330,7 +323,7 @@ function _rapierOrnamentRelease(root) {
 	for (const image of root.querySelectorAll('img')) if (image._rapierUrl) { URL.revokeObjectURL(image._rapierUrl); image._rapierUrl = null; }
 }
 function _rapierOrnamentThumbnail(item, ink, tiles) {
-	const image = _rapierComposerEl('img', 'rapier-composer__picture');
+	const image = _rapierTextElement('img', 'rapier-composer__picture');
 	image.alt = ''; image.draggable = false; image.decoding = 'async'; image.dataset.draw = '1';
 	image._rapierDraw = () => { image.src = 'data:image/svg+xml;base64,' + btoa(tiles ? RapierOrnaments.elementSVG(item, {ink, tiles}) : RapierOrnaments.thumbnailSVG(item, ink)); };
 	_rapierOrnamentWatch(image);
@@ -339,13 +332,13 @@ function _rapierOrnamentThumbnail(item, ink, tiles) {
 
 function _rapierComposerInk() { return _rapierComposerSheet.ink || RapierOrnaments.ELEMENT_INK; }
 function _rapierComposerSwatches(onChange) {
-	const row = _rapierComposerEl('div', 'rapier-composer__inks');
+	const row = _rapierTextElement('div', 'rapier-composer__inks');
 	row.setAttribute('role', 'group');
 	row.setAttribute('aria-label', 'color');
 	const paint = () => { for (const swatch of row.querySelectorAll('[data-ink]')) swatch.setAttribute('aria-pressed', String((swatch.dataset.ink || null) === (_rapierComposerSheet.ink || ''))); };
 	const choose = ink => { _rapierComposerSheet.ink = ink || null; paint(); onChange(); };
 	const make = (label, ink) => {
-		const swatch = _rapierComposerEl('button', 'rapier-composer__swatch');
+		const swatch = _rapierTextElement('button', 'rapier-composer__swatch');
 		swatch.type = 'button';
 		swatch.dataset.ink = ink || '';
 		swatch.setAttribute('aria-label', label);
@@ -355,9 +348,9 @@ function _rapierComposerSwatches(onChange) {
 		return swatch;
 	};
 	row.append(make('text color', ''), ..._RAPIER_COMPOSER_INKS.map(([name, hex]) => make(name, hex)));
-	const custom = _rapierComposerEl('label', 'rapier-composer__swatch rapier-composer__swatch--custom');
+	const custom = _rapierTextElement('label', 'rapier-composer__swatch rapier-composer__swatch--custom');
 	custom.title = 'custom color';
-	const input = _rapierComposerEl('input');
+	const input = _rapierTextElement('input');
 	input.type = 'color';
 	input.value = '#7924d7';
 	input.setAttribute('aria-label', 'custom color');
@@ -406,12 +399,12 @@ async function _rapierComposerElements() {
 	try { await _rapierGalleryEnsure('elements'); }
 	catch (error) { if (!error?.canceled) showToast(_rapierErrorWords(error, 'Couldn’t open the Gallery.'), 'error'); return; }
 	_rapierComposerOpen('Elements', state => {
-		const body = _rapierComposerEl('div', 'rapier-composer__groups');
+		const body = _rapierTextElement('div', 'rapier-composer__groups');
 		let open = null, wanted = null, groups = _rapierElementGroups();
 		const ink = () => _rapierComposerInk() === RapierOrnaments.ELEMENT_INK ? _rapierComposerHex(getComputedStyle(document.body).color) : _rapierComposerInk();
 		const cover = group => {
 			if (group.items?.length) { const sample = group.items[0]; return _rapierOrnamentThumbnail(sample, ink(), sample.tile ? 2 : 0); }
-			const preview = globalThis.RapierGalleryPreviews?.ELEMENT_PREVIEWS?.find(row => row.group === group.name), image = _rapierComposerEl('img', 'rapier-composer__picture');
+			const preview = globalThis.RapierGalleryPreviews?.ELEMENT_PREVIEWS?.find(row => row.group === group.name), image = _rapierTextElement('img', 'rapier-composer__picture');
 			image.alt = ''; image.draggable = false; image.decoding = 'async'; if (preview) image.src = preview.src;
 			return image;
 		};
@@ -430,24 +423,24 @@ async function _rapierComposerElements() {
 			const group = open !== null && groups.find(each => each.name === open);
 			if (!group?.items) {
 				open = null;
-				const list = _rapierComposerEl('div', 'rapier-composer__grid rapier-composer__grid--groups');
+				const list = _rapierTextElement('div', 'rapier-composer__grid rapier-composer__grid--groups');
 				list.setAttribute('role', 'group'); list.setAttribute('aria-label', 'groups');
 				for (const each of groups) {
-					const card = _rapierComposerEl('button', 'rapier-composer__card rapier-composer__card--group');
+					const card = _rapierTextElement('button', 'rapier-composer__card rapier-composer__card--group');
 					card.type = 'button'; card.dataset.group = each.name; card.setAttribute('aria-label', each.name + ', ' + each.count);
-					card.append(cover(each), _rapierComposerEl('span', 'rapier-composer__name', each.name + ' \u00b7 ' + each.count));
+					card.append(cover(each), _rapierTextElement('span', 'rapier-composer__name', each.name + ' \u00b7 ' + each.count));
 					card.addEventListener('click', () => void enter(each));
 					list.append(card);
 				}
 				body.append(list);
 				return;
 			}
-			const back = _rapierComposerEl('button', 'link-dialog__btn', '\u2039 ' + open);
+			const back = _rapierTextElement('button', 'link-dialog__btn', '\u2039 ' + open);
 			back.type = 'button'; back.addEventListener('click', () => { open = null; draw(); panelTop(); });
-			const grid = _rapierComposerEl('div', 'rapier-composer__grid rapier-composer__grid--items');
+			const grid = _rapierTextElement('div', 'rapier-composer__grid rapier-composer__grid--items');
 			grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', open);
 			for (const item of group.items) {
-				const card = _rapierComposerEl('button', 'rapier-composer__card');
+				const card = _rapierTextElement('button', 'rapier-composer__card');
 				card.type = 'button'; card.dataset.piece = item.id; card.setAttribute('aria-label', item.name);
 				card.append(_rapierOrnamentThumbnail(item, ink(), item.tile ? Math.min(3, RapierOrnaments.bandTiles(item)) : 0));
 				card.addEventListener('click', () => { if (state.close(false)) void _rapierComposerInsert({item, ink: _rapierComposerSheet.ink, target}); });
@@ -469,16 +462,16 @@ function _rapierComposerBorders() {
 			for (const [heading, wanted] of [['Title pages', row => /^Title/.test(row.name)], ['Borders', row => !/^Title/.test(row.name)]]) {
 				const group = rows.filter(wanted);
 				if (!group.length) continue;
-				const grid = _rapierComposerEl('div', 'rapier-composer__grid rapier-composer__grid--borders');
+				const grid = _rapierTextElement('div', 'rapier-composer__grid rapier-composer__grid--borders');
 				grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', heading);
 				for (const row of group) {
-					const card = _rapierComposerEl('button', 'rapier-composer__card');
+					const card = _rapierTextElement('button', 'rapier-composer__card');
 					card.type = 'button'; card.dataset.border = row.id; card.setAttribute('aria-label', row.name);
-					card.append(_rapierOrnamentThumbnail(row, ink, 0), _rapierComposerEl('span', 'rapier-composer__name', row.name.replace(/^Title border /, '').replace(/^Border /, '')));
+					card.append(_rapierOrnamentThumbnail(row, ink, 0), _rapierTextElement('span', 'rapier-composer__name', row.name.replace(/^Title border /, '').replace(/^Border /, '')));
 					card.addEventListener('click', () => { if (state.close(false)) void _rapierPresetPart.startPage(row, stamp); });
 					grid.append(card);
 				}
-				parts.push(_rapierComposerEl('div', 'link-dialog__label', heading + ' \u00b7 ' + group.length), grid);
+				parts.push(_rapierTextElement('div', 'link-dialog__label', heading + ' \u00b7 ' + group.length), grid);
 			}
 			return parts;
 		});

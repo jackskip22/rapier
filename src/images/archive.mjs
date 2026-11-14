@@ -4,7 +4,7 @@ import {readOpenRasterMembers} from './openraster.mjs';
 import {zipRanges, zipMember, archivePathName, archivePathRegistry} from '../notes/zip-reader.mjs';
 export {crc32};
 
-export const ARCHIVE_LIMITS = Object.freeze({bytes: 25 * 1024 * 1024, entries: 1024, nameBytes: 1024, metadataBytes: 65536});
+export const ARCHIVE_LIMITS = Object.freeze({bytes: 128 * 1024 * 1024, entries: 1024, nameBytes: 1024, metadataBytes: 65536});
 const ARCHIVE_ZIP = Object.freeze({
 	maxBytes: ARCHIVE_LIMITS.bytes, maxEntries: ARCHIVE_LIMITS.entries, zip64: false, maxNameBytes: ARCHIVE_LIMITS.nameBytes,
 	rejectEmpty: true, contiguous: true, versionMax: 20, paths: 'archive', errors: 'archive', fileTypes: true,

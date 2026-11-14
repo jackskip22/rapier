@@ -30,7 +30,7 @@
 
   let sel = null;
   let bar = null, row = null;
-  let plate = null, dragState = null, ghost = null;
+  let plate = null, dragState = null;
   let shown = null;
   const positions = new Map();
   let escapeWasEditing = false, lastDragAt = 0;
@@ -201,8 +201,21 @@
     return shapeId ? diagram.querySelector('[data-shape-id="' + shapeId + '"]') : null;
   }
 
+  function holdBoxes(diagram) {
+    const plates = [];
+    for (const group of diagram.querySelectorAll('[data-shape-id]')) {
+      const part = diagram._rapierFlowchart?.parts?.[group.dataset.shapeId];
+      if (part?.kind !== 'node' || sel?.kind === 'node' && part.id === sel.id) continue;
+      const box = platePlace(diagram, group);
+      box.dataset.box = part.id;
+      box.addEventListener('pointerdown', event => beginPointer(event, diagram, part.id));
+      plates.push(box);
+    }
+    return () => { for (const box of plates) box.remove(); };
+  }
+
   function unpaint() {
-    if (shown) { try { shown.saved(); } catch (_) {} shown = null; }
+    if (shown) { try { shown.saved(); shown.held(); } catch (_) {} shown = null; }
     plate?.remove(); plate = null;
   }
 
@@ -211,8 +224,9 @@
     if (!sel) { showBar(null); return; }
     const group = groupOf(diagram, sel);
     if (!group) { sel = null; showBar(null); return; }
-    shown = {diagram, group, saved: restyle(group, sel.kind === 'node' ? paintNode : paintEdge)};
+    shown = {diagram, group, saved: restyle(group, sel.kind === 'node' ? paintNode : paintEdge), held: () => {}};
     if (sel.kind === 'node') placePlate(diagram, group);
+    shown.held = holdBoxes(diagram);
     showBar(diagram);
   }
 
@@ -334,6 +348,8 @@
     if (Date.now() - lastDragAt < 400) return true;
     const data = diagram._rapierFlowchart, {block} = blockOf(diagram);
     if (!data || !block) return false;
+    const held = pressed.closest?.('.rapier-diagram-plate[data-box]');
+    if (held) pressed = diagram.querySelector('[data-shape-id="' + held.dataset.box + '"]') || pressed;
     const group = pressed.closest?.('[data-shape-id]');
     const part = group && data.parts?.[group.dataset.shapeId];
     if (pressed.closest?.('.rapier-diagram-plate') && sel?.kind === 'node') {
@@ -369,23 +385,66 @@
     return rects;
   }
 
-  function placePlate(diagram, group) {
+  function platePlace(diagram, group) {
     const bounds = diagram.getBoundingClientRect(), rect = ([...group.children].find(element => element.localName !== 'text') || group).getBoundingClientRect();
-    plate = document.createElement('div');
-    plate.className = 'rapier-diagram-plate';
-    Object.assign(plate.style, {left: rect.left - bounds.left + diagram.scrollLeft + 'px', top: rect.top - bounds.top + diagram.scrollTop + 'px',
+    const box = document.createElement('div');
+    box.className = 'rapier-diagram-plate';
+    Object.assign(box.style, {left: rect.left - bounds.left + diagram.scrollLeft + 'px', top: rect.top - bounds.top + diagram.scrollTop + 'px',
       width: rect.width + 'px', height: rect.height + 'px'});
-    plate.addEventListener('pointerdown', event => beginPointer(event, diagram, sel.id, true));
-    diagram.append(plate);
+    diagram.append(box);
+    return box;
   }
 
-  function beginPointer(event, diagram, id, onPlate) {
+  function placePlate(diagram, group) {
+    plate = platePlace(diagram, group);
+    plate.addEventListener('pointerdown', event => beginPointer(event, diagram, sel.id));
+  }
+
+  function beginPointer(event, diagram, id) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (dragState) return;
     if (editor().editing()) event.preventDefault();
-    dragState = {diagram, id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, moved: false, rects: null, hover: null, onPlate};
+    dragState = {diagram, id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, moved: false};
     window.addEventListener('pointermove', dragMove, true);
     window.addEventListener('pointerup', dragEnd, true);
     window.addEventListener('pointercancel', dragEnd, true);
+  }
+
+  function centreOf(diagram, id) {
+    const geom = diagram._rapierFlowchart?.recipe?.shapes?.find(shape => shape.id === id)?.geom;
+    return geom && Number.isFinite(geom.cx) && Number.isFinite(geom.cy) ? {x: geom.cx, y: geom.cy} : null;
+  }
+
+  function unitsPerPixel(diagram) {
+    const matrix = diagram.querySelector('svg')?.getScreenCTM?.();
+    const scale = matrix ? Math.hypot(matrix.a, matrix.b) : 1;
+    return scale > 0 ? 1 / scale : 1;
+  }
+
+  function follow(s) {
+    const group = s.diagram.querySelector('[data-shape-id="' + s.id + '"]');
+    if (!group) return;
+    const dx = s.target.x - s.drawn.x, dy = s.target.y - s.drawn.y;
+    group.ownerSVGElement?.style.setProperty('overflow', 'visible');
+    group.style.transform = dx || dy ? 'translate(' + dx + 'px,' + dy + 'px)' : '';
+    if (plate && sel?.id === s.id) plate.style.transform = dx || dy ? 'translate(' + dx / s.units + 'px,' + dy / s.units + 'px)' : '';
+  }
+
+  async function preview(s) {
+    if (s.busy || dragState !== s) return;
+    s.busy = true;
+    try {
+      while (dragState === s && (s.target.x !== s.asked?.x || s.target.y !== s.asked?.y)) {
+        const at = {...s.target}, result = edits().move(s.base, s.id, at.x, at.y);
+        s.asked = at;
+        if (!result.ok || result.splice === null) continue;
+        s.diagram.setAttribute('data-diagram-src', encodeURIComponent(result.source.replace(/\r\n?/g, '\n')));
+        await _rapierFillDiagram(s.diagram);
+        if (dragState !== s) return;
+        s.drawn = at;
+        follow(s);
+      }
+    } finally { s.busy = false; }
   }
 
   const toLocal = (diagram, x, y) => {
@@ -400,22 +459,7 @@
     return {x: cx + dx * Math.min(scale, 1), y: cy + dy * Math.min(scale, 1)};
   }
 
-  function dragMove(event) {
-    const s = dragState;
-    if (!s || event.pointerId !== s.pointerId) return;
-    if (!s.moved) {
-      if (Math.hypot(event.clientX - s.x, event.clientY - s.y) < DRAG_PX) return;
-      s.moved = true;
-      s.rects = nodeRects(s.diagram);
-      if (!s.rects.has(s.id)) { dragEnd(event, true); return; }
-      select({blockId: blockOf(s.diagram).block.id, kind: 'node', id: s.id});
-      ghost = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      ghost.setAttribute('class', 'rapier-diagram-ghost');
-      ghost.append(document.createElementNS(SVG, 'line'), document.createElementNS(SVG, 'polygon'));
-      s.diagram.append(ghost);
-      tick();
-    }
-    event.preventDefault();
+  function linkMove(s, event) {
     const from = s.rects.get(s.id);
     let hover = null;
     for (const [id, rect] of s.rects) {
@@ -430,31 +474,82 @@
       }
       s.hover = hover;
     }
-    const tip = hover ? {x: s.rects.get(hover).left + s.rects.get(hover).width / 2, y: s.rects.get(hover).top + s.rects.get(hover).height / 2} : {x: event.clientX, y: event.clientY};
-    const start = edgePoint(from, tip), end = hover ? edgePoint(s.rects.get(hover), start) : tip;
+    const target = hover && s.rects.get(hover);
+    const tip = target ? {x: target.left + target.width / 2, y: target.top + target.height / 2} : {x: event.clientX, y: event.clientY};
+    const start = edgePoint(from, tip), end = target ? edgePoint(target, start) : tip;
     const a = toLocal(s.diagram, start.x, start.y), b = toLocal(s.diagram, end.x, end.y);
     const angle = Math.atan2(b.y - a.y, b.x - a.x), size = 10;
     const p = (r, t) => (b.x - Math.cos(angle + t) * r) + ',' + (b.y - Math.sin(angle + t) * r);
-    ghost.setAttribute('width', s.diagram.scrollWidth); ghost.setAttribute('height', s.diagram.scrollHeight);
-    ghost.firstChild.setAttribute('x1', a.x); ghost.firstChild.setAttribute('y1', a.y);
-    ghost.firstChild.setAttribute('x2', b.x - Math.cos(angle) * (size - 1)); ghost.firstChild.setAttribute('y2', b.y - Math.sin(angle) * (size - 1));
-    ghost.lastChild.setAttribute('points', b.x + ',' + b.y + ' ' + p(size, -.4) + ' ' + p(size, .4));
+    s.ghost.setAttribute('width', s.diagram.scrollWidth); s.ghost.setAttribute('height', s.diagram.scrollHeight);
+    s.ghost.firstChild.setAttribute('x1', a.x); s.ghost.firstChild.setAttribute('y1', a.y);
+    s.ghost.firstChild.setAttribute('x2', b.x - Math.cos(angle) * (size - 1)); s.ghost.firstChild.setAttribute('y2', b.y - Math.sin(angle) * (size - 1));
+    s.ghost.lastChild.setAttribute('points', b.x + ',' + b.y + ' ' + p(size, -.4) + ' ' + p(size, .4));
   }
 
-  function dragEnd(event, cancel) {
+  function dragMove(event) {
+    const s = dragState;
+    if (!s || event.pointerId !== s.pointerId) return;
+    if (!s.moved && sel?.linking && sel.kind === 'node' && sel.blockId === blockOf(s.diagram).block?.id) {
+      if (Math.hypot(event.clientX - s.x, event.clientY - s.y) < DRAG_PX) return;
+      s.moved = true; s.linking = true; s.blockId = sel.blockId;
+      s.rects = nodeRects(s.diagram);
+      if (!s.rects.has(s.id)) { dragEnd(event, true); return; }
+      s.ghost = document.createElementNS(SVG, 'svg');
+      s.ghost.setAttribute('class', 'rapier-diagram-ghost');
+      s.ghost.append(document.createElementNS(SVG, 'line'), document.createElementNS(SVG, 'polygon'));
+      s.diagram.append(s.ghost);
+      tick();
+    }
+    if (s.linking) { event.preventDefault(); linkMove(s, event); return; }
+    if (!s.moved) {
+      if (Math.hypot(event.clientX - s.x, event.clientY - s.y) < DRAG_PX) return;
+      const {block} = blockOf(s.diagram), start = centreOf(s.diagram, s.id);
+      if (!block || !start || _rapierUserMutationBlocked() || !editor().close()) { dragEnd(event, true); return; }
+      s.moved = true;
+      s.blockId = block.id;
+      s.original = s.diagram.getAttribute('data-diagram-src');
+      s.base = editor().fence(block.raw)?.body;
+      s.start = start; s.drawn = start; s.target = start;
+      s.units = unitsPerPixel(s.diagram);
+      if (typeof s.base !== 'string') { dragEnd(event, true); return; }
+      select({blockId: block.id, kind: 'node', id: s.id});
+      tick();
+    }
+    event.preventDefault();
+    s.target = {x: Math.round(s.start.x + (event.clientX - s.x) * s.units), y: Math.round(s.start.y + (event.clientY - s.y) * s.units)};
+    follow(s);
+    void preview(s);
+  }
+
+  async function dragEnd(event, cancel) {
     const s = dragState;
     if (!s || (event.pointerId !== undefined && event.pointerId !== s.pointerId)) return;
     dragState = null;
     window.removeEventListener('pointermove', dragMove, true);
     window.removeEventListener('pointerup', dragEnd, true);
     window.removeEventListener('pointercancel', dragEnd, true);
-    s.unhover?.();
-    ghost?.remove(); ghost = null;
     if (!s.moved) return;
     lastDragAt = Date.now();
     event.preventDefault?.();
-    if (cancel === true || event.type === 'pointercancel' || !s.hover) return;
-    void connect(s.diagram, s.id, s.hover);
+    if (s.linking) {
+      s.unhover?.(); s.ghost?.remove();
+      if (cancel === true || event.type === 'pointercancel' || !s.hover) return;
+      if (sel) sel.linking = false;
+      await connect(s.diagram, s.id, s.hover);
+      const diagram = findDiagram(s.blockId);
+      if (diagram && sel) showBar(diagram);
+      return;
+    }
+    const drawn = s.diagram.isConnected ? s.diagram : findDiagram(s.blockId);
+    const back = async () => {
+      if (!drawn) return;
+      drawn.querySelector('[data-shape-id="' + s.id + '"]')?.style.removeProperty('transform');
+      if (drawn.getAttribute('data-diagram-src') !== s.original) { drawn.setAttribute('data-diagram-src', s.original); await _rapierFillDiagram(drawn); }
+      else if (sel) draw(drawn);
+    };
+    const result = cancel === true || event.type === 'pointercancel' ? null : edits().move(s.base, s.id, s.target.x, s.target.y);
+    if (!result?.ok || result.splice === null || !drawn) { await back(); return; }
+    if (!(await commit(drawn, 'document.move-diagram-box', source => edits().move(source, s.id, s.target.x, s.target.y)))) await back();
   }
 
 
@@ -511,7 +606,7 @@
     const before = positions.get(blockId);
     positions.delete(blockId); positions.set(blockId, now);
     while (positions.size > 8) positions.delete(positions.keys().next().value);
-    if (!before || reduced()) return;
+    if (!before || reduced() || dragState?.moved) return;
     let changed = false;
     for (const [id, at] of now) {
       const group = diagram.querySelector('[data-shape-id="' + id + '"]'), old = before.get(id);
@@ -551,7 +646,7 @@
       } else if (part?.kind === 'node') {
         group.setAttribute('tabindex', '0');
         group.setAttribute('role', 'button');
-        group.addEventListener('pointerdown', event => { if (event.pointerType === 'mouse') beginPointer(event, diagram, part.id, false); });
+        group.addEventListener('pointerdown', event => { if (event.pointerType === 'mouse' || sel?.blockId === block.id) beginPointer(event, diagram, part.id); });
         group.addEventListener('focus', () => { if (group.matches(':focus-visible')) select({blockId: block.id, kind: 'node', id: part.id}); });
       }
     }

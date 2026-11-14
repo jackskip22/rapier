@@ -17,7 +17,7 @@ function backupSequenceRecord(value) {
 	const fail = () => { throw new Error('the private backup sequence record is invalid; staging is retained, not exported'); };
 	const {name, stamp, plan, options, sent, pending} = value;
 	if (typeof name !== 'string' || !/^[^/\\\0]+\.zip$/i.test(name) || name.length > 255 || !name.isWellFormed() || typeof stamp !== 'string' || !Number.isFinite(Date.parse(stamp))
-		|| !plan || !Array.isArray(plan.parts) || !plan.parts.length || plan.parts.length > 65533 || !Number.isSafeInteger(plan.maxBytes) || plan.maxBytes < 22 || plan.maxBytes > ZIP_READ_MAX_BYTES
+		|| !plan || !Array.isArray(plan.parts) || !plan.parts.length || plan.parts.length > 65533 || !Number.isSafeInteger(plan.maxBytes) || plan.maxBytes < 22 || plan.maxBytes > ZIP_READ_MAX_BYTES && plan.maxBytes !== Number.MAX_SAFE_INTEGER
 		|| !Array.isArray(plan.manifest?.files) || !plan.manifest.files.length || plan.manifest.files.length > 65533 || !Array.isArray(plan.omitted)
 		|| !options || options.stamp !== Date.parse(stamp) || plan.manifest.stamp !== options.stamp || plan.manifest.appVersion !== options.appVersion || typeof options.appVersion !== 'string' || typeof options.comment !== 'string'
 		|| !Array.isArray(sent) || sent.length > plan.parts.length || sent.some(row => !['confirmed','dispatched'].includes(row?.status) || typeof row.name !== 'string')) fail();

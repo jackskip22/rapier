@@ -92,9 +92,12 @@ function tokenizeCode(source, language) {
 const _RAPIER_TOKEN_TYPES = Object.freeze(['plain', 'comment', 'string', 'number', 'keyword', 'type', 'function', 'constant', 'operator']);
 const _RAPIER_TOKEN_KIND = Object.freeze(Object.assign(Object.create(null), Object.fromEntries(_RAPIER_TOKEN_TYPES.map((type, kind) => [type, kind]))));
 function _rapierCodeRuns(text, language) {
+	return _rapierFinishWork(_rapierCodeRunsWork(text, language, Infinity));
+}
+function* _rapierCodeRunsWork(text, language, slice) {
 	const reading = _rapierCodeReading(language);
 	if (reading === 'plain') return text ? {ends: Int32Array.of(text.length), kinds: Uint8Array.of(0)} : {ends: new Int32Array(0), kinds: new Uint8Array(0)};
-	return reading === 'markdown' ? _rapierMarkdownRuns(text, 0) : reading === 'diff' ? _rapierDiffRuns(text) : _rapierCodeSpanRuns(text);
+	return reading === 'markdown' ? _rapierMarkdownRuns(text, 0) : reading === 'diff' ? _rapierDiffRuns(text) : yield* _rapierCodeSpanWork(text, slice);
 }
 function _rapierRunSpans({ends, kinds}) {
 	const spans = new Array(ends.length);
@@ -162,6 +165,14 @@ function _rapierCodeSpans(text) {
 	return _rapierRunSpans(_rapierCodeSpanRuns(text));
 }
 function _rapierCodeSpanRuns(text) {
+	return _rapierFinishWork(_rapierCodeSpanWork(text, Infinity));
+}
+function _rapierFinishWork(work) {
+	let step;
+	while (!(step = work.next()).done);
+	return step.value;
+}
+function* _rapierCodeSpanWork(text, slice) {
 	const n = text.length, {colour, finish, next, lineEnd} = _rapierCodeSpanList(text);
 	const {hashOnly, dash} = _rapierCodeCommentMarks(text);
 	const sql = /\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/.test(text);
@@ -203,8 +214,9 @@ function _rapierCodeSpanRuns(text) {
 		while (i < n && _RAPIER_CODE_REGEX_FLAGS.has(text.charCodeAt(i))) i++;
 		return _rapierCodeWordChar(text.charCodeAt(i)) ? -1 : i;
 	};
-	let tickMissing = n + 1, wordStart = 0, wordStop = 0, wordEnd = -1, lifetimeEnd = -1, angle = null, wordClass = 0;
+	let tickMissing = n + 1, wordStart = 0, wordStop = 0, wordEnd = -1, lifetimeEnd = -1, angle = null, wordClass = 0, pause = slice;
 	for (let at = 0; at < n;) {
+		if (at >= pause) { yield at; pause = at + slice; }
 		const c = text.charCodeAt(at);
 		let end = at + 1, type = 'plain';
 		if (c < 128 && _RAPIER_CODE_PLAIN_TABLE[c] === 1) {
@@ -471,6 +483,29 @@ function _rapierTokensHtml(source, spans) {
 	return html;
 }
 
+const _RAPIER_CODE_PART_CHARS = 4096;
+function _rapierCodePartsHtml(source, language) {
+	const text = typeof source === 'string' ? source : String(source ?? '');
+	if (text.length <= RAPIER_CODE_COLOUR_MAX_CHARS || _rapierCodeReading(language) === 'plain') return '';
+	const write = _rapierHtmlWriter(text);
+	let html = '';
+	for (let from = 0; from < text.length;) {
+		const at = text.indexOf('\n', Math.min(text.length - 1, from + _RAPIER_CODE_PART_CHARS - 1)), end = at < 0 ? text.length : at + 1;
+		html += '<span class="tok-part"><span class="tok-text">' + write(from, end) + '</span></span>';
+		from = end;
+	}
+	return html;
+}
+
+function _rapierRunsPartPieces(text, {ends, kinds}, from, to) {
+	let lo = 0, hi = ends.length - 1;
+	while (lo < hi) { const mid = (lo + hi) >> 1; if (ends[mid] <= from) lo = mid + 1; else hi = mid; }
+	const pieces = [];
+	for (let i = lo, start = from; i < ends.length && start < to; start = Math.min(ends[i++], to))
+		pieces.push([kinds[i] ? _RAPIER_TOKEN_TYPES[kinds[i]] : '', text.slice(start, Math.min(ends[i], to))]);
+	return pieces;
+}
+
 function _rapierCodeHtml(source, language) {
 	const text = typeof source === 'string' ? source : String(source ?? '');
 	const {ends, kinds} = _rapierCodeRuns(text, language), write = _rapierHtmlWriter(text);
@@ -482,10 +517,10 @@ function _rapierCodeHtml(source, language) {
 	return html;
 }
 
-export { RAPIER_CODE_COLOUR_MAX_CHARS, _RAPIER_HIGHLIGHT_SLAB_MAX_CHARS, _RAPIER_HIGHLIGHT_LINE_MAX_CHARS,
+export { RAPIER_CODE_COLOUR_MAX_CHARS, _RAPIER_CODE_PART_CHARS, _rapierCodePartsHtml, _rapierRunsPartPieces, _rapierFinishWork, _rapierCodeSpanWork, _RAPIER_HIGHLIGHT_SLAB_MAX_CHARS, _RAPIER_HIGHLIGHT_LINE_MAX_CHARS,
 	_rapierHighlightLinesAdmitted, _rapierHighlightAdmitted, _RAPIER_CODE_WORDS, _RAPIER_CODE_SQL_WORDS, _RAPIER_CODE_CONSTANTS, _RAPIER_CODE_TYPES, _RAPIER_CODE_PLAIN, _RAPIER_CODE_STRING_PREFIXES,
 	_RAPIER_CODE_DEFINERS, _RAPIER_CODE_LABELLERS, _RAPIER_CODE_OPERATORS, _RAPIER_CODE_REGEX_BEFORE, _RAPIER_CODE_REGEX_AFTER, _RAPIER_CODE_REGEX_FLAGS, _RAPIER_CODE_CLASS, _RAPIER_CODE_CLASS_WORDS, _RAPIER_CODE_CLASS_BITS,
 	_RAPIER_CODE_CLASS_SLOTS, _rapierCodeWordHash, _RAPIER_CODE_CLASS_LENGTHS, _rapierCodeWordClass, _RAPIER_CODE_OPERATOR_TABLE, _RAPIER_CODE_PLAIN_TABLE,
-	_RAPIER_TOKEN_TYPES, _RAPIER_TOKEN_KIND, _rapierCodeReading, tokenizeCode, _rapierCodeRuns, _rapierRunSpans, _rapierCodeSpanList, _rapierCodeWordChar, _rapierCodeBreakChar,
+	_RAPIER_TOKEN_TYPES, _RAPIER_TOKEN_KIND, _rapierCodeReading, tokenizeCode, _rapierCodeRuns, _rapierCodeRunsWork, _rapierRunSpans, _rapierCodeSpanList, _rapierCodeWordChar, _rapierCodeBreakChar,
 	_rapierCodeCommentMarks, _rapierCodeSpans, _rapierCodeSpanRuns, _rapierDiffTokens, _rapierDiffRuns, _rapierMarkdownTokens, _rapierMarkdownRuns,
 	_RAPIER_TOKEN_OPEN, _RAPIER_TOKEN_OPEN_BY_KIND, _rapierHtmlWriter, _rapierTokensHtml, _rapierCodeHtml };

@@ -26,9 +26,19 @@ export const SCENE = Object.freeze({
 	note: 'A WebGL scene saved as JPEG XL while it keeps drawing, on this device.',
 	missing: 'The scene could not load. Reload the page and try again.'});
 export const EXAMPLE = Object.freeze({
+	part: 'jxlexample', global: 'RapierJxlExample',
 	title: 'Animated JPEG XL:',
+	alt: 'Earth from the International Space Station, animated JPEG XL',
 	credit: 'Earth from the International Space Station. NASA, public domain.',
 	missing: 'The example could not load. Reload the page and try again.'});
+export const CLIP = Object.freeze({
+	part: 'jxlclip', global: 'RapierJxlClip',
+	title: 'Animated JPEG XL:',
+	alt: 'A chimpanzee driving a watermelon train, animated JPEG XL',
+	caption: 'GIF 4.0 MB · JPEG XL 510 KB',
+	local: false,
+	credit: '',
+	missing: 'The clip could not load. Reload the page and try again.'});
 export const ABOUT = Object.freeze([
 	'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies.',
 	'Rapier is a single HTML file that works offline, free and open source.',

@@ -38,7 +38,6 @@ try {
     ['HarfBuzz', join(here, 'HARFBUZZ-LICENSE.txt')],
     ['WOFF2 1.0.2', join(here, 'WOFF2-LICENSE.txt')],
     ['Brotli', join(here, 'BROTLI-LICENSE.txt')],
-    ['fflate ' + packages.fflate, join(dependencies, 'node_modules/fflate/LICENSE')],
   ]) notices.push(name + '\n\n' + await readFile(path, 'utf8'));
   const noticeBytes = Buffer.from(notices.join('\n\n---\n\n'));
   const esbuild = await import(pathToFileURL(join(dependencies, 'node_modules/esbuild/lib/main.js')).href);

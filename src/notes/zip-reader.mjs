@@ -92,19 +92,34 @@ function* scanZip(length, options = {}) {
 	let {maxMetadataBytes} = limits;
 	if (![maxBytes, maxEntries, maxMetadataBytes].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error('readZip: admission bounds must be nonnegative safe integers');
 	maxMetadataBytes = Math.min(maxMetadataBytes, ZIP_METADATA_BYTES);
-	const byteLimit = Math.min(maxBytes, ZIP_READ_MAX_BYTES), entryLimit = Math.min(maxEntries, ZIP_MAX_ENTRIES);
+	const ranged = zip64 && options.ranged === true;
+	const byteLimit = ranged ? maxBytes : Math.min(maxBytes, ZIP_READ_MAX_BYTES), entryLimit = zip64 ? maxEntries : Math.min(maxEntries, ZIP_MAX_ENTRIES);
 	if (length < 22) zipError(limits, 'archive_byte_limit', 'readZip: too short to be a zip file');
 	const tailAt = Math.max(0, length - 22 - 65535 - 20), tail = yield [tailAt, length - tailAt];
-	const tv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength), end = findEndRecord(tail, tv, limits), eocd = tailAt + end;
-	if (eocd >= 20 && tv.getUint32(end - 20, true) === 0x07064b50) zipError(limits, 'archive_zip64_unsupported', 'readZip: this archive uses ZIP64, which this reader does not support');
-	const total = tv.getUint16(end + 10, true), cdSize = tv.getUint32(end + 12, true), cdOffset = tv.getUint32(end + 16, true);
-	if (total === 0xFFFF || cdSize === 0xFFFFFFFF || cdOffset === 0xFFFFFFFF) zipError(limits, 'archive_zip64_unsupported', 'readZip: this archive uses ZIP64, which this reader does not support');
+	const tv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength), end = findEndRecord(tail, tv, limits);
+	let eocd = tailAt + end, total = tv.getUint16(end + 10, true), cdSize = tv.getUint32(end + 12, true), cdOffset = tv.getUint32(end + 16, true);
+	const located = eocd >= 20 && end >= 20 && tv.getUint32(end - 20, true) === 0x07064b50;
+	if (located || total === 0xFFFF || cdSize === 0xFFFFFFFF || cdOffset === 0xFFFFFFFF) {
+		if (!zip64 || !located) zipError(limits, 'archive_zip64_unsupported', 'readZip: this archive uses ZIP64, which this reader does not support');
+		const lo = end - 20, recordAt = tv.getUint32(lo + 8, true) + tv.getUint32(lo + 12, true) * 0x100000000;
+		if (tv.getUint32(lo + 4, true) || tv.getUint32(lo + 16, true) !== 1) zipError(limits, 'archive_multidisk_unsupported', 'readZip: split archives are not supported');
+		if (recordAt !== eocd - 20 - 56) throw new Error('readZip: the ZIP64 end record is not where its locator says');
+		const record = yield [recordAt, 56], rv = new DataView(record.buffer, record.byteOffset, record.byteLength);
+		const u64 = at => { const high = rv.getUint32(at + 4, true); if (high > 0x1FFFFF) throw new Error('readZip: a ZIP64 end value is outside the safe integer range'); return high * 0x100000000 + rv.getUint32(at, true); };
+		if (rv.getUint32(0, true) !== 0x06064b50 || u64(4) !== 44) throw new Error('readZip: the ZIP64 end record is malformed');
+		if (rv.getUint32(16, true) || rv.getUint32(20, true)) zipError(limits, 'archive_multidisk_unsupported', 'readZip: split archives are not supported');
+		const total64 = u64(32), size64 = u64(40), offset64 = u64(48);
+		if (u64(24) !== total64) zipError(limits, 'archive_multidisk_unsupported', 'readZip: the file counts disagree');
+		if (total !== 0xFFFF && total !== total64 || cdSize !== 0xFFFFFFFF && cdSize !== size64 || cdOffset !== 0xFFFFFFFF && cdOffset !== offset64) throw new Error('readZip: the ZIP64 end record disagrees with the classic one');
+		total = total64; cdSize = size64; cdOffset = offset64; eocd = recordAt;
+		if (tv.getUint16(end + 4, true) || tv.getUint16(end + 6, true)) zipError(limits, 'archive_multidisk_unsupported', 'readZip: split archives are not supported');
+	}
 	if (limits.rejectEmpty && !total || total > entryLimit) {
 		if (limits.errors === 'archive') throw new Error('archive_entry_limit');
 		throw zipAdmissionError('entries', `readZip: ${total} entries exceed the ${entryLimit}-entry admission bound`);
 	}
 	if (tv.getUint16(end + 4, true) || tv.getUint16(end + 6, true)) zipError(limits, 'archive_multidisk_unsupported', 'readZip: split archives are not supported');
-	if (tv.getUint16(end + 8, true) !== total) zipError(limits, 'archive_multidisk_unsupported', 'readZip: the file counts disagree');
+	if (tv.getUint16(end + 8, true) !== Math.min(total, 0xFFFF)) zipError(limits, 'archive_multidisk_unsupported', 'readZip: the file counts disagree');
 	if (cdOffset + cdSize !== eocd) zipError(limits, 'archive_zip_directory_invalid', 'readZip: the central directory is truncated or has an inconsistent size');
 	const dec = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}), records = [], names = new Set(), paths = limits.paths === 'archive' ? archivePathRegistry() : null;
 	let budget = byteLimit, at = cdOffset, metadata = 0;

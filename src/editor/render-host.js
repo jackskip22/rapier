@@ -77,6 +77,7 @@ function _rapierBindRenderOwner(kind) {
       _rapierApplyMarkdownSpec: typeof _rapierApplyMarkdownSpec === 'undefined' ? undefined : _rapierApplyMarkdownSpec,
       _rapierChromeOwnsId: (...args) => _rapierRenderModule('render-sanitize')._rapierChromeOwnsId(...args),
       _rapierCodeHtml: typeof _rapierLexedCodeHtml === 'undefined' ? undefined : _rapierLexedCodeHtml,
+      _rapierCodePartsHtml: typeof _rapierCodePartsHtml === 'undefined' ? undefined : _rapierCodePartsHtml,
       _rapierDeriveDarkColor: typeof _rapierDeriveDarkColor === 'undefined' ? undefined : _rapierDeriveDarkColor,
       _rapierDormantHeadings: typeof _rapierDormantHeadings === 'undefined' ? undefined : _rapierDormantHeadings,
       _rapierEmbedAssetSource: typeof _rapierEmbedAssetSource === 'undefined' ? undefined : _rapierEmbedAssetSource,
@@ -255,16 +256,13 @@ async function _rapierServerRenderDocument({source, filename = 'document.md', fo
     const prepared = await _rapierBuildDocxHtml(context);
     const blob = await _rapierConvertPortableHtmlToDocx(prepared);
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    let binary = '';
-    for (let offset = 0; offset < bytes.length; offset += 32768)
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
-    return {base64: btoa(binary), filename: context.baseName + '.docx'};
+    return {base64: bytes.toBase64(), filename: context.baseName + '.docx'};
   }
   throw new TypeError('Unknown document export format');
 }
 async function _rapierServerReadWord(base64) {
   await _rapierServerRenderReady();
-  const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+  const bytes = Uint8Array.fromBase64(base64);
   let index = 0; const pictures = new Map();
   const result = await globalThis.RapierDocxImport.readDocx(new Blob([bytes]), {embedImage: async image => {
     const reference = 'server-word-' + (++index);

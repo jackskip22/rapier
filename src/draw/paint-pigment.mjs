@@ -19,12 +19,6 @@ function fastChroma(r, g, b) {
 }
 const SKIP = (1 - MIX_RESCUE_FROM) * 1.002;
 
-export function paintPigment(r, g, b) {
-	const out = new Float64Array(PAINT_PIGMENT_CHANNELS);
-	out.set(paintPigmentCell(Math.round(clamp(r) * GRID), Math.round(clamp(g) * GRID), Math.round(clamp(b) * GRID)));
-	mixState(r, g, b, out, KM, 1 / lumOf(r, g, b));
-	return out;
-}
 function paintPigmentCell(r, g, b) {
 	const key = r * 1048576 + g * 1024 + b;
 	let pigment = pigments.get(key);
@@ -79,8 +73,6 @@ export function writePaintKM(r, g, b, out, offset = 0) {
 	return out;
 }
 export function paintWetRGB(pigment, out, offset = 0) { return paintPigmentRGB(pigment, out, offset); }
-export function paintKMRGB(pigment, out, offset = 0) { return kmRGB(pigment, out, offset); }
-export function paintWetPigment(r, g, b) { return paintPigmentCell(Math.round(clamp(r) * GRID), Math.round(clamp(g) * GRID), Math.round(clamp(b) * GRID)); }
 
 export function writePaintRGB(r, g, b, out) { out[0] = r; out[1] = g; out[2] = b; return out; }
 export function readPaintRGB(source, out) { out[0] = source[0]; out[1] = source[1]; out[2] = source[2]; return out; }

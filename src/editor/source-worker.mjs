@@ -121,7 +121,7 @@ export function installSourceWorker(scope) {
         find = {source, visible, surface: input.surface};
         progress(.75);
         const read = visible?.read;
-        const found = _rapierFindFlexibleSeparatorHits(read?.text ?? source, input.query, input.limit,
+        const found = _rapierFindFlexibleSeparatorHits(read?.text ?? source, input.query, Infinity,
           read?.hidden ?? visible?.hidden ?? null);
         const hits = read ? found.hits.map(read.hit) : found.hits;
         const offsets = new Uint32Array(hits.length * 2);
@@ -420,11 +420,11 @@ function sourceFindSession(source, surface, parser, createWorker) {
       session.metadata = session.visible = session.source = session.parser = null;
       worker.terminate();
     },
-    request(query, limit, task) {
+    request(query, task) {
       if (session.disposed || task.signal?.aborted) return Promise.reject(cancelled());
       return new Promise((resolve, reject) => {
         active?.finish(cancelled()); queued?.finish(cancelled());
-        const entry = {id: ++serial, query, limit, task, settled: false,
+        const entry = {id: ++serial, query, task, settled: false,
           finish(error, result) {
             if (entry.settled) return;
             entry.settled = true;
@@ -445,13 +445,12 @@ function sourceFindSession(source, surface, parser, createWorker) {
     if (session.disposed || active || !queued) return;
     active = queued; queued = null;
     if (ready) {
-      try { worker.postMessage({operation: 'find', id: active.id, query: active.query, limit: active.limit}); }
+      try { worker.postMessage({operation: 'find', id: active.id, query: active.query}); }
       catch (error) { session.dispose(error); }
       return;
     }
     const feed = async () => {
-      worker.postMessage({operation: 'begin', kind: 'find', surface, id: active.id,
-        query: active.query, limit: active.limit});
+      worker.postMessage({operation: 'begin', kind: 'find', surface, id: active.id, query: active.query});
       let started = performance.now();
       for (let at = 0; at < source.length; at += 65536) {
         if (session.disposed) return;
@@ -480,7 +479,7 @@ function sourceFindSession(source, surface, parser, createWorker) {
   return session;
 }
 
-export async function sourceFindIndex(source, query, surface, memo, task, {parser, limit, createWorker, now} = {}) {
+export async function sourceFindIndex(source, query, surface, memo, task, {parser, createWorker, now} = {}) {
   task.check();
   let session = memo?.worker;
   if (!session || session.disposed || session.source !== source || session.parser !== parser || session.surface !== surface) {
@@ -489,7 +488,7 @@ export async function sourceFindIndex(source, query, surface, memo, task, {parse
     if (memo) memo.worker = session;
   }
   try {
-    const response = await session.request(query, limit, task);
+    const response = await session.request(query, task);
     task.check();
     const offsets = new Uint32Array(response.hits), hits = [];
     if (surface !== 'source' && !session.visible) {

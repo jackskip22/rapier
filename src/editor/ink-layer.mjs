@@ -34,13 +34,22 @@ function _rapierInkOnResize() {
 	if (host) _rapierInkSchedule(host);
 }
 
+function _rapierInkCodePaint(record) {
+	const mark = Symbol.for('rapier.codePaint'), target = record.target;
+	if (!target || target[mark] !== true) return false;
+	if (record.type === 'attributes') return record.attributeName === 'class' && target.className === 'tok-part tok';
+	return record.type === 'childList' && record.addedNodes.length > 0 &&
+		Array.prototype.every.call(record.addedNodes, node => node[mark] === true) &&
+		Array.prototype.every.call(record.removedNodes, node => node[mark] === true || node.nodeType === 3);
+}
+
 function _rapierInkOnMutation(records) {
 	const host = _rapierInkHost();
 	if (!host) return;
 	for (const record of records) {
 		const target = record.target;
 		const element = target.nodeType === 1 ? target : target.parentElement;
-		if (element && element.closest && element.closest('.rapier-ink-layer')) continue;
+		if (element && element.closest && element.closest('.rapier-ink-layer') || _rapierInkCodePaint(record)) continue;
 		_rapierInkSchedule(host);
 		return;
 	}
@@ -54,10 +63,8 @@ function _rapierInkInstall(spec, ink, draw, dark) {
 	if (state.observer) { _rapierInkSchedule(host); return; }
 	state.observer = new MutationObserver(_rapierInkOnMutation);
 	state.observer.observe(host, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'data-rapier-ink', 'hidden'] });
-	if (typeof ResizeObserver === 'function') {
-		state.resize = new ResizeObserver(_rapierInkOnResize);
-		state.resize.observe(host);
-	}
+	state.resize = new ResizeObserver(_rapierInkOnResize);
+	state.resize.observe(host);
 	window.addEventListener('resize', _rapierInkOnResize);
 	if (document.fonts && typeof document.fonts.addEventListener === 'function') document.fonts.addEventListener('loadingdone', _rapierInkOnResize);
 	_rapierInkSchedule(host);

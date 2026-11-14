@@ -1447,14 +1447,13 @@ const _rapierImageFlow = (() => {
     if (!image?.isConnected || !Number.isFinite(top)) { endSettle(); schedule(); return; }
     const intent = settle?.intent ?? userIntent;
     endSettle();
-    const observer = typeof ResizeObserver === 'function'
-      ? new ResizeObserver(() => { if (settle?.observer === observer) pinSettled(); }) : null;
+    const observer = new ResizeObserver(() => { if (settle?.observer === observer) pinSettled(); });
     settle = {image, top, position: null, index: -1, intent, until: performance.now() + SETTLE_WINDOW, observer, frame: 0,
       editDiv: _activeBlockEditContext()?.editDiv || null};
     if (frame) { cancelAnimationFrame(frame); frame = 0; }
     layout();
     if (!settle) return;
-    if (observer) for (const wrapper of mountedWrappers()) observer.observe(wrapper);
+    for (const wrapper of mountedWrappers()) observer.observe(wrapper);
     const tick = () => {
       if (!settle) return;
       settle.frame = 0;

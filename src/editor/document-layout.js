@@ -335,8 +335,7 @@ function _rapierClipboardPictures(html, rtf) {
 	const byShape = shapes.length === pictures.length && shapes.length > 0;
 	if (!byShape && pictures.length !== names.length) { showToast('Some pictures weren’t copied. Copy them with the text.', 'info'); return html; }
 	const urls = pictures.map(({bytes, type}) => {
-		let binary = ''; for (let at = 0; at < bytes.length; at += 8192) binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
-		return 'data:' + type + ';base64,' + btoa(binary);
+		return 'data:' + type + ';base64,' + bytes.toBase64();
 	});
 	let missing = false;
 	for (const image of local) {

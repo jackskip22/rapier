@@ -16,7 +16,7 @@ Everything is plain Markdown. Pictures, drawings and paintings are embedded insi
 
 ## Get Rapier
 
-- **Android:** [Google Play](https://play.google.com/store/apps/details?id=app.rapier). About 3 MB, no internet permission,
+- **Android:** [Google Play](https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Drapier-readme). About 3 MB, no internet permission,
   no tracking, no ads.
 - **Web:** [rapier.website](https://rapier.website). Add it to your home screen and it works offline.
 - **One HTML file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) is the whole editor, and
@@ -28,8 +28,8 @@ Everything is plain Markdown. Pictures, drawings and paintings are embedded insi
 
 ## With AI agents
 
-Claude, ChatGPT and any MCP client can work in a document with you. Connect to `https://mcp.rapier.website/mcp` and say
-"open Rapier". You watch every change and can undo any of it. In ChatGPT, add it in developer mode.
+Claude, ChatGPT and any MCP client can work in a document with you. Connect to `https://mcp.rapier.website/door/mcp` and say
+"open Rapier". You watch every change and can undo any of it. In ChatGPT, add the OpenAI connector at `https://mcp.rapier.website/openai/mcp` in developer mode.
 
 ```sh
 claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier

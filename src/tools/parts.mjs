@@ -26,6 +26,7 @@ export const PARTS = Object.freeze([
   {id: 'jxlscene', label: '3D scene', scripts: ['jxl/scene.js'], styles: [], globals: {RapierJxlScene: 'jxl/scene.mjs'}},
   {id: 'jxlexample', label: 'Animated example', scripts: [], styles: [], globals: {RapierJxlExample: 'jxl/example.mjs'},
     fetched: true},
+  {id: 'jxlclip', label: 'Animated clip', scripts: [], styles: [], globals: {RapierJxlClip: 'jxl/clip.mjs'}, fetched: true},
   {id: 'diff', label: 'Compare', scripts: ['editor/diff-view.js'], styles: ['rapier-diff-style'], globals: {}},
   {id: 'mathview', label: 'Equation editor', scripts: ['editor/math-view.js'], styles: ['rapier-math-style'], globals: {}},
   {id: 'fonts', label: 'Font library', scripts: ['editor/font-library.js'], styles: [],

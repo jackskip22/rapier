@@ -136,7 +136,7 @@ export function readerBlocks(ui) {
 	};
 	const markup = BLOCKS.filter(key => key !== 'licenses-overlay').map(pick).join('\n') + '\n' + pick('mermaid-plugin-overlay').replaceAll('mermaid-', 'pdf-');
 	const present = new Set(elements(markup).map(row => row.id));
-	const cut = dropElements(withoutIds(markup, CUT.filter(id => present.has(id))), (row, text) => /\bexport-choice-card\b/.test(row.cls) || /\bexport-choice\b/.test(row.cls) && /data-action="share-choice"[^>]*data-value="(?:editor|web|card|return)"/.test(text.slice(0, text.indexOf('>') + 1)) || /\bsettings-action-row\b/.test(row.cls) && /data-action="document-spacing"/.test(text) || /\bsettings-info-btn\b/.test(row.cls) || /\bexport-choice-toggle\b/.test(row.cls) && /data-(?:action="share-image-compat"|ledger-choice)/.test(text));
+	const cut = dropElements(withoutIds(markup, CUT.filter(id => present.has(id))), (row, text) => /\bexport-choice-card\b/.test(row.cls) || /\bexport-choice\b/.test(row.cls) && /data-action="share-choice"[^>]*data-value="(?:editor|web|card|return|agent)"/.test(text.slice(0, text.indexOf('>') + 1)) || /\bsettings-action-row\b/.test(row.cls) && /data-action="document-spacing"/.test(text) || /\bsettings-info-btn\b/.test(row.cls) || /\bexport-choice-toggle\b/.test(row.cls) && /data-(?:action="share-image-compat"|ledger-choice)/.test(text));
 	const named = cut.replace(/<button type="button" class="filename-btn" id="filename-btn" data-action="rename"\s+aria-label="rename file">([^<]*)<\/button>/,
 		'<span class="filename-btn" id="filename-btn">$1</span>')
 		.replace(/<button type="button" class="filename-ext-btn" id="filename-ext-btn" data-action="change-extension"\s+aria-label="change extension">([\s\S]*?<\/span>)<\/button>/,

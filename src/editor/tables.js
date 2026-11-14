@@ -728,7 +728,7 @@ function _rapierTablePinchResume() {
 function _rapierTablePinchWatch(table) {
 	const scroller = table.closest('.table-scroll-wrap');
 	if (!scroller) return;
-	if (!_rapierTablePinch.observer && typeof ResizeObserver === 'function') {
+	if (!_rapierTablePinch.observer) {
 		_rapierTablePinch.observer = new ResizeObserver(entries => entries.forEach(entry => {
 			const node = entry.target;
 			const own = node.tagName === 'TABLE' ? node : node.querySelector(':scope > table');

@@ -10,7 +10,6 @@ async function decodeWoff2(bytes) {
   if (!result) fail('The page font container is invalid.');
   return result;
 }
-import {zlibSync, Unzlib} from 'fflate';
 
 let engine;
 function harfbuzz() {
@@ -129,21 +128,26 @@ function sfntBytes(flavor, tables) {
   return bytes;
 }
 
-function inflateTable(bytes, length) {
-  const output = new Uint8Array(length);
+async function inflateTable(bytes, length) {
+  const output = new Uint8Array(length), reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate')).getReader();
   let offset = 0;
-  const stream = new Unzlib(chunk => {
-    if (chunk.length > length - offset) fail('The page font table length changed during decompression.');
-    output.set(chunk, offset); offset += chunk.length;
-  });
-  // Bound each decoder emission as well as the table's retained bytes.
-  for (let at = 0; at < bytes.length; at += 1024)
-    stream.push(bytes.subarray(at, at + 1024), at + 1024 >= bytes.length);
+  try {
+    // Bound the retained bytes, not only the table's declared size.
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+      if (chunk.value.length > length - offset) fail('The page font table length changed during decompression.');
+      output.set(chunk.value, offset); offset += chunk.value.length;
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    if (error?.code === 'export_font_invalid') throw error;
+    fail('The page font container has an invalid table.');
+  }
   if (offset !== length) fail('The page font table length changed during decompression.');
   return output;
 }
+const deflate = async bytes => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
 
-function readWoff(bytes) {
+async function readWoff(bytes) {
   if (bytes.length < 44) fail('The page font container is invalid.');
   const view = viewOf(bytes), count = view.getUint16(12);
   if (view.getUint32(8) !== bytes.length || !count || 44 + count * 20 > bytes.length) fail('The page font container is invalid.');
@@ -160,7 +164,7 @@ function readWoff(bytes) {
     if (seen.has(name) || offset < 44 + count * 20 || offset > bytes.length || size > bytes.length - offset || size > original)
       fail('The page font container has an invalid table.');
     seen.add(name);
-    const data = size === original ? bytes.slice(offset, offset + size) : inflateTable(bytes.subarray(offset, offset + size), original);
+    const data = size === original ? bytes.slice(offset, offset + size) : await inflateTable(bytes.subarray(offset, offset + size), original);
     if (data.length !== original) fail('The page font table length changed during decompression.');
     tables.push({name, bytes: data});
   }
@@ -169,10 +173,10 @@ function readWoff(bytes) {
   return output;
 }
 
-function writeWoff(bytes) {
+async function writeWoff(bytes) {
   const {flavor, tables} = tableDirectory(bytes), sfnt = sfntBytes(flavor, tables);
   for (const table of tables) {
-    const compressed = zlibSync(table.bytes, {level: 9});
+    const compressed = await deflate(table.bytes);
     table.data = compressed.length < table.bytes.length ? compressed : table.bytes;
   }
   const count = tables.length, header = 44 + count * 20;
@@ -197,7 +201,7 @@ export async function subset(value, characters, {format = 'woff', coordinates = 
   // Preserve code point strings as entries: joining them could pair isolated surrogates.
   const repertoire = new Set(characters + characters.normalize('NFC') + characters.normalize('NFD'));
   const container = tag(original, 0), sfnt = container === 'wOF2' ? bytesOf(await decodeWoff2(original))
-    : container === 'wOFF' ? readWoff(original) : original;
+    : container === 'wOFF' ? await readWoff(original) : original;
   const {tables} = tableDirectory(sfnt), permission = tables.find(row => row.name === 'OS/2');
   if (!mappedCharacters(tables, repertoire)) return null;
   // A font's no-subsetting permission requires its whole face even in a static page.

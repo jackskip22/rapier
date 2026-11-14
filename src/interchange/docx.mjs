@@ -842,7 +842,7 @@ function mathTex(node, inEqArr = false) {
 }
 
 export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgress, work, name = 'Word.dotx', inspect = false, plain = false} = {}) {
-  if (!(blob instanceof Blob) || blob.size > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB import limit.');
+  if (!(blob instanceof Blob) || blob.size > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds 128 MiB.');
   if (typeof DOMParser !== 'function') return fail('DOCX import requires an XML parser.');
   work ||= createImportWork({signal, checkCurrent, onProgress});
   work.check();
@@ -870,9 +870,9 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     return row;
   };
   const account = html => {
-    if (html.length > ARCHIVE_LIMITS.bytes - outputBytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
+    if (html.length > ARCHIVE_LIMITS.bytes - outputBytes) return fail('Converted DOCX exceeds 128 MiB.');
     outputBytes += utf8.encode(html).length;
-    if (outputBytes > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
+    if (outputBytes > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds 128 MiB.');
     return html;
   };
   const readXml = async (path, family, rootName, {carrier = false} = {}) => {
@@ -1632,7 +1632,8 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       return {html: ''};
     }
     if (!entries.get(path).size) return fail('DOCX contains an empty picture.');
-    if (contentType(path) !== 'image/svg+xml' && entries.get(path).size <= IMAGE_LIMITS.bytes) {
+    if (entries.get(path).size > IMAGE_LIMITS.bytes) return fail('DOCX picture exceeds the 16 MiB image limit.', 'docx_image_invalid');
+    if (contentType(path) !== 'image/svg+xml') {
       if (!readablePictures.has(path)) {
         await work.checkpoint();
         const bytes = await files.read(path);
@@ -2683,7 +2684,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     comments.threads.push({id: 'word-thread-' + group.id, wordId: group.id, document: group.document, resolved: group.resolved, messages});
   }
   work.check();
-  if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
+  if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds 128 MiB.');
   progress(.75, 'integrity');
   const admittedImages = new Map();
   for (const request of imageRequests) {
@@ -2780,7 +2781,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       'data-rapier-asset="' + references.get(key) + '"'));
   html = replaceImages(html);
   if (rejectedHtml !== null) rejectedHtml = replaceImages(rejectedHtml);
-  if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds the 25 MB document limit.');
+  if (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes) return fail('Converted DOCX exceeds 128 MiB.');
   for (const thread of comments.threads) for (const message of thread.messages)
     message.html = replaceImages(message.html);
   const detailsOpen = {marker: '\uFFFERapierWordDetailsOpen\uFFFF'};
@@ -2805,7 +2806,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
   });
   html = guardMathFences(html);
   if (rejectedHtml !== null) rejectedHtml = guardMathFences(rejectedHtml);
-  if ((guardedDetails || mathFences.tails.length) && (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes)) return fail('Converted DOCX exceeds the 25 MB document limit.');
+  if ((guardedDetails || mathFences.tails.length) && (html.length > ARCHIVE_LIMITS.bytes || new Blob([html]).size > ARCHIVE_LIMITS.bytes)) return fail('Converted DOCX exceeds 128 MiB.');
   const acceptedHtml = html;
   for (const row of revisions) for (const edge of ['S', 'E']) html = html.split(sourceToken(reviewMarker + row.id + edge + reviewMarker)).join('');
   progress(1, 'complete');
@@ -6172,7 +6173,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
       return fail('This document is too large for a Word file. Use fewer or smaller pictures, or export a PDF or an HTML page.', 'docx_too_large');
   }
   await pause(work, .87);
-  if (zipStoredSize(entries) > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
+  if (zipStoredSize(entries) > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds 128 MiB.');
   if (typeof rewriteDocument === 'function') {
     const at = entries.findIndex(entry => entry.name === 'word/document.xml');
     entries[at] = {name: entries[at].name, bytes: await encodeXml(rewriteDocument(new TextDecoder('utf-8').decode(entries[at].bytes)))};
@@ -6181,7 +6182,7 @@ async function buildDocx(input, {convertImage, rewriteDocument, canonical, compa
   if (carrySource) entries.push({name: DOCX_SOURCE.path, bytes: await docxSourceRecord(entries, (bom === true ? '\uFEFF' : '') + canonical, work, equations)});
   await pause(work, .94);
   const complete = work ? await zipStoredAsync(entries.map(entry => ({...entry, modified: 0})), {utf8Flag: false, work}) : packDocx(entries);
-  if (complete.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds the 25 MB document limit.');
+  if (complete.length > ARCHIVE_LIMITS.bytes) return fail('DOCX exceeds 128 MiB.');
   return complete;
 }
 

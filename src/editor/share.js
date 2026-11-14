@@ -200,17 +200,17 @@ async function _rapierReadSharedDocument(text, filename) {
 			const page = await _rapierRenderModule('render')._rapierReadSharedDocument(text, String(filename).replace(/\.rapier\.html$/i, '.html'));
 			if (page) return page;
 		}
-		throw new Error('This HTML editor file has no complete editable document.');
+		throw new Error('This portable editor file has no complete editable document.');
 	}
 	const carrier = carriers[0], name = carrier.getAttribute('data-name') || 'document.md';
 	const kind = carrier.getAttribute('data-kind') || _classifyDocKind(name);
 	if (!_rapierDocumentNameIsAdmissible(filename) || !_rapierDocumentNameIsAdmissible(name) || !['markdown', 'text', 'code'].includes(kind))
-		throw new Error('This HTML editor file has invalid document metadata.');
+		throw new Error('This portable editor file has invalid document metadata.');
 	const source = RapierLedgerCarried.decodeCarried(carrier.textContent), bom = source.charCodeAt(0) === 0xFEFF;
 	if (globalThis.RapierPortablePage?.unwrap(String(text)).text !== source)
-		throw new Error('This HTML editor file has an incomplete or changed source carrier.');
+		throw new Error('This portable editor file has an incomplete or changed source carrier.');
 	if (RapierTextCodec.normalizeDocument(source) !== (bom ? source.slice(1) : source))
-		throw new Error('This HTML editor file has invalid source text.');
+		throw new Error('This portable editor file has invalid source text.');
 	const parts = RapierLedgerCarried.readParts(source, Array.from(template.content.querySelectorAll('#rapier-ledger, #rapier-authorship')));
 	const comparisonBase = RapierLedgerCarried.readBaseElements(Array.from(template.content.querySelectorAll('#rapier-base')));
 	return {source: bom ? source.slice(1) : source, filename, name, kind, bom, ...parts, comparisonBase, editablePage: true};
@@ -259,7 +259,7 @@ async function _rapierPrepareEditablePage(captured, options = {}) {
 			kind: captured.metadata.docKind, theme, base: captured.comparisonBase || undefined, readable, ...parts,
 		});
 		const blob = new Blob([html], {type: 'text/html; charset=utf-8'});
-		if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This HTML editor file exceeds 64 MiB.');
+		if (blob.size > RapierTextCodec.maxDocumentBytes) throw new Error('This portable editor file exceeds 64 MiB.');
 		return {blob, linkedWords, filename: _rapierEditablePageFilename(captured.metadata.filename), mime: blob.type, canonical: captured.canonical,
 			included: portable.choices.filter(choice => ids.has(choice.id)).map(choice => choice.id)};
 	};
@@ -597,6 +597,7 @@ async function _rapierSendBackDirect() {
 
 async function rapierShare(kind) {
 	if (!_rapierEmbedFeatureAllowed('share')) return false;
+	if (kind === 'agent') return _rapierShareForAgent();
 	let captured;
 	if (typeof _rapierMoveOn === 'function') _rapierMoveOn();
 	const task = _rapierProgressTask({leaves: true, label: kind === 'web' ? 'Sharing web page' : 'Sharing file', size: rapier.document.source.length, current: () => !captured?.stamp || _rapierMutationStampIsCurrent(captured.stamp)});
@@ -630,6 +631,28 @@ async function rapierShare(kind) {
 		if (error?.name !== 'AbortError' && error?.code !== 'cancelled') showToast('Couldn’t share.', 'error', null, error);
 		return false;
 	} finally { task.end(); _rapierShareLedgerReset(); }
+}
+
+function _rapierAgentMessage(markdown, part) {
+	const fence = text => '`'.repeat(Math.max(3, ...[...String(text).matchAll(/`+/g)].map(run => run[0].length + 1)));
+	const block = text => fence(text) + 'markdown\n' + text + (text.endsWith('\n') ? '' : '\n') + fence(text);
+	return 'Open this in Rapier and work on it with me (Rapier\'s connector: https://rapier.website/mcp).' +
+		(part ? '\n\nStart with this part:\n\n' + block(part) : '') + '\n\nThe document:\n\n' + block(markdown);
+}
+async function _rapierShareForAgent() {
+	const part = _rapierQuoteCurrent()?.markdown || '';
+	const captured = await _rapierCaptureSettledExternalDocument({});
+	if (!captured) return false;
+	const text = _rapierAgentMessage(captured.canonical, part);
+	const platform = window.RapierPlatform;
+	if (platform?.environment.allowsWebShareFallback === true && navigator.share && navigator.canShare?.({text})) {
+		try { await navigator.share({text}); return true; }
+		catch (error) { if (error?.name === 'AbortError') return false; }
+	}
+	const copied = await _rapierWriteTextClipboard(text);
+	if (copied === null) return false;
+	showToast(copied ? 'Copied for your agent' : 'Couldn’t copy.', copied ? 'success' : 'error');
+	return copied;
 }
 
 function _rapierShareCompatSet(toggle, on) {
@@ -741,7 +764,7 @@ function _rapierQuoteCurrent() {
 }
 function _rapierQuoteOffer() {
 	const choice = document.getElementById('share-quote-card');
-	if (choice) choice.hidden = !_rapierQuoteCurrent();
+	if (choice) choice.setAttribute('aria-disabled', _rapierQuoteCurrent() ? 'false' : 'true');
 }
 
 const _RAPIER_QUOTE_SHAPES = [{height: 540, smallest: 17}, {height: 675, smallest: 13}];

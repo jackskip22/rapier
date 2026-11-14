@@ -2897,7 +2897,9 @@ function _rapierDrawSetHint() {
 function _rapierDrawToolAllowed(name) {
 	if (['select', 'erase', 'effects', 'image'].includes(name))
 		return _rapierEmbedFeatureAllowed('draw') || _rapierEmbedFeatureAllowed('paint');
-	return _rapierEmbedFeatureAllowed(name === 'paint' || name === 'oil' || name === 'acrylic' || name === 'water' ? 'paint' : 'draw');
+	const paint = name === 'paint' || name === 'oil' || name === 'acrylic' || name === 'water';
+	if (paint && !_rapierPaints()) return false;
+	return _rapierEmbedFeatureAllowed(paint ? 'paint' : 'draw');
 }
 async function _rapierDrawSetTool(name, remember = true) {
 	if (!_rapierDrawToolAllowed(name)) return;
@@ -3730,7 +3732,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.69/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.70/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -5869,7 +5871,7 @@ function _rapierDrawBuildSurface() {
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--clear" data-draw-act="clear">Clear</button></span>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--done" data-draw-act="done">Done</button>' +
 		'<button type="button" class="rapier-draw-btn rapier-draw-btn--stowed" data-draw-act="close">Close</button></span></div>' +
-		'<div class="rapier-draw-tool-menu" role="menu" aria-label="Drawing tools" hidden>' + RAPIER_DRAW_TOOL_SECTIONS.map(([title, names]) =>
+		'<div class="rapier-draw-tool-menu" role="menu" aria-label="Drawing tools" hidden>' + RAPIER_DRAW_TOOL_SECTIONS.filter(([title]) => title !== 'Raster' || _rapierPaints()).map(([title, names]) =>
 			'<div class="rapier-draw-tool-menu-section" role="group" aria-label="' + title + '"><div class="rapier-draw-tool-menu-head" role="presentation">' + title + '</div>' + names.filter(name => name !== 'gallery' || _rapierDrawGalleryOffered()).map(name => name === 'image' || name === 'gallery'
 			? '<button type="button" class="rapier-draw-tool-menu-item" role="menuitem" data-draw-act="' + name + '" aria-label="' + RAPIER_DRAW_TOOL_SAYS[name] + '">' + RAPIER_DRAW_ICONS[name] + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span></button>'
 			: '<button type="button" class="rapier-draw-tool-menu-item" role="menuitemradio" data-draw-act="tool" data-draw-tool="' + name + '" aria-checked="false" aria-label="' + RAPIER_DRAW_TOOL_SAYS[name] + '">' + _rapierDrawToolIcon(name) + '<span>' + RAPIER_DRAW_TOOL_WORDS[name] + '</span></button>').join('') + '</div>').join('') +
@@ -6123,7 +6125,7 @@ function _rapierDrawBuildSurface() {
 		if (!state.gesture) { _rapierDrawFollowStage(); _rapierDrawUpdateMenu(); _rapierDrawUpdateHandles(); _rapierDrawPlaceTextInput(); _rapierPaintPlaceLive(); _rapierDrawFlushGeometry(); }
 	};
 	window.addEventListener('resize', reposition); window.visualViewport?.addEventListener('resize', reposition); window.visualViewport?.addEventListener('scroll', reposition);
-	if (typeof ResizeObserver === 'function') { const observer = new ResizeObserver(reposition); observer.observe(surface.querySelector('.rapier-draw-stage')); observer.observe(state.svgRoot); }
+	{ const observer = new ResizeObserver(reposition); observer.observe(surface.querySelector('.rapier-draw-stage')); observer.observe(state.svgRoot); }
 	const togglePanel = (button, name) => {
 		const panel = surface.querySelector('[data-draw-panel="' + name + '"]');
 		if (!panel) return;
@@ -6484,7 +6486,7 @@ function _rapierDrawOpenSurface(options) {
 		const session = state.session;
 		_rapierPaintStartPainter('water').catch(error => {
 			if (!state.open || state.session !== session || state.tool !== 'water' || state.gesture) return;
-			_rapierDrawWaterUnavailable(error, false);
+			_rapierDrawWaterUnavailable(error, window.RapierPlatform?.environment?.app === 'watercolor');
 		});
 	}
 	state.pen = state.tool === 'pen';
@@ -7355,6 +7357,19 @@ if (typeof window !== 'undefined') {
 	const kick = () => setTimeout(() => { _rapierDrawOfferRecovery().catch(error => console.warn('[rapier] draw recovery', error)); }, 2500);
 	if (document.readyState === 'complete') kick(); else window.addEventListener('load', kick, { once: true });
 }
+function _rapierDrawWaterRuns() {
+	const gpu = globalThis.navigator?.gpu;
+	if (!gpu?.requestAdapter) return Promise.resolve(false);
+	const asked = (async () => {
+		const adapter = await gpu.requestAdapter({powerPreference: 'high-performance'});
+		if (!adapter) return false;
+		const info = adapter.info || {};
+		const software = info.isFallbackAdapter === true || adapter.isFallbackAdapter === true ||
+			/swiftshader|llvmpipe|lavapipe|softpipe|microsoft basic render|\bwarp\b/i.test([info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(' '));
+		return !software || globalThis.__rapierWaterSoftwareTest === true;
+	})().catch(() => false);
+	return Promise.race([asked, new Promise(done => setTimeout(() => done(false), 1500))]);
+}
 if (typeof window !== 'undefined' && RAPIER_DRAW_DOOR_AT_BIRTH) {
 	const door = () => {
 		const booted = typeof _rapierBootFactsPublished !== 'undefined' ? _rapierBootFactsPublished : Promise.resolve();
@@ -7362,15 +7377,20 @@ if (typeof window !== 'undefined' && RAPIER_DRAW_DOOR_AT_BIRTH) {
 			if (globalThis._rapierDrawDoorYielded === true) { _rapierDrawStartClass(false); return; }
 			if (!_rapierDrawState.open && !_rapierDrawState.finishing) {
 			if (RAPIER_DRAW_DOOR_AT_BIRTH === 'paint') {
+				const water = RAPIER_DRAW_START_IN_PAINT ? Promise.resolve(false) : _rapierDrawWaterRuns();
 				if (!await _rapierPartReady('notes')) return;
 				await _rapierNotesPart.open(false, {unseen: true});
 				if (!_rapierNotesPart.state.open) return;
+				const tool = await water ? 'water' : 'paint';
 				_rapierDrawState.painterNext = true;
-				try { await _rapierNotesNewDrawing(null, 'paint'); } finally { _rapierDrawState.painterNext = false; }
+				try { await _rapierNotesNewDrawing(null, tool); } finally { _rapierDrawState.painterNext = false; }
 				return;
 			}
 			_rapierDrawState.painterNext = RAPIER_DRAW_DOOR_AT_BIRTH === 'watercolor';
 			try { rapierOpenDraw(null, RAPIER_DRAW_DOOR_AT_BIRTH === 'watercolor' ? 'water' : null); } finally { _rapierDrawState.painterNext = false; }
+			if (window.RapierPlatform?.environment?.app === 'watercolor' && !globalThis.navigator?.gpu && _rapierDrawState.open) showToast('Watercolor needs WebGPU.', 'info');
+			else if (RAPIER_DRAW_DOOR_AT_BIRTH === 'watercolor' && _rapierDrawState.open)
+				_rapierOfferAndroidApp('Paint with your finger in the Android app.', 'https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Dwatercolor-page');
 		} }).catch(error => showToast('Couldn’t open Draw.', 'error', null, error)).finally(() => _rapierDrawStartClass(false));
 	};
 	door();

@@ -148,11 +148,6 @@ function appendLine(text, range, value) {
 	pieces.splice(end, 0, indent + marker + ' [ ] ' + value + ending);
 	return pieces.join('');
 }
-export function appendItem(text, range, label) {
-	const value = String(label ?? '').trim();
-	if (!value) return null;
-	return appendLine(text, range, value);
-}
 export function appendEmptyItem(text, range) { return appendLine(text, range, ''); }
 
 export function hideBoxes(text, range) {

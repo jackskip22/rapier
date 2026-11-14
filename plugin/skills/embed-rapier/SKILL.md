@@ -54,7 +54,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.62
+npm install rapier-embed@1.2.69
 ```
 
 Or copy the package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -142,7 +142,7 @@ The reader on its own page opens a document at an address on its own origin: `ht
 
 Keep the helper, page and plug-in manifest on one version. For version 1.2.46:
 
-1. Install the helper: `npm install rapier-embed@1.2.62`.
+1. Install the helper: `npm install rapier-embed@1.2.69`.
 2. Create `public/vendor/rapier/` and save the reader into it from
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.46/embed/rapier-reader.html`.
 3. Fetch its plug-ins from the same version's manifest:
@@ -169,14 +169,14 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `math` | Typesets TeX math ($...$ and $$...$$) as SVG. | 0.74 MB | Both |
 | `diagrams` | Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more. | 1.14 MB (2 files) | Both |
 | `pdf` | Opens a PDF as a Markdown document: its text layer, or each page as a picture. Fetches the pdf.js files itself. | 6.17 MB (198 files) | Both |
-| `ocr` | Reads the words in pictures on the device (PP-OCRv6 tiny on ONNX Runtime Web), so search finds them. About 21 MB. | 21.7 MB (10 files) | Both (the reader: only with `--with ocr`) |
-| `font-subset` | Keeps the used characters in fonts embedded in exported pages. | 1.21 MB | `rapier.html` |
+| `ocr` | Reads the words in pictures on the device (PP-OCRv6 tiny on ONNX Runtime Web), so search finds them. About 21 MB. | 20.6 MB (7 files) | Both (the reader: only with `--with ocr`) |
+| `font-subset` | Keeps the used characters in fonts embedded in exported pages. | 1.20 MB | `rapier.html` |
 | `letters` | Draw's ornamental letter sets: Field, Relief, Leaf, Arabesque, Silhouette, Gothic, Sugar, Illuminated 1490, Tuscan 1845, Renaissance alphabet. | 1.31 MB (10 files) | `rapier.html` |
 | `templates` | Starters' traced page borders: 72 borders from the ornament book. | 6.03 MB (72 files) | `rapier.html` |
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.37 MB (31.0 MB with `ocr`); `rapier.html`, 57.2 MB. Release 1.2.69.
+Totals: the reader, 9.37 MB (30.0 MB with `ocr`); `rapier.html`, 56.2 MB. Release 1.2.70.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import

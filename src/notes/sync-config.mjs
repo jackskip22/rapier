@@ -4,13 +4,6 @@ export const CLOUDFLARE_SYNC = Object.freeze({
 	scopes: Object.freeze([]),
 	browserRoundTripVerified: false,
 });
-export const CLOUDFLARE_SETUP = Object.freeze({
-	enabled: false,
-	clientId: '',
-	redirectUri: 'https://rapier.website/',
-	scopes: Object.freeze(['memberships.read', 'user-details.read', 'workers-scripts.write']),
-	browserRoundTripVerified: false,
-});
 export const OTHER_SYNC = Object.freeze({
 	drive: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes', pickerKey: '', appId: ''}),
 	onedrive: Object.freeze({clientId: '', redirectUri: 'https://rapier.website/notes'}),
@@ -18,7 +11,6 @@ export const OTHER_SYNC = Object.freeze({
 });
 export const clientRegistered = registration => typeof registration?.clientId === 'string' && !!registration.clientId && !/^PENDING/i.test(registration.clientId);
 export const SYNC_UNAVAILABLE = 'sign in with cloudflare will be available soon.';
-export const SYNC_CONSENT = 'cloudflare grants rapier access to storage across the account you choose. your notes are kept there as plain markdown files.';
 export function registrationReady(config = CLOUDFLARE_SYNC) {
 	return typeof config.clientId === 'string' && !!config.clientId && !/^PENDING/i.test(config.clientId) &&
 		Array.isArray(config.scopes) && config.scopes.some(scope => scope !== 'openid' && scope !== 'offline_access') &&

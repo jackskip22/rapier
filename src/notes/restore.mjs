@@ -51,18 +51,31 @@ function indexFrom(files) {
 	const index = parseIndex(text);
 	return {index, sidecar, raw: parseJSON(text)};
 }
+const BACKUP_WRAPPED = Symbol('backup wrapped');
+const recordBytes = file => file.bytes !== undefined || file.text !== undefined ? (file.bytes ?? file.text ?? '').length : file.size;
+const finderDirectory = (name, prefix) => name.endsWith('/') && (name.startsWith(prefix) || prefix.startsWith(name));
+const finderCopy = (name, prefix) => finderDirectory(name, '__MACOSX/' + prefix) ||
+	name.startsWith('__MACOSX/' + prefix) && !name.endsWith('/') && name.slice(name.lastIndexOf('/') + 1).startsWith('._');
 function snapshotRoot(files) {
-	if (files.some(file => file.name === 'notes.json')) return files;
-	const roots = files.filter(file => file.name.endsWith('/notes.json'));
-	if (!roots.length) return files;
-	const root = roots.reduce((a, b) => a.name.length < b.name.length ? a : b);
+	const same = {files, wrapped: false};
+	if (files.some(file => file?.name === 'notes.json')) return same;
+	const roots = files.filter(file => typeof file?.name === 'string' && file.name.endsWith('/notes.json'));
+	if (!roots.length) return same;
+	const root = roots.reduce((a, b) => a.name.length <= b.name.length ? a : b);
 	const prefix = root.name.slice(0, -'notes.json'.length);
-	if (!files.every(file => file.name.startsWith(prefix))) return files;
-	return files.map(file => {
+	const members = [];
+	for (const file of files) {
+		const name = file?.name;
+		if (typeof name !== 'string' || name.endsWith('/') && recordBytes(file) !== 0) return same;
+		if (finderDirectory(name, prefix) || finderCopy(name, prefix)) continue;
+		if (!name.startsWith(prefix)) return same;
+		members.push(file);
+	}
+	return {wrapped: true, files: members.map(file => {
 		const name = file.name.slice(prefix.length);
 		backupPath(name);
 		return {...file, name};
-	});
+	})};
 }
 function coherence(files, index) {
 	const present = new Set(files.filter(file => isNoteFile(file.name)).map(file => file.name));
@@ -169,8 +182,9 @@ function setDeclarations(manifest, index) {
 	return set;
 }
 export async function verifyBackup(entries, options = {}) {
-	const parts = snapshotParts(entries).map(inventory);
-	const checked = await verifyBackupStream({parts: parts.map(files => ({entries: files.map(file => ({name: file.name, size: file.bytes.length, read: async () => file.bytes}))}))}, options);
+	const unwrapped = snapshotParts(entries).map(snapshotRoot), parts = unwrapped.map(part => inventory(part.files));
+	const checked = await verifyBackupStream({parts: parts.map((files, i) => ({[BACKUP_WRAPPED]: unwrapped[i].wrapped,
+		entries: files.map(file => ({name: file.name, size: file.bytes.length, read: async () => file.bytes}))}))}, options);
 	const originals = new Map();
 	for (const part of parts) for (const file of part) if (!originals.has(file.name)) originals.set(file.name, file);
 	return {...checked, files: checked.files.map(file => originals.get(file.name))};
@@ -188,14 +202,15 @@ export async function verifyBackupStream(archive, {subtle, signal, notes = false
 	const parts = [];
 	for (const part of input) {
 		if (!Array.isArray(part?.entries) || part.entries.length > 65534) throw new TypeError('a streamed backup needs a bounded ZIP directory');
-		const seen = new Set(); let total = 0;
-		const all = part.entries.map(entry => {
+		const seen = new Set();
+		const unwrapped = snapshotRoot(part.entries), wrapped = unwrapped.wrapped || part[BACKUP_WRAPPED] === true;
+		const all = unwrapped.files.map(entry => {
 			const {name, size, read} = entry || {};
 			backupPath(name);
 			if (seen.has(name)) throw new Error('duplicate backup file: ' + name);
 			seen.add(name);
 			if (!Number.isSafeInteger(size) || size < 0 || typeof read !== 'function') throw new Error('invalid backup entry: ' + name);
-			total += size; if (total > ZIP_READ_MAX_BYTES) throw tooLarge('this backup', ZIP_READ_MAX_BYTES);
+			if (size > ZIP_READ_MAX_BYTES) throw tooLarge('backup file ' + name, ZIP_READ_MAX_BYTES);
 			return {name, size, read: () => entry.read()};
 		});
 		const sidecar = all.find(file => file.name === 'notes.json');
@@ -205,7 +220,9 @@ export async function verifyBackupStream(archive, {subtle, signal, notes = false
 		const manifestFile = all.find(file => file.name === BACKUP_MANIFEST_FILE);
 		if (manifestFile?.size > ZIP_WRITE_METADATA_BYTES) throw tooLarge('this backup\'s ' + BACKUP_MANIFEST_FILE, ZIP_WRITE_METADATA_BYTES);
 		const manifest = manifestFile ? manifestFrom(await read(manifestFile)) : null;
-		parts.push({files: all.filter(file => file !== manifestFile), sidecar, indexBytes, index, raw, manifest});
+		const declared = wrapped && Array.isArray(manifest?.files) ? new Set(manifest.files.map(row => row?.name)) : null;
+		const files = all.filter(file => file !== manifestFile && !(declared && /(?:^|\/)\.DS_Store$/.test(file.name) && !declared.has(file.name)));
+		parts.push({files, sidecar, indexBytes, index, raw, manifest});
 	}
 	const first = parts[0], manifest = first.manifest, set = manifest?.set ? setDeclarations(manifest, first.index) : null;
 	const numbers = new Set();

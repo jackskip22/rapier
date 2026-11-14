@@ -35,6 +35,72 @@ export function dataDescriptor(f) {
 	v.setUint32(8, f.size, true); v.setUint32(12, f.size, true);
 	return buf;
 }
+const MAX32 = 0xFFFFFFFF;
+export const zip64Entry = (size, at) => size >= MAX32 || at >= MAX32;
+const put64 = (view, at, value) => { view.setUint32(at, value % 0x100000000, true); view.setUint32(at + 4, Math.floor(value / 0x100000000), true); };
+const joined = (...parts) => {
+	const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0));
+	let at = 0; for (const part of parts) { out.set(part, at); at += part.length; }
+	return out;
+};
+export function localRecord(f, at) {
+	const head = localHeader(f);
+	if (!zip64Entry(f.size, at)) return joined(head, f.nameBytes);
+	const v = new DataView(head.buffer), extra = new Uint8Array(20), e = new DataView(extra.buffer);
+	v.setUint16(4, 45, true); v.setUint32(18, MAX32, true); v.setUint32(22, MAX32, true); v.setUint16(28, 20, true);
+	e.setUint16(0, 1, true); e.setUint16(2, 16, true); put64(e, 4, f.descriptor ? 0 : f.size); put64(e, 12, f.descriptor ? 0 : f.size);
+	return joined(head, f.nameBytes, extra);
+}
+export const localRecordSize = (nameLength, size, at) => 30 + nameLength + (zip64Entry(size, at) ? 20 : 0);
+export function centralRecord(f, at) {
+	const head = centralHeader(f, Math.min(at, MAX32));
+	if (!zip64Entry(f.size, at)) return joined(head, f.nameBytes);
+	const big = f.size >= MAX32, far = at >= MAX32, length = (big ? 16 : 0) + (far ? 8 : 0);
+	const v = new DataView(head.buffer), extra = new Uint8Array(4 + length), e = new DataView(extra.buffer);
+	v.setUint16(4, 45, true); v.setUint16(6, 45, true); v.setUint16(30, 4 + length, true);
+	if (big) { v.setUint32(20, MAX32, true); v.setUint32(24, MAX32, true); }
+	e.setUint16(0, 1, true); e.setUint16(2, length, true);
+	let w = 4;
+	if (big) { put64(e, w, f.size); put64(e, w + 8, f.size); w += 16; }
+	if (far) put64(e, w, at);
+	return joined(head, f.nameBytes, extra);
+}
+export const centralRecordSize = (nameLength, size, at) => 46 + nameLength + (zip64Entry(size, at) ? 4 + (size >= MAX32 ? 16 : 0) + (at >= MAX32 ? 8 : 0) : 0);
+export function descriptorRecord(f, at) {
+	if (!zip64Entry(f.size, at)) return dataDescriptor(f);
+	const buf = new Uint8Array(24), v = new DataView(buf.buffer);
+	v.setUint32(0, 0x08074b50, true); v.setUint32(4, f.crc, true); put64(v, 8, f.size); put64(v, 16, f.size);
+	return buf;
+}
+export const descriptorRecordSize = (size, at) => zip64Entry(size, at) ? 24 : 16;
+export function endRecords(count, size, start, commentLength) {
+	if (count < 0xFFFF && size < MAX32 && start < MAX32) return endRecord(count, size, start, commentLength);
+	const buf = new Uint8Array(56 + 20 + 22), v = new DataView(buf.buffer);
+	v.setUint32(0, 0x06064b50, true); put64(v, 4, 44); v.setUint16(12, 45, true); v.setUint16(14, 45, true);
+	v.setUint32(16, 0, true); v.setUint32(20, 0, true); put64(v, 24, count); put64(v, 32, count); put64(v, 40, size); put64(v, 48, start);
+	v.setUint32(56, 0x07064b50, true); v.setUint32(60, 0, true); put64(v, 64, start + size); v.setUint32(72, 1, true);
+	buf.set(endRecord(Math.min(count, 0xFFFF), Math.min(size, MAX32), Math.min(start, MAX32), commentLength), 76);
+	return buf;
+}
+export const endRecordsSize = (count, size, start) => count < 0xFFFF && size < MAX32 && start < MAX32 ? 22 : 98;
+
+export function zipBlob(entries, {now = Date.now(), type = 'application/zip'} = {}) {
+	const enc = new TextEncoder(), parts = [], central = [];
+	let offset = 0, centralSize = 0;
+	for (const e of entries) {
+		const nameBytes = enc.encode(normalisedName(e.name));
+		if (nameBytes.length > 0xFFFF) throw new Error(`zipBlob: "${e.name.slice(0, 40)}…" is longer than a zip name can be`);
+		const size = e.blob.size;
+		if (size !== e.size) throw new Error(`zipBlob: "${e.name}" is ${size} bytes, not the ${e.size} its CRC was taken over`);
+		const f = {nameBytes, size, crc: e.crc >>> 0, ...dosDateTime(e.modified ?? now)};
+		const head = localRecord(f, offset), entry = centralRecord(f, offset);
+		parts.push(head, e.blob); central.push(entry);
+		offset += head.length + size; centralSize += entry.length;
+	}
+	const blob = new Blob([...parts, ...central, endRecords(entries.length, centralSize, offset, 0)], {type});
+	return {blob, size: blob.size, count: entries.length};
+}
+
 export function commentBytes(comment, enc) {
 	const bytes = enc.encode(comment || '');
 	if (bytes.length <= 0xFFFF) return bytes;

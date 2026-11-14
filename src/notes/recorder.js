@@ -947,7 +947,7 @@ async function _rapierRecorderSeek(view, seconds) {
 }
 function _rapierRecorderShelfWatch(view) {
 	const R = _rapierRecorder;
-	if (!R.sight && typeof IntersectionObserver === 'function') {
+	if (!R.sight) {
 		R.inSight = new Set();
 		R.sight = new IntersectionObserver(entries => { for (const e of entries) { if (e.isIntersecting) R.inSight.add(e.target); else R.inSight.delete(e.target); } _rapierRecorderBarPaint(); });
 	}

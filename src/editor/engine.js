@@ -453,7 +453,7 @@ const FT = {
 	stack: function() {
 		if (!this.stackEl) {
 			this.stackEl = document.getElementById('format-toolbar-stack');
-			if (this.stackEl && typeof ResizeObserver === 'function') {
+			if (this.stackEl) {
 				this.resizeObserver = new ResizeObserver(() => {
 					_rapierScheduleFormatToolbarPosition();
 					_rapierScheduleKeyboardAccommodation();
@@ -1255,6 +1255,7 @@ const _rapierWysiwygLedger = {
 	order: [], entries: new Map(), indexById: new Map(), cumulative: [0], total: 0,
 	pending: new Map(), raf: 0, dragging: false, observer: null, version: 0, window: null,
 	materialized: new Set(),
+	sleptChars: 0,
 };
 const _rapierCommandRuntime = Object.seal({ palette: null });
 const _rapierSourceRuntime = _rapierCreateSourceRuntime();
@@ -1265,6 +1266,7 @@ function _rapierCreateSourceRuntime() {
 		flatDirty: false,
 		gutterLabelFrame: 0,
 		slabRendered: [],
+		slabJobs: new Map(),
 		slabLangKey: '',
 		slabLineBase: 0,
 		structuralGeneration: 0,
@@ -1419,6 +1421,13 @@ function _rapierProFeatures() {
 		['typewriter', 'Typewriter scrolling'],
 	].map(([id, name]) => Object.freeze({id, name})));
 }
+
+function _rapierProFeaturesHere() {
+	const windows = window.RapierPlatform?.environment?.id === 'windows';
+	return _rapierProFeatures().filter(feature => !(windows && ['widget', 'icon'].includes(feature.id)) &&
+		(_rapierPaints() || !['video', 'palettes', 'trace'].includes(feature.id)));
+}
+function _rapierProStore() { return window.RapierPlatform?.environment?.id === 'windows' ? 'the Microsoft Store' : 'Google Play'; }
 
 function _rapierFeatureAllowedForPlatform(featureId, platform) {
 	const id = String(featureId || '');
@@ -2280,7 +2289,6 @@ function _rapierRenderBlocksBatched(blocks, referenceIndex = null, prepared = nu
 	return out;
 }
 function _rapierSanitizeBatch(htmls) {
-	if (htmls.length === 1) return [_rapierRenderModule('render-sanitize').sanitizeRapierHtml(htmls[0], 'render')];
 	const joined = htmls.map((html, index) =>
 		'<div data-rapier-batch="' + index + '">' + html + '</div>').join('');
 	let fragment = null;
@@ -2433,7 +2441,7 @@ function _rapierRenderedHtmlWithTrailingSpace(raw, html) {
 
 const _rapierOverflowRuntime = Object.seal({ observer: null, observedWidth: 0 });
 function _rapierEnsureOverflowObserver() {
-	if (_rapierOverflowRuntime.observer || !('ResizeObserver' in window)) return;
+	if (_rapierOverflowRuntime.observer) return;
 	const host = document.getElementById('editor-blocks');
 	if (!host) return;
 	_rapierOverflowRuntime.observedWidth = host.getBoundingClientRect().width;
@@ -2451,6 +2459,14 @@ function _rapierOverflowSurface(shell) {
 	return Array.from(shell.children || []).find(child =>
 		child.classList && child.classList.contains('rapier-hscroll__surface')
 	) || null;
+}
+function _rapierOverflowPlaceHolds(surfaces, wrapper) {
+	for (let i = 0; i < surfaces.length; i++) {
+		const surface = surfaces[i];
+		if (!surface.isConnected || (wrapper ? surface.closest('.block-wrapper[data-block-id]') !== wrapper : i > 0)) return false;
+		if (i && !(surfaces[i - 1].compareDocumentPosition(surface) & Node.DOCUMENT_POSITION_FOLLOWING)) return false;
+	}
+	return true;
 }
 function _rapierSyncOverflowAccessibility(shell, surface, maxScroll) {
 	if (!shell?.classList?.contains('rapier-hscroll') || !surface) return;
@@ -2470,13 +2486,19 @@ function _rapierSyncOverflowAccessibility(shell, surface, maxScroll) {
 			? rapier.document.blocks.findIndex(block => block.id === blockId)
 			: -1);
 	const blockNumber = modelIndex >= 0 ? modelIndex + 1 : Math.max(1, blockId || 1);
-	const localSurfaces = wrapper
-		? Array.from(wrapper.querySelectorAll('.rapier-hscroll > .rapier-hscroll__surface'))
-		: [surface];
-	const localIndex = Math.max(0, localSurfaces.indexOf(surface));
+	const read = surface.closest('.block-read');
+	const owner = wrapper || surface;
+	let place = owner._rapierOverflowPlace;
+	if (!place || place.read !== read || !place.surfaces.includes(surface) || !_rapierOverflowPlaceHolds(place.surfaces, wrapper)) {
+		const surfaces = wrapper
+			? Array.from(wrapper.querySelectorAll('.rapier-hscroll > .rapier-hscroll__surface'))
+			: [surface];
+		place = owner._rapierOverflowPlace = { read, surfaces };
+	}
+	const index = Math.max(0, place.surfaces.indexOf(surface)), count = place.surfaces.length;
 	const kind = shell.classList.contains('rapier-hscroll--table') ? 'table'
 		: shell.classList.contains('rapier-hscroll--math') ? 'equation' : 'code';
-	const suffix = localSurfaces.length > 1 ? ` ${localIndex + 1}` : '';
+	const suffix = count > 1 ? ` ${index + 1}` : '';
 	surface.setAttribute('role', 'region');
 	surface.setAttribute('aria-label', `scrollable ${kind}${suffix}, document block ${blockNumber}`);
 	surface.tabIndex = 0;
@@ -2505,6 +2527,8 @@ function _rapierRegisterOverflowShell(shell) {
 	const surface = _rapierOverflowSurface(shell);
 	if (!surface || surface.dataset.rapierOverflowBound === '1') return;
 	surface.dataset.rapierOverflowBound = '1';
+	const wrapper = shell.closest('.block-wrapper[data-block-id]');
+	if (wrapper) wrapper._rapierOverflowPlace = null;
 	let frame = 0;
 	const schedule = () => {
 		if (frame) return;
@@ -4688,7 +4712,7 @@ function rapierWelcomeMarkdown() {
 		"",
 		"Under the three dots, **Copy**, **Share** and **Export** send your work as text, PDF, Word or a web page.",
 		"",
-		"Press **Share** and choose **HTML editor** to save your document as a `.rapier.html` file. It wraps the whole Rapier editor around your document in one file anybody can open offline in any browser, so others can read and edit it with no Markdown app installed.",
+		"Press **Share** and choose **Portable editor** to save your document as a `.rapier.html` file. It wraps the whole Rapier editor around your document in one file anybody can open offline in any browser, so others can read and edit it with no Markdown app installed.",
 		"",
 		"## Compare",
 		"",
@@ -4969,15 +4993,7 @@ async function rapierLoad(content, filename, options) {
 }
 
 function _rapierCreateDocumentAuthority() {
-	try {
-		if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-	} catch (_) {}
-	const random = new Uint32Array(4);
-	try { crypto.getRandomValues(random); }
-	catch (_) {
-		for (let i = 0; i < random.length; i++) random[i] = Math.floor(Math.random() * 0x100000000);
-	}
-	return Array.from(random, value => value.toString(16).padStart(8, '0')).join('');
+	return crypto.randomUUID();
 }
 
 function _rapierNormalizeVirtualDocumentKind(value) {
@@ -5488,6 +5504,7 @@ function _rapierInstallMarkdownProjection(fragment, blocks, options = null) {
 	const staged = !sameDocument && fragment._rapierLedgerEntries instanceof Map ? fragment._rapierLedgerEntries : null;
 	if (staged) _rapierWysiwygLedger.entries = staged;
 	else if (!sameDocument) _rapierWysiwygLedger.entries.clear();
+	if (!sameDocument) _rapierWysiwygLedger.sleptChars = 0;
 	_rapierWysiwygLedger.order = [];
 	_rapierWysiwygLedger.indexById = new Map();
 	_rapierWysiwygLedger.cumulative = [0];
@@ -5844,7 +5861,7 @@ function _rapierOpenEmptyFirstLine(receipt, tries = 0, epoch = rapier.identity.u
 	_rapierMakeEdgeParagraph(null, true);
 }
 
-const _rapierHighlightRuntime = Object.seal({ queue: [], queued: new WeakSet(), scheduled: false });
+const _rapierHighlightRuntime = Object.seal({ queue: [], queued: new WeakSet(), scheduled: false, partsRuns: null });
 function _yieldToIdle(fn) {
 	if (typeof scheduler !== 'undefined' && scheduler.postTask) {
 		scheduler.postTask(fn, { priority: 'background' });
@@ -5900,9 +5917,15 @@ function _rapierColourOpenCode(editDiv) {
 
 function _rapierColourCodeElement(el) {
 	const source = el.textContent || '';
-	if (!_rapierHighlightAdmitted(source) || _rapierCodeHoldsSelection(el)) return;
+	if (_rapierCodeHoldsSelection(el)) return;
 	const lang = _rapierRenderModule('render-markdown')._rapierLanguageClass(el) || 'text', reading = _rapierCodeReading(lang);
-	const kept = reading === 'code' ? _rapierLexedHtml(source) : '';
+	if (el.querySelector(':scope > .tok-part')) {
+		if (reading === 'plain') el.classList.add('tok');
+		else _rapierColourCodeParts(el, source, lang);
+		return;
+	}
+	const admitted = _rapierHighlightAdmitted(source);
+	const kept = admitted && reading === 'code' ? _rapierLexedHtml(source) : '';
 	if (kept) {
 		if (el.innerHTML !== kept) _rapierRenderModule('render')._rapierPaintCode(el, kept);
 		el.classList.add('tok', 'tok-lexed');
@@ -5910,7 +5933,78 @@ function _rapierColourCodeElement(el) {
 	}
 	if (el.firstElementChild || reading === 'plain' || source.length > RAPIER_CODE_COLOUR_MAX_CHARS) el.classList.add('tok');
 	else _rapierRenderModule('render')._rapierPaintCode(el, _rapierCodeHtml(source, lang));
-	if (reading === 'code') void _rapierColourCodeGpu(el, source);
+	if (admitted && reading === 'code') void _rapierColourCodeGpu(el, source);
+}
+
+function _rapierPaintRunPieces(target, text, runs, from, to, own = false) {
+	const nodes = document.createDocumentFragment(), mark = Symbol.for('rapier.codePaint');
+	for (const [type, piece] of _rapierRunsPartPieces(text, runs, from, to)) {
+		let node;
+		if (!type) node = document.createTextNode(piece);
+		else { node = document.createElement('span'); node.className = 'tok-' + type; node.textContent = piece; }
+		if (own) node[mark] = true;
+		nodes.appendChild(node);
+	}
+	if (own) target[mark] = true;
+	target.replaceChildren(nodes);
+}
+function _rapierCodePaintRecord(record) {
+	const mark = Symbol.for('rapier.codePaint'), target = record.target;
+	if (!target || target[mark] !== true) return false;
+	if (record.type === 'attributes') return record.attributeName === 'class' && target.className === 'tok-part tok';
+	return record.type === 'childList' && record.addedNodes.length > 0 &&
+		Array.prototype.every.call(record.addedNodes, node => node[mark] === true) &&
+		Array.prototype.every.call(record.removedNodes, node => node[mark] === true || node.nodeType === 3);
+}
+function _rapierColourCodeParts(el, source, lang) {
+	if (el._rapierPartsJob?.live) return;
+	el.classList.add('tok-parts');
+	const kept = _rapierHighlightRuntime.partsRuns;
+	const job = el._rapierPartsJob = { live: true, runs: kept?.source === source && kept.lang === lang ? kept.runs : null, work: null, parts: null };
+	const stop = () => { job.live = false; };
+	const slice = () => {
+		if (el._rapierPartsJob !== job || !el.isConnected) return stop();
+		const until = performance.now() + 6;
+		if (!job.runs) {
+			job.work ||= _rapierCodeRunsWork(source, lang, 2048);
+			for (;;) {
+				const step = job.work.next();
+				if (step.done) { job.runs = step.value; _rapierHighlightRuntime.partsRuns = { source, lang, runs: job.runs }; break; }
+				if (performance.now() >= until) return _yieldToIdle(slice);
+			}
+		}
+		return paint(until);
+	};
+	const paint = until => {
+		if (!job.parts) {
+			job.parts = [];
+			let at = 0;
+			for (const part of el.children) {
+				if (!part.classList.contains('tok-part') || !part.firstElementChild?.classList.contains('tok-text') || part.childNodes.length !== 1) return stop();
+				const length = part.textContent.length;
+				job.parts.push({ part, from: at, to: at + length });
+				at += length;
+			}
+			if (at !== source.length || el.textContent !== source) return stop();
+		}
+		for (;;) {
+			const left = job.parts.filter(row => !row.part.classList.contains('tok'));
+			if (!left.length) { el.classList.add('tok'); return stop(); }
+			const middle = innerHeight / 2;
+			let lo = 0, hi = left.length - 1;
+			while (lo < hi) { const mid = (lo + hi) >> 1; if (left[mid].part.getBoundingClientRect().bottom < middle) lo = mid + 1; else hi = mid; }
+			const row = [left[lo], ...left.slice(0, lo).reverse(), ...left.slice(lo + 1)].find(row => !_rapierCodeHoldsSelection(row.part));
+			if (!row) return void setTimeout(slice, 500);
+			if (row.part.parentElement !== el || row.part.textContent !== source.slice(row.from, row.to)) return stop();
+			const text = row.part.firstElementChild;
+			if (row.part.childNodes.length !== 1 || !text?.classList.contains('tok-text')) return stop();
+			_rapierPaintRunPieces(text, source, job.runs, row.from, row.to, true);
+			row.part[Symbol.for('rapier.codePaint')] = true;
+			row.part.classList.add('tok');
+			if (performance.now() >= until) return _yieldToIdle(slice);
+		}
+	};
+	_yieldToIdle(slice);
 }
 
 async function _rapierColourCodeGpu(el, source) {
@@ -5929,7 +6023,7 @@ async function _rapierColourCodeGpu(el, source) {
 }
 
 function _rapierRelexRendered() {
-	const targets = document.querySelectorAll('pre > code.tok:not(.tok-lexed):not(.tok-lexing)');
+	const targets = document.querySelectorAll('pre > code.tok:not(.tok-lexed):not(.tok-lexing):not(.tok-parts)');
 	for (let i = 0; i < targets.length; i++) {
 		const target = targets[i];
 		if (_rapierHighlightRuntime.queued.has(target)) continue;
@@ -5952,7 +6046,7 @@ function _drainCodeColourQueue() {
 		_rapierHighlightRuntime.queued.delete(el);
 		if (!el.isConnected) continue;
 		if (!el.classList.contains('tok')) _rapierColourCodeElement(el);
-		else if (!el.classList.contains('tok-lexed') && _rapierCodeReading(_rapierRenderModule('render-markdown')._rapierLanguageClass(el) || 'text') === 'code') void _rapierColourCodeGpu(el, el.textContent || '');
+		else if (!el.classList.contains('tok-lexed') && !el.classList.contains('tok-parts') && _rapierCodeReading(_rapierRenderModule('render-markdown')._rapierLanguageClass(el) || 'text') === 'code') void _rapierColourCodeGpu(el, el.textContent || '');
 	} while (performance.now() < until);
 	if (_rapierHighlightRuntime.queue.length) { _rapierHighlightRuntime.scheduled = true; _yieldToIdle(_drainCodeColourQueue); }
 }
@@ -6466,10 +6560,6 @@ function _rapierObserveDiagrams(root) {
 	if (!root?.isConnected || !root.querySelectorAll) return;
 	const nodes = root.querySelectorAll('.diagram-block[data-diagram-src]');
 	if (!nodes.length) return;
-	if (typeof IntersectionObserver !== 'function') {
-		nodes.forEach(node => _rapierFillDiagram(node));
-		return;
-	}
 	if (!_rapierReadProjectionRuntime.diagramObserver) {
 		_rapierReadProjectionRuntime.diagramObserver = new IntersectionObserver(entries => {
 			for (const entry of entries) {
@@ -7930,6 +8020,20 @@ function _rapierSelectionFingerprint() {
 	].join('|');
 }
 
+function _rapierAndroidBrowser() {
+	try { return window.RapierPlatform?.environment?.id === 'web' && window.top === window && !_rapierEmbed.active && /Android/i.test(navigator.userAgent || ''); }
+	catch (_) { return false; }
+}
+
+function _rapierOfferAndroidApp(words, play) {
+	try {
+		if (!_rapierAndroidBrowser() || RapierPreferences.read('androidOfferShown') === true) return false;
+		RapierPreferences.write('androidOfferShown', true);
+	} catch (_) { return false; }
+	showToast(words, 'info', {label: 'Get the app', fn: () => _rapierOpenExternalLink(play, '', true)});
+	return true;
+}
+
 function _rapierOpenExternalLink(href, text = '', confirmed = false) {
 	const raw = String(href || '').trim();
 	if (!/^(?:https?:\/\/|mailto:)/i.test(raw)) return false;
@@ -8245,9 +8349,26 @@ function _rapierInitBlockInteractionRouter() {
 		}
 		return best && !best.surface.classList.contains('block-edit') ? best : null;
 	};
+	const handleZoneSurface = (clientX, clientY) => {
+		const near = nearestSurface(clientX, clientY);
+		if (!near) return null;
+		const rect = near.surface.getBoundingClientRect(), pad = parseFloat(getComputedStyle(host).paddingLeft) || 16;
+		if (!(clientX < rect.left && clientX >= rect.left - pad)) return null;
+		const walker = document.createTreeWalker(near.surface, NodeFilter.SHOW_TEXT);
+		let text = walker.nextNode();
+		while (text && !/\S/.test(text.data)) text = walker.nextNode();
+		if (!text) return null;
+		const first = document.createRange(), at = text.data.search(/\S/);
+		first.setStart(text, at);
+		first.setEnd(text, at + 1);
+		const letter = first.getBoundingClientRect();
+		if (!letter.height) return null;
+		const middle = letter.top + letter.height / 2, half = Math.max(22, letter.height / 2);
+		return Math.abs(clientY - middle) <= half ? { ...near, x: letter.left + 1, y: middle } : null;
+	};
 	const gapPress = event => {
 		const target = event.target;
-		if (target === host) return _activeBlockEditContext() ? null : nearestSurface(event.clientX, event.clientY);
+		if (target === host) return _activeBlockEditContext() ? handleZoneSurface(event.clientX, event.clientY) : nearestSurface(event.clientX, event.clientY);
 		return target?.classList?.contains('block-wrapper') && host.contains(target) ? nearestSurface(event.clientX, event.clientY) : null;
 	};
 	host.addEventListener('pointerdown', event => {
@@ -8785,8 +8906,9 @@ document.addEventListener('pointerup', event => {
 document.addEventListener('pointercancel', () => { _rapierImagePress = null; }, { capture: true, passive: true });
 
 function _rapierMetadataBlock(block) {
+	const raw = String(block.raw || '');
 	return block.type === 'link_reference' || block.type === 'abbreviation_reference' || !!globalThis.RapierImageAssets?.isAssetBlock(block.raw)
-		|| /^<!--[ \t]*continuation[ \t]+brief\b[\s\S]*-->\s*$/i.test(String(block.raw || ''));
+		|| /^<!-- md-comments:v1 [^\r\n]*-->\s*$/.test(raw) || /^<!--[ \t]*continuation[ \t]+brief\b[\s\S]*-->\s*$/i.test(raw);
 }
 
 function _rapierFirstEarlyStands() {
@@ -8866,6 +8988,7 @@ function _rapierHydrateBlockEl(wrapper, projection = null) {
 	_rapierUnpackSleepGroup(wrapper.parentElement, wrapper);
 	if (projection && (projection.raw !== block.raw || projection.state && !_rapierReadRenderStateIsCurrent(projection.state))) projection = null;
 	projection ||= _rapierSleptProjection(wrapper);
+	if (wrapper._rapierSleptRender) _rapierWysiwygLedger.sleptChars = Math.max(0, _rapierWysiwygLedger.sleptChars - wrapper._rapierSleptRender.html.length);
 	wrapper._rapierSleptRender = null;
 	block.rendered = projection ? projection.html : null;
 	try { _rapierFillBlockEl(wrapper, block, projection); }
@@ -9316,7 +9439,7 @@ function _rapierEditHtmlKeepingSpaceRuns(editDiv, spaces = editDiv._rapierEditNb
 		return editDiv.innerHTML;
 	}
 	const clone = editDiv.cloneNode(true);
-	for (const mark of clone.querySelectorAll('strong, b, em, i')) {
+	for (const mark of clone.querySelectorAll('strong, b, em, i, s, del, strike, mark, span[data-md-color]')) {
 		if (mark.closest('pre, code')) continue;
 		const end = mark.lastChild, next = mark.nextSibling;
 		if (end?.nodeType !== Node.TEXT_NODE || next?.nodeType !== Node.TEXT_NODE) continue;
@@ -14493,6 +14616,23 @@ function _rapierPressTypingMark(cmd, editDiv, selection, value) {
 	requestAnimationFrame(refreshFormatToolbar);
 	return true;
 }
+function _rapierClearTypingMarks(editDiv, selection) {
+	const context = _activeBlockEditContext();
+	if (!context || context.editDiv !== editDiv) return _rapierFormatCantGoHere();
+	_rapierSettleCaretIntoText(editDiv);
+	_rapierSnapEditCaret(editDiv);
+	const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+	const surface = range && range.collapsed ? _rapierTypingSurface(context, range.startContainer) : null;
+	if (!surface) return _rapierFormatCantGoHere();
+	const live = _rapierMarksLiveAtCaret(editDiv, range), marks = {};
+	if (live.code) marks.code = false;
+	else for (const mark of Object.keys(live)) marks[mark] = mark === 'highlight' || mark === 'color' ? 'none' : false;
+	if (!Object.keys(marks).length) return _rapierFormatCantGoHere();
+	const at = _rapierStableLiveOffset(surface.root, range.startContainer, range.startOffset);
+	editDiv._rapierTypingMarks = { root: surface.root, at, caret: at, marks, spaces: !!live.code };
+	requestAnimationFrame(refreshFormatToolbar);
+	return true;
+}
 function _rapierPlanTypedMarks(raw, anchor, end, marks) {
 	let source = String(raw || '');
 	const entries = Object.entries(marks || {});
@@ -14528,7 +14668,11 @@ function _rapierPlanTypedPaint(raw, anchor, end, kind, value) {
 	const words = (from, to) => probe.text.slice(from, to);
 	if (kind === 'color') {
 		const paint = _rapierColorPaint(_rapierRenderedColorProbe(source) || { text: '', runs: [] }).slice(start, stop);
-		if (value === 'none' ? !paint.some(Boolean) : paint.every(hex => hex === value)) return source;
+		if (value === 'none') {
+			const off = _rapierColorPaint(_rapierRenderedColorProbe(source) || { text: '', runs: [] }).slice(anchor, stop);
+			return off.some(Boolean) ? _rapierPlanExactSourceColor(source, words(anchor, stop), value, anchor, stop) : source;
+		}
+		if (paint.every(hex => hex === value)) return source;
 		return _rapierPlanExactSourceColor(source, words(start, stop), value, start, stop);
 	}
 	const runs = (_rapierRenderedHighlightProbe(source) || { runs: [] }).runs;
@@ -14635,7 +14779,7 @@ function _rapierTypedCode(surface, from, to, on, spaces = false) {
 		}
 	} catch (_) { last = null; }
 	const raw = last ? surface.raw() : null, read = raw == null ? null : _rapierRenderedMarkProbe(raw, 'bold');
-	const same = value => String(value || '').replace(/\u00a0/g, ' ');
+	const same = value => String(value || '').replace(/\u00a0/g, ' ').replace(/\u2060/g, '\n');
 	const runs = read ? _rapierMarkRuns(read.root, 'code') : [];
 	if (!read || same(read.text) !== same(root.textContent) ||
 			(on ? !runs.some(run => run.start <= start && run.end >= stop) : _rapierMarkTouches(runs, start, stop))) {
@@ -14665,7 +14809,7 @@ function _rapierApplyTypingMarks(editDiv) {
 	const typed = _rapierStableLiveText(root).slice(pending.at, caret);
 	if (caret <= pending.at) { editDiv._rapierTypingMarks = null; return false; }
 	pending.caret = caret;
-	if (!/\S/.test(typed.replace(/\u00a0/g, ' '))) return false;
+	if (!/\S/.test(typed.replace(/\u00a0/g, ' ')) && !(pending.spaces && pending.marks.code === false)) return false;
 	editDiv._rapierTypingMarks = null;
 	if (Object.hasOwn(pending.marks, 'code')) {
 		if (surface.cell || !_rapierTypedCode(surface, pending.at, caret, pending.marks.code, !!pending.spaces)) return _rapierFormatCantGoHere();
@@ -15547,7 +15691,7 @@ function rapierFmt(cmd, value) {
 	const crossBlock = !!(state && state.wrappers.length > 1);
 	const editDiv = _rapierActiveEditDiv();
 	if (cmd === 'clear' && selection && selection.isCollapsed) {
-		return _rapierFormatCantGoHere();
+		return editDiv ? _rapierClearTypingMarks(editDiv, selection) : _rapierFormatCantGoHere();
 	}
 
 	if (crossBlock && (cmd === 'link' || cmd === 'code')) {
@@ -16523,10 +16667,8 @@ function _rapierSyncListItemHandles(wrapper) {
 		wrapper.appendChild(button);
 		return button;
 	});
-	if (typeof ResizeObserver === 'function') {
-		state.observer = new ResizeObserver(() => _rapierPlaceListItemHandles());
-		state.observer.observe(editDiv);
-	}
+	state.observer = new ResizeObserver(() => _rapierPlaceListItemHandles());
+	state.observer.observe(editDiv);
 	_rapierPlaceListItemHandles();
 }
 function _rapierListItemDragStart(event) {
@@ -21018,7 +21160,7 @@ function _rapierCompareCancelWorker() {
 	c.running = false;
 }
 
-function _rapierCompareTextNode(tag, className, text) {
+function _rapierTextElement(tag, className, text) {
 	const node = document.createElement(tag);
 	if (className) node.className = className;
 	if (text != null) node.textContent = String(text);
@@ -21071,7 +21213,7 @@ function _rapierCompareSetSummary(result) {
 			if (typeof part === 'string') { counts.append(part); continue; }
 			for (const [index, phrase] of part.slice(0, 4).entries()) {
 				if (index) counts.append(', ');
-				const button = _rapierCompareTextNode('button', 'compare-summary__phrase', phrase.text);
+				const button = _rapierTextElement('button', 'compare-summary__phrase', phrase.text);
 				button.type = 'button';
 				button.addEventListener('click', () => _rapierCompareJumpPhrase(result, phrase.indices));
 				counts.append(button);
@@ -21095,7 +21237,7 @@ function _rapierCompareControls(result, indices) {
 	const controls = document.getElementById('compare-controls');
 	if (!controls) return;
 	controls.replaceChildren();
-	const filters = _rapierCompareTextNode('div', 'compare-state__actions');
+	const filters = _rapierTextElement('div', 'compare-state__actions');
 	filters.setAttribute('role', 'group'); filters.setAttribute('aria-label', 'Filter changes');
 	const kinds = new Set(result.diff.changes.map(_rapierCompareConcern));
 	for (const [kind, label] of [['all', 'all'], ['move', 'moves'], ['rename', 'renames'], ['word', 'words'], ['format', 'format']]) {
@@ -21110,7 +21252,7 @@ function _rapierCompareControls(result, indices) {
 		filters.appendChild(button);
 	}
 	controls.appendChild(filters);
-	const moves = _rapierCompareTextNode('div', 'compare-state__actions');
+	const moves = _rapierTextElement('div', 'compare-state__actions');
 	moves.setAttribute('role', 'group'); moves.setAttribute('aria-label', 'Moved blocks');
 	for (const [index, hunk] of _rapierCompareUnits(result).entries()) if (hunk.moved) {
 		const button = _rapierCompareStateAction('moved · line ' + hunk.newStart, () => {
@@ -21122,7 +21264,7 @@ function _rapierCompareControls(result, indices) {
 		moves.appendChild(button);
 	}
 	if (moves.childElementCount) controls.appendChild(moves);
-	const keep = _rapierCompareTextNode('div', 'compare-state__actions');
+	const keep = _rapierTextElement('div', 'compare-state__actions');
 	if (Array.isArray(result.review)) {
 		const source = _rapierCompareRuntime.view === 'source';
 		const view = _rapierCompareStateAction('source', () => _rapierCompareSetView(result, source ? 'blocks' : 'source'));
@@ -21164,8 +21306,8 @@ function _rapierCompareReviewPage(result, title, summary, escape) {
 	for (const item of _rapierCompareBlockItems(result)) {
 		if (item.type === 'same') root.appendChild(_rapierCompareBlockContext(item.item.block));
 		else if (item.type === 'fold') {
-			const fold = _rapierCompareTextNode('details', 'compare-fold');
-			fold.appendChild(_rapierCompareTextNode('summary', '', '⋯ ' + _rapierCountNoun(item.item.blocks.length, 'unchanged block')));
+			const fold = _rapierTextElement('details', 'compare-fold');
+			fold.appendChild(_rapierTextElement('summary', '', '⋯ ' + _rapierCountNoun(item.item.blocks.length, 'unchanged block')));
 			for (const block of item.item.blocks) fold.appendChild(_rapierCompareBlockContext(block));
 			root.appendChild(fold);
 		} else {
@@ -21198,7 +21340,7 @@ function _rapierCompareReviewPage(result, title, summary, escape) {
 }
 
 function _rapierCompareStateAction(label, handler) {
-	const button = _rapierCompareTextNode('button', 'compare-state__action', label);
+	const button = _rapierTextElement('button', 'compare-state__action', label);
 	button.type = 'button';
 	button.addEventListener('click', handler);
 	return button;
@@ -21212,10 +21354,10 @@ function _rapierCompareShowState(message, details, allowChoose = true) {
 	if (!state) return;
 	state.replaceChildren();
 	state.dataset.visible = 'true';
-	state.appendChild(_rapierCompareTextNode('p', 'compare-state__message', message));
-	if (details) state.appendChild(_rapierCompareTextNode('p', 'compare-state__details', details));
+	state.appendChild(_rapierTextElement('p', 'compare-state__message', message));
+	if (details) state.appendChild(_rapierTextElement('p', 'compare-state__details', details));
 	if (allowChoose) {
-		const actions = _rapierCompareTextNode('div', 'compare-state__actions');
+		const actions = _rapierTextElement('div', 'compare-state__actions');
 		actions.appendChild(_rapierCompareStateAction('choose another file', rapierCompareChooseFile));
 		actions.appendChild(_rapierCompareStateAction('close', event => globalThis.RAPIER_APPS_HOST === true ? globalThis.RapierMcpApp?.closeComparison(event) : rapierCompareClose()));
 		state.appendChild(actions);
@@ -21231,7 +21373,7 @@ function _rapierCompareAppendText(target, value, controls = false) {
 		const entry = marks[text[index]];
 		if (!entry) continue;
 		if (index > at) target.appendChild(document.createTextNode(text.slice(at, index)));
-		const mark = _rapierCompareTextNode('span', 'compare-row__control', entry[0]);
+		const mark = _rapierTextElement('span', 'compare-row__control', entry[0]);
 		mark.title = entry[1];
 		mark.setAttribute('aria-label', entry[1]);
 		target.appendChild(mark);
@@ -21266,7 +21408,7 @@ function _rapierCompareRefreshOverflowFades() {
 function _rapierCompareRow(row) {
 	if (row.type === 'omitted') {
 		const holder = document.createElement('div');
-		const more = _rapierCompareTextNode('button', 'compare-omitted', '⋯ ' + row.text);
+		const more = _rapierTextElement('button', 'compare-omitted', '⋯ ' + row.text);
 		more.type = 'button';
 		let at = 0;
 		more.addEventListener('click', () => {
@@ -21279,17 +21421,17 @@ function _rapierCompareRow(row) {
 		holder.appendChild(more);
 		return holder;
 	}
-	const line = _rapierCompareTextNode('div', 'compare-row compare-row--' + row.type);
+	const line = _rapierTextElement('div', 'compare-row compare-row--' + row.type);
 	const quiet = row.type.startsWith('format-');
 	if (row.type === 'add') line.setAttribute('aria-label', 'added line ' + row.newLine);
 	else if (row.type === 'remove') line.setAttribute('aria-label', 'removed line ' + row.oldLine);
 	else if (row.type === 'context') line.setAttribute('aria-label', 'unchanged line ' + row.oldLine);
 	else if (row.type === 'move') line.setAttribute('aria-label', 'moved from line ' + row.oldLine + ' to line ' + row.newLine);
 	else if (quiet) line.setAttribute('aria-label', 'formatting ' + (row.type === 'format-before' ? 'before' : 'after'));
-	const oldNo = _rapierCompareTextNode('span', 'compare-row__line', row.oldLine == null ? '' : row.oldLine);
-	const newNo = _rapierCompareTextNode('span', 'compare-row__line', row.newLine == null ? '' : row.newLine);
-	const op = _rapierCompareTextNode('span', 'compare-row__op', row.type === 'add' ? '+' : row.type === 'remove' ? '−' : row.type === 'move' ? '↪' : quiet ? '≈' : '');
-	const text = _rapierCompareTextNode('span', 'compare-row__text');
+	const oldNo = _rapierTextElement('span', 'compare-row__line', row.oldLine == null ? '' : row.oldLine);
+	const newNo = _rapierTextElement('span', 'compare-row__line', row.newLine == null ? '' : row.newLine);
+	const op = _rapierTextElement('span', 'compare-row__op', row.type === 'add' ? '+' : row.type === 'remove' ? '−' : row.type === 'move' ? '↪' : quiet ? '≈' : '');
+	const text = _rapierTextElement('span', 'compare-row__text');
 	text.dir = 'auto';
 	const longLine = row.code && row.text && row.text.length > 500 && !row.text.includes('\n');
 	if (longLine) text.classList.add('compare-row__text--long');
@@ -21297,7 +21439,7 @@ function _rapierCompareRow(row) {
 	const value = String(row.text || '');
 	const parts = row.wordParts?.length ? row.wordParts : [{ text: value, changed: false }];
 	let at = 0, partIndex = 0, partOffset = 0;
-	const more = _rapierCompareTextNode('button', 'compare-omitted compare-row__more', 'show more');
+	const more = _rapierTextElement('button', 'compare-omitted compare-row__more', 'show more');
 	more.type = 'button';
 	const append = () => {
 		let end = Math.min(value.length, at + 8192);
@@ -21323,7 +21465,7 @@ function _rapierCompareRow(row) {
 	more.addEventListener('click', append);
 	append();
 	if (row.showControls && row.lineBreak) {
-		const ending = _rapierCompareTextNode('span', 'compare-row__control', 'LF');
+		const ending = _rapierTextElement('span', 'compare-row__control', 'LF');
 		ending.setAttribute('aria-label', 'line feed');
 		text.appendChild(ending);
 	}
@@ -21336,11 +21478,11 @@ function _rapierCompareRow(row) {
 }
 
 function _rapierCompareMovedRow(item) {
-	const line = _rapierCompareTextNode('button', 'compare-row compare-row--moved');
+	const line = _rapierTextElement('button', 'compare-row compare-row--moved');
 	line.type = 'button';
-	line.append(_rapierCompareTextNode('span', 'compare-row__line', item.oldLine), _rapierCompareTextNode('span', 'compare-row__line', ''),
-		_rapierCompareTextNode('span', 'compare-row__op', item.down ? '↓' : '↑'),
-		_rapierCompareTextNode('span', 'compare-row__text compare-row__text--prose', 'moved ' + (item.down ? 'down' : 'up') + ' to line ' + item.newLine));
+	line.append(_rapierTextElement('span', 'compare-row__line', item.oldLine), _rapierTextElement('span', 'compare-row__line', ''),
+		_rapierTextElement('span', 'compare-row__op', item.down ? '↓' : '↑'),
+		_rapierTextElement('span', 'compare-row__text compare-row__text--prose', 'moved ' + (item.down ? 'down' : 'up') + ' to line ' + item.newLine));
 	line.addEventListener('click', () => {
 		if (item.index < 0) return;
 		if (_rapierCompareRuntime.renderThrough || item.index === 0) _rapierCompareFocusChange(item.index);
@@ -21366,7 +21508,7 @@ function _rapierCompareRenderRegionRows(target, item, from, count) {
 
 function _rapierCompareOmitted(item) {
 	const holder = document.createElement('div');
-	const button = _rapierCompareTextNode('button', 'compare-omitted', '⋯ ' + _rapierCountNoun(item.count, 'unchanged line'));
+	const button = _rapierTextElement('button', 'compare-omitted', '⋯ ' + _rapierCountNoun(item.count, 'unchanged line'));
 	button.type = 'button';
 	let at = 0;
 	button.addEventListener('click', () => {
@@ -21391,10 +21533,10 @@ function _rapierCompareRenderHunk(hunk, index) {
 	const kind = _rapierCompareNoun(hunk) + (hunk.renamed ? ' · ' + hunk.renamed.from + ' → ' + hunk.renamed.to
 		: hunk.columns ? ' · ' + hunk.columns.join(', ') : hunk.name && hunk.kind === 'declaration' ? ' ' + hunk.name : '');
 	const change = hunk.change === 'format' ? 'formatting' : (hunk.renamed ? 'renamed ' : { insert: 'added ', delete: 'removed ', move: 'moved ', replace: 'replaced ' }[hunk.change] || '') + kind;
-	section.appendChild(_rapierCompareTextNode('div', 'compare-hunk__label', change + ' · current ' +
+	section.appendChild(_rapierTextElement('div', 'compare-hunk__label', change + ' · current ' +
 		hunk.oldStart + '–' + Math.max(hunk.oldStart, hunk.oldStart + hunk.oldLines - 1) + ' · selected ' +
 		hunk.newStart + '–' + Math.max(hunk.newStart, hunk.newStart + hunk.newLines - 1)));
-	const more = _rapierCompareTextNode('button', 'compare-omitted', 'show more lines');
+	const more = _rapierTextElement('button', 'compare-omitted', 'show more lines');
 	more.type = 'button';
 	let at = 0;
 	const append = () => {
@@ -21441,13 +21583,13 @@ function _rapierCompareRenderBlockChange(unit, index) {
 	section.dataset.hunkIndex = String(index);
 	section.dataset.current = index === 0 ? 'true' : 'false';
 	section.setAttribute('aria-label', 'change ' + (index + 1));
-	const label = _rapierCompareTextNode('div', 'compare-hunk__label compare-block__label');
-	label.append(_rapierCompareTextNode('span', '', { replace: 'changed', insert: 'added', delete: 'removed', move: 'moved', spacing: 'spacing' }[item.kind]),
-		_rapierCompareTextNode('span', '', _rapierCompareBlockLines(item.line)));
+	const label = _rapierTextElement('div', 'compare-hunk__label compare-block__label');
+	label.append(_rapierTextElement('span', '', { replace: 'changed', insert: 'added', delete: 'removed', move: 'moved', spacing: 'spacing' }[item.kind]),
+		_rapierTextElement('span', '', _rapierCompareBlockLines(item.line)));
 	section.appendChild(label);
 	for (const side of ['before', 'after']) for (const block of item[side]) {
 		const ground = item.kind === 'move' ? 'move' : side === 'before' ? 'remove' : 'add';
-		const panel = _rapierCompareTextNode('div', 'compare-panel compare-panel--' + ground);
+		const panel = _rapierTextElement('div', 'compare-panel compare-panel--' + ground);
 		panel.dataset.side = side;
 		panel.setAttribute('aria-label', (side === 'before' ? 'current' : 'selected') + ', line ' + block.line);
 		panel.appendChild(_rapierCompareBlockBody(side, block, block.marks));
@@ -21472,12 +21614,12 @@ function _rapierComparePreviewGate() {
 	const button = document.createElement('button');
 	button.className = 'compare-pro-gate__button';
 	button.type = 'button';
-	button.appendChild(_rapierCompareTextNode('span', 'compare-pro-gate__title', 'full compare'));
-	button.appendChild(_rapierCompareTextNode(
+	button.appendChild(_rapierTextElement('span', 'compare-pro-gate__title', 'full compare'));
+	button.appendChild(_rapierTextElement(
 		'span', 'compare-pro-gate__copy',
 		'Browse every change and jump between changed regions.'
 	));
-	button.appendChild(_rapierCompareTextNode('span', 'compare-pro-gate__action', 'get Rapier Pro'));
+	button.appendChild(_rapierTextElement('span', 'compare-pro-gate__action', 'get Rapier Pro'));
 	button.addEventListener('click', () => {
 		_rapierRequireFeature('compare.full', { source: 'compare-preview' });
 	});
@@ -21567,7 +21709,7 @@ function _rapierCompareRenderResult(result) {
 	_rapierCompareControls(result, indices);
 	const previewOnly = units.length > 1 && !_rapierFeatureAllowed('compare.full');
 	_rapierCompareRuntime.previewing = previewOnly;
-	const more = _rapierCompareTextNode('button', 'compare-omitted', 'show more changes');
+	const more = _rapierTextElement('button', 'compare-omitted', 'show more changes');
 	more.type = 'button';
 	let cursor = 0, rendered = 0;
 	const items = blockView ? _rapierCompareBlockItems(result) : result.items;
@@ -21615,7 +21757,7 @@ function _rapierCompareRenderResult(result) {
 		});
 	}
 	_rapierBindHorizontalSwipe(content, direction => rapierCompareStep(direction));
-	if (!_rapierCompareRuntime.resizeObserver && typeof ResizeObserver === 'function') {
+	if (!_rapierCompareRuntime.resizeObserver) {
 		_rapierCompareRuntime.resizeObserver = new ResizeObserver(_rapierCompareRefreshOverflowFades);
 		const mode = document.getElementById('compare-mode');
 		if (mode) _rapierCompareRuntime.resizeObserver.observe(mode);
@@ -23952,7 +24094,7 @@ function _rapierWatchListContinuations() {
 		host._rapierListWatch = new MutationObserver(records => {
 			for (const record of records) {
 				const target = record.target;
-				if (target.nodeType === 1 && target.closest('.block-edit')) continue;
+				if (target.nodeType === 1 && target.closest('.block-edit') || _rapierCodePaintRecord(record)) continue;
 				schedule();
 				return;
 			}
@@ -24316,7 +24458,7 @@ async function rapierCopy(kind, suppliedCapture = null) {
 
 const RAPIER_DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const RAPIER_DOCX_EMBEDDED_IMAGE_WARN_BYTES = 8 * 1024 * 1024;
-const RAPIER_DOCX_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const RAPIER_DOCX_IMAGE_MAX_BYTES = 16 * 1024 * 1024;
 const _rapierDocxRuntime = Object.seal({
 	generationPromise: null,
 	actionPromise: null,
@@ -24469,7 +24611,7 @@ async function _rapierBuildDocxHtml(context) {
 		const bytes = Math.floor(payload.length * .75) - (payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0);
 		imageBytes += bytes;
 		if (bytes > RAPIER_DOCX_IMAGE_MAX_BYTES) throw Object.assign(new Error(
-			'A picture is over Word’s 10 MiB limit. Try HTML or PDF.'), {code: 'DOCX_IMAGE_SIZE_LIMIT'});
+			'A picture is over 16 MiB. Try HTML or PDF.'), {code: 'DOCX_IMAGE_SIZE_LIMIT'});
 	}
 	stats.embeddedImageBytes = imageBytes;
 	const blocks = work ? await globalThis.RapierDocxImport.docxBlocksFromDomAsync(portableRoot, {canonical: context.canonical, work, willTokens, ...(context.wordLayout ? {pointSize: globalThis.RapierMarkdownSpec.wordDocumentSettings(globalThis.RapierMarkdownSpec.readDocumentSettings(context.canonical)).fontsize.unit * 12} : {})})
@@ -28563,9 +28705,7 @@ function _rapierRasterClipboardFile(dataTransfer) {
 	return null;
 }
 async function _rapierDecodeRaster(blob) {
-    if (typeof createImageBitmap === 'function') {
-        try { return await createImageBitmap(blob, {imageOrientation: 'from-image'}); } catch (_) {}
-    }
+    try { return await createImageBitmap(blob, {imageOrientation: 'from-image'}); } catch (_) {}
     return globalThis.RapierEmbeddedImages.nativeImage(await _rapierBlobDataUrl(blob));
 }
 function _rapierCanvasBlob(canvas, type, quality) {
@@ -30036,12 +30176,11 @@ function _normalizeStyleFormatting(htmlString) {
 }
 
 function _isHtmlInlineSafe(htmlString) {
-	if (String(htmlString || '').length > 32 * 1024) return false;
 	const tmp = document.createElement('template').content.ownerDocument.createElement('div');
 	tmp.innerHTML = htmlString;
 	if (tmp.querySelector(
 		'h1,h2,h3,h4,h5,h6,ul,ol,li,pre,blockquote,table,thead,tbody,tr,td,th,hr,details,summary')) return false;
-	if (tmp.querySelectorAll('*').length > 400 || tmp.querySelectorAll('br').length > 24) return false;
+	if (tmp.querySelectorAll('br').length > 24) return false;
 	if (tmp.querySelectorAll('p,div').length > 1) return false;
 	return true;
 }
@@ -31796,7 +31935,7 @@ function _rapierWysiwygMeasuredHeight(wrapper) {
 	return rect.height + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
 }
 function _rapierWysiwygLedgerObserver() {
-	if (_rapierWysiwygLedger.observer || typeof ResizeObserver === 'undefined') return _rapierWysiwygLedger.observer;
+	if (_rapierWysiwygLedger.observer) return _rapierWysiwygLedger.observer;
 	_rapierWysiwygLedger.observer = new ResizeObserver(records => {
 		let notice = false;
 		records.forEach(record => {
@@ -32104,8 +32243,9 @@ function _rapierWysiwygSleep(entry, held) {
 	wrapper._rapierReadState = state && (state.details.length || state.overflow.length)
 		? {raw: block?.raw, state} : null;
 	const html = read?._rapierProjectionHtml;
-	wrapper._rapierSleptRender = html?.length < 65536 && _rapierWysiwygLedger.order.length < 400 && wrapper._rapierBlockRaw === block?.raw
+	wrapper._rapierSleptRender = html?.length < 65536 && _rapierWysiwygLedger.sleptChars + html.length <= 32e6 && wrapper._rapierBlockRaw === block?.raw
 		? {raw: block.raw, html, state: read._rapierProjectionRenderState} : null;
+	if (wrapper._rapierSleptRender) _rapierWysiwygLedger.sleptChars += html.length;
 	_rapierWysiwygWriteIntrinsic(wrapper, Math.max(1, _rapierWysiwygLedgerEntryHeight(entry)));
 	_rapierReleaseBlockProjection(wrapper);
 	_rapierWysiwygLedger.observer?.unobserve(wrapper);
@@ -32225,6 +32365,8 @@ function _rapierWysiwygRenderWindowNow(centerIndex, approachViewports) {
 	});
 	globalThis.RapierImageFlow?.prepareRetire?.(leaving.filter(wrapper => !held.has(wrapper)));
 	for (const wrapper of leaving) _rapierWysiwygSleep(_rapierWysiwygLedger.entries.get(String(wrapper.dataset.blockId)), held);
+	const indexOf = wrapper => _rapierWysiwygLedger.indexById.get(String(wrapper?.dataset.blockId)) ?? -1;
+	let changedFrom = Math.min(Infinity, ...leaving.filter(wrapper => !_rapierWysiwygLedger.entries.get(String(wrapper.dataset.blockId))?.measured).map(indexOf));
 	_rapierWysiwygLedger.window = [first, last];
 	const demand = [];
 	for (let index = visibleFirst; index <= visibleLast; index++) demand.push(index);
@@ -32241,6 +32383,7 @@ function _rapierWysiwygRenderWindowNow(centerIndex, approachViewports) {
 	for (let index = 0; index < pending.length; index += batchSize) {
 		if (index && _rapierNow() - started >= 8) { _rapierScheduleRenderWindow(); break; }
 		const wrappers = pending.slice(index, index + batchSize);
+		for (const wrapper of wrappers) changedFrom = Math.min(changedFrom, indexOf(wrapper));
 		const fresh = wrappers.filter(wrapper => !_rapierSleptProjection(wrapper));
 		const drawn = fresh.length ? _rapierRenderBlocksBatched(fresh.map(_rapierBoundBlock), rapier.semantic.references, null, true) : [];
 		wrappers.forEach(wrapper => {
@@ -32254,7 +32397,12 @@ function _rapierWysiwygRenderWindowNow(centerIndex, approachViewports) {
 		rapier.document.docKind === 'markdown' && !rapier.compare?.active && !host.dataset.rapierImageGesture &&
 		!_rapierWysiwygLedger.dragging) {
 		globalThis.RapierImageFlow?.pinSettled?.();
-	} else _rapierRestoreEditorViewport(viewport);
+	} else if (!viewport || changedFrom <= (viewport.blockId != null ? _rapierWysiwygLedger.indexById.get(String(viewport.blockId)) ?? visibleLast : visibleLast))
+		_rapierRestoreEditorViewport(viewport);
+	else if (viewport.token === rapier.view.restoreToken && viewport.authority === rapier.identity.authority) {
+		rapier.view.editorViewport = viewport;
+		_rapierScheduleEditorViewport();
+	}
 }
 
 let _rapierApproachFrame = 0;
@@ -33065,14 +33213,6 @@ document.addEventListener('click', event => {
 	}
 });
 
-const _RAPIER_OUTLINE_ITEM_LIMIT = 4096;
-
-function _rapierOutlineWindow(items, currentIndex) {
-	if (items.length <= _RAPIER_OUTLINE_ITEM_LIMIT) return { items, start: 0 };
-	const half = Math.floor(_RAPIER_OUTLINE_ITEM_LIMIT / 2);
-	const start = Math.max(0, Math.min(items.length - _RAPIER_OUTLINE_ITEM_LIMIT, currentIndex - half));
-	return { items: items.slice(start, start + _RAPIER_OUTLINE_ITEM_LIMIT), start };
-}
 
 function _rapierNavigatorJumpToOffset(button, textarea, offset, navigatorGuard) {
 	if (!_rapierMutationStampIsCurrent(navigatorGuard)) {
@@ -33131,6 +33271,7 @@ function _rapierOutlineDragStart(event) {
 	const tick = now => {
 		drag.frame = 0;
 		const push = _rapierDragEdgeScroll(list, drag, now);
+		if (list._rapierOutlineRows) { _rapierOutlineDrawRows(list); drag.collect(); }
 		place();
 		if (push) drag.frame = requestAnimationFrame(tick);
 	};
@@ -33138,10 +33279,14 @@ function _rapierOutlineDragStart(event) {
 		drag.plan = _rapierSectionMovePlan(blockId);
 		if (!drag.plan) return false;
 		const index = id => rapier.document.blocks.findIndex(block => block.id === id);
-		drag.rows = Array.from(list.querySelectorAll('.navigator-outline__item[data-block-id]')).map(entry => ({ row: entry, index: index(Number(entry.dataset.blockId)) }));
 		const headings = _rapierOutlineFromBlocks(), last = headings[headings.length - 1];
-		drag.end = !!last && drag.rows.length > 0 && drag.rows[drag.rows.length - 1].index === last.blockIndex;
-		drag.rows.forEach(entry => { if (entry.index >= drag.plan.start && entry.index < drag.plan.end) entry.row.setAttribute('data-section-moving', ''); });
+		drag.collect = () => {
+			drag.rows = Array.from(list.querySelectorAll('.navigator-outline__item[data-block-id]')).map(entry => ({ row: entry, index: index(Number(entry.dataset.blockId)) }));
+			drag.end = !!last && drag.rows.length > 0 && drag.rows[drag.rows.length - 1].index === last.blockIndex &&
+				!(list._rapierOutlineRows && list._rapierOutlineRows.to < list._rapierOutlineRows.shown.length - 1);
+			drag.rows.forEach(entry => { if (entry.index >= drag.plan.start && entry.index < drag.plan.end) entry.row.setAttribute('data-section-moving', ''); });
+		};
+		drag.collect();
 		drag.mark = document.createElement('div');
 		drag.mark.className = 'section-move-mark';
 		list.parentElement.appendChild(drag.mark);
@@ -33192,6 +33337,8 @@ function _rapierRefreshHeadingOutline(blockId, focus) {
 	_rapierListHeadingOutline(host);
 	renderOutlineFilter(_rapierUiNavigator.filter);
 	list.scrollTop = scroll;
+	const long = list._rapierOutlineRows, at = long ? long.shown.findIndex(index => long.rows[index].item.blockId === blockId) : -1;
+	if (at >= 0 && (at < long.from || at > long.to)) _rapierOutlineDrawRows(list, at - 24, at + 24);
 	const row = list.querySelector('.navigator-outline__item[data-block-id="' + blockId + '"]');
 	if (!row) return;
 	row.scrollIntoView({ block: 'nearest' });
@@ -33204,27 +33351,23 @@ function _rapierListHeadingOutline(host) {
 	const blocks = rapier.document.blocks || [];
 	const entries = _rapierOutlineFromBlocks();
 	let currentIndex = 0;
-	entries.forEach((entry, index) => {
-		const block = blocks[entry.blockIndex];
-		const wrapper = block && document.querySelector('[data-block-id="' + block.id + '"]');
-		if (wrapper && !wrapper.hidden && _rapierBlockOffsetTop(wrapper) <= host.scrollTop + 72) currentIndex = index;
-	});
-	const windowed = _rapierOutlineWindow(entries, currentIndex);
+	for (let index = 0; index < entries.length; index++) {
+		const block = blocks[entries[index].blockIndex];
+		const wrapper = block && _rapierWysiwygLedger.entries.get(String(block.id))?.wrapper;
+		if (!wrapper?.isConnected || wrapper.hidden) continue;
+		if (_rapierBlockOffsetTop(wrapper) > host.scrollTop + 72) break;
+		currentIndex = index;
+	}
 
 	if (!entries.length) {
 		const empty = renderOutlineNote('no headings in this document', { terminal: true });
 		renderNavigatorStatus(empty ? empty.textContent : '');
 	} else {
-		if (windowed.items.length !== entries.length) {
-			renderOutlineNote('showing headings near the current section');
-		}
-		windowed.items.forEach((entry, localIndex) => {
-			const index = windowed.start + localIndex;
-			renderOutlineButton({
+		renderOutlineRows(entries.map((entry, index) => ({ item: {
 				level: entry.level,
 				label: entry.label || 'untitled heading',
 				blockId: movable && blocks[entry.blockIndex] ? blocks[entry.blockIndex].id : null,
-			}, index === currentIndex, button => {
+			}, current: index === currentIndex, onActivate: button => {
 			if (!_rapierMutationStampIsCurrent(navigatorGuard)) {
 				rapierCloseDocumentNavigator(false);
 				return;
@@ -33239,8 +33382,7 @@ function _rapierListHeadingOutline(host) {
 			try { button.blur(); } catch (_) {}
 			rapierCloseDocumentNavigator(false);
 			_rapierJumpToRenderedHeading('', targetBlockId, travel);
-		});
-		});
+		} })));
 	}
 }
 
@@ -33328,10 +33470,6 @@ function _rapierOpenDocumentNavigator(kind, inheritedTravelTicket = null) {
 				const caretAt = _rapierAbsPos(Number(textarea.selectionStart || 0));
 				let current = 0;
 				items.forEach((item, index) => { if (item.offset <= caretAt) current = index; });
-				const shown = _rapierOutlineWindow(items, current);
-				if (shown.items.length !== items.length) {
-					renderOutlineNote('showing declarations near the current position');
-				}
 				if (analysis.complete !== true) {
 					const omitted = (analysis.omissions || []).filter(row => row && row.domain === 'entries')
 						.reduce((total, row) => total + Math.max(0, Number(row.omitted || 0)), 0);
@@ -33339,10 +33477,8 @@ function _rapierOpenDocumentNavigator(kind, inheritedTravelTicket = null) {
 						? String(omitted) + ' declarations omitted by the structure budget'
 						: 'structure is bounded for this file');
 				}
-				shown.items.forEach((item, localIndex) => {
-					renderOutlineButton(item, shown.start + localIndex === current,
-						button => _rapierNavigatorJumpToOffset(button, textarea, item.offset, navigatorGuard));
-				});
+				renderOutlineRows(items.map((item, index) => ({ item, current: index === current,
+					onActivate: button => _rapierNavigatorJumpToOffset(button, textarea, item.offset, navigatorGuard) })));
 
 				renderOutlineFilter(_rapierUiNavigator.filter);
 				requestAnimationFrame(() => {
@@ -36424,8 +36560,7 @@ function _rapierEmbedStart() {
 	_rapierEmbedNotify();
 }
 function _rapierEmbedRequestId() {
-	if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-	return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+	return crypto.randomUUID();
 }
 function _rapierEmbedQueueSave(options) {
 	if (!_rapierEmbed.pendingSave) return false;
@@ -38518,6 +38653,8 @@ function _rapierCrossBlockReplace(type, text, composing = false) {
 		type === 'insertParagraph' || type === 'insertLineBreak';
 	if (!destructive) return false;
 	if (composing) {
+		const held = rapier.composition.block;
+		const unheld = () => { rapier.composition.block = held && !!_activeBlockEditContext(); return false; };
 		rapier.composition.block = true;
 		const join = _crossBlockDelete(range, null, { pushHistory: false, fieldScoped: true });
 		if (join?.refused) {
@@ -38526,7 +38663,7 @@ function _rapierCrossBlockReplace(type, text, composing = false) {
 			return true;
 		}
 		const block = join && rapier.document.blocks.find(row => row.id === join.blockId);
-		if (!block || !join.window) return false;
+		if (!block || !join.window) return unheld();
 		block._rapierCompositionWindow = join.window;
 		const previous = join.previousOwner;
 		if (previous && previous.block !== block) {
@@ -38539,7 +38676,7 @@ function _rapierCrossBlockReplace(type, text, composing = false) {
 			}
 		}
 		const editDiv = _enterBlockEditAtOffset(join.blockId, join.charOffset, join.tableCell);
-		if (!editDiv) return false;
+		if (!editDiv) return unheld();
 		editDiv._rapierComposeStart = _rapierComposeSnapshot(editDiv, text);
 		editDiv._rapierCheckpointFresh = false;
 		rapier.composition.block = true;
@@ -42668,9 +42805,50 @@ function _slabCacheSet(key, val) {
 }
 function _highlightSlab(text, lang, firstLine) {
 	if (_rapierHighlightAdmitted(text)) return _rapierWrapHighlightedLines(_rapierCodeHtml(text, lang), firstLine);
-	if (text.length > _RAPIER_HIGHLIGHT_SLAB_MAX_CHARS) return _rapierPlainSlab(text, firstLine);
-	const lines = text.split('\n');
-	return _rapierWrapHighlightedLines(lines.map(line => _rapierHighlightLinesAdmitted(line) ? _rapierCodeHtml(line, lang) : _rapierEscapeHtml(line)).join('\n'), firstLine);
+	return _rapierPlainSlab(text, firstLine);
+}
+
+function _rapierColourSlabIdle(slabText, lang, firstLine, key) {
+	const jobs = _rapierSourceRuntime.slabJobs;
+	if (jobs.has(key) || _rapierCodeReading(lang) === 'plain') return;
+	const job = { work: _rapierCodeRunsWork(slabText, lang, 2048), runs: null, lines: null, at: 0, painted: new WeakSet(), tries: 0 };
+	jobs.set(key, job);
+	const slice = () => {
+		if (jobs.get(key) !== job) return;
+		const until = performance.now() + 6;
+		while (!job.runs) {
+			const step = job.work.next();
+			if (step.done) job.runs = step.value;
+			else if (performance.now() >= until) return _yieldToIdle(slice);
+		}
+		if (!job.lines) {
+			job.lines = [];
+			for (let from = 0; from <= slabText.length;) {
+				const at = slabText.indexOf('\n', from), end = at < 0 ? slabText.length : at;
+				job.lines.push([from, end]);
+				from = end + 1;
+			}
+		}
+		const out = document.getElementById('source-highlight-code');
+		const first = out?.querySelector('.rapier-slab > .tok-line[data-line="' + (Math.max(0, firstLine | 0) + 1) + '"]');
+		for (; job.at < job.lines.length; job.at++) {
+			const [from, to] = job.lines[job.at], target = first?.parentElement.children[job.at];
+			if (to > from && target?.dataset.line === String(firstLine + job.at + 1) && target.textContent === slabText.slice(from, to)) {
+				_rapierPaintRunPieces(target, slabText, job.runs, from, to);
+				job.painted.add(target);
+			}
+			if (performance.now() >= until) { job.at++; return _yieldToIdle(slice); }
+		}
+		const slab = first?.isConnected ? first.parentElement : null;
+		const lines = slab?.children;
+		const whole = lines?.length === job.lines.length && job.lines.every(([from, to], i) => lines[i].dataset.line === String(firstLine + i + 1)
+			&& (to > from ? job.painted.has(lines[i]) && lines[i].textContent === slabText.slice(from, to) : lines[i].textContent === '\u00A0'));
+		if (whole) _slabCacheSet(key, slab.innerHTML);
+		else if (slab && job.tries++ < 2) { job.at = 0; return _yieldToIdle(slice); }
+		else _rapierSlabCache.delete(key);
+		jobs.delete(key);
+	};
+	_yieldToIdle(slice);
 }
 
 function _rapierEscapeHtml(text) {
@@ -42769,6 +42947,7 @@ function _rapierHighlightedSlabInner(slabText, lang, firstLine) {
 	if (inner === undefined) {
 		inner = _highlightSlab(slabText, lang, firstLine);
 		_slabCacheSet(key, inner);
+		if (!_rapierHighlightAdmitted(slabText)) _rapierColourSlabIdle(slabText, lang, firstLine, key);
 	}
 	if (lexed === undefined && _rapierCodeReading(lang) === 'code' && _rapierHighlightAdmitted(slabText)) void _rapierColourSlabGpu(slabText, lang, firstLine, key);
 	return inner;
@@ -45257,6 +45436,7 @@ function _rapierDialogsHandleBack() {
 	if (top) {
 		if (_rapierModalOwnsInput(top) && _rapierModalDismiss(_rapierDialogRuntime.open.get(top))) return true;
 		if (_rapierUiHandleBack(top)) return true;
+		if (_rapierModalOwnsInput(top)) return true;
 	}
 	if (_rapierUiDialogIsOpen(_rapierUi.refs.infoOverlay)) { closeDialog(_rapierUi.refs.infoOverlay); return true; }
 	if (_rapierCommandRuntime.palette) { _rapierCloseCommandPalette(true); return true; }
@@ -46222,12 +46402,6 @@ function _rapierMessageQueueTake() {
 	return dropped > 0 ? { ...spoken, dropped } : spoken;
 }
 
-function _rapierWaitDocumentSettled() {
-	return !_rapierMutationBarrierActive() &&
-		!rapier.composition.block && !rapier.composition.source &&
-		_rapierHistoryIsComplete();
-}
-
 function _rapierFlatSurface() {
 	return rapier.document.docKind !== 'markdown' || rapier.view.mode === 'source';
 }
@@ -46637,7 +46811,7 @@ async function _rapierWaitForUser(input, ctx) {
 					finish({ outcome: 'delivery', reason: '' });
 					return;
 				}
-			} else if (state.pointerActive || !_rapierWaitDocumentSettled()) activity();
+			} else if (state.pointerActive || !_rapierGuestQuiescent()) activity();
 			else if (_rapierNow() - state.lastActivityAt >= state.quietMs) {
 				const value = state.evaluate();
 				if (value) { finish(value); return; }
@@ -48375,7 +48549,12 @@ function _rapierUiHandleBack(overlay = null) {
 }
 
 function _rapierUiEscape() {
-	const top = _rapierUiSurfaces().find(surface => surface.open());
+	const surfaces = _rapierUiSurfaces(), top = surfaces.find(surface => surface.open());
+	if (top && !top.question && top.overlay && surfaces.some(surface => surface !== top && surface.overlay && surface.open())) {
+		if (top.blocking && top.blocking()) return;
+		try { top.close({ restoreFocus: true }); } catch (_) {}
+		return;
+	}
 	dismissTransientSurfaces(true);
 	if (!top || !top.question || top.answerOnly) return;
 	if (top.blocking && top.blocking()) return;
@@ -48443,7 +48622,7 @@ function _rapierSwitchSlide(group) {
 			state.positioned = true;
 		};
 		const root = document.documentElement;
-		if (!root._rapierSwitchObserver && typeof ResizeObserver === 'function') root._rapierSwitchObserver = new ResizeObserver(entries => {
+		if (!root._rapierSwitchObserver) root._rapierSwitchObserver = new ResizeObserver(entries => {
 			for (const {target} of entries) {
 				if (!target.isConnected) root._rapierSwitchObserver.unobserve(target);
 				else target._rapierSwitch?.layout();
@@ -48558,7 +48737,7 @@ function _rapierUiPlatformFacts() {
 			typeof p.installation.launcherIcon === 'function' &&
 			typeof p.installation.setLauncherIcon === 'function'),
 		pro: !!(p && p.pro.supported),
-		androidPro: !!(p && p.pro.supported && _rapierUiAndroid()),
+		androidPro: !!(p && p.pro.supported && (_rapierUiAndroid() || p.environment.id === 'windows')),
 		storage: !!(p && p.host && typeof p.host.storageReport === 'function'),
 	};
 }
@@ -48972,6 +49151,7 @@ const _RAPIER_UI_VISIBLE = Object.freeze([
 ]);
 
 function _rapierUiAndroid() { return window.RapierPlatform?.environment.android === true; }
+function _rapierPaints() { return window.RapierPlatform?.environment?.paints !== false; }
 function _rapierUiHere() { return window.RapierPlatform?.environment.here || 'This browser'; }
 function _rapierUiWords() {
 	return window.RapierPlatform?.environment.native === true
@@ -49148,11 +49328,9 @@ function _rapierUpdateToastLift() {
 		root.addEventListener('animationend', settled);
 		root.addEventListener('transitionend', settled);
 		new MutationObserver(_rapierScheduleToastLift).observe(root, {childList: true});
-		if (typeof ResizeObserver === 'function') {
-			const observer = new ResizeObserver(_rapierScheduleToastLift);
-			root._rapierToastSizes = {observer, observed: new Set([root])};
-			observer.observe(root);
-		}
+		const observer = new ResizeObserver(_rapierScheduleToastLift);
+		root._rapierToastSizes = {observer, observed: new Set([root])};
+		observer.observe(root);
 	}
 	if (root._rapierToastSizes) {
 		const {observer, observed} = root._rapierToastSizes;
@@ -50086,7 +50264,7 @@ const _rapierUiPro = {
 		return feature ? feature.name + ' is part of Rapier Pro.' : '';
 	},
 	statusText() {
-		return this.busy ? 'Checking Google Play…' : this.message;
+		return this.busy ? 'Checking ' + _rapierProStore() + '…' : this.message;
 	},
 	async purchase() {
 		const platform = window.RapierPlatform;
@@ -50120,7 +50298,7 @@ function renderProSheet() {
 	const copy = _rapierUiPro.featureCopy(), status = _rapierUiPro.statusText();
 	refs.proCopy.textContent = copy;
 	refs.proCopy.hidden = !copy;
-	refs.proList.replaceChildren(..._rapierProFeatures().map(feature => {
+	refs.proList.replaceChildren(..._rapierProFeaturesHere().map(feature => {
 		const item = document.createElement('li');
 		item.textContent = feature.name;
 		return item;
@@ -50278,6 +50456,7 @@ function renderOutlineReset(model) {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
 	const root = refs.navigatorOutline;
+	_rapierOutlineForgetRows(root);
 	root.textContent = '';
 	root.dataset.outlineNoun = model.noun;
 	root.setAttribute('aria-busy', model.busy ? 'true' : 'false');
@@ -50301,19 +50480,25 @@ function renderOutlineNote(text, options) {
 	return note;
 }
 
+function _rapierOutlineForgetRows(root) {
+	const list = root._rapierOutlineRows;
+	if (!list) return;
+	if (list.frame) cancelAnimationFrame(list.frame);
+	root.removeEventListener('scroll', _rapierOutlineScheduleRows);
+	root._rapierOutlineRows = null;
+}
+
 function renderOutlineList(model) {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
-	if (model.clear) refs.navigatorOutline.textContent = '';
+	if (model.clear) { _rapierOutlineForgetRows(refs.navigatorOutline); refs.navigatorOutline.textContent = ''; }
 	if (model.busy != null) {
 		refs.navigatorOutline.setAttribute('aria-busy', model.busy ? 'true' : 'false');
 		_rapierUiNavigator.busy = !!model.busy;
 	}
 }
 
-function renderOutlineButton(item, current, onActivate) {
-	const refs = _rapierUi.refs;
-	if (!refs) return;
+function _rapierOutlineRow(item, current, onActivate) {
 	const button = document.createElement('button');
 	button.type = 'button';
 	button.className = 'navigator-outline__item';
@@ -50335,7 +50520,60 @@ function renderOutlineButton(item, current, onActivate) {
 		button.appendChild(grip);
 		button.addEventListener('keydown', _rapierOutlineMoveKey);
 	}
-	refs.navigatorOutline.appendChild(button);
+	return button;
+}
+
+function renderOutlineRows(rows) {
+	const refs = _rapierUi.refs;
+	if (!refs) return;
+	const root = refs.navigatorOutline;
+	if (rows.length <= 1024) {
+		const fragment = document.createDocumentFragment();
+		for (const row of rows) fragment.appendChild(_rapierOutlineRow(row.item, row.current, row.onActivate));
+		root.appendChild(fragment);
+		return;
+	}
+	const spacer = () => { const part = document.createElement('div'); part.setAttribute('aria-hidden', 'true'); return part; };
+	const list = { rows, shown: rows.map((_, index) => index), drawn: new Map(), before: spacer(), after: spacer(), height: 48, frame: 0, from: 0, to: -1 };
+	root.append(list.before, list.after);
+	root._rapierOutlineRows = list;
+	root.addEventListener('scroll', _rapierOutlineScheduleRows, { passive: true });
+	const current = Math.max(0, rows.findIndex(row => row.current));
+	_rapierOutlineDrawRows(root, current - 24, current + 24);
+}
+
+function _rapierOutlineScheduleRows(event) {
+	const root = event.currentTarget, list = root._rapierOutlineRows;
+	if (!list || list.frame) return;
+	list.frame = requestAnimationFrame(() => { list.frame = 0; _rapierOutlineDrawRows(root); });
+}
+
+function _rapierOutlineDrawRows(root, from = null, to = null) {
+	const list = root._rapierOutlineRows;
+	if (!list || !list.before.isConnected) return;
+	const sample = list.drawn.values().next().value;
+	if (sample?.isConnected && sample.offsetHeight) list.height = sample.offsetHeight;
+	if (from == null) {
+		const origin = list.before.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
+		const view = root.clientHeight || 800, top = root.scrollTop - origin;
+		from = Math.floor((top - view) / list.height);
+		to = Math.ceil((top + 2 * view) / list.height);
+	}
+	from = Math.max(0, from); to = Math.min(list.shown.length - 1, to);
+	if (from === list.from && to === list.to) return;
+	list.from = from; list.to = to;
+	const wanted = new Set(list.shown.slice(from, to + 1));
+	for (const [index, button] of list.drawn) if (!wanted.has(index)) { button.remove(); list.drawn.delete(index); }
+	let cursor = list.before.nextSibling;
+	for (let at = from; at <= to; at++) {
+		const index = list.shown[at];
+		let button = list.drawn.get(index);
+		if (!button) { const row = list.rows[index]; button = _rapierOutlineRow(row.item, row.current, row.onActivate); list.drawn.set(index, button); }
+		if (button === cursor) cursor = cursor.nextSibling;
+		else root.insertBefore(button, cursor);
+	}
+	list.before.style.height = from * list.height + 'px';
+	list.after.style.height = Math.max(0, list.shown.length - 1 - to) * list.height + 'px';
 }
 
 function renderOutlineFilter(value) {
@@ -50344,9 +50582,19 @@ function renderOutlineFilter(value) {
 	const root = refs.navigatorOutline;
 	_rapierUiNavigator.filter = String(value || '');
 	const terms = String(value || '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-	const buttons = Array.from(root.querySelectorAll('.navigator-outline__item'));
+	const long = root._rapierOutlineRows;
+	const buttons = long ? long.rows : Array.from(root.querySelectorAll('.navigator-outline__item'));
 	let visible = 0;
-	buttons.forEach(button => {
+	if (long) {
+		long.shown = [];
+		long.rows.forEach((row, index) => {
+			const haystack = String(row.item.label || 'untitled heading').toLocaleLowerCase();
+			if (terms.every(term => haystack.includes(term))) long.shown.push(index);
+		});
+		visible = long.shown.length;
+		long.from = 0; long.to = -1;
+		_rapierOutlineDrawRows(root);
+	} else buttons.forEach(button => {
 		const haystack = String(button.dataset.outlineText || button.textContent || '').toLocaleLowerCase();
 		const match = terms.every(term => haystack.includes(term));
 		button.hidden = !match;
@@ -50715,7 +50963,7 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	'open-share-menu': () => { _rapierShareCompatSet(_rapierUi.refs.shareImageCompatToggle, false); _rapierQuoteOffer(); return _rapierUiOpenInterchange(_rapierUi.refs.shareOverlay); },
 	'share-image-compat': control => _rapierShareCompatSet(control, control.getAttribute('aria-pressed') !== 'true'),
 	'share-choice': control => {
-		if (control.disabled) return;
+		if (control.disabled || control.getAttribute('aria-disabled') === 'true') return;
 		if (control.dataset.value === 'return') return _rapierSendBack();
 		const shared = control.dataset.value === 'card' ? _rapierShareQuoteCard() : rapierShare(control.dataset.value);
 		closeDialog(_rapierUi.refs.shareOverlay);

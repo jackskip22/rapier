@@ -226,7 +226,8 @@ async function mountVisual(root, {clip, signal, current, frame, deferPixels = fa
     if (/^data:/i.test(url)) return url;
     if (url.startsWith(document.URL.split('#')[0] + '#')) url = url.slice(url.indexOf('#'));
     if (url.startsWith('#')) {
-      const target = document.getElementById(decodeURIComponent(url.slice(1)));
+      const scope = root.getRootNode(), id = decodeURIComponent(url.slice(1));
+      const target = (typeof scope.getElementById === 'function' && scope.getElementById(id)) || document.getElementById(id);
       if (!target || target.namespaceURI !== SVG) throw error('visual_resources_unavailable');
       references.set(url, target);
       return url;

@@ -32,7 +32,7 @@ function _setFindCount(cur, total) {
 }
 
 function _rapierFindTotalLabel() {
-	return String(rapier.find.ranges.length) + (rapier.find.overflow ? '+' : '');
+	return String(rapier.find.ranges.length);
 }
 
 function _findCurrentRange() {
@@ -53,36 +53,60 @@ function _rapierSyncFindHighlights() {
 	const host = document.getElementById('editor-blocks');
 	const live = range => range instanceof Range && !range.collapsed &&
 		host?.contains(range.startContainer) && host.contains(range.endContainer);
-	const ranges = rapier.find.ranges.filter(record => record.surface !== 'picture')
-		.map(record => record.range).filter(live);
-	if (ranges.length) CSS.highlights.set('rapier-find-all', new Highlight(...ranges));
-	else CSS.highlights.delete('rapier-find-all');
+	const all = _rapierFindRuntime.highlight = new Highlight();
+	for (const record of rapier.find.ranges) if (record.surface !== 'picture' && live(record.range)) all.add(record.range);
+	CSS.highlights.set('rapier-find-all', all);
+	_rapierFindSyncCurrentHighlight();
+}
+
+function _rapierFindSyncCurrentHighlight() {
+	if (!CSS.highlights) return;
 	const current = rapier.find.ranges[rapier.find.current];
-	if (current?.surface !== 'picture' && live(current?.range))
+	if (current?.surface !== 'picture' && current?.range instanceof Range && !current.range.collapsed && current.range.startContainer.isConnected)
 		CSS.highlights.set('rapier-find-current', new Highlight(current.range));
 	else CSS.highlights.delete('rapier-find-current');
 }
 
-let _rapierFindHighlightSyncQueued = false;
+function _rapierFindSetRange(record, range) {
+	const all = _rapierFindRuntime.highlight;
+	if (record.range && all) all.delete(record.range);
+	record.range = range;
+	if (range && all) all.add(range);
+}
+
+function _rapierFindBlockRecords(id) {
+	const runtime = _rapierFindRuntime;
+	if (runtime.blockRecordsOf !== runtime.textRecords) {
+		runtime.blockRecordsOf = runtime.textRecords;
+		runtime.blockRecords = new Map();
+		for (const record of runtime.textRecords) {
+			if (record.surface === 'picture' || record.blockId == null) continue;
+			const key = Number(record.blockId);
+			const list = runtime.blockRecords.get(key);
+			if (list) list.push(record); else runtime.blockRecords.set(key, [record]);
+		}
+	}
+	return runtime.blockRecords.get(id) || [];
+}
+
 function _rapierRetireFindBlockProjection(wrapper) {
 	const id = Number(wrapper?.dataset?.blockId);
 	if (!Number.isSafeInteger(id)) return;
 	_rapierFindRuntime.documentGuard?.projection?.blocks?.delete(id);
-	for (const records of [rapier.find.ranges, _rapierFindRuntime.textRecords]) {
-		for (const record of records) {
-			if (record.surface !== 'picture' && Number(record.blockId) === id) record.range = null;
-		}
+	let current = false;
+	const selected = rapier.find.ranges[rapier.find.current];
+	for (const record of _rapierFindBlockRecords(id)) {
+		if (!record.range) continue;
+		_rapierFindSetRange(record, null);
+		current ||= record === selected;
 	}
-	if (_rapierFindHighlightSyncQueued) return;
-	_rapierFindHighlightSyncQueued = true;
-	queueMicrotask(() => { _rapierFindHighlightSyncQueued = false; _rapierSyncFindHighlights(); });
+	if (current && CSS.highlights) CSS.highlights.delete('rapier-find-current');
 }
 
 function _rapierRefreshFindBlockProjection(wrapper, paint = true) {
 	if (!_rapierFindOwnsCurrentDocument() || !wrapper?.isConnected || wrapper._rapierUnrendered) return;
 	const id = Number(wrapper.dataset.blockId);
-	const records = rapier.find.ranges.filter(record => record.surface !== 'picture' &&
-		Number(record.blockId) === id && typeof record.shown === 'string');
+	const records = _rapierFindBlockRecords(id).filter(record => typeof record.shown === 'string');
 	if (!records.length) return;
 	const memo = _rapierFindRuntime.documentGuard.projection;
 	const prior = memo?.blocks?.get(id);
@@ -94,12 +118,12 @@ function _rapierRefreshFindBlockProjection(wrapper, paint = true) {
 	const occurrences = new Map();
 	for (const record of records) {
 		const key = record.shown;
-		if (!occurrences.has(key)) occurrences.set(key, _rapierFindLiteralHits(projection.text, key, _RAPIER_FIND_MATCH_LIMIT).hits
+		if (!occurrences.has(key)) occurrences.set(key, _rapierFindLiteralHits(projection.text, key).hits
 			.filter(hit => projection.text.slice(hit.start, hit.end) === key));
 		const hit = occurrences.get(key)[record.ordinal];
-		record.range = hit ? _rapierFindProjectionRange(projection, hit.start, hit.end) : null;
+		_rapierFindSetRange(record, hit ? _rapierFindProjectionRange(projection, hit.start, hit.end) : null);
 	}
-	if (paint) _rapierSyncFindHighlights();
+	if (paint && records.includes(rapier.find.ranges[rapier.find.current])) _rapierFindSyncCurrentHighlight();
 }
 
 function _findOverlayRoot() {
@@ -201,6 +225,7 @@ const _rapierFindRuntime = Object.seal({
 	overlayFrame: 0, overlayBound: false,
 	revealEpoch: 0, revealDeadline: 0, revealFrame: 0, revealTimers: [],
 	documentGuard: null, textRecords: [], textOverflow: false, job: null,
+	highlight: null, blockRecords: null, blockRecordsOf: null,
 	createWorker: () => _rapierCreateSourceWorker('rapier-source'),
 
 });
@@ -372,8 +397,8 @@ function _rapierFindIndexHits(source, query, surface = 'rendered', memo = null, 
 	}
 	const hidden = visible?.hidden || null;
 	const read = prepared ? null : visible?.read || null;
-	const result = prepared || (read ? _rapierFindFlexibleSeparatorHits(read.text, query, _RAPIER_FIND_MATCH_LIMIT, read.hidden)
-		: _rapierFindFlexibleSeparatorHits(source, query, _RAPIER_FIND_MATCH_LIMIT, hidden));
+	const result = prepared || (read ? _rapierFindFlexibleSeparatorHits(read.text, query, Infinity, read.hidden)
+		: _rapierFindFlexibleSeparatorHits(source, query, Infinity, hidden));
 	const found = prepared ? prepared.hits : read ? result.hits.map(read.hit) : result.hits;
 
 	if (surface === 'source') {
@@ -479,7 +504,7 @@ function rapierFindRun() {
 		try {
 			await task.yield(0);
 			const prepared = await globalThis.RapierSourceWorker.sourceFindIndex(source, query, surface, projection, task,
-				{parser: md, limit: _RAPIER_FIND_MATCH_LIMIT, createWorker: _rapierFindRuntime.createWorker, now: _rapierNow});
+				{parser: md, createWorker: _rapierFindRuntime.createWorker, now: _rapierNow});
 			await task.yield(.75);
 			const records = [];
 			let started = _rapierNow();
@@ -565,6 +590,8 @@ function rapierFindClear(keepProjection = null) {
 	rapier.find.overflow = false;
 	rapier.find.flexible = false;
 	rapier.find.query = '';
+	_rapierFindRuntime.highlight = null;
+	_rapierFindRuntime.blockRecords = _rapierFindRuntime.blockRecordsOf = null;
 	if (CSS.highlights) {
 		CSS.highlights.delete('rapier-find-all');
 		CSS.highlights.delete('rapier-find-current');

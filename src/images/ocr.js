@@ -40,10 +40,10 @@ async function _rapierOcrStream(bytes, transform, limit = Infinity) {
 		reader.releaseLock();
 	}
 }
-function _rapierOcrPack(bytes) { return typeof CompressionStream === 'function' ? _rapierOcrStream(bytes, new CompressionStream('gzip')) : bytes; }
+function _rapierOcrPack(bytes) { return _rapierOcrStream(bytes, new CompressionStream('gzip')); }
 async function _rapierOcrUnpack(value) {
 	const bytes = RapierBundleIO.bytes(value);
-	return bytes && bytes[0] === 0x1f && bytes[1] === 0x8b && typeof DecompressionStream === 'function'
+	return bytes && bytes[0] === 0x1f && bytes[1] === 0x8b
 		? _rapierOcrStream(bytes, new DecompressionStream('gzip'), Math.max(..._rapierOcrModule().OCR_FILES.map(file => file.bytes))) : bytes;
 }
 function _rapierOcrWorker() {
@@ -103,10 +103,8 @@ function _rapierOcrSetup() {
 			if (!await _rapierOcrIdle(current)) return null;
 			const pixels = await _rapierOcrPixels(source);
 			if (!await _rapierOcrIdle(current)) return null;
-			let answer;
-			if (pixels) answer = await state.reader.read(pixels.rgba, pixels.width, pixels.height);
-			else if (source.type === 'image/jxl' || globalThis.RapierImageAssets?.isJxl(source.bytes)) answer = await state.reader.readJxl(source.bytes.slice(), RAPIER_OCR_MAX_SIDE);
-			else return null;
+			if (!pixels) return null;
+			const answer = await state.reader.read(pixels.rgba, pixels.width, pixels.height);
 			return {width: answer.width, height: answer.height, lines: answer.lines};
 		},
 	});

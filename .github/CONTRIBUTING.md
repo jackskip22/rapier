@@ -9,4 +9,4 @@ Rapier is an offline Markdown editor licensed AGPL-3.0-only. See [commercial lic
 - Include a regression test that fails before the fix and passes after.
 - Preserve offline editing and exact Markdown source outside the edited range.
 
-For agent integrations, see the [MCP endpoint](https://mcp.rapier.website/mcp), [skills](../plugin/skills/), and [llms.txt](../site/llms.txt).
+For agent integrations, see the [MCP endpoint](https://mcp.rapier.website/door/mcp), [skills](../plugin/skills/), and [llms.txt](../site/llms.txt).

@@ -203,9 +203,7 @@ function _rapierVisibleHits(hits, hidden) {
 	});
 }
 
-const _RAPIER_FIND_MATCH_LIMIT = 2048;
-
-function _rapierFindPatternHits(text, pattern, limit, hidden = null) {
+function _rapierFindPatternHits(text, pattern, limit = Infinity, hidden = null) {
 	const hits = [];
 	let match, cursor = 0, characters = null;
 	const whole = at => at <= 0 || at >= text.length || text.charCodeAt(at) < 0x80 && text.charCodeAt(at - 1) < 0x80
@@ -228,7 +226,7 @@ function _rapierFindPatternHits(text, pattern, limit, hidden = null) {
 	return { hits, overflow };
 }
 
-function _rapierFindLiteralHits(textValue, queryValue, limit = _RAPIER_FIND_MATCH_LIMIT, hidden = null) {
+function _rapierFindLiteralHits(textValue, queryValue, limit = Infinity, hidden = null) {
 	const text = String(textValue == null ? '' : textValue);
 	const query = String(queryValue == null ? '' : queryValue);
 	if (!query) return { hits: [], overflow: false };
@@ -238,7 +236,7 @@ function _rapierFindLiteralHits(textValue, queryValue, limit = _RAPIER_FIND_MATC
 	return _rapierFindPatternHits(text, pattern, limit, hidden);
 }
 
-function _rapierFindFlexibleSeparatorHits(textValue, queryValue, limit = _RAPIER_FIND_MATCH_LIMIT, hidden = null) {
+function _rapierFindFlexibleSeparatorHits(textValue, queryValue, limit = Infinity, hidden = null) {
 	const exact = _rapierFindLiteralHits(textValue, queryValue, limit, hidden);
 	if (exact.hits.length || exact.overflow) return { ...exact, flexible: false };
 	const query = String(queryValue == null ? '' : queryValue).trim();
@@ -402,6 +400,6 @@ function _rapierPlanVisibleReplacement(sourceText, matches, replacement, markdow
 	return { splices, refused };
 }
 
-export { hiddenSourceSteps, inlineSourceSteps, visibleSourceProjectionWork, _rapierHiddenSourceRanges, _rapierInlineSourceRanges, _rapierVisibleHits, _RAPIER_FIND_MATCH_LIMIT, _rapierFindPatternHits,
+export { hiddenSourceSteps, inlineSourceSteps, visibleSourceProjectionWork, _rapierHiddenSourceRanges, _rapierInlineSourceRanges, _rapierVisibleHits, _rapierFindPatternHits,
 	_rapierFindLiteralHits, _rapierFindFlexibleSeparatorHits, _rapierEscapeRegExp, _rapierHiddenMarkPairs, _rapierHiddenSpanPairs,
 	_rapierPairMarks, _rapierVisibleMarkText, _rapierVisibleSourceProjection, _rapierPairSplices, _rapierPlanVisibleReplacement };

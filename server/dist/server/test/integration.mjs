@@ -264,8 +264,9 @@ export async function serverCells({rendering=true}={}) {
       const createToken=randomUUID().replaceAll('-',''),filename='recovery-'+point+'.md',text='Recovered '+point+'.\r\n';
       const interrupted=await call('open',{text,filename,createToken});
       assert(fired);assert(!interrupted.document,'an interrupted persistence is not acknowledged');
-      assert.equal((await fetch(server.origin+'/health')).status,503,'a prepared uncertain write requires recovery');
-      assert((await readdir(join(root,'.rapier-server'))).includes('pending.json'));
+      assert.equal((await fetch(server.origin+'/health')).status,200,'the next request recovers an interrupted commit in this process');
+      assert(!(await readdir(join(root,'.rapier-server'))).includes('pending.json'),'in-process recovery clears the WAL');
+      assert.equal(await readFile(join(root,filename),'utf8'),text,'in-process recovery publishes the exact pending text');
       await server.close();await start();
       assert.equal(await readFile(join(root,filename),'utf8'),text);
       const replay=await call('open',{text,filename,createToken});assert(replay.document,JSON.stringify(replay));

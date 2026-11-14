@@ -22,8 +22,7 @@ function _rapierFenceCopyButton(nested) {
 	control.append(glyph('copy', use), glyph('done', check));
 	return control;
 }
-const _rapierNestedFenceObserver = typeof ResizeObserver === 'function'
-	? new ResizeObserver(entries => { for (const entry of entries) _rapierPlaceNestedFenceCopies(entry.target.closest('.block-wrapper')); }) : null;
+const _rapierNestedFenceObserver = new ResizeObserver(entries => { for (const entry of entries) _rapierPlaceNestedFenceCopies(entry.target.closest('.block-wrapper')); });
 function _rapierPlaceNestedFenceCopies(wrapper) {
 	const read = wrapper?.querySelector(':scope > .block-read');
 	const buttons = wrapper ? [...wrapper.querySelectorAll(':scope > .fence-copy--nested')] : [];
@@ -56,9 +55,9 @@ function _rapierSyncFenceCopyControl(wrapper, readDiv, controlHost = wrapper) {
 		controlHost.appendChild(control);
 	}
 	const observed = wrapper._rapierFenceObserved;
-	if (observed && (observed !== read || !nested)) { _rapierNestedFenceObserver?.unobserve(observed); wrapper._rapierFenceObserved = null; }
+	if (observed && (observed !== read || !nested)) { _rapierNestedFenceObserver.unobserve(observed); wrapper._rapierFenceObserved = null; }
 	if (nested && read) {
-		if (!wrapper._rapierFenceObserved) { _rapierNestedFenceObserver?.observe(read); wrapper._rapierFenceObserved = read; }
+		if (!wrapper._rapierFenceObserved) { _rapierNestedFenceObserver.observe(read); wrapper._rapierFenceObserved = read; }
 		_rapierPlaceNestedFenceCopies(wrapper);
 	}
 }

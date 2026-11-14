@@ -21,6 +21,8 @@ function _rapierNotesShowDoors() {
 	const other = document.getElementById('notes-sync-other-btn');
 	if (other) other.hidden = globalThis.RapierPlatform?.environment?.native === true || !_rapierNotesSyncReachable();
 	const start = document.getElementById('settings-start-section');
+	const startPaint = start?.querySelector('[data-value="paint"]');
+	if (startPaint) startPaint.textContent = _rapierPaints() ? 'PAINT' : 'DRAW';
 	if (start) start.hidden = _rapierEmbed.active || globalThis.RAPIER_APPS_HOST === true || window.self !== window.top || typeof globalThis.RAPIER_PAIRED_DOCUMENT === 'string';
 }
 if (typeof window !== 'undefined') window.addEventListener('rapier:platform-state', () => { if (_rapierNotesDoorsShown) _rapierNotesShowDoors(); });
