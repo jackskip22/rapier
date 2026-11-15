@@ -1,65 +1,27 @@
-# Rapier - Markdown Editor & Art: Claude plugin
+Rapier is a fast, open source Markdown editor and note-taking app with a canvas, and it opens right in your chat. It also has a Draw mode with an SVG editor, brushes, watercolors and typographic art. Supports Mermaid diagrams and flowcharts.
 
-Rapier is a Markdown editor for writing, drawing and painting with your AI assistant. Edit the page yourself, add editable diagrams and illustrations, and keep your work as portable Markdown.
+Collaborate on art or words with Claude. Your assistant writes, diagrams, draws and paints where you can watch and undo anything, and you can change anything yourself. The diagrams Claude makes for you are fully customizable so you can rearrange and relabel them.
 
-Work together on plans, notes, drafts and visual explanations. Read exact source, make focused revision-checked edits, compare proposed text and undo recorded work while keeping later independent edits. Download Markdown or plain text, or create an editable offline HTML file through supported export tools or the included local helpers. Running local helpers requires Node and npm; an MCP connection alone does not provide a shell.
+Everything is plain Markdown. Pictures, drawings and paintings are embedded inside the file in two standard formats (JPEG XL and SVG) with optional fallbacks to other image formats. Documents in Rapier are single files you can open in other Markdown apps or any browser.
 
-Painting needs an open full editor. Water requires WebGPU. Word, PDF and rendered-page exports depend on the available editor or renderer. A successful tool call does not by itself prove that the inline editor appeared. Connected Notes require a configured store.
+**Writing.** Notes, plans, lists, letters and reports that you keep working on. Formatting includes lists, tables, footnotes, code with syntax highlighting and LaTeX equations done properly. Find and replace, proper undo, compare, light and dark themes. Every change Claude makes is marked, it undoes its own edits without touching yours, and it can show you two versions side by side before anything changes.
 
-Rapier accesses only the document or configured store you share. It cannot search unshared device files, send email or make purchases. Hosted workspaces expire after 30 idle days; download an independent copy to keep it. The four skills include the published offline helper packages.
+**Drawing.** Ask for a flowchart and drag its boxes where you want them. Sketch with a finger, your mouse or a stylus. Boxes and arrows stay tidy automatically. Drawings are SVGs so they stay sharp and editable, and they can be exported in multiple formats easily.
 
-## Try it together
+**Painting.** Paint in realistic watercolor with fluid simulation, spectral color blending, spreading and drying. Everything is designed for painting with your finger, but you can use a mouse or stylus too. Ask Claude to paint and it paints right in the chat, then pick up the brush on the same sheet. Raster brush mode uses the open MyPaint preset format and includes many factory brushes like oil, bristle, feather and pencil. Watercolor needs WebGPU, as in current Chrome or Edge. Where the chat has none, Claude gives you a link to paint in a browser that has it.
 
-- “Write my blog post in Rapier with the images embedded so I can keep editing it, then export it as HTML.”
-- “Make a Mermaid diagram of how our company’s data flows, put our report underneath for me to check, then give me a PDF to print for the meeting.”
-- “Make my document more concise and better structured, and show me each change so I can compare it and undo any one of them.”
-- “Draw a flowchart of our new plan with boxes I can move around.”
-- “Paint the first layer of a watercolor garden, then we’ll take turns.”
-- “Turn this Markdown report into a Rapier HTML file my friend can read and edit offline, with no Markdown app installed.”
+**JPEG XL.** Use Rapier's JPEG XL encoder to convert images, GIFs and videos to .jxl files, which are much smaller at the same quality, and convert .jxl files back to JPEG or PNG. Pictures convert on your device. The open source rapier-jxl encoder keeps text sharp inside compressed images such as screenshots, automatically.
 
-Open the returned editor link and keep it visible while painting. A queued painting is not finished: Claude checks
-that it committed before handing you the brush. If Water needs WebGPU your browser lacks, open the link in one that has it.
-Later marks on the same paint surface can make an undo conflict; Rapier reports it rather than discarding your work.
-Live collaboration needs an internet connection; downloaded files remain yours to edit offline.
+**Keep and share.** Export to Markdown, Word, PDF, text or an HTML page that opens offline in any browser. You can also share a single HTML file with the Rapier editor inside. Anyone can open it offline, make changes and export an updated copy to send back with history preserved. Leave comments and suggest edits. Open the same document in your own browser and tap a link to allow it in the chat.
 
-Export links last up to 24 hours within the workspace lifetime. Download a file to keep an independent copy.
-
-## The four skills
-
-| Skill | Use it when |
-|---|---|
-| `rapier-html` | the person wants a document they can keep editing, or a page showing a deliberate diff |
-| `rapier-agent-door` | an explanation, plan, creative sketch or revision benefits from working on the same editable page |
-| `rapier-markdown` | a portable Markdown document needs pictures, layout or source-preserving delivery |
-| `embed-rapier` | a site or app wants the reader or the editor inside it, with its own storage |
+Open source. Works offline with no install. No account, no tracking, no ads.
 
 ## Install
 
-**Claude chat and Cowork:** add the plugin, open its **Connectors** tab, and add or connect **Rapier** at
-`https://mcp.rapier.website/door/mcp`. No Rapier account or login is needed. Installing the skills alone does not connect the tools.
+Add the plugin, open its **Connectors** tab, and add or connect **Rapier** at `https://mcp.rapier.website/door/mcp`. No Rapier account or login is needed. The skills alone do not connect the tools.
 
-**Claude Code:** `claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier`
+Command line: `claude plugin marketplace add jackskip22/rapier-plugins && claude plugin install rapier@rapier`
 
-Start with the painting prompt above, or ask for a document or diagram. Open the returned editor link;
-if a browser pairing code appears, give it to Claude and approve the connection in that browser.
-The assistant creates a workspace with `open` and checks `read {state:true}` for editor presence.
-If the host supplies no editor, it can deliver an offline editable file through an available file/code surface,
-or the Markdown source in chat. A successful workspace call alone does not confirm that an editor opened.
-If Rapier tools are unavailable, check the plugin's connector connection before retrying.
+Open the returned editor link and keep it visible while painting. If a pairing code appears, give it to Claude and approve it in that browser.
 
-Each skill carries its own references and helpers. The `rapier-html` npm package supplies the editor for `npx`;
-`SKILLS.json` records the staged package versions. Node 22 and npm depend on the host; an MCP connection does not
-promise a shell.
-
-## Snapshot
-
-`SKILLS.json` names this skill snapshot, its file digest and the worker source digest it was staged with. The worker's
-`serverInfo.version` is `<release>+worker.<id>` when Cloudflare supplies its version metadata, otherwise the release
-alone; read it through MCP or `/health`. The source digest is build identity, not proof of a deployment. 
-
-## What it sends
-
-The skills are instructions and helpers for the host's file and tool environment. The declared package command
-downloads its pinned package from npm when needed. The connector sends the document you share with the assistant to the door, which
-keeps it, with the work on it, in a workspace that expires after thirty idle days. No account, no telemetry; the person ends the
-assistant's access from the editor at any moment. In full: [PRIVACY.md](PRIVACY.md).
+[Privacy and terms](https://mcp.rapier.website/privacy.html)

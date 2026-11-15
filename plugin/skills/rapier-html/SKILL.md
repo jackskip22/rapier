@@ -7,7 +7,7 @@ description: "Make a .rapier.html file: the whole Rapier editor with your Markdo
 
 ## Start here
 
-Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise use the helper installed with this skill (below) when Node 22, a supported file surface and a Rapier `.html` page to build on are available, and run it on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.69 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
+Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise run the published helper (`npx`, below) when Node 22, npm and a supported file surface are available, on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.69 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
@@ -47,7 +47,7 @@ Keep supplied facts and mark missing information plainly. Use `rapier-markdown` 
 For a return, call `show {target:"return"}` on the hosted workspace and add its one-use address to the page.
 
 - With a connected host, Send back opens a confirmation page in the browser where the person connected Rapier. They
-  check the preview and confirm. The connection credential never enters the offline file.
+  check the preview and confirm. The connection itself never enters the offline file.
 - Without a connected account, the address itself grants one upload. Keep it private, except in the page meant for
   the person.
 - Neither kind can read the workspace or edit its active source.
@@ -68,22 +68,20 @@ Through the connector, `export` delivers the file and its receipt names what it 
 - A page that opens showing what changed: `show {target:"comparison", text}` with the original, then
   `export {document, format:"html", compare_id}`.
 
-The helper installed with this skill, `cli.mjs` in this skill's folder, needs Node 22 and downloads nothing. It puts a document into a
-Rapier page you already have: one `export` delivered or one the person gave you.
+The published package `rapier-html` carries the editor, needs Node 22 and npm, and downloads itself from npm the first time.
+It writes a document into the editor as one page:
 
 ```sh
-node cli.mjs notes.md --editor page.html                                # writes notes.rapier.html: the document in that editor
-node cli.mjs notes.md --editor page.html --view draw                    # opens on Draw (the page must carry Draw)
-node cli.mjs notes.md --editor page.html --drawing sketch.svg           # opens on Draw with the drawing
-node cli.mjs revised.md --editor page.html --compare original.md --by "Editor"   # opens showing what changed
-node cli.mjs notes.md --editor page.html --return <return_url> --return-expires-at <return_expires_at>   # Send back returns the person's edit to your workspace
-node cli.mjs notes.md --editor page.html out.html                       # a named output
+npx -- rapier-html@1.2.69 notes.md                          # writes notes.rapier.html: the document in the editor
+npx -- rapier-html@1.2.69 notes.md --view draw              # opens on Draw
+npx -- rapier-html@1.2.69 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.2.69 revised.md --compare original.md --by "Editor"   # opens showing what changed
+npx -- rapier-html@1.2.69 notes.md --return <return_url> --return-expires-at <return_expires_at>   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.2.69 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an existing output is refused, so pick a new name. Write the Markdown as Self-contained Markdown
-first (`rapier-markdown`) so pictures, layout and color travel inside the page. On their own computer, the person can
-make the same pages with the published package: `npx -- rapier-html@1.2.69 notes.md`, with the options above and no
-`--editor`.
+first (`rapier-markdown`) so pictures, layout and color travel inside the page.
 
 ## When to use it
 
@@ -102,7 +100,7 @@ record when you wrap or unwrap a page. A picture of the page can't replace its s
 live document's pixels, use `read {as:"image"}` when an editor is active; pixels are an observation, not edit
 authority.
 
-1. Call `show {target:"return"}` for your document. Pass its `return_url` and `return_expires_at` to the installed
+1. Call `show {target:"return"}` for your document. Pass its `return_url` and `return_expires_at` to the
    helper's `--return` and `--return-expires-at`, or to `wrap`'s `return` and `return_expires_at` options.
 2. The person edits offline and taps Send back in Share. The page shows acceptance or refusal and never sends a
    second copy. Save stays local. The address works once, for up to one day, only on
@@ -130,7 +128,7 @@ Use the surface the host actually provides:
 - **An Artifact tool or HTML preview:** offer the page beside the chat. Also hand over the file when the viewer
   blocks downloads, and use the host's real sharing controls.
 - **A project Browser pane:** write the page into the project and name its path.
-- **A code sandbox with Node:** `export {format:"html"}`, or the installed `cli.mjs` on a Rapier page, and hand over
+- **A code sandbox with Node:** `export {format:"html"}`, or the `npx` helper above, and hand over
   the file.
 - **A host that shows MCP apps, such as ChatGPT:** `open` shows the editor in the chat (`rapier-agent-door`).
 - **A link:** `https://rapier.website` opens the person's own Rapier, with their documents.
@@ -158,7 +156,7 @@ observations, not source or history.
 
 ## As a library
 
-The installed [page helper](page.mjs) exports the same `wrap` and `unwrap`. Give `wrap` the full editor HTML; the
+The `rapier-html` package (`npm install rapier-html@1.2.69`) exports the same `wrap` and `unwrap`. Give `wrap` the full editor HTML; the
 helper alone is not the editor. `carry` cuts that editor to the base and the choices you name (`drawing`, `math`,
 `mermaid`); `portableNeeds` names what a document displays with. The published npm package also carries the editor for its CLI. Use complete source
 bytes or the host's source export: passage reads with redacted image data can't rebuild an exact file.

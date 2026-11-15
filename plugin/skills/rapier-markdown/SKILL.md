@@ -19,7 +19,7 @@ and strikethrough. A few small conventions sit on top, each an HTML comment or a
 other Markdown readers show the same words and ignore what they don't know. No image folder, ZIP, account or
 particular app is needed.
 
-The standard is [Self-contained Markdown](references/markdown-standard.md), also at
+The standard is [Self-contained Markdown](https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md), also at
 https://github.com/jackskip22/rapier/blob/main/docs/markdown-standard.md. The MIT reader and writer is `npm install rapier-markdown-kit@1.2.69`.
 Rapier renders it and writes it back exactly; so can any editor.
 
@@ -168,7 +168,7 @@ file keeps the source. Say whether you read the export back and whether a save w
 
 ## Optional: Will/1
 
-Will/1 is a separate, optional [standard](references/will.md). A person can mark a region `keep`, `append` or
+Will/1 is a separate, optional [standard](https://github.com/jackskip22/rapier/blob/main/docs/will.md). A person can mark a region `keep`, `append` or
 `edit` with HTML comment lines of their own (`<!-- will/1 keep: my own words -->` … `<!-- /will -->`). Most
 documents have none. If you find one, honor it:
 

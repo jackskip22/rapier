@@ -9,7 +9,7 @@
     {
       "name": "rapier",
       "source": "./plugin",
-      "description": "Markdown editor for writing, notes, editable diagrams, drawing and painting with your AI assistant."
+      "description": "Markdown, SVG, watercolor, JXL"
     }
   ]
 }
