@@ -51,3 +51,4 @@ jobs:
           pwsh -NoLogo -NoProfile -File ./windows-check/sealed-candidate.ps1 -App watercolor
           if ($LASTEXITCODE -eq 0) { throw 'Wrapper accepted changed ciphertext.' }
           Write-Host 'PASS synthetic wrapper success path and tamper rejection; no app or source snapshot tested.'
+          exit 0
