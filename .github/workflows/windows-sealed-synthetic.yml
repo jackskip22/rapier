@@ -52,3 +52,22 @@ jobs:
           if ($LASTEXITCODE -eq 0) { throw 'Wrapper accepted changed ciphertext.' }
           Write-Host 'PASS synthetic wrapper success path and tamper rejection; no app or source snapshot tested.'
           exit 0
+      - name: Check Node preload specifiers on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $fixture = Join-Path $env:RUNNER_TEMP 'synthetic-preload.mjs'
+          'globalThis.syntheticPreloadRan = true;' | Set-Content -LiteralPath $fixture
+          $test = 'if (!globalThis.syntheticPreloadRan) process.exit(11)'
+          $raw = @( node --import $fixture -e $test 2>&1 )
+          $rawExit = $LASTEXITCODE
+          $uri = node -e "console.log(require('node:url').pathToFileURL(process.argv[1]).href)" $fixture
+          if ($LASTEXITCODE -ne 0) { throw 'Could not construct test preload URL.' }
+          node --import $uri -e $test
+          if ($LASTEXITCODE -ne 0) { throw 'File URL preload did not execute the fixture.' }
+          if ($rawExit -eq 0) { Write-Host 'Raw drive path: PASS (this hypothesis is disproved).' }
+          elseif (($raw | Out-String) -match 'ERR_UNSUPPORTED_ESM_URL_SCHEME') { Write-Host 'Raw drive path: FAIL ERR_UNSUPPORTED_ESM_URL_SCHEME.' }
+          else { throw 'Raw path failed for an unexpected reason.' }
+          Write-Host 'File URL preload: PASS.'
+          exit 0
