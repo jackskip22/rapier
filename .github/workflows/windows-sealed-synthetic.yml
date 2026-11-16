@@ -1,0 +1,53 @@
+name: Synthetic Windows harness diagnostic
+on:
+  push:
+    branches: [ci/windows-sealed-candidates-20261116]
+    paths: [.github/workflows/windows-sealed-synthetic.yml]
+permissions:
+  contents: read
+jobs:
+  wrapper:
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /windows-check/unseal.mjs
+            /windows-check/sealed-candidate.ps1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.4'
+      - name: Test the real wrapper with an explicitly synthetic snapshot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ("synthetic wrapper " + [Guid]::NewGuid().ToString("N"))
+          $scriptDir = Join-Path $root 'source/handover/tools/checks/barry-windows-ci'
+          New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
+          New-Item -ItemType Directory -Path sealed -Force | Out-Null
+          @'
+          param([string]$App)
+          $ErrorActionPreference = 'Stop'
+          if ($App -ne 'watercolor') { throw 'Synthetic app mismatch' }
+          if ($env:WINDOWS_CANDIDATE_KEY) { throw 'Failed to scrub key before child' }
+          if ((Get-Location).Path -notmatch 'sealed-[a-z0-9]+[\\/]source$') { throw 'Wrong child workspace' }
+          New-Item -ItemType Directory -Path .windows-candidate | Out-Null
+          '{"nativeSelfTest":"PASS","package":"PASS unsigned test MSIX","webviewStartup":"PASS unpackaged WebView2"}' | Set-Content .windows-candidate/receipt.json
+          '@ | Set-Content (Join-Path $scriptDir 'candidate.ps1')
+          tar.exe -czf (Join-Path $root 'input.tar.gz') -C $root source
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic tar setup failed' }
+          $env:SYNTHETIC_INPUT = Join-Path $root 'input.tar.gz'
+          $env:WINDOWS_CANDIDATE_KEY = '0' * 64  # public deterministic fixture; not the temporary app key
+          node --input-type=module -e "import {createCipheriv} from 'node:crypto'; import {readFileSync,writeFileSync} from 'node:fs'; const iv=Buffer.alloc(12); const c=createCipheriv('aes-256-gcm',Buffer.alloc(32),iv);c.setAAD(Buffer.from('windows-candidate:watercolor'));writeFileSync('sealed/watercolor.part-000',Buffer.concat([iv,c.update(readFileSync(process.env.SYNTHETIC_INPUT)),c.final(),c.getAuthTag()]));"
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic encryption fixture setup failed' }
+          $env:GITHUB_STEP_SUMMARY = Join-Path $root 'scratch-summary.md'
+          pwsh -NoLogo -NoProfile -File ./windows-check/sealed-candidate.ps1 -App watercolor
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic wrapper failed before a known-good child could return its receipt.' }
+          if (!(Select-String -Path $env:GITHUB_STEP_SUMMARY -Pattern 'Unpackaged WebView2 startup: PASS' -Quiet)) { throw 'Wrapper swallowed the synthetic receipt.' }
+          node --input-type=module -e "import {readFileSync,writeFileSync} from 'node:fs'; const p='sealed/watercolor.part-000'; const b=readFileSync(p); b[17]^=1; writeFileSync(p,b);"
+          pwsh -NoLogo -NoProfile -File ./windows-check/sealed-candidate.ps1 -App watercolor
+          if ($LASTEXITCODE -eq 0) { throw 'Wrapper accepted changed ciphertext.' }
+          Write-Host 'PASS synthetic wrapper success path and tamper rejection; no app or source snapshot tested.'
