@@ -60,3 +60,40 @@ jobs:
           } finally {
             Remove-Item -LiteralPath $root -Recurse -Force
           }
+      - name: Validate an NTFS denied-subtree fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ("windows-acl-smoke-" + [Guid]::NewGuid().ToString("N"))
+          $blocked = Join-Path $root 'blocked'
+          $visible = Join-Path $root 'visible'
+          New-Item -ItemType Directory -Path $blocked,$visible -Force | Out-Null
+          $hiddenFile = Join-Path $blocked 'hidden.fixture'
+          $visibleFile = Join-Path $visible 'visible.fixture'
+          [IO.File]::WriteAllText($hiddenFile, 'synthetic hidden')
+          [IO.File]::WriteAllText($visibleFile, 'synthetic visible')
+          $beforeHidden = (Get-FileHash -LiteralPath $hiddenFile).Hash
+          $beforeVisible = (Get-FileHash -LiteralPath $visibleFile).Hash
+          $acl = Get-Acl -LiteralPath $blocked
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          try {
+            & icacls.exe $blocked /deny ('*' + $sid + ':(RD)')
+            if ($LASTEXITCODE -ne 0) { throw 'Fixture ACL setup failed.' }
+            $denied = $false
+            try { [IO.Directory]::GetFiles($blocked) | Out-Null }
+            catch [UnauthorizedAccessException] { $denied = $true }
+            if (!$denied) { throw 'Invalid fixture: blocked folder is still enumerable.' }
+            $files = @([IO.Directory]::GetFiles($visible))
+            if ($files.Count -ne 1 -or $files[0] -ne $visibleFile) {
+              throw 'Invalid fixture: accessible sibling was not enumerable.'
+            }
+          } finally {
+            Set-Acl -LiteralPath $blocked -AclObject $acl
+            try {
+              if ((Get-FileHash -LiteralPath $hiddenFile).Hash -ne $beforeHidden -or
+                  (Get-FileHash -LiteralPath $visibleFile).Hash -ne $beforeVisible) {
+                throw 'Fixture bytes changed.'
+              }
+            } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+          }
+          '- PASS: this Windows runner can produce a genuine denied folder, keep its sibling accessible, and restore the fixture ACL without changing the files. App behavior is UNRUN.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
