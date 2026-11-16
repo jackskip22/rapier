@@ -10,11 +10,17 @@ try {
   New-Item -ItemType Directory -Path $runnerDir | Out-Null
   node (Join-Path $workspace 'windows-check/unseal.mjs') $App (Join-Path $workspace 'sealed') $archive
   if ($LASTEXITCODE -ne 0) { throw 'No authenticated archive.' }
+  $guide = Join-Path $runnerDir 'guides.tar.gz'
+  node (Join-Path $workspace 'windows-check/unseal.mjs') guides (Join-Path $workspace 'sealed') $guide
+  if ($LASTEXITCODE -ne 0) { throw 'No authenticated build input.' }
   Remove-Item Env:WINDOWS_CANDIDATE_KEY -ErrorAction SilentlyContinue
   $outerStage = 'extract snapshot'
   & tar.exe -xzf $archive -C $runnerDir *> (Join-Path $runnerDir 'tar.log')
   if ($LASTEXITCODE -ne 0) { throw 'Snapshot extraction failed.' }
-  Remove-Item -LiteralPath $archive -Force
+  & tar.exe -xzf $guide -C $runnerDir *> (Join-Path $runnerDir 'guide.log')
+  if ($LASTEXITCODE -ne 0) { throw 'Build input extraction failed.' }
+  if (!(Test-Path -LiteralPath (Join-Path $runnerDir 'source/docs/agents.md') -PathType Leaf)) { throw 'Build input missing.' }
+  Remove-Item -LiteralPath $archive,$guide -Force
   $source = Join-Path $runnerDir 'source'
   $candidate = Join-Path $source 'handover/tools/checks/barry-windows-ci/candidate.ps1'
   if (!(Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'Test script not found.' }

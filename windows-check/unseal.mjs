@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 
 async function decrypt() {
   const [app, dir, output] = process.argv.slice(2);
-  if (!['watercolor', 'converter'].includes(app)) throw new Error('Invalid app');
+  if (!['watercolor', 'converter', 'guides'].includes(app)) throw new Error('Invalid app');
   const key = process.env.WINDOWS_CANDIDATE_KEY;
   if (!/^[0-9a-f]{64}$/.test(key ?? '')) throw new Error('Missing key');
   const match = new RegExp('^' + app + '\\.part-[0-9]{3}$');
