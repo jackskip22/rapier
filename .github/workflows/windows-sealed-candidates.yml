@@ -1,4 +1,4 @@
-name: Windows application tests
+name: Windows application tests (corrected)
 on:
   push:
     branches: [ci/windows-sealed-candidates-20261116]
