@@ -1,0 +1,62 @@
+name: Windows file safety smoke
+on:
+  push:
+    branches: [ci/windows-file-smoke]
+    paths: [.github/workflows/windows-file-smoke.yml]
+permissions:
+  contents: read
+jobs:
+  windows-file-smoke:
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - name: Check Windows non-replacing file publication
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ("rapier-file-smoke-" + [Guid]::NewGuid().ToString("N"))
+          New-Item -ItemType Directory -Path $root | Out-Null
+          try {
+            $east = Join-Path $root 'east'
+            $west = Join-Path $root 'west'
+            New-Item -ItemType Directory -Path $east,$west | Out-Null
+            $a = Join-Path $east 'IMG_0100.jpg'
+            $b = Join-Path $west 'IMG_0100.jpg'
+            [IO.File]::WriteAllText($a, 'synthetic east source')
+            [IO.File]::WriteAllText($b, 'synthetic west source')
+            function Hash([string]$p) { (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash }
+            $ah = Hash $a
+            $bh = Hash $b
+            if ($ah -eq $bh) { throw 'Setup: same-name fixtures must differ' }
+            $stage = Join-Path $east 'temporary.out'
+            [IO.File]::WriteAllText($stage, 'synthetic derived output')
+            $stagedHash = Hash $stage
+            $collision = $false
+            try { [IO.File]::Move($stage, (Join-Path $east 'img_0100.JPG'), $false) }
+            catch [IO.IOException] { $collision = $true }
+            if (!$collision -or (Hash $a) -ne $ah -or (Hash $stage) -ne $stagedHash) {
+              throw 'Case-only collision was not safely refused'
+            }
+            $published = Join-Path $east 'IMG_0100-new.jxl'
+            [IO.File]::Move($stage, $published, $false)
+            if ((Hash $published) -ne $stagedHash -or (Hash $a) -ne $ah -or (Hash $b) -ne $bh) {
+              throw 'Fresh publish changed an input or output'
+            }
+            $wvPaths = @(
+              'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+              'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+            )
+            $runtime = @($wvPaths | ForEach-Object { (Get-ItemProperty -Path $_ -Name pv -ErrorAction SilentlyContinue).pv } | Where-Object { $_ } | Select-Object -First 1)
+            if ($runtime.Count -eq 0) { $runtime = @('not detected') }
+            @(
+              '## Windows file safety smoke'
+              "- Windows: $([System.Environment]::OSVersion.VersionString)"
+              "- WebView2 registry: $($runtime[0]) (not launched)"
+              '- PASS: case-only collision refused without changing input or temporary file'
+              '- PASS: same-named originals in separate folders kept their distinct hashes'
+              '- PASS: fresh non-replacing publication read back with the expected hash'
+              '- UNRUN: app compilation, package installation, codec, Explorer and the app itself'
+            ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          } finally {
+            Remove-Item -LiteralPath $root -Recurse -Force
+          }
