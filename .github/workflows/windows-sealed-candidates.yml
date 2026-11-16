@@ -1,0 +1,37 @@
+name: Windows application tests
+on:
+  push:
+    branches: [ci/windows-sealed-candidates-20261116]
+    paths: [.github/workflows/windows-sealed-candidates.yml]
+permissions:
+  contents: read
+concurrency:
+  group: windows-sealed-candidates-20261116
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    name: ${{ matrix.app }} native candidate
+    environment: windows-candidate-once-20261116
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [watercolor, converter]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /windows-check/unseal.mjs
+            /windows-check/sealed-candidate.ps1
+            /sealed/
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.4'
+      - name: Verify encrypted snapshot and run native candidate tests
+        shell: pwsh
+        env:
+          WINDOWS_CANDIDATE_KEY: ${{ secrets.WINDOWS_CANDIDATE_ONCE }}
+        run: ./windows-check/sealed-candidate.ps1 -App ${{ matrix.app }}
