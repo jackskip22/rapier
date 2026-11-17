@@ -2,7 +2,7 @@ name: windows
 # Rapier on a GitHub-hosted Windows machine: the published Rapier.exe and the Store MSIX by SHA-256, the WebView2 Runtime,
 # first-start.ps1 unchanged, the Store MSIX installed and started as a packaged app, a write-and-Undo
 # journey, and the five Store listing screenshots from the real window.
-# A product row that fails is a result (the summary and the files say so); the run fails only when the check breaks.
+# The packaged journey fails the job on any failed/unrun stage; separate historical first-start rows are retained.
 # GitHub dispatches only workflows on the default branch, so a push to this branch is what starts a run.
 on:
   workflow_dispatch:
@@ -52,11 +52,22 @@ jobs:
           "| Windows | $($r.windows) |`n| WebView2 | $($r.webview2) |`n| Self-test | $($r.selfTest) |`n" +
           "| Page loaded | $($r.pageLoaded) |`n| One window per file | $($r.windowCells.firstFile), $($r.windowCells.secondFileOwnWindow), $($r.windowCells.sameFileNoNewWindow) |`n" +
           "| Owner-ACL checks | $($r.ownerAclChecks.syncNative), $($r.ownerAclChecks.attachmentOpen) |`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-      - name: The Store MSIX, installed and started
+      - name: Test-signed MSIX installed journey
         run: |
           # Windows PowerShell 5.1: its Appx module installs packages; PowerShell 7's does not load it natively.
           powershell -NoProfile -ExecutionPolicy Bypass -File ./windows-check/install.ps1 -App '${{ steps.fetch.outputs.app }}' -Out "$env:RUNNER_TEMP\out"
-          "## MSIX`n" + '```' + "`n" + (Get-Content "$env:RUNNER_TEMP\out\packaged.json" -Raw) + '```' + "`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $installedExit = $LASTEXITCODE
+          foreach ($name in 'packaged.json','installed-journey.json') {
+            $receipt = Join-Path "$env:RUNNER_TEMP\out" $name
+            if (Test-Path -LiteralPath $receipt) {
+              "## $name`n" + '```' + "`n" + (Get-Content -LiteralPath $receipt -Raw) + '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            }
+          }
+          if ($installedExit -ne 0 -or -not (Test-Path (Join-Path "$env:RUNNER_TEMP\out" 'installed-journey.json'))) { throw 'Installed Rapier journey failed or did not run' }
+          $proof = Get-Content (Join-Path "$env:RUNNER_TEMP\out" 'installed-journey.json') -Raw | ConvertFrom-Json
+          $required = @('identity','openPicker','edit','savePicker','disk','normalQuit','relaunch','reopenPicker','reopenedText','finalQuit')
+          if ($proof.schema -cne 'rapier-installed-journey/1' -or $required.Count -ne @($proof.stages.PSObject.Properties).Count) { throw 'Malformed installed Rapier journey receipt' }
+          foreach ($stage in $required) { if ($proof.stages.$stage -cne 'PASS') { throw "Installed Rapier journey stage not passed: $stage" } }
       - name: Journey and Store listing screenshots from the real window
         run: |
           ./windows-check/listing.ps1 -App '${{ steps.fetch.outputs.app }}' -Out "$env:RUNNER_TEMP\out\listing"

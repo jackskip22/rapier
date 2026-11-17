@@ -75,12 +75,22 @@ try {
     $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
     $bitmap.Save((Join-Path $Out 'packaged.png'), [System.Drawing.Imaging.ImageFormat]::Png)
     $graphics.Dispose(); $bitmap.Dispose()
-    if ($process -and -not $process.HasExited) { [void]$process.CloseMainWindow(); [void]$process.WaitForExit(8000) }
-    if ($process -and -not $process.HasExited) { Stop-Process -InputObject $process }
+    if (-not $record.packageIdentity -or -not $record.pageLoaded) { throw 'INSTALLED_STARTUP_NOT_PROVEN' }
+    & (Join-Path $PSScriptRoot 'installed-journey.ps1') -Package $package `
+      -AppId $manifest.Package.Applications.Application.Id -ExpectedExeSha256 $built.sha256 -Port $port -Out $Out
   }
 } finally {
   [Environment]::SetEnvironmentVariable('RAPIER_TEST_DEVTOOLS_PORT', $null, 'User')
-  if ($package) { Remove-AppxPackage -Package $package.PackageFullName -ErrorAction SilentlyContinue }
+  if ($package) {
+    # Cleanup only: a failed optional journey might leave its verified installed process open.
+    $cleanupExe = Join-Path $package.InstallLocation 'Rapier.exe'
+    foreach ($p in @(Get-Process -Name Rapier -ErrorAction SilentlyContinue)) {
+      if ($p.Path -ieq $cleanupExe -and [Pkg]::Of($p.Handle) -eq $package.PackageFullName) {
+        Stop-Process -InputObject $p -ErrorAction SilentlyContinue
+      }
+    }
+    Remove-AppxPackage -Package $package.PackageFullName -ErrorAction SilentlyContinue
+  }
   if ($cert) {
     Get-ChildItem 'Cert:\LocalMachine\TrustedPeople' | Where-Object Thumbprint -eq $cert.Thumbprint | Remove-Item -ErrorAction SilentlyContinue
     Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
