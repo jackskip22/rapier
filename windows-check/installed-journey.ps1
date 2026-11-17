@@ -11,14 +11,21 @@ $ErrorActionPreference = 'Stop'
 $rows = [ordered]@{ identity='UNRUN'; openPicker='UNRUN'; edit='UNRUN'; savePicker='UNRUN'; disk='UNRUN';
   normalQuit='UNRUN'; relaunch='UNRUN'; reopenPicker='UNRUN'; reopenedText='UNRUN'; finalQuit='UNRUN' }
 $step = 'identity'
+$failure = 'none'
 $work = $null
 
 function Probe([string]$Mode, [string]$Prior='') {
   $argsForNode = @((Join-Path $PSScriptRoot 'installed-editor.mjs'), "$Port", $Mode)
   if ($Prior) { $argsForNode += $Prior }
   $json = & node @argsForNode
-  if ($LASTEXITCODE -ne 0 -or -not $json) { throw 'EDITOR_PROBE_FAILED' }
-  return ($json | ConvertFrom-Json)
+  $code = $LASTEXITCODE
+  if (-not $json) { throw 'EDITOR_PROBE_FAILED' }
+  $data = $json | ConvertFrom-Json
+  if ($code -ne 0 -or $data.error) {
+    if ($data.error -cin @('SETTINGS_CONTROL_NOT_VISIBLE','SETTINGS_DID_NOT_OPEN','OPEN_CONTROL_NOT_VISIBLE','SAVE_AS_CONTROL_NOT_VISIBLE','EDITOR_TARGET_NOT_UNIQUE_OR_TEXT_DIFFERS','COLD_START_ALREADY_HAS_SAVED_TEXT','MULTIPLE_MATCHING_PAGES','EDIT_TEXT_DIFFERS','CDP_COMMAND_TIMEOUT','CDP_COMMAND_REFUSED','CDP_EVAL_FAILED')) { throw $data.error }
+    throw 'EDITOR_PROBE_FAILED'
+  }
+  return $data
 }
 
 function PackageProcesses {
@@ -35,17 +42,9 @@ function MatchPicker([string]$Title) {
   do {
     $group = @(PackageProcesses)
     $hits = @()
-    $root = [System.Windows.Automation.AutomationElement]::RootElement
     foreach ($p in $group) {
-      $pc = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, [int]$p.Id)
-      $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,$pc)
-      foreach ($w in $windows) {
-        if ($w.Current.ClassName -ne '#32770' -or $w.Current.Name -ne $Title) { continue }
-        $hwnd = [IntPtr]::new([int]$w.Current.NativeWindowHandle)
-        $owner = [PickerOwner]::GetWindow($hwnd,4)
-        $ownerPid = [uint32]0
-        [void][PickerOwner]::GetWindowThreadProcessId($owner,[ref]$ownerPid)
-        if ($owner -ne [IntPtr]::Zero -and $ownerPid -eq $p.Id) { $hits += $w }
+      foreach ($hwnd in [PickerOwner]::OwnedDialogs([uint32]$p.Id, $Title)) {
+        $hits += [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
       }
     }
     if ($hits.Count -gt 1) { throw 'MULTIPLE_OWNED_PICKERS' }
@@ -57,7 +56,7 @@ function MatchPicker([string]$Title) {
 function TypedControl($Picker,[string]$Id,$Type) {
   $auto = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,$Id)
   $kind = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,$Type)
-  $when = [System.Windows.Automation.AndCondition]::new($auto,$kind)
+  $when = [System.Windows.Automation.AndCondition]::new([System.Windows.Automation.Condition[]]@($auto,$kind))
   $hits = $Picker.FindAll([System.Windows.Automation.TreeScope]::Descendants,$when)
   if ($hits.Count -gt 1) { throw 'NATIVE_CONTROL_AMBIGUOUS' }
   if ($hits.Count -eq 1) { return $hits.Item(0) }
@@ -103,10 +102,31 @@ try {
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
   Add-Type @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class PickerOwner {
-  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd,uint command);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+  delegate bool EnumProc(IntPtr hwnd, IntPtr data);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc visit, IntPtr data);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+  [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd,uint command);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder name,int size);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd,StringBuilder text,int size);
+  public static IntPtr[] OwnedDialogs(uint expectedPid, string expectedTitle) {
+    var found = new List<IntPtr>();
+    EnumWindows(delegate(IntPtr hwnd, IntPtr ignored) {
+      uint pid, ownerPid;
+      if (!IsWindowVisible(hwnd) || GetWindowThreadProcessId(hwnd,out pid)==0 || pid!=expectedPid) return true;
+      var owner=GetWindow(hwnd,4);
+      if(owner==IntPtr.Zero || GetWindowThreadProcessId(owner,out ownerPid)==0 || ownerPid!=expectedPid) return true;
+      var cls=new StringBuilder(64); var label=new StringBuilder(128);
+      GetClassName(hwnd,cls,cls.Capacity); GetWindowText(hwnd,label,label.Capacity);
+      if(cls.ToString()=="#32770" && label.ToString()==expectedTitle) found.Add(hwnd);
+      return true;
+    },IntPtr.Zero);
+    return found.ToArray();
+  }
 }
 '@
   if ($ExpectedExeSha256 -notmatch '^[a-fA-F0-9]{64}$' -or $AppId -notmatch '^[a-zA-Z0-9.]+$') { throw 'INVALID_PACKAGE_INPUT' }
@@ -180,9 +200,17 @@ public static class PickerOwner {
   $rows.finalQuit='PASS'
 } catch {
   $rows[$step]='FAIL'
+  $detail = $_.Exception.Message
+  $fixed = @('SETTINGS_CONTROL_NOT_VISIBLE','SETTINGS_DID_NOT_OPEN','OPEN_CONTROL_NOT_VISIBLE','SAVE_AS_CONTROL_NOT_VISIBLE',
+    'EDITOR_TARGET_NOT_UNIQUE_OR_TEXT_DIFFERS','COLD_START_ALREADY_HAS_SAVED_TEXT','MULTIPLE_MATCHING_PAGES','EDIT_TEXT_DIFFERS',
+    'CDP_COMMAND_TIMEOUT','CDP_COMMAND_REFUSED','CDP_EVAL_FAILED','EDITOR_PROBE_FAILED','NATIVE_PICKER_NOT_FOUND',
+    'MULTIPLE_OWNED_PICKERS','NATIVE_CONTROL_AMBIGUOUS','PICKER_FILENAME_HOST_NOT_UNIQUE','PICKER_FILENAME_EDIT_NOT_UNIQUE',
+    'PICKER_ACCEPT_CONTROL_MISSING','PICKER_FILENAME_INPUT_DIFFERS','DISK_WITNESS_FAILED','NORMAL_CLOSE_DID_NOT_FINISH')
+  $failure = if ($fixed -ccontains $detail) { $detail } else { 'UNCLASSIFIED' }
+  Write-Host "Installed journey diagnostic: $step/$failure"
   throw "INSTALLED_RAPIER_JOURNEY_FAILED: $step"
 } finally {
-  [ordered]@{ schema='rapier-installed-journey/1'; stages=$rows } | ConvertTo-Json -Depth 3 |
+  [ordered]@{ schema='rapier-installed-journey/1'; stages=$rows; diagnostic=$failure } | ConvertTo-Json -Depth 3 |
     Set-Content (Join-Path $Out 'installed-journey.json') -Encoding UTF8
   if ($work -and (Test-Path -LiteralPath $work)) { Remove-Item -LiteralPath $work -Recurse -Force }
 }

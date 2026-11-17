@@ -59,20 +59,25 @@ async function evalPage(cdp,expression) {
 }
 const ready="window.RapierAgentBrowser?.status().ready === true && !!document.querySelector('#editor-blocks')";
 const current="document.querySelector('#source-textarea')?.value";
-async function click(cdp,selector) {
-  const p=await evalPage(cdp,`(() => {
+async function click(cdp,selector,code='EDITOR_CONTROL_NOT_VISIBLE') {
+  const p=await poll(()=>evalPage(cdp,`(() => {
     const el=document.querySelector(${JSON.stringify(selector)}),r=el?.getBoundingClientRect();
     if(!r?.width||!r.height||el.disabled) return null;
     const x=r.x+r.width/2,y=r.y+r.height/2,top=document.elementFromPoint(x,y);
     return top&&(el===top||el.contains(top))?{x,y}:null;
-  })()`);
-  if(!p) fail('EDITOR_CONTROL_NOT_VISIBLE');
+  })()`),code,6500);
   for(const type of ['mousePressed','mouseReleased'])
     await cdp.send('Input.dispatchMouseEvent',{type,...p,button:'left',clickCount:1,buttons:type==='mousePressed'?1:0});
 }
 async function chord(cdp,key,code,windowsVirtualKeyCode,modifiers=0) {
   await cdp.send('Input.dispatchKeyEvent',{type:'rawKeyDown',key,code,windowsVirtualKeyCode,modifiers});
   await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode,modifiers});
+}
+async function settingsButton(cdp,selector,code) {
+  const menuOpen="document.querySelector('#settings-overlay')?.getAttribute('aria-hidden')==='false'";
+  if (!await evalPage(cdp,menuOpen)) await click(cdp,'#btn-overflow','SETTINGS_CONTROL_NOT_VISIBLE');
+  await poll(()=>evalPage(cdp,menuOpen),'SETTINGS_DID_NOT_OPEN',6000);
+  await click(cdp,selector,code);
 }
 async function sourceMode(cdp) {
   const visible="!!document.querySelector('#source-textarea')?.getClientRects().length";
@@ -125,8 +130,8 @@ async function main(args) {
   else fail('INVALID_STEP');
   const cdp=await connect(page.webSocketDebuggerUrl);
   try {
-    if(op==='open'||op==='reopen') await chord(cdp,'o','KeyO',79,2);
-    if(op==='save') await chord(cdp,'S','KeyS',83,10);
+    if(op==='open'||op==='reopen') await settingsButton(cdp,'#settings-open-pair [data-action="open-document"]','OPEN_CONTROL_NOT_VISIBLE');
+    if(op==='save') await settingsButton(cdp,'#settings-save-as-btn','SAVE_AS_CONTROL_NOT_VISIBLE');
     if(op==='edit'){
       await click(cdp,'#source-textarea');
       await chord(cdp,'End','End',35,2);
@@ -144,7 +149,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href===import.meta.url) {
       checkDisk(await readFile(args[1]),await readFile(args[2]));console.log('{"disk":true}');
     } else console.log(JSON.stringify(await main(args)));
   } catch(e){
-    console.error(/^[A-Z_]+$/.test(e.message)?e.message:'EDITOR_PROBE_FAILED');
+    console.log(JSON.stringify({error:/^[A-Z_]+$/.test(e.message)?e.message:'EDITOR_PROBE_FAILED'}));
     process.exitCode=1;
   }
 }
