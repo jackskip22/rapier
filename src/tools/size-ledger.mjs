@@ -35,7 +35,7 @@ function edits(source, ranges) {
 export function omitEncoder(source) {
   const files = one(find(source, n => n.type === 'VariableDeclarator' && n.id?.name === 'JXL_PAGE_FILES'), 'embedded JPEG XL file list');
   assert.equal(files.init?.type, 'ArrayExpression', 'the embedded JPEG XL files are an explicit list');
-  return edits(source, [[files.init.start, files.init.end, "['codec.mjs']"]]);
+  return edits(source, [[files.init.start, files.init.end, "['index.browser.mjs']"]]);
 }
 export function omitLoader(source, path) {
   const found = [];
@@ -151,10 +151,10 @@ const SCRIPTS = 'editor/scripts.json', STYLES = 'editor/styles.json';
 const element = (a, id) => a.elements.find(e => e.id === id);
 const vendorCarries = id => a => !!element(a, id)?.spans.some(name => name !== BLANK_SPAN);
 export const GROUPS = [
-  {id: 'jxl', name: 'JPEG XL (rapier-jxl\'s embedded worker files; rapier-jxl/codec stays)', edits: {'tools/build.mjs': omitEncoder},
+  {id: 'jxl', name: 'JPEG XL (rapier-jxl\'s embedded module files; the still client stays)', edits: {'tools/build.mjs': omitEncoder},
     inputs: a => element(a, 'rapier-jxl-worker').spans.map(name => 'images/vendor/rapier-jxl/' + name),
-    carries: a => a.spans.has('still.worker.mjs'),
-    leaves: a => a.spans.has('codec.mjs') && !a.spans.has('still.worker.mjs')},
+    carries: a => a.spans.has('index.mjs'),
+    leaves: a => a.spans.has('index.browser.mjs') && !a.spans.has('index.mjs')},
   {id: 'fonts', name: 'Geist + Geist Mono export fonts (shell/fonts/docx-fonts.mjs, in the codec runtime; native layout shares them)',
     edits: {'shell/fonts/docx-fonts.mjs': () => 'export const DOCX_FONTS = Object.freeze([]);\n'},
     inputs: () => ['shell/fonts/docx-fonts.mjs'],

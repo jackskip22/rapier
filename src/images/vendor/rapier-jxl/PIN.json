@@ -1,35 +1,43 @@
 {
-  "rebuild": "ESBUILD=<dir>/node_modules/esbuild TERSER=<dir>/node_modules/terser node tools/jxl-vendor.mjs --write",
-  "version": "8.3.5",
+  "rebuild": "node tools/jxl-vendor.mjs --write 8.4.1",
+  "version": "8.4.1",
   "source": {
-    "digest": "83cedb4723568d4a1f54e6796930debfdf14f27cf8f67e2cd1cac0a6c0a6048b",
-    "files": 657
-  },
-  "tools": {
-    "esbuild": "0.25.10",
-    "terser": "5.51.2",
-    "node": "v22.23.4"
+    "registry": "https://registry.npmjs.org/jpegxl",
+    "shasum": "db03ab7d2248f34e3af2c9396ee911c2f586f016",
+    "digest": "39287a2fec507eac677657550a6a9b69f8d584a7fbf76761e8714edba849f5c3"
   },
   "files": {
-    "codec.mjs": {
-      "bytes": 74311,
-      "sha256": "c6ead1d2f4f12b84dde3a4e338023e8fbedf78d77747ae874ed701379ead72e6"
+    "index.mjs": {
+      "bytes": 1567197,
+      "sha256": "a18f55abdd52612c517c8b71a0c52eea2a6ed04ee1a4d8edda3f614acd7bf160"
     },
-    "still.worker.mjs": {
-      "bytes": 1228062,
-      "sha256": "465c5b4266573afc00f5676258a259f72a600c80233ce1b43bf5c51dcdf02d37"
+    "index.browser.mjs": {
+      "bytes": 54158,
+      "sha256": "2d9400f0ef34f1af1d7845b1ee9afc2030576033b14381e0d94312e06ba87dd3"
     },
-    "animation.worker.mjs": {
-      "bytes": 1240839,
-      "sha256": "f001ad3279902ba0d70f84732b8bf579d973c3e2e2d29aca09e845ed5f728f3c"
+    "jpeg.mjs": {
+      "bytes": 528566,
+      "sha256": "e9562b872a6f4f68a4b0b965bff98427ffeb4290f2b58ec5f268aaaf8451510c"
     },
-    "decode.worker.mjs": {
-      "bytes": 369271,
-      "sha256": "50be90747a40482445db7dadcbf77d23d0b2b914a54a552bb979e53ba51bbe08"
+    "jpeg.browser.mjs": {
+      "bytes": 27154,
+      "sha256": "5dbabdb003ab1965314225e1d6067817c7c14d55567808f497010500646316d7"
     },
-    "jpeg.worker.mjs": {
-      "bytes": 472084,
-      "sha256": "ff0ab831a814710975b95b9511087c5de9d929d719f9a40d651d20d302c17fba"
+    "decode.mjs": {
+      "bytes": 375552,
+      "sha256": "8ad0abff1da2787f52677b1733da0556d3e7829d240aeab444db93e24fc039ff"
+    },
+    "decode.browser.mjs": {
+      "bytes": 26831,
+      "sha256": "d6a473333629e8601d4a1ce76d0e7743ec1a68efe0a17bdc231eac2bdbce443b"
+    },
+    "animation.mjs": {
+      "bytes": 1625808,
+      "sha256": "617ed2173357ffac87f898b670f99e082af374b4bf5711be507e3d64203140be"
+    },
+    "animation.browser.mjs": {
+      "bytes": 62271,
+      "sha256": "899ce02b6f46aecb5d7a17ac4866e5ff03d5c23c185571c099a522aded610a6d"
     }
   }
 }

@@ -4,6 +4,7 @@ import {crc32} from '../images/crc32.mjs';
 import {readPng, isPng} from './png.mjs';
 import {embeddedProfile, avifColors, displayP3Profile, isSrgbProfile} from './profile.mjs';
 import {mediaKind, convertMedia, mediaNote as framesNote} from './frames.mjs';
+export {createPicture} from './preview.mjs';
 
 export const CARRY_BYTES = 256 * 1024 * 1024, PIXELS = 268_435_456;
 export const QUALITY = Object.freeze({lossless: 100, high: 90, smaller: 75});
@@ -39,6 +40,20 @@ export const CLIP = Object.freeze({
 	local: false,
 	credit: '',
 	missing: 'The clip could not load. Reload the page and try again.'});
+export const BIG = Object.freeze({
+	part: 'jxlbig', global: 'RapierJxlBig', id: 'rapier-jxl-big',
+	title: 'Watch a big JXL image load progressively:',
+	button: 'Load big JXL image',
+	alt: 'Earth from Apollo 17, a progressive JPEG XL',
+	width: 4579, height: 4579, plain: 706476, rate: 51200,
+	about: Object.freeze([
+		'A progressive JPEG XL stores a small whole picture first, at 1:8 of each side, then passes that add detail.',
+		'A browser can show each pass as its bytes arrive, so the picture appears long before its last byte.',
+		'This file is 729 KB and 4579 × 4579 pixels (21 megapixels). Here it arrives at 50 KB a second, so you can watch: the 1:8 pass shows after 181 KB, the 1:4 pass after 359 KB.',
+		'Made without passes, the same picture is 690 KB: the passes add 6%.',
+		'Where a browser cannot show JPEG XL, this page decodes each pass with rapier-jxl.',
+		'Earth from Apollo 17. NASA, public domain.']),
+	missing: 'The picture could not load. Reload the page and try again.'});
 export const ABOUT = Object.freeze([
 	'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies.',
 	'Rapier is a single HTML file that works offline, free and open source.',
@@ -210,6 +225,7 @@ const carriedSize = carried => globalThis.RapierImageAssets.imageDimensions(carr
 const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
 export const exhausted = error => error?.code === 'JXL_MEMORY' || error instanceof RangeError || /out of memory|allocation failed|Array buffer allocation/i.test(String(error?.message || ''));
 export const EFFORT = Object.freeze({min: 1, max: 9, start: 7});
+export const PREVIEW_EFFORT = 6;
 export const effortOf = value => Math.min(EFFORT.max, Math.max(EFFORT.min, Math.round(Number(value)) || EFFORT.start));
 
 export async function pixelsOf(file, {raw = false} = {}) {
@@ -247,8 +263,23 @@ async function opens(bytes) {
 	try { (await createImageBitmap(new Blob([bytes], {type: 'image/jxl'}))).close(); return true; } catch (_) { return false; }
 }
 
-export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
+export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, onPreview, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
 	const effort = effortOf(asked), effortFor = () => effort;
+	if (effort >= PREVIEW_EFFORT && typeof onPreview === 'function') {
+		const call = codec;
+		codec = (operation, input, options, work) => {
+			if (operation !== 'encode') return call(operation, input, options, work);
+			const lifetime = new AbortController();
+			const preview = {signal: work?.signal ? AbortSignal.any([work.signal, lifetime.signal]) : lifetime.signal};
+			return (async () => {
+				try {
+					return await call(operation, input, options, {...work, onPreview: frame => {
+						if (!preview.signal.aborted) return onPreview(frame, preview);
+					}});
+				} finally { lifetime.abort(); }
+			})();
+		};
+	}
 	const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
 	if (kindOf(head) === 'other' && mediaKind(head, file.type) === 'video')
 		return convertMedia(file, null, 'video', {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {})});

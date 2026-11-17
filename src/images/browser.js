@@ -36,29 +36,26 @@ const _rapierEmbeddedImages = (() => {
     if (suspended || stamp !== epoch || identity !== rapier.identity.authority) throw cancelled();
   }
   const MODULE_FILES = Object.freeze({
-    'rapier-jxl': {file: 'still.worker.mjs'},
-    'rapier-jxl/decode': {file: 'decode.worker.mjs', part: 'jxlcomplete'},
-    'rapier-jxl/jpeg': {file: 'jpeg.worker.mjs'},
-    'rapier-jxl/animation': {file: 'animation.worker.mjs', part: 'jxlcomplete'},
+    'rapier-jxl': {client: 'index.browser.mjs', file: 'index.mjs'},
+    'rapier-jxl/decode': {client: 'decode.browser.mjs', file: 'decode.mjs', part: 'jxlcomplete'},
+    'rapier-jxl/jpeg': {client: 'jpeg.browser.mjs', file: 'jpeg.mjs'},
+    'rapier-jxl/animation': {client: 'animation.browser.mjs', file: 'animation.mjs', part: 'jxlcomplete'},
   });
   const moduleFileSources = [];
-  let pageFiles = null, codecEntry = null;
+  let pageFiles = null;
   function provideModuleFiles(source) { if (typeof source === 'function') moduleFileSources.push(source); }
   const moduleFile = name => { for (const source of moduleFileSources) { const text = source(name); if (typeof text === 'string') return text; } return null; };
   const codecs = new Map();
+  let decodeJobs = 0, displayCopies = 0;
+  let finalDisplays = Promise.resolve();
   async function pageFile(name) {
     pageFiles ||= _rapierWhenRuntime('rapier-jxl-worker').then(() => _rapierInflateVendor('rapier-jxl-worker'));
     pageFiles.catch(() => { pageFiles = null; });
     return (await pageFiles).find(row => row.name === name)?.source ?? null;
   }
-  function loadCodecEntry() {
-    codecEntry ||= pageFile('codec.mjs').then(async source => {
-      if (!source) throw new Error('The bundled JPEG XL codec is missing');
-      const url = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));
-      try { return (await import(url)).createCodec; } finally { URL.revokeObjectURL(url); }
-    });
-    codecEntry.catch(() => { codecEntry = null; });
-    return codecEntry;
+  async function loadClient(source) {
+    const url = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));
+    try { return await import(url); } finally { URL.revokeObjectURL(url); }
   }
   function closeCodec(name) {
     const held = codecs.get(name);
@@ -67,44 +64,71 @@ const _rapierEmbeddedImages = (() => {
     held.codec.close().catch(() => {}).finally(() => URL.revokeObjectURL(held.url));
   }
   function closeCodecs() { for (const name of [...codecs.keys()]) closeCodec(name); }
+  function idleCodec(name, held) {
+    if (codecs.get(name) !== held || held.jobs) return;
+    clearTimeout(held.idle);
+    held.idle = setTimeout(() => { if (codecs.get(name) === held && !held.jobs) closeCodec(name); }, 30000);
+  }
+  function displayWait(pending, signal, late) {
+    if (!signal) return pending;
+    return new Promise((resolve, reject) => {
+      const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason); };
+      signal.addEventListener('abort', abort, {once: true});
+      Promise.resolve(pending).then(value => {
+        signal.removeEventListener('abort', abort);
+        if (signal.aborted) { late?.(value); reject(signal.reason); } else resolve(value);
+      }, error => { signal.removeEventListener('abort', abort); reject(error); });
+      if (signal.aborted) abort();
+    });
+  }
   async function openCodec(name, stamp, identity) {
     const ready = codecs.get(name);
     if (ready) { clearTimeout(ready.idle); return ready; }
     const spec = MODULE_FILES[name];
     if (spec.part) { await RapierParts.need(spec.part); assertCurrent(stamp, identity); }
-    const source = spec.part ? moduleFile(spec.file) : await pageFile(spec.file);
-    if (!source) throw new Error('The bundled JPEG XL codec is missing');
-    const createCodec = await loadCodecEntry();
+    const [source, clientSource] = spec.part ? [moduleFile(spec.file), moduleFile(spec.client)] : await Promise.all([pageFile(spec.file), pageFile(spec.client)]);
+    if (!source || !clientSource) throw new Error('The bundled JPEG XL codec is missing');
+    const client = await loadClient(clientSource);
     assertCurrent(stamp, identity);
     if (codecs.has(name)) return codecs.get(name);
     const classic = location.protocol === 'file:' || globalThis.origin === 'null'
-      ? '(function () {"use strict";\n' + source.replaceAll('import.meta.url', 'self.location.href') + '\n}).call(undefined);' : null;
+      ? '(function () {"use strict";\n' + source.replaceAll('import.meta.url', 'self.location.href').replace(/\bexport\s*\{[^{}]*\};?/, '') + '\n}).call(undefined);' : null;
     const type = classic && !classic.includes('import.meta') ? 'classic' : 'module';
     const url = URL.createObjectURL(new Blob([type === 'classic' ? classic : source], {type: 'text/javascript'}));
     const room = name === 'rapier-jxl' ? {maxPixels: 268435456, maxPendingBytes: 268435456 * 4} : {};
-    const held = {codec: createCodec({module: name, ...room, workerFactory: () => new Worker(url, {type})}), url, idle: 0};
+    client.configure({...room, workerFactory: () => new Worker(url, {type, name: name + ' worker'})});
+    const held = {codec: client, url, idle: 0, jobs: 0};
     codecs.set(name, held);
     return held;
   }
-  function moduleJob(name, operation, input, options, {signal, progress, optional = false} = {}) {
+  function moduleJob(name, operation, input, options, {signal, progress, onPreview, optional = false} = {}, display = false) {
     if (!optional) interruptIdleFinishes();
     synchronizeScope();
     if (!optional) foregroundCodecs++;
+    if (operation === 'decode') decodeJobs++;
     const stamp = epoch, identity = authority;
     const run = async () => {
       signal?.throwIfAborted();
       assertCurrent(stamp, identity);
-      const held = await openCodec(name, stamp, identity);
-      signal?.throwIfAborted();
+      const opening = openCodec(name, stamp, identity);
+      const held = await (display ? displayWait(opening, signal, held => idleCodec(name, held)) : opening);
+      if (signal?.aborted) { if (display) idleCodec(name, held); signal.throwIfAborted(); }
+      clearTimeout(held.idle); held.idle = 0;
       const megapixels = Math.ceil((input?.width * input?.height * (input?.frames?.length || 1) || 0) / 1e6);
       const controller = new AbortController(), abort = () => controller.abort(signal.reason);
       signal?.addEventListener('abort', abort, {once: true});
       let timer = 0;
       const watch = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('Image processing took too long')), 45000 + megapixels * 15000); };
       const onProgress = fraction => { if (!controller.signal.aborted) watch(); try { progress?.(fraction); } catch (_) {} };
+      const preview = typeof onPreview === 'function' ? value => {
+        if (controller.signal.aborted || stamp !== epoch || identity !== rapier.identity.authority) return;
+        watch();
+        try { return onPreview(value); } catch (_) {}
+      } : null;
+      held.jobs++;
       watch();
       try {
-        const value = await held.codec[operation](input, {...options, signal: controller.signal, onProgress});
+        const value = await held.codec[operation](input, {...options, signal: controller.signal, onProgress, ...(preview && {onPreview: preview})});
         assertCurrent(stamp, identity);
         if (operation === 'decode') return value;
         if (!(value?.bytes instanceof Uint8Array)) throw Object.assign(new Error(value?.reason?.message || 'No JPEG XL output'), {code: value?.reason?.code || 'JXL_TARGET'});
@@ -113,16 +137,17 @@ const _rapierEmbeddedImages = (() => {
         if (error?.code === 'JXL_CLOSED') throw cancelled();
         throw error;
       } finally {
+        held.jobs--;
         clearTimeout(timer); signal?.removeEventListener('abort', abort);
-        if (codecs.get(name) === held) {
+        if (codecs.get(name) === held && !held.jobs) {
           if (operation === 'encode' && !optional) closeCodec(name);
-          else held.idle = setTimeout(() => { if (codecs.get(name) === held) closeCodec(name); }, 30000);
+          else idleCodec(name, held);
         }
       }
     };
-    const job = queue.then(run, run);
-    queue = job.catch(() => {});
-    return optional ? job : job.finally(() => { foregroundCodecs--; });
+    const job = display ? run() : queue.then(run, run);
+    if (!display) queue = job.catch(() => {});
+    return job.finally(() => { if (!optional) foregroundCodecs--; if (operation === 'decode') decodeJobs--; });
   }
   function codec(operation, input, options = {}, work = {}) {
     if (operation === 'encode' && Array.isArray(input?.frames)) return moduleJob('rapier-jxl/animation', 'encode', input, options, work);
@@ -176,18 +201,40 @@ const _rapierEmbeddedImages = (() => {
       image.src = url;
     });
   }
-  async function fallbackPixels(bytes, {signal, maxPixels = 64000000} = {}) {
+  async function fallbackPixels(bytes, {signal, maxPixels = 64000000, display = false, poster = false} = {}) {
     signal?.throwIfAborted();
     const info = assets.inspectJPEGXL(bytes), size = assets.imageDimensions(bytes, 'image/jxl');
     if (bytes.byteLength > assets.IMAGE_LIMITS.bytes || !assets.validCarriedDimensions(size.width, size.height) || size.width * size.height > maxPixels)
       throw Object.assign(new Error('JPEG XL exceeds the picture budget'), {code: 'JXL_LIMIT'});
-    if (info.animated) throw Object.assign(new Error('This JPEG XL needs animation playback'), {code: 'JXL_UNSUPPORTED'});
-    const pixels = await codec('decode', bytes, {format: 'uint8', colorSpace: 'srgb', unpremultiplyAlpha: true,
-      partial: false, maxInputBytes: assets.IMAGE_LIMITS.bytes, maxPixels, maxDimension: assets.IMAGE_LIMITS.dimension}, {signal});
+    if (info.animated && !poster) throw Object.assign(new Error('This JPEG XL needs animation playback'), {code: 'JXL_UNSUPPORTED'});
+    const pixels = await moduleJob('rapier-jxl/decode', 'decode', bytes, {format: 'uint8', colorSpace: 'srgb', unpremultiplyAlpha: true,
+      partial: false, maxInputBytes: assets.IMAGE_LIMITS.bytes, maxPixels, maxDimension: assets.IMAGE_LIMITS.dimension}, {signal, optional: display}, display);
     signal?.throwIfAborted();
     if (pixels.width !== size.width || pixels.height !== size.height || !(pixels.data instanceof Uint8ClampedArray || pixels.data instanceof Uint8Array) || pixels.data.length !== size.width * size.height * 4 || pixels.partial)
       throw new Error('JPEG XL decoder returned a different raster');
     return pixels;
+  }
+  async function previewBlob(bytes, {signal, optional = false, maxPixels = 64000000} = {}) {
+    signal?.throwIfAborted();
+    const native = await displayWait(whenJxlDisplayKnown(), signal);
+    signal?.throwIfAborted();
+    if (native) return new Blob([bytes], {type: 'image/jxl'});
+    if (optional && (decodeJobs || displayCopies)) return null;
+    displayCopies++;
+    const ahead = optional ? null : finalDisplays;
+    const copy = (async () => {
+      try {
+        if (ahead) await displayWait(ahead, signal);
+        const pixels = await fallbackPixels(bytes, {signal, maxPixels, display: true, poster: true});
+        signal?.throwIfAborted();
+        const blob = await canvasBlob(context => context.putImageData(new ImageData(new Uint8ClampedArray(pixels.data.buffer,
+          pixels.data.byteOffset, pixels.data.byteLength), pixels.width, pixels.height), 0, 0), pixels.width, pixels.height);
+        signal?.throwIfAborted();
+        return blob;
+      } finally { displayCopies--; }
+    })();
+    if (ahead) finalDisplays = Promise.allSettled([ahead, copy]).then(() => {});
+    return displayWait(copy, signal);
   }
   globalThis.RapierImageInspection.configurePaintRasterDecoder(async (bytes, {signal} = {}) => {
     if (await whenJxlDisplayKnown()) return null;
@@ -224,7 +271,7 @@ const _rapierEmbeddedImages = (() => {
     };
     return globalThis.RapierImageInspection.validatePaintRaster(url, {signal, nativeRead});
   }
-  async function canvasUrl(draw, width, height) {
+  async function canvasBlob(draw, width, height) {
     const canvas = document.createElement('canvas');
     canvas.width = width; canvas.height = height;
     try {
@@ -233,8 +280,11 @@ const _rapierEmbeddedImages = (() => {
       draw(context);
       const blob = await _rapierCanvasBlob(canvas, 'image/png');
       if (!blob) throw new Error('Image rendering failed');
-      return await _rapierBlobDataUrl(blob);
+      return blob;
     } finally { canvas.width = 0; canvas.height = 0; }
+  }
+  async function canvasUrl(draw, width, height) {
+    return await _rapierBlobDataUrl(await canvasBlob(draw, width, height));
   }
   function joinRaster(request, signal) {
     const waiter = {};
@@ -1667,6 +1717,6 @@ const _rapierEmbeddedImages = (() => {
   function historySplices(target, redo) {
     return globalThis.RapierLedger.pictureHistorySplices({source: _rapierSourceText(), records: rapier.undo.ledger}, target, redo);
   }
-  return Object.freeze({cachedDrawing: url => primed?.signature === url ? primed : cache.get(url) || null, codec, provideModuleFiles, imageHtml, originalReady, geometry: imageGeometry, materialize, present, prepare, prepareView, insert, insertDrawing, caretSplit, portable, clipboard, nativeImage, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex(), canFinishLater, finishLater, finishSettled, historySplices, historySubject});
+  return Object.freeze({cachedDrawing: url => primed?.signature === url ? primed : cache.get(url) || null, codec, provideModuleFiles, imageHtml, originalReady, geometry: imageGeometry, materialize, present, prepare, prepareView, insert, insertDrawing, caretSplit, portable, clipboard, nativeImage, previewBlob, validatePaintRaster, schedule, retheme, stats, inkForPaper, downloadOriginal, jxlDisplayable, whenJxlDisplayKnown, index: () => documentIndex(), canFinishLater, finishLater, finishSettled, historySplices, historySubject});
 })();
 globalThis.RapierEmbeddedImages = _rapierEmbeddedImages;

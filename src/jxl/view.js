@@ -31,8 +31,8 @@
 			node.append(document.createTextNode(C.LOCAL_NOTE[0]), document.createElement('br'), document.createTextNode(C.LOCAL_NOTE[1]));
 			return node;
 		};
-		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input');
-		pick.append(C.pickLabel(make('span')), input);
+		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input'), pickText = C.pickLabel(make('span'));
+		pick.append(pickText, input);
 		input.type = 'file'; input.accept = 'image/*,video/*,.jxl'; input.multiple = true;
 		const group = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff');
 		group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Quality');
@@ -95,9 +95,60 @@
 			return {spec, section, slot, note, shown: null, near: null};
 		};
 		const example = clipBlock({...C.EXAMPLE, id: 'rapier-jxl-example'}), clip = clipBlock({...C.CLIP, id: 'rapier-jxl-clip'});
-		_rapierJxlMakerPart.tabs(body, [fold, example.section, more, scene, clip.section, _rapierToolAlso('/jxl')]);
+		const big = {section: make('section', 'rapier-jxl-view__more'), title: make('h2', 'rapier-jxl-view__title', C.BIG.title), row: make('div', 'rapier-jxl-view__bigbar'),
+			load: make('button', 'settings-action-btn', C.BIG.button), info: make('button', 'settings-info-btn'), box: make('div', 'rapier-jxl-view__big'), note: make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center'), timer: 0, url: null, playing: false};
+		big.title.id = C.BIG.id; big.section.setAttribute('aria-labelledby', big.title.id);
+		big.load.type = 'button'; big.info.type = 'button'; big.info.setAttribute('aria-label', 'about progressive JPEG XL'); big.info.setAttribute('aria-haspopup', 'dialog');
+		big.info.innerHTML = info.innerHTML;
+		big.box.hidden = big.note.hidden = true; big.note.setAttribute('aria-live', 'polite');
+		big.box.style.aspectRatio = C.BIG.width + ' / ' + C.BIG.height;
+		big.row.append(big.load, big.box, big.info); big.section.append(big.title, big.row, big.note);
+		_rapierJxlMakerPart.tabs(body, [fold, example.section, more, scene, big.section, clip.section, _rapierToolAlso('/jxl')]);
 		root.append(bar, body);
-		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, scene, stage, clips: [example, clip], rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
+		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, pickText, scene, stage, clips: [example, clip], big, showing: null, following: null, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
+	}
+
+	function clearPicture(self) {
+		const row = self.showing;
+		self.showing = null;
+		row?.picture?.close();
+		if (row) row.picture = null;
+		self.pick.querySelector('img')?.remove();
+		filled(self);
+	}
+	function showPicture(self, row, manual = false) {
+		if (self !== view || row.removed) return;
+		if (self.showing !== row) {
+			clearPicture(self); self.showing = row;
+			row.picture = C.createPicture(shown => {
+				if (self !== view || self.showing !== row || row.removed) return;
+				const previous = self.pick.querySelector('img');
+				if (!shown) { previous?.remove(); filled(self); return; }
+				if (previous?.getAttribute('src') === shown.url) return;
+				const image = make('img', 'rapier-jxl-view__pick-picture');
+				image.alt = row.name; image.decoding = 'async'; image.src = shown.url;
+				if (previous) previous.replaceWith(image); else self.pick.prepend(image);
+				filled(self);
+			});
+			if (row.state === 'done') void row.picture.finish(row.result.blob);
+			else void row.picture.source(row.file);
+		}
+		if (manual) self.pick.scrollIntoView({block: 'nearest'});
+	}
+	function followPicture(self, row) {
+		if (self !== view || row.removed || row.state !== 'working' || self.following?.run === row.previewRun) return;
+		self.following = {row, run: row.previewRun}; showPicture(self, row);
+	}
+	function sourcePicture(row) {
+		if (!row.removed && row.owner === view) void row.picture?.source(row.file);
+	}
+	function finishPicture(row, blob) {
+		if (row.removed || row.owner !== view) return;
+		if (!row.owner.showing) showPicture(row.owner, row);
+		else void row.picture?.finish(blob);
+	}
+	function filled(of) {
+		of.pick.toggleAttribute('data-filled', !!of.pick.querySelector('img') || of.rows.some(row => row.state === 'working' || row.state === 'waiting'));
 	}
 
 	function paint(row) {
@@ -112,6 +163,7 @@
 		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, so the JPEG can\'t be restored' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
 		note.textContent = text;
 		download.hidden = row.state !== 'done';
+		row.nameButton.disabled = row.state !== 'done';
 		media(row);
 	}
 	function media(row) {
@@ -133,6 +185,7 @@
 		of.count.textContent = !rows.length ? '' : (working ? settled + ' of ' + rows.length + ' · ' : done.length + ' of ' + rows.length + ' converted · ') + (done.length ? size(before) + ' → ' + size(after) : '');
 		of.cancel.hidden = !of.running;
 		of.all.hidden = done.length < 2;
+		filled(of);
 	}
 
 	const PART = 'jxlcomplete', held = () => ['ready', 'carried', 'stored'].includes(RapierParts.status(PART)?.status);
@@ -180,17 +233,29 @@
 			while (!out && !signal.aborted) {
 				const row = self.rows.find(each => each.state === 'waiting');
 				if (!row) return;
-				row.state = 'working'; row.progress = 0; row.say = ''; row.stop = new AbortController(); paint(row); overall(self);
+				row.state = 'working'; row.progress = 0; row.say = ''; row.stop = new AbortController();
+				const previewRun = row.previewRun = {};
+				const current = () => self === view && row.previewRun === previewRun && row.state === 'working' && !row.removed && !signal.aborted && !row.stop?.signal.aborted;
+				paint(row); overall(self);
+				if (!self.following) followPicture(self, row);
 				try {
 					const key = keyOf(self), mode = self.mode, effort = self.effort;
-					const made = await C.convert(row.file, {mode, effort, complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]), say: text => { row.say = text; paint(row); follow1(self, row); }, progress: value => { row.progress = value; paint(row); overall(self); follow1(self, row); }});
+					const made = await C.convert(row.file, {mode, effort, complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]),
+						onPreview: (frame, preview) => { if (!current()) return; followPicture(self, row); return row.picture?.preview(frame, preview); },
+						say: text => { row.say = text; paint(row); follow1(self, row); },
+						progress: value => {
+							if (current() && value > 0 && (!row.progress || !self.following)) followPicture(self, row);
+							row.progress = value; paint(row); overall(self); follow1(self, row);
+						}});
 					const {also, ...kept} = made;
 					row.results.set(key, kept);
 					if (also) row.results.set('lossless|' + effort, also);
 					if (kept.ext && !row.outputName.toLowerCase().endsWith(kept.ext)) row.outputName = C.outputName(row.file.name, new Set(self.rows.filter(other => other !== row).map(other => other.outputName.toLowerCase())), kept.ext);
 					const now = row.results.get(keyOf(self));
-					if (now) { row.result = now; row.state = 'done'; } else row.state = 'waiting';
+					if (now) { row.result = now; row.state = 'done'; finishPicture(row, now.blob); }
+					else { row.state = 'waiting'; sourcePicture(row); }
 				} catch (error) {
+					row.picture?.stop();
 					if (error?.name === 'AbortError') { row.state = 'stopped'; row.say = 'Canceled'; }
 					else if (error?.code === 'IMAGE_CANCELLED' && (row.again = (row.again || 0) + 1) <= 3) row.state = 'waiting';
 					else if (C.exhausted(error)) {
@@ -198,14 +263,14 @@
 						self.help.textContent = 'This device ran out of memory. The files that finished are kept; choose the rest again, a few at a time.';
 					} else { row.state = 'failed'; row.say = C.refusal(error, row.file); }
 				}
-				row.stop = null;
+				row.stop = null; row.previewRun = null;
 				if (row.removed) row.results.clear();
 				paint(row); overall(self); follow1(self, row);
 			}
 		};
 		try { await Promise.all(Array.from({length: LANES}, lane)); }
 		finally {
-			for (const row of self.rows) if (row.state === 'waiting') { row.state = 'stopped'; row.say = signal.aborted ? 'Canceled' : 'Not converted'; paint(row); }
+			for (const row of self.rows) if (row.state === 'waiting') { row.picture?.stop(); row.state = 'stopped'; row.say = signal.aborted ? 'Canceled' : 'Not converted'; paint(row); }
 			self.running = false; self.controller = null; overall(self);
 			if (!signal.aborted) document.getElementById('sr-live')?.replaceChildren(document.createTextNode(self.rows.filter(row => row.state === 'done').length + ' files converted'));
 			if (!signal.aborted) try { self.settled?.(self.rows.map(row => ({file: row.file, name: row.name, state: row.state, say: row.say, before: row.result?.before, size: row.result?.size}))); } catch (_) {}
@@ -217,7 +282,8 @@
 		for (const row of view.rows) {
 			if (row.state === 'working') continue;
 			const hit = row.results.get(keyOf(view));
-			if (hit) { row.result = hit; row.state = 'done'; } else row.state = 'waiting';
+			if (hit) { row.result = hit; row.state = 'done'; finishPicture(row, hit.blob); }
+			else { row.state = 'waiting'; sourcePicture(row); }
 			paint(row);
 		}
 		overall(); void run();
@@ -231,21 +297,28 @@
 
 	function add(files) {
 		if (!view || !files.length) return;
+		const self = view;
 		view.help.textContent = '';
 		const fragment = document.createDocumentFragment();
 		for (const file of files) {
-			const row = {file, state: 'waiting', progress: 0, say: '', results: new Map(), result: null};
+			const row = {file, owner: self, state: 'waiting', progress: 0, say: '', results: new Map(), result: null, picture: null};
 			const node = make('li', 'rapier-jxl-view__row'), text = make('div', 'rapier-jxl-view__row-text'), actions = make('div', 'rapier-jxl-view__row-actions');
 			const download = make('button', 'settings-action-btn rapier-jxl-view__row-download', 'Download'), remove = make('button', 'navigator-close');
-			text.append(make('div', 'rapier-jxl-view__row-name', file.name), make('div', 'rapier-jxl-view__row-note'));
+			const name = make('button', 'rapier-jxl-view__row-name', file.name);
+			name.type = 'button'; name.disabled = true; name.setAttribute('aria-label', 'Show ' + file.name);
+			name.addEventListener('click', () => { if (row.state === 'done') showPicture(self, row, true); });
+			row.nameButton = name;
+			text.append(name, make('div', 'rapier-jxl-view__row-note'));
 			download.type = 'button'; download.hidden = true; remove.type = 'button'; remove.setAttribute('aria-label', 'Remove ' + file.name);
 			remove.innerHTML = view.shut.innerHTML;
 			download.addEventListener('click', () => save(row.result.blob, row.outputName));
 			remove.addEventListener('click', () => {
-				if (row.state === 'working') { row.removed = true; row.stop?.abort(); }
-				const at = view.rows.indexOf(row);
-				view.rows.splice(at, 1); node.remove(); row.shown?.end(); row.results.clear(); row.result = null; overall();
-				(view.list.children[at]?.querySelector('.navigator-close') || view.pick.querySelector('input'))?.focus();
+				row.removed = true; row.stop?.abort();
+				if (self.following?.row === row) self.following = null;
+				if (self.showing === row) clearPicture(self);
+				const at = self.rows.indexOf(row);
+				self.rows.splice(at, 1); node.remove(); row.shown?.end(); row.results.clear(); row.result = null; overall(self);
+				(self.list.children[at]?.querySelector('.navigator-close') || self.pick.querySelector('input'))?.focus();
 			});
 			actions.append(download, remove); node.append(text, actions); fragment.append(node);
 			row.node = node; row.name = file.name; row.outputName = C.outputName(file.name, new Set(view.rows.map(other => other.outputName.toLowerCase()))); view.rows.push(row); paint(row);
@@ -300,6 +373,7 @@
 			if (key !== 'root' && value instanceof Node) kept[key] = at(value);
 			else if (Array.isArray(value) && value.length && value.every(item => item instanceof Node)) kept[key] = value.map(at);
 		}
+		kept.big = Object.fromEntries(Object.entries(fresh.big).map(([key, value]) => [key, value instanceof Node ? at(value) : value]));
 		return kept;
 	}
 
@@ -324,7 +398,7 @@
 		view.input.addEventListener('change', () => { add([...view.input.files]); view.input.value = ''; });
 		view.shut.addEventListener('click', close);
 		view.info.addEventListener('click', about);
-		view.cancel.addEventListener('click', () => view.controller?.abort());
+		view.cancel.addEventListener('click', () => { view.controller?.abort(); view.following = null; clearPicture(view); });
 		view.all.addEventListener('click', saveAll);
 		for (const button of view.modes) button.addEventListener('click', () => {
 			if (button.dataset.mode === view.mode) return;
@@ -360,6 +434,7 @@
 		root.addEventListener('paste', event => { const files = [...event.clipboardData?.files || []].filter(file => /^(image|video)\//.test(file.type)); if (files.length) { event.preventDefault(); add(files); } });
 		sceneWhenNear(view);
 		for (const block of view.clips) clipWhenNear(view, block);
+		bigWhenPressed(view);
 		overall();
 		view.pick.querySelector('input').focus({preventScroll: true});
 		if (view.chosen?.length) { const chosen = view.chosen; view.chosen = null; view.input.value = ''; add(chosen); }
@@ -395,6 +470,59 @@
 		}, {root: block.section.closest('.rapier-jxl-view__body'), rootMargin: '100% 0px'});
 		block.near.observe(block.section);
 	}
+	function bigWhenPressed(self) {
+		const big = self.big, spec = C.BIG;
+		if (!_rapierPartAvailable(spec.part)) { big.section.hidden = true; return; }
+		big.info.addEventListener('click', () => _rapierInfoSheetShow('Progressive JPEG XL', spec.about));
+		big.load.addEventListener('click', () => {
+			if (big.playing) return;
+			big.playing = true; big.load.hidden = true; stopBig(big);
+			big.box.hidden = big.note.hidden = false; big.box.replaceChildren(); big.note.textContent = 'Loading';
+			void globalThis.RapierEmbeddedImages.whenJxlDisplayKnown?.().then(native => { if (native !== true) return RapierParts.need('jxlcomplete'); }).catch(() => {});
+			RapierParts.check(spec.part).catch(() => {}).then(() => RapierParts.need(spec.part)).then(() => {
+				if (view !== self) return;
+				const E = globalThis[spec.global], bytes = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
+				const passes = [[E.AT[0], bytes(E.EIGHTH), '1:8'], [E.AT[1], bytes(E.QUARTER), '1:4'], [E.AT[2], bytes(E.JXL), spec.width + ' × ' + spec.height]];
+				const total = E.AT[2], start = performance.now();
+				let shown = -1;
+				const tick = () => {
+					if (view !== self) return;
+					const got = Math.min(total, Math.round((performance.now() - start) / 1000 * spec.rate));
+					let pass = shown;
+					while (pass + 1 < passes.length && got >= passes[pass + 1][0]) pass++;
+					if (pass > shown) { shown = pass; void showBig(self, passes[pass][1]); }
+					big.note.textContent = size(got) + ' of ' + size(total) + (shown >= 0 ? ' · ' + passes[shown][2] : '');
+					if (got < total) big.timer = setTimeout(tick, 100);
+					else { big.timer = 0; big.playing = false; }
+				};
+				tick();
+			}, error => {
+				if (view !== self) return;
+				big.playing = false; big.load.hidden = false; big.box.hidden = true;
+				if (error?.cause?.code === 'part_not_carried') big.section.hidden = true;
+				else big.note.textContent = spec.missing;
+			});
+		});
+	}
+	async function showBig(self, bytes) {
+		const big = self.big, images = globalThis.RapierEmbeddedImages, seq = big.seq = (big.seq || 0) + 1;
+		let blob;
+		try { blob = await images.previewBlob(bytes, {maxPixels: C.BIG.width * C.BIG.height}); } catch (error) { console.warn('JPEG XL pass', error?.code, error?.message); return; }
+		if (view !== self || big.seq !== seq || !blob) return;
+		const url = URL.createObjectURL(blob), image = make('img');
+		image.alt = C.BIG.alt; image.decoding = 'async';
+		image.addEventListener('load', () => { if (big.url && big.url !== url) URL.revokeObjectURL(big.url); big.url = url; }, {once: true});
+		image.addEventListener('error', () => { URL.revokeObjectURL(url); if (!big.url) big.note.textContent = C.SHOW_REFUSED; }, {once: true});
+		image.src = url;
+		const previous = big.box.querySelector('img');
+		if (previous) image.addEventListener('load', () => previous.remove(), {once: true});
+		big.box.append(image);
+	}
+	function stopBig(big) {
+		clearTimeout(big.timer); big.timer = 0; big.seq = (big.seq || 0) + 1;
+		if (big.url) URL.revokeObjectURL(big.url);
+		big.url = null;
+	}
 	function close() {
 		if (!view) return;
 		view.controller?.abort();
@@ -402,8 +530,10 @@
 		const done = view;
 		view = null;
 		done.follow?.popup.end();
-		for (const row of done.rows) { row.shown?.end(); row.results.clear(); row.result = null; }
+		clearPicture(done); done.following = null;
+		for (const row of done.rows) { row.removed = true; row.shown?.end(); row.results.clear(); row.result = null; }
 		for (const block of done.clips) block.shown?.end();
+		stopBig(done.big);
 		if (done.notices?.root.parentElement === done.root) done.notices.home.append(done.notices.root);
 		done.maker?.unbind();
 		done.root.remove();

@@ -3268,6 +3268,54 @@
       "reason": "The file input fills its choice box so a tap anywhere on the box opens the picker; it is invisible and owns no edge of the page."
     },
     {
+      "id": "jxl-pick-picture",
+      "file": "editor/styles/rapier-jxl.css",
+      "selector": ".rapier-jxl-view__pick-picture",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-jxl-view__pick",
+      "reason": "The converter's picture fills its own choice box behind the invisible file input; it owns no edge of the page."
+    },
+    {
+      "id": "jxl-pick-strip",
+      "file": "editor/styles/rapier-jxl.css",
+      "selector": "html:not(.rapier-app-inline) .rapier-jxl-view__pick[data-filled]>span",
+      "rule": {
+        "origin": "stylesheet",
+        "at": [],
+        "occurrence": 1,
+        "declarations": [
+          {
+            "property": "position",
+            "value": "absolute",
+            "important": false
+          },
+          {
+            "property": "inset",
+            "value": "auto 0 0",
+            "important": false
+          }
+        ]
+      },
+      "owner": ".rapier-jxl-view__pick",
+      "reason": "The choice box's words sit on a strip along the bottom of its own picture; inside the box, no viewport surface."
+    },
+    {
       "id": "font-library-head",
       "file": "editor/styles/rapier-editor.css",
       "selector": ".rapier-font-library .rapier-font-head",
