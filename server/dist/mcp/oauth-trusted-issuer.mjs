@@ -21,7 +21,7 @@ function freshSeconds(headers) {
 }
 
 async function fetchDocument(url) {
-  const response = await fetch(url, {redirect: 'error', headers: {Accept: 'application/json'}, signal: AbortSignal.timeout(FETCH_MS)});
+  const response = await fetch(url, {redirect: 'manual', headers: {Accept: 'application/json'}, signal: AbortSignal.timeout(FETCH_MS)});
   if (!response.ok || Number(response.headers.get('Content-Length')) > DOCUMENT_BYTES || !response.body) {
     await response.body?.cancel().catch(() => {});
     throw new Error('Issuer document unavailable');

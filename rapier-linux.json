@@ -1,46 +1,46 @@
 {
   "schema": "rapier-linux/1",
-  "version": "1.2.66",
+  "version": "1.2.73",
   "file": "rapier-linux",
-  "bytes": 48986224,
-  "sha256": "528305650a77dc1a266a5a8fe58b3e3768e90a89acaa8ea74f67497d59692812",
-  "payload": "57b30809b89354a54a5438d66ebb8469b859c8cec4e58aea537078422d958994",
-  "pageCertificate": "2f7e28d9237d32131116531e168c7acbce68966dbfff81e96a9a444593dec049",
+  "bytes": 50638576,
+  "sha256": "3f75b1450466202d21738f6250bbbc066a4ea4a64eed6cbbdc968ff20905e80f",
+  "payload": "403cec8a793d172e5274702b0a3cc533a7a10d0c390c8306b0f5084c4f8010a5",
+  "pageCertificate": "63aeca0f9bb8cce2c20a8f55645cbd2692fe27d510ab694b4e71423d1524f673",
   "page": [
     [
       "rapier.html",
-      2343406,
-      "40e54e34883ba5d7e959f1b64cf45d3e35f9d745245ef869deae9a5d96f3bdae"
+      2470678,
+      "50d49670c00cdc96e7f1bc9c9b49a950bb798c8fd99a18d217f869853a9c4a7c"
     ],
     [
-      "parts/rapier-document-e2b98d5c33d13213.txt",
-      902426,
-      "e2b98d5c33d132138d3732f073b1f4c31a55e174dbb668c948e639dbaf067e8a"
+      "parts/rapier-document-e869b58683a468af.txt",
+      903350,
+      "e869b58683a468af6ecd82f0d11c8df2253d27f746ae1b2e981aba38e1cebb42"
     ],
     [
-      "parts/rapier-presets-2e691232a1998d65.txt",
-      252271,
-      "2e691232a1998d65218cc9df3dae238ceece7be7ca4927e4dde9ac350757dac7"
+      "parts/rapier-presets-5dbccf854d85d1ac.txt",
+      252282,
+      "5dbccf854d85d1acf4337086b0d38ba6371e1c4ae7c57fa97a44b54a131e538d"
     ],
     [
-      "parts/rapier-drawing-9513a202cec03fa2.txt",
-      810248,
-      "9513a202cec03fa2b4ccce855c42bb7aca181cfffca87cc1b022e2a2346887c3"
+      "parts/rapier-drawing-86cd38c22d6804b7.txt",
+      814518,
+      "86cd38c22d6804b741b3a2cf367a222b516ec5291ee41d8710f62483b03f6ba0"
     ],
     [
-      "parts/rapier-jxl-557d0e9b07f86b33.txt",
-      34829,
-      "557d0e9b07f86b333900166aa9219a9adbbbff439c3b13bfd8b2c30ac1db2af8"
+      "parts/rapier-jxl-b6e9cfd87181f17b.txt",
+      37951,
+      "b6e9cfd87181f17b04435fe5027cdfcaaebd88a8df23ad14a4b1954b234fbac6"
     ],
     [
-      "parts/rapier-convert-540b4c6df9933853.txt",
-      5779,
-      "540b4c6df99338532dfd20a67b4c520cb6a527d34cc3647f8e5c0f8c980aced7"
+      "parts/rapier-convert-9a027d2a48833f2b.txt",
+      5786,
+      "9a027d2a48833f2ba72bd4534d94940df33610bd95ff0c9d94083d4a5271898f"
     ],
     [
-      "parts/rapier-diagrams-28ed9d37c3e2290d.txt",
+      "parts/rapier-diagrams-c90748b3cc888034.txt",
       6020,
-      "28ed9d37c3e2290d78e46577bdc574ada8df7c4ea3dc7265c6de10a18718a71b"
+      "c90748b3cc888034bc41b16279b55b9b93d3e1945674a377e56e22c7656a785c"
     ],
     [
       "parts/rapier-diagramtheme-31e471e2bc1f912d.txt",
@@ -48,14 +48,14 @@
       "31e471e2bc1f912dd820feb86001f2c982dc3b72d5d2e47a694aec9a8a7508a8"
     ],
     [
-      "parts/rapier-jxlcomplete-604203119c934326.txt",
-      524457,
-      "604203119c93432687105f74220a6fb65edf80747487dbdef6bff79c8450bced"
+      "parts/rapier-jxlcomplete-fbd72a9c1e95eb22.txt",
+      689846,
+      "fbd72a9c1e95eb22af0bfd3c58a8fa7a93404def5a5bc2ca735e2a665ad7e232"
     ],
     [
-      "parts/rapier-jxlscene-49ed99a6b4eac4bb.txt",
+      "parts/rapier-jxlscene-f58b441037f95522.txt",
       5355,
-      "49ed99a6b4eac4bb39e0d457fb2c115e5162b9c829ef9e250b0fa7692242102a"
+      "f58b441037f95522805132c045c5f58864e74c1062de969ff92c8c4e6727933a"
     ],
     [
       "parts/rapier-jxlexample-4f1027a3a4385b1a.txt",
@@ -63,24 +63,34 @@
       "4f1027a3a4385b1a628f06331166668e451bf3b975d0374bddd8f3fe1ff7c3c6"
     ],
     [
-      "parts/rapier-diff-25fb5879129a99f2.txt",
+      "parts/rapier-jxlclip-189ad8226addf66c.txt",
+      535587,
+      "189ad8226addf66ce9ddf4ba98fbdf1ddae4141f9f3e220f120804dee14111a7"
+    ],
+    [
+      "parts/rapier-jxlbig-b891f05d10d1dd65.txt",
+      1246376,
+      "b891f05d10d1dd65ba317fcdde4d3eda24842b3ebfcf349560b54e8e8b5fd129"
+    ],
+    [
+      "parts/rapier-diff-677b2f6ef83ccb16.txt",
       4985,
-      "25fb5879129a99f2458f6e8b2b533b9877bec038c4275de5e298cdf538adf222"
+      "677b2f6ef83ccb16b577853315a16e91dd74b7b3bdfa73c0f6581113a29f1d6c"
     ],
     [
-      "parts/rapier-mathview-ca78627b274b67ba.txt",
-      4864,
-      "ca78627b274b67babe8abad6a6c0036ac6dc230867e3e5dfb1e909a2c21e0c2c"
+      "parts/rapier-mathview-ea0411716eab04d9.txt",
+      4871,
+      "ea0411716eab04d9f7d2d1ce2971f7a54b8c67f8acec80926ca6ce0bff79e510"
     ],
     [
-      "parts/rapier-fonts-cfbaa78787b5013b.txt",
-      11372,
-      "cfbaa78787b5013ba7b3952f674fee69dc267a8e6f54caaec229ec4d28992e84"
+      "parts/rapier-fonts-8dd9c628f004ce60.txt",
+      11365,
+      "8dd9c628f004ce608c5d733dc09c3c23cf0ec64e1508f67f1ce3f8e42c21a0f9"
     ],
     [
-      "parts/rapier-notes-5a21e8b49e35ca9f.txt",
-      414991,
-      "5a21e8b49e35ca9f6582627055b21ee16a97dfc02a0d882b502d74a0f0d576fb"
+      "parts/rapier-notes-9e15b30f4429ec4e.txt",
+      416055,
+      "9e15b30f4429ec4e35e1cc14a90c322f7a5396eae15e8583db03d98a87108b4a"
     ]
   ],
   "resources": [
@@ -101,8 +111,8 @@
     ],
     [
       "plugins/rapier-font-subset",
-      1207570,
-      "68e552cc54bb2cc83b9910647085d4e0a03f7a029d86fd3127e2e2cc94fe15ff"
+      1196706,
+      "1c0f4a07ace79a7414bfa1797717ad2ce57b2f3a0913ef9e6a88c40f3eb35819"
     ],
     [
       "plugins/rapier-ocr-runtime",
@@ -138,21 +148,6 @@
       "plugins/rapier-ocr-notice",
       311,
       "8b879c41b9852ed3127f07d403b7a8e15ee8b06810e52580a79a6358e7c95695"
-    ],
-    [
-      "plugins/rapier-ocr-jxl",
-      27310,
-      "9174ef4f42d4d6e8cea149491723d23c0086f73a2579022494f8f8de7679a4a8"
-    ],
-    [
-      "plugins/rapier-ocr-jxlWasm",
-      1009731,
-      "b94b745f2d8f95aafc18ee10e228df1866563c757690059939dfa51499b010e5"
-    ],
-    [
-      "plugins/rapier-ocr-jxlLicence",
-      15727,
-      "733320af069773723ef6f70669402a6666fa9b42f5056c89b91c9ec3a4a090c5"
     ],
     [
       "plugins/rapier-letters-field",
@@ -1956,8 +1951,8 @@
     ],
     [
       "plugins/rapier-pdf-rapier-pdf-reader.mjs",
-      67528,
-      "9d85862b9e4a6121685c14a44defaed348c1e02c5f1097d1812d4178388c9093"
+      83247,
+      "95735f1cdc7a8bd8cd200673834d68490cbfe5dce57cfbc9460b0b434fbad9aa"
     ]
   ],
   "sourceDigest": "71884632fbdddf956e9c1bb86f11f5c62d311dcdb77c84ec938bc22990031610",
@@ -2079,5 +2074,5 @@
     "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)",
     "node": "v22.23.4"
   },
-  "source": "1ad0b55056faeea850373368e9d66c78d538b97a"
+  "source": "1aae446757f9de6d25eda04c2cbb9d5c497855e6"
 }

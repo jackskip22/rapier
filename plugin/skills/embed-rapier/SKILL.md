@@ -54,7 +54,7 @@ downloaded copy yourself and pass it as `src`.
   document access remain enforced.
 
 ```sh
-npm install rapier-embed@1.2.69
+npm install rapier-embed@1.2.73
 ```
 
 Or copy the installed package's `embed.mjs` and `contract.mjs` into one directory of your app; no runtime CDN is needed.
@@ -142,11 +142,11 @@ The reader on its own page opens a document at an address on its own origin: `ht
 
 Keep the helper, page and plug-in manifest on one version. For version 1.2.46:
 
-1. Install the helper: `npm install rapier-embed@1.2.69`.
+1. Install the helper: `npm install rapier-embed@1.2.73`.
 2. Create `public/vendor/rapier/` and save the reader into it from
    `https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.46/embed/rapier-reader.html`.
 3. Fetch its plug-ins from the same version's manifest:
-   `npx -- rapier-embed@1.2.69 plugins public/vendor/rapier/plugins --build reader`. It does not fetch the page.
+   `npx -- rapier-embed@1.2.73 plugins public/vendor/rapier/plugins --build reader`. It does not fetch the page.
 4. Use the complete mount in Show a document above, with `src`, `plugins` and `load`. Serve the files over HTTPS
    (HTTP on localhost) and allow their origin in your `frame-src`. Give the container a height. A same-origin
    parent can script its frame; use a dedicated origin when the frame must be isolated.
@@ -175,11 +175,11 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.37 MB (30.0 MB with `ocr`); `rapier.html`, 56.2 MB. Release 1.2.73.
+Totals: the reader, 9.37 MB (30.0 MB with `ocr`); `rapier.html`, 56.2 MB. Release 1.2.74.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
-built in. `npx -- rapier-embed@1.2.69 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
+built in. `npx -- rapier-embed@1.2.73 plugins <directory> --build reader` leaves out `ocr` (text in pictures) unless you add `--with ocr`.
 
 **Approve plug-ins up front.** Without `plugins`, a frame asks its person "Install math plug-in?" the first time a document needs math or a diagram, and math and diagrams stay raw until they answer. A host that has decided passes `approvePlugins: true`: the frame installs the plug-in it needs without a question. Naming `plugins` has the same effect, because the host then serves the files itself. In a frame shorter than the question's sheet, the sheet's body scrolls.
 
@@ -192,7 +192,7 @@ The directory must be on the page's own origin, because the page's Content Secur
 throws a `TypeError` for a directory on another origin, and a page opened with one shows each plug-in as failed, with the
 reason, without making a request. To keep the plug-ins on a CDN, serve the page from the same origin.
 
-`npx -- rapier-embed@1.2.69 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
+`npx -- rapier-embed@1.2.73 plugins <directory>` fetches every file the manifest lists, checks it, and writes it. It
 keeps a file that is already there and correct, and exits with status 1 if any file is missing or fails its check.
 `--build reader` or `--build full` keeps the files that page uses, `--only name,name` fetches some
 plug-ins, `--check` verifies a directory without fetching, `--from <address>` fetches from your own mirror, and

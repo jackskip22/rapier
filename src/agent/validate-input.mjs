@@ -17,6 +17,38 @@ export function agentInputSchema(schema, depth = 0) {
   return projected;
 }
 
+const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const admitsNull = schema => isPlain(schema) && (schema.type === 'null' || Array.isArray(schema.type) && schema.type.includes('null') ||
+  Array.isArray(schema.enum) && schema.enum.includes(null) || ['anyOf', 'oneOf', 'allOf'].some(key => (schema[key] || []).some(admitsNull)));
+function nullAbsent(schema) {
+  const names = new Map(), visit = node => {
+    if (!isPlain(node)) return;
+    for (const [name, field] of Object.entries(isPlain(node.properties) ? node.properties : {})) names.set(name, names.get(name) !== false && !admitsNull(field));
+    for (const key of ['anyOf', 'oneOf', 'allOf']) (node[key] || []).forEach(visit);
+  };
+  visit(schema);
+  return names;
+}
+function declaredItems(schema, name) {
+  const found = [], visit = node => {
+    if (!isPlain(node)) return;
+    if (isPlain(node.properties?.[name]?.items)) found.push(node.properties[name].items);
+    for (const key of ['anyOf', 'oneOf', 'allOf']) (node[key] || []).forEach(visit);
+  };
+  visit(schema);
+  return {anyOf: found};
+}
+const dropNull = (object, names) => Object.fromEntries(Object.entries(object).filter(([name, value]) => value !== null || names.get(name) !== true));
+export function withoutNulls(args, schema) {
+  if (!isPlain(args) || !isPlain(schema)) return args;
+  const kept = dropNull(args, nullAbsent(schema));
+  if (Array.isArray(kept.changes)) {
+    const names = nullAbsent(declaredItems(schema, 'changes'));
+    kept.changes = kept.changes.map(change => isPlain(change) ? dropNull(change, names) : change);
+  }
+  return kept;
+}
+
 export function validateInput(schema, value, path = 'arguments', agent = false) {
   const faults = [];
   let firstPath, omittedErrors = 0, omittedDetails = false;

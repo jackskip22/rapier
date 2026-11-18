@@ -1,7 +1,7 @@
-import {validateInput, agentInputSchema} from './validate-input.mjs';
+import {validateInput, agentInputSchema, withoutNulls} from './validate-input.mjs';
 import {EDITOR_PLUGINS} from './editor.mjs';
 import {TOOLS as KERNEL_OPERATIONS, HOST_TOOLS as OPERATIONS, SET_VIEW_SCHEMA, SET_PREFERENCES_SCHEMA, READ_ALOUD_SCHEMA, COPY_SCHEMA, OPEN_FILE_SCHEMA, INSTALL_PLUGIN_SCHEMA, MARK, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, noteFields} from './operation-contracts.mjs';
-export {ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, validateInput};
+export {ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, validateInput, withoutNulls};
 export {SET_VIEW_SCHEMA, SET_PREFERENCES_SCHEMA, READ_ALOUD_SCHEMA, COPY_SCHEMA, OPEN_FILE_SCHEMA, INSTALL_PLUGIN_SCHEMA, MARK};
 
 export const UI_RESOURCE = 'ui://rapier/editor';
@@ -40,7 +40,7 @@ const convertFile = object({name: {...string(256), minLength: 1, description: 'T
   data: {type: 'string', maxLength: Math.ceil(CONVERT_BYTES / 3) * 4, contentEncoding: 'base64', description: 'The file\'s exact bytes, base64.'}}, ['name', 'data']);
 
 export const TOOLS = Object.freeze([
-  tool('open', 'Open Rapier', 'Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account, in the chat or any browser. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:"new", text, title} (title only there), or import a host file {file}. Put a new document\'s whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person\'s editor). Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:"pair", code}. Share editor_url when available; keep document private.', 'create', {
+  tool('open', 'Open Rapier', 'Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account. Shows as an editor inside the chat where the host can show one. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:"new", text, title} (title only there), or import a host file {file}. Put a new document\'s whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person\'s editor). Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:"pair", code}. Keep the document private. Share editor_url only when no view shows or the person asks for a browser.', 'create', {
     document: string(256), url: string(2048, 'This Door\'s editor_url, through its authorized connection. Use alone; other URLs are not fetched.'), text, filename: string(MAX_FILENAME_CHARS), note: noteRef, title: string(256),
     file: object({name: string(256), resourceUri: string(8192)}, ['name', 'resourceUri']), createToken: string(128),
   }),
@@ -127,8 +127,8 @@ export function mcpDescriptors({uiResource, auth = 'anonymous', editor = false} 
       : [{type: 'oauth2', scopes: effect === 'read' ? ['rapier:read'] : ['rapier:read', 'rapier:write']}]};
     const hostedOpen = entry.name === 'open' && !editor && uiResource;
     return {...descriptor, ...(entry.name === 'convert' && !editor ? {description: HOSTED_CONVERT} : {}),
-      ...(hostedOpen ? {description: descriptor.description.replace('Share editor_url when available; keep document private.',
-        'In ChatGPT with a Rapier view, stay in chat. Use fullscreen for writing or painting and return to chat as needed. Keep the private document value for later turns. In ChatGPT, offer editor_url only when the view cannot serve the task or the person asks. In other clients, use the browser editor link.')} : {}),
+      ...(hostedOpen ? {description: descriptor.description.replace('Keep the document private. Share editor_url only when no view shows or the person asks for a browser.',
+        'Where the host shows Rapier\'s view (ChatGPT, Claude), it opens in the chat: stay there, no link. Use fullscreen for writing or painting and return to chat as needed. Keep the private document value for later turns. Offer editor_url only when no view shows or the person asks for a browser.')} : {}),
       inputSchema: editor ? entry.inputSchema : hostedSchema(entry),
       annotations: {title: entry.title, ...annotations(effect, 'mcp', entry.name)}, ...security,
       _meta: {...security, 'website.rapier/tool-class': toolClass, ...(editor ? {'openai/widgetAccessible': true} : {}), ui: {visibility: editor ? ['app'] : ['model', 'app'],

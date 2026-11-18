@@ -7,7 +7,7 @@ description: "Make a .rapier.html file: the whole Rapier editor with your Markdo
 
 ## Start here
 
-Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise run the published helper (`npx`, below) when Node 22, npm and a supported file surface are available, on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.69 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
+Start with the supplied Markdown. When the Rapier MCP server is connected and the person has not asked to keep the text off it, make the file with one call: `export {document, format:"html"}` (first `open {text, filename}` if the text is not in Rapier yet); it is named after the document. Otherwise run the published helper (`npx`, below) when Node 22, npm and a supported file surface are available, on a Markdown file named after the document (`report.md`, never a temporary name): the page takes its name from that file. If execution, an editor page or file delivery is unavailable, explain what is missing and offer source, or the person's own command `npx rapier-html@1.2.73 notes.md`; do not claim to have created the file. For a no-upload or no-host request, do not call MCP `open` or `export` as a fallback.
 
 For an explanation-only request, answer in chat without creating a document. If required content or integration details are missing, ask for them; do not create an empty hosted workspace.
 Honor no-upload or no-host instructions. The workflow choices below are alternatives, not steps to run. Skip hosted suggestions, including opening a workspace or creating a return link, for local-only or embed-only work.
@@ -72,12 +72,12 @@ The published package `rapier-html` carries the editor, needs Node 22 and npm, a
 It writes a document into the editor as one page:
 
 ```sh
-npx -- rapier-html@1.2.69 notes.md                          # writes notes.rapier.html: the document in the editor
-npx -- rapier-html@1.2.69 notes.md --view draw              # opens on Draw
-npx -- rapier-html@1.2.69 notes.md --drawing sketch.svg     # opens on Draw with the drawing
-npx -- rapier-html@1.2.69 revised.md --compare original.md --by "Editor"   # opens showing what changed
-npx -- rapier-html@1.2.69 notes.md --return <return_url> --return-expires-at <return_expires_at>   # Send back returns the person's edit to your workspace
-npx -- rapier-html@1.2.69 notes.md out.html                 # a named output
+npx -- rapier-html@1.2.73 notes.md                          # writes notes.rapier.html: the document in the editor
+npx -- rapier-html@1.2.73 notes.md --view draw              # opens on Draw
+npx -- rapier-html@1.2.73 notes.md --drawing sketch.svg     # opens on Draw with the drawing
+npx -- rapier-html@1.2.73 revised.md --compare original.md --by "Editor"   # opens showing what changed
+npx -- rapier-html@1.2.73 notes.md --return <return_url> --return-expires-at <return_expires_at>   # Send back returns the person's edit to your workspace
+npx -- rapier-html@1.2.73 notes.md out.html                 # a named output
 ```
 
 It never overwrites: an existing output is refused, so pick a new name. Write the Markdown as Self-contained Markdown
@@ -156,7 +156,7 @@ observations, not source or history.
 
 ## As a library
 
-The `rapier-html` package (`npm install rapier-html@1.2.69`) exports the same `wrap` and `unwrap`. Give `wrap` the full editor HTML; the
+The `rapier-html` package (`npm install rapier-html@1.2.73`) exports the same `wrap` and `unwrap`. Give `wrap` the full editor HTML; the
 helper alone is not the editor. `carry` cuts that editor to the base and the choices you name (`drawing`, `math`,
 `mermaid`); `portableNeeds` names what a document displays with. The published npm package also carries the editor for its CLI. Use complete source
 bytes or the host's source export: passage reads with redacted image data can't rebuild an exact file.

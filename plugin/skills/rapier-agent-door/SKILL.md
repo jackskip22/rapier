@@ -48,7 +48,7 @@ when applicable; never create a replacement without asking. Hosted workspaces ex
 - `html` export is the whole editor with the document inside, editable offline.
 - Handing over a draft: give them a `.rapier.html` with Send back. `show {target:"return"}` gives `return_url` and
   `return_expires_at`; where you have Node, the `rapier-html` skill's `npx` helper adds them to an exported
-  page: `npx -- rapier-html@1.2.69 draft.md --return <return_url> --return-expires-at <return_expires_at>`.
+  page: `npx -- rapier-html@1.2.73 draft.md --return <return_url> --return-expires-at <return_expires_at>`.
   Their edited copy comes back once; `read {return_id}` reads it.
 
 ## Each step

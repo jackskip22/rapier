@@ -27,7 +27,7 @@ import {withWaterEditorLink} from './water-refusal.mjs';
 import {browserWhere} from './browser-where.mjs';
 import {meter, routeClass, personOf, callerOf, takeDailyShare} from './governor.mjs';
 import { parseFlowchart } from '../spec/flowchart.mjs';
-import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, publishedSchema, validateInput } from '../agent/catalog.mjs';
+import { HOST_TOOLS, TOOLS, HUMAN_OPERATIONS, ICONS, MAX_TEXT_BYTES, MAX_EXPORT_BYTES, MAX_FILENAME_CHARS, UI_RESOURCE, getTool, getHumanOperation, inputGuide, mcpDescriptors, publishedSchema, validateInput, withoutNulls } from '../agent/catalog.mjs';
 import { analyzeDocument } from '../agent/structure.mjs';
 import { analyzeMarkdown, checkMarkdownReferences } from '../agent/markdown-server.mjs';
 import { resolveCaller, validateOrigin, WORKER_PRESENCE, sealForEditor, fromBase64url } from '../agent/door-identity.mjs';
@@ -982,6 +982,7 @@ function observeToolOutcome(observation, result) {
 
 async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null, toolAdmission = null, observation = null) {
   const invalidInput = error => { observation?.outcome('tool_error', 'validation'); observation?.errorCode?.(error?.code); return inputErrorResult(error); };
+  if (authority?.source !== 'page') args = withoutNulls(args, TOOL_BY_NAME.get(name)?.inputSchema);
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
     const descriptor = TOOL_BY_NAME.get(name);
@@ -1168,7 +1169,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     const editor_url = new URL('/d/' + pageId(documentAddress), request.url).href, pairing = result.structuredContent.pairing;
     result.structuredContent = {...result.structuredContent, reason: 'editor_unavailable', editor_url,
       hint: 'No editor is open for this document. ' + (pairing?.status && pairing.status !== 'none' && pairing.next ? pairing.next + ' '
-        : 'In ChatGPT, if the Rapier view is available, ask the person to open it fullscreen. Otherwise share editor_url; if they read you a code, send show {target:"pair", code}. ') +
+        : 'If the host shows the Rapier view, ask the person to open it fullscreen. Otherwise share editor_url; if they read you a code, send show {target:"pair", code}. ') +
         (name === 'read' ? 'Without an editor, read the text.' : 'Without an editor, export markdown, html or txt.')};
   }
   if (!page && (authority.source !== 'server' || env.LOCAL_EDITOR_PAGE === true) && result.structuredContent?.reason === 'water_webgpu_unavailable')

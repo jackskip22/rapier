@@ -49,6 +49,12 @@ export function objectStore(env) {
       const answer = await ask(storeShard(key), {op: 'claim', key, value: String(value), metadata: options.metadata, expiration: expirationOf(options)});
       return answer.state === 'stored';
     },
+    async swap(key, value, options = {}, tokenId, grantExpiresAt) {
+      seen.delete(key);
+      const answer = await ask(storeShard(key), {op: 'swap', key, value: String(value), metadata: options.metadata, expiration: expirationOf(options),
+        tokenId, grantExpiresAt});
+      return answer.state === 'stored';
+    },
     async delete(key) {
       seen.delete(key);
       await ask(storeShard(key), {op: 'delete', key});
@@ -70,7 +76,7 @@ export function objectStore(env) {
   };
 }
 
-export async function oauthStoreRequest(ctx, {op, key, value, metadata, expiration, prefix}) {
+export async function oauthStoreRequest(ctx, {op, key, value, metadata, expiration, prefix, tokenId, grantExpiresAt}) {
   const kv = ctx.storage.kv, now = Date.now(), live = row => !(row.expiration && row.expiration * 1000 <= now);
   if (op === 'get') {
     const row = kv.get('o:' + key);
@@ -85,10 +91,19 @@ export async function oauthStoreRequest(ctx, {op, key, value, metadata, expirati
     }
     return {keys, gone};
   }
-  if (op !== 'put' && op !== 'delete' && op !== 'claim') throw new TypeError('Unknown OAuth store operation');
+  if (op !== 'put' && op !== 'delete' && op !== 'claim' && op !== 'swap') throw new TypeError('Unknown OAuth store operation');
   if (op === 'claim') {
     const held = kv.get('o:' + key);
     if (held && !held.gone && live(held)) return {state: 'present'};
+  }
+  if (op === 'swap') {
+    if (!key.startsWith('grant:') || typeof tokenId !== 'string' || !tokenId) throw new TypeError('A swap names a grant and its token');
+    const passed = at => at !== undefined && at !== null && !(Number.isSafeInteger(at) && at * 1000 > now);
+    if (passed(grantExpiresAt)) return {state: 'changed'};
+    const held = kv.get('o:' + key);
+    let grant = null;
+    try { grant = held && !held.gone && live(held) ? JSON.parse(held.value) : null; } catch {}
+    if (held && (grant?.refreshTokenId !== tokenId || passed(grant.expiresAt))) return {state: 'changed'};
   }
   const expired = [];
   for (const [name, row] of kv.list({prefix: 'o:'})) if (name !== 'o:' + key && !live(row)) expired.push(name);
