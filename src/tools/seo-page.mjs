@@ -23,7 +23,7 @@ Headings, lists, checklists, tables, footnotes, callouts, syntax-colored code, L
 
 ## Free online Markdown viewer
 
-Tap ••• at the top right, then open, and pick a .md file; on Android, open it from your file manager. Headings, tables, checklists, code, math and Mermaid diagrams show formatted. Nothing is uploaded; it works offline. Edit in place, switch to the source, or turn on read only in settings.
+Tap ••• at the top right, then open, and pick a .md file. On Android, open it from your file manager. Headings, tables, checklists, code, math and Mermaid diagrams show formatted. Nothing is uploaded. It works offline. Edit in place, switch to the source, or turn on read only in settings.
 
 ## Markdown to PDF
 
@@ -47,7 +47,7 @@ Paste two texts, or choose two Markdown, code, Word or PDF files, and see what c
 
 ## Free diagram maker
 
-Write Mermaid and the diagram is drawn as you type: flowcharts, sequence, class, state and ER diagrams, Gantt charts, mind maps and more. Save it as SVG or PNG, or put it in a document. Flowcharts draw at once; the other kinds use the free diagram plug-in, which downloads once. [Free diagram maker](${sitePage('/diagrams')})
+Write Mermaid and the diagram is drawn as you type: flowcharts, sequence, class, state and ER diagrams, Gantt charts, mind maps and more. Save it as SVG or PNG, or put it in a document. Flowcharts draw at once. The other kinds use the free diagram plug-in, which downloads once. [Free diagram maker](${sitePage('/diagrams')})
 
 ## Other files
 
@@ -55,7 +55,7 @@ Rapier also opens text, code, TextPack and PDF (PDF import is a free plug-in), a
 
 ## Notes, drawing and painting
 
-[Notes](${sitePage('/notes')}) are Markdown files with colors, pins, checklists, voice recordings, tags, history and search; import from Google Keep, Evernote, Notion, Obsidian and 15+ other apps. [Draw](${sitePage('/draw')}) freehand or build diagrams with connected arrows, kept as editable SVG inside your file. [Paint](${sitePage('/paint')}) with oil, pencil, marker and MyPaint brushes, or [watercolor](${sitePage('/watercolor')}) with flowing pigments on textured paper. The [Gallery](${sitePage('/gallery')}) holds thousands of free ornaments, borders and decorative letters, the [JPEG XL converter](${sitePage('/jxl')}) makes JXL pictures on your device, and the [LaTeX equation editor](${sitePage('/math')}) draws equations for Word, SVG and PNG.
+[Notes](${sitePage('/notes')}) are Markdown files with colors, pins, checklists, voice recordings, tags, history and search. Import from Google Keep, Evernote, Notion, Obsidian and 15+ other apps. [Draw](${sitePage('/draw')}) freehand or build diagrams with connected arrows, kept as editable SVG inside your file. [Paint](${sitePage('/paint')}) with oil, pencil, marker and MyPaint brushes, or [watercolor](${sitePage('/watercolor')}) with flowing pigments on textured paper. The [Gallery](${sitePage('/gallery')}) holds thousands of free ornaments, borders and decorative letters, the [JPEG XL converter](${sitePage('/jxl')}) makes JXL pictures on your device, and the [LaTeX equation editor](${sitePage('/math')}) draws equations for Word, SVG and PNG.
 
 ## AI agents
 
@@ -211,7 +211,7 @@ export function guideSection(markdown, path) {
 
 const WATERCOLOR_GUIDE = `Paint watercolor online with Rapier. Blend pigments, lay transparent washes and let wet color spread across textured paper. Use a mouse, a finger or a pen. The editor is free, with no account or installation required.
 
-Watercolor needs WebGPU; without it, Rapier paints with Brushes.
+Watercolor needs WebGPU. Without it, Rapier paints with Brushes.
 
 #### Start a watercolor painting
 
@@ -219,9 +219,9 @@ Watercolor needs WebGPU; without it, Rapier paints with Brushes.
 
 #### Water, pigment and paper
 
-Water continues moving after a stroke. Wet washes meet and spread; pigment settles into the paper's texture and gathers at drying edges. Control flow, bleed, edge darkening, granulation and drying to shape the result. Paper settings change how the wash behaves, while the canvas background stays separate from the paint.
+Water continues moving after a stroke. Wet washes meet and spread. Pigment settles into the paper's texture and gathers at drying edges. Control flow, bleed, edge darkening, granulation and drying to shape the result. Paper settings change how the wash behaves, while the canvas background stays separate from the paint.
 
-Use the water tool to wet the paper and the lift tool to take pigment back out. A light wash leaves room for the next color; a drier brush brings out the paper's grain. Undo lets you return to an earlier stroke while you explore a mixture or composition.
+Use the water tool to wet the paper and the lift tool to take pigment back out. A light wash leaves room for the next color. A drier brush brings out the paper's grain. Undo lets you return to an earlier stroke while you explore a mixture or composition.
 
 #### Keep transparent, movable artwork
 

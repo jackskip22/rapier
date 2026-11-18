@@ -12,10 +12,10 @@ export function convertOnDoor({files = [], quality, effort} = {}, uncounted = 0,
 		...(file.mime_type ? {mime_type: file.mime_type} : {})}));
 	const count = named.length, unpassed = given.length - count + uncounted;
 	const opened = 'Rapier\'s converter opens in this chat\'s view' + (count ? ' with ' + count + (count === 1 ? ' picture' : ' pictures') : '') +
-		'. ' + (count ? 'They convert on the person\'s own device, where the person saves the results; the server converts nothing, so there is no count here.' :
+		'. ' + (count ? 'They convert on the person\'s own device, where the person saves the results. The server converts nothing, so there is no count here.' :
 			'No picture reached it, so it is empty: the person chooses pictures there, and they convert on the person\'s own device.') +
 		(unpassed ? ' ' + unpassed + (unpassed === 1 ? ' picture was' : ' pictures were') + ' passed without a file_id, so the converter cannot read ' + (unpassed === 1 ? 'it' : 'them') +
-			'; tell the person to choose ' + (unpassed === 1 ? 'it' : 'them') + ' in the converter.' : '') +
+			'. Tell the person to choose ' + (unpassed === 1 ? 'it' : 'them') + ' in the converter.' : '') +
 		' The converter tells you what it got and how the conversion ended.';
 	return {reply: {outcome: 'converter', converter, pictures: count, ...(unpassed ? {unpassed} : {}), message: opened, ...(quality ? {quality} : {}), ...(effort ? {effort} : {}),
 		hint: 'Where no view shows, give the person ' + converter + ' to add the pictures there. An agent with a shell converts its own files: ' +

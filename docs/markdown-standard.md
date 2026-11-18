@@ -18,8 +18,8 @@ edit, Undo and Redo leave all 1,329 sources exactly as they were.
 | Semantic renderer and styled HTML writer against the unadjusted official meaning | 638 of 652 (97.85%) | 662 of 677 (97.78%) |
 | Document meaning kept under the [documented profile](markdown-profile.md) | 652 of 652 | 677 of 677 |
 
-Differences: GFM autolinks and the disallowed-tag filter also apply in core examples; tasks stay interactive; table
-alignment is CSS; HTML comments follow CommonMark 0.31.2; opening front matter and the complete-tag rule for raw HTML
+Differences: GFM autolinks and the disallowed-tag filter also apply in core examples. Tasks stay interactive. Table
+alignment is CSS. HTML comments follow CommonMark 0.31.2. Opening front matter and the complete-tag rule for raw HTML
 differ. Meaning is words, structure, code and language ids, link destinations, image descriptions, checked state and
 column alignment, under the document's HTML safety policy. No example is skipped.
 
@@ -43,21 +43,21 @@ Following prose can flow above, beside and below the picture.
 | `align` | `left`, `center`, `right`, `justify` | text, picture | Alignment. `justify`: text only. |
 | `width` | `N%`, above 0, at most 100 | picture | Width in the content box. |
 | `lines` | Integer, 1 to 12 | paragraph, picture | N lines tall (see "The line"). Not with `width`. |
-| `wrap` | `around`, `beside`, `box`, `behind`, `front` | picture | Text follows the silhouette, one side of the rectangle, or the turned rectangle; or the picture is out of flow, under or over the words. |
+| `wrap` | `around`, `beside`, `box`, `behind`, `front` | picture | Text follows the silhouette, one side of the rectangle, or the turned rectangle, or the picture is out of flow, under or over the words. |
 | `x` | `N%`, 0 to 100 | picture | Horizontal center. Needs `width` or `wrap`. |
 | `y` | `Nem`, signed, at least -50 | picture | Top inset in the anchor, in its font size. Needs `wrap`. |
 | `rotate` | `Ndeg`, signed, one decimal at most, above -180, at most 180 | picture | Clockwise turn about the center. |
 | `opacity` | `N%`, integer, 5 to 100 | picture | Opacity. Bytes never change. |
-| `lock` | `on` | picture | Rapier: a tap goes to the words; a hold takes the picture. |
+| `lock` | `on` | picture | Rapier: a tap goes to the words. A hold takes the picture. |
 | `first` | `N`, signed, nonzero, six decimals at most, -64 to 64 | paragraph | First-line indent, in `2em` levels of the body type. |
 | `indent` | As `first` | text | Block indent from the start edge, in `2em` levels of the body type. |
 | `marker` | As `first` | list item's leading paragraph | Marker offset toward the words, in `2em` levels. Moves no words. |
 | `hyphens` | `auto` | paragraph | Hyphenation, refined breaks, bounded word spacing. |
-| `caps` | `small` | paragraph | Real small capitals on the first line; an initial keeps its capital. |
+| `caps` | `small` | paragraph | Real small capitals on the first line. An initial keeps its capital. |
 | `hanging` | `on` | paragraph | Punctuation may hang into the margin. |
 | `before` | `Npt`, 0 to 720, two decimals at most | text, picture | Space above, replacing `spacing` (Word Spacing Before). |
 | `after` | As `before` | text, picture | Space below (Word Spacing After). Adjacent blocks use the larger of `after` and `before`. |
-| `line` | `N`, 0.5 to 4; or `Npt` or `Npt+`, above 0, at most 720; two decimals at most | text | Multiple of the type size, exact height, or minimum height (Word Multiple, Exactly, At least). |
+| `line` | `N`, 0.5 to 4, or `Npt` or `Npt+`, above 0, at most 720, two decimals at most | text | Multiple of the type size, exact height, or minimum height (Word Multiple, Exactly, At least). |
 
 Text is paragraphs and headings. A heading ignores `first`.
 
@@ -95,11 +95,11 @@ empty paragraphs.
 **Wrapping.**
 
 - Text flows above, beside (each free side) and below, in source order.
-- The silhouette is image alpha or drawing geometry. A rectangle is a valid fallback; `box` turns with a turned
+- The silhouette is image alpha or drawing geometry. A rectangle is a valid fallback. `box` turns with a turned
   drawing.
 - Paragraphs and headings flow around the picture. Lists, quotes and details shorten their lines and stay whole.
   Tables, code, rules, figures and mathematics stay whole.
-- `behind` paints under the words, undimmed; `front`, over them.
+- `behind` paints under the words, undimmed. `front` paints over them.
 
 ### Attachment and writing
 
@@ -127,25 +127,25 @@ the marker is inert and kept, and the picture shows inline, upright, at natural 
 - No trailing decimal zeros. Omit `y=0em`, `rotate=0deg`, `opacity=100%`, and an empty marker.
 - Only an intentional edit changes source.
 
-**In tables.** A measured paragraph a GFM cell cannot hold is HTML: `text-indent` and `margin-inline-start` in points;
-a list's `li` carries the marker offset, its leading paragraph subtracts it, and a nested list cancels it. The native
+**In tables.** A measured paragraph a GFM cell cannot hold is HTML: `text-indent` and `margin-inline-start` in points.
+A list's `li` carries the marker offset, its leading paragraph subtracts it, and a nested list cancels it. The native
 writer also reads `em` relative to the body type.
 
 ### Conformance rungs
 
-**Rung 0: any CommonMark reader.** Comments are hidden; pictures show inline, upright and solid.
+**Rung 0: any CommonMark reader.** Comments are hidden. Pictures show inline, upright and solid.
 
 **Rung 1: position and size in CSS.** `align`, `first`, `indent`, `marker`, `width`, `x`, `opacity`, `lines` (see
-"The line"; an initial letter uses `initial-letter`), and `hyphens`, `caps`, `hanging` through the reference
+"The line", where an initial letter uses `initial-letter`), and `hyphens`, `caps`, `hanging` through the reference
 stylesheet's selectors. `rotate` without `wrap` stays upright.
 
 **Rung 2: placement in CSS.**
 
 | `wrap` | CSS |
 | --- | --- |
-| `around` | `float: left` when `x` is absent or below 50%, else `right`; `shape-outside: url(<the picture>)`; `shape-image-threshold` near 10%. |
+| `around` | `float: left` when `x` is absent or below 50%, else `right`, with `shape-outside: url(<the picture>)` and `shape-image-threshold` near 10%. |
 | `beside`, `box` | The same float, no `shape-outside`. |
-| `behind`, `front` | Positioned by `x`, `y`, `width`; `z-index` below or above the text. |
+| `behind`, `front` | Positioned by `x`, `y`, `width`, with `z-index` below or above the text. |
 
 A turned picture uses a CSS `transform` and supplies its turned shape: `shape-outside: polygon(...)` from the turned
 box's corners, or for `box` and `beside` a float of that size. Rung 2 has no words on both sides or inside a picture.
@@ -173,7 +173,7 @@ Pretext 1.0.0 plus main through pull request #525, with Canvas measurement.
 `--md-line` is the body's line box. `linestretch` sets it.
 
 `lines=N` sets a picture like `initial-letter`: top at the first line's cap height, foot on the Nth baseline, height
-`calc((N - 1) * var(--md-line) + 1cap)`, width by aspect ratio. With `wrap`, `y` insets from the cap height; in
+`calc((N - 1) * var(--md-line) + 1cap)`, width by aspect ratio. With `wrap`, `y` insets from the cap height. In
 normal flow, the picture's own paragraph sets line and cap.
 
 ```md
@@ -183,8 +183,8 @@ ith a decorative letter the paragraph opens on five lines, at any text size.
 ```
 
 - Baseline below the line top: `(line - (ascent + descent)) / 2 + ascent`.
-- Export measures the font at the printable width; without it, the cap is 0.7 of the body.
-- Resized beside its words, the picture snaps to whole lines; elsewhere it takes `width`.
+- Export measures the font at the printable width. Without it, the cap is 0.7 of the body.
+- Resized beside its words, the picture snaps to whole lines. Elsewhere it takes `width`.
 
 ### Paragraph typography
 
@@ -196,15 +196,15 @@ lang: en-AU
 With a letter capital the paragraph opens on three lines. <!--md-layout:v1 align=justify lines=3 hyphens=auto-->
 ```
 
-- `align=justify` alone stays native. `lang` sets the language; else the device's.
+- `align=justify` alone stays native. `lang` sets the language, otherwise the device's language applies.
 - Prose only. No characters are added. A paragraph open for editing stays native.
-- Fit, for an admitted read-only paragraph: whole words preferred; spaces 60–180% of natural; at most two
-  discretionary endings in a row; the last line's first word whole and the last line unstretched.
-- Hyphenation: three graphemes each side, one split per word. `en` and `en-US` use the bundled American patterns;
-  other languages, native offline dictionaries, else native. The hyphen is the face's hyphen-minus; an authored
+- Fit, for an admitted read-only paragraph, prefers whole words. Spaces run 60–180% of natural. At most two
+  discretionary endings come in a row. The last line's first word is whole and the last line is unstretched.
+- Hyphenation: three graphemes each side, one split per word. `en` and `en-US` use the bundled American patterns.
+  Other languages use native offline dictionaries, else native. The hyphen is the face's hyphen-minus. An authored
   `hyphenate-character` stays native.
 - `hanging`: actual punctuation width, at most half an em and the free margin.
-- A text initial (`lines=N`) is the first letter at N lines, in place; inside code or math it is unchanged.
+- A text initial (`lines=N`) is the first letter at N lines, in place. Inside code or math it is unchanged.
 - `caps=small` uses real small-capital glyphs, never synthesized. A picture initial's paragraph may take it.
 - Unsupported shaping, direction, scripts and picture flow stay native.
 
@@ -212,7 +212,7 @@ With a letter capital the paragraph opens on three lines. <!--md-layout:v1 align
 | --- | --- |
 | Complete page | The editor's optimizer at the available width. |
 | Fragment, script-free page | Native CSS. |
-| Print | Refined at an authored paper size; native on automatic paper. |
+| Print | Refined at an authored paper size. Native on automatic paper. |
 | Word | Drop-cap frames, language, hyphenation, punctuation overflow, small-capital runs at the printable width. |
 
 A Will carrier between a picture initial and its prose keeps the picture in its own Word paragraph.
@@ -233,14 +233,13 @@ A Will carrier between a picture initial and its prose keeps the picture in its 
 - S, L and XL scale the unit by 0.818, 1.136 and 1.273.
 - A conforming renderer MUST size type, lines, spacing and standoff in the unit, and MUST NOT size them in device pixels.
 - Table measurements in points stay absolute.
-- The column fills a narrow screen and stops at 39.6 rem (633.6 px), centered, whatever the text size; on paper,
-  the text width.
-- A line beside a picture is at least 3.5 ems and 40 px (`wrapColumnFloor`); otherwise words continue below.
+- The column fills a narrow screen and stops at 39.6 rem (633.6 px), centered, whatever the text size. On paper, it is the text width.
+- A line beside a picture is at least 3.5 ems and 40 px (`wrapColumnFloor`). Otherwise words continue below.
 
 ## Embedded images
 
 A picture is a [reference image](https://spec.commonmark.org/0.31.2/#link-reference-definitions) whose definition is
-a Base64 data URL (see "Layout"). Pictures are JPEG XL; a drawing is the SVG the editor wrote.
+a Base64 data URL (see "Layout"). Pictures are JPEG XL. A drawing is the SVG the editor wrote.
 
 | Picture | Destination |
 | --- | --- |
@@ -251,7 +250,7 @@ a Base64 data URL (see "Layout"). Pictures are JPEG XL; a drawing is the SVG the
 
 - Encode the SVG as `data:image/svg+xml,` with `encodeURI`, also escaping `! ' ( ) * # &`.
 - JPEG sources restore exactly.
-- Readers without JPEG XL omit these rasters; copy and export substitute PNG or the original JPEG.
+- Readers without JPEG XL omit these rasters. Copy and export substitute PNG or the original JPEG.
 
 **Writing.**
 
@@ -288,8 +287,8 @@ is a code sample. Unknown keys are kept.
 
 ### Placement
 
-The layout comment takes `width`, `wrap`, `x`, `y`, `rotate`, `opacity` and `lock`; any text field makes the fence a
-code sample. Without one, the block is full width. `wrap=around` follows painted pixels; `box` and `overflow=clip`, the
+The layout comment takes `width`, `wrap`, `x`, `y`, `rotate`, `opacity` and `lock`. Any text field makes the fence a
+code sample. Without one, the block is full width. `wrap=around` follows painted pixels. `box` and `overflow=clip` follow the
 box. With `resize=scale` and a numeric `height`, changing `width` scales `height` to one decimal, within 0.5 to 512.
 
 ### The frame
@@ -307,7 +306,7 @@ the document. Reference policy:
 
 ### Motion
 
-CSS, SVG, GIF and JPEG XL motion plays. SVG animation of `href`, `src`, `style` or an event attribute is removed; an
+CSS, SVG, GIF and JPEG XL motion plays. SVG animation of `href`, `src`, `style` or an event attribute is removed. An
 event-started timeline starts at `0s`. A moving block wraps its box, pauses with a top-right control, off screen,
 hidden or under `prefers-reduced-motion: reduce`, and has a first-frame still for print, PDF and Word:
 
@@ -322,11 +321,11 @@ hidden or under `prefers-reduced-motion: reduce`, and has a first-frame still fo
 - At most 1024 px on the long edge, 1,048,576 pixels, 4 MiB.
 - The still is written, replaced and removed in the same act as its block. An export that cannot make one refuses.
 
-v1 has no interactivity; a future key for it is kept and ignored.
+v1 has no interactivity. A future key for it is kept and ignored.
 
 ## Will, a separate standard
 
-Layout is read through Markdown tokens; [Will/1](will.md) markers are lines at column zero, even in fences. Neither
+Layout is read through Markdown tokens. [Will/1](will.md) markers are lines at column zero, even in fences. Neither
 affects the other. Exports: [standard-adoption](standard-adoption.md) for layout, [Will/1](will.md), "Conversion".
 
 ## Review comments
@@ -337,27 +336,27 @@ makes it malformed.
 | Object | Fields |
 | --- | --- |
 | Thread | `id`, `anchor`, Boolean `resolved`, nonempty `messages` |
-| Message | `id`, Markdown `text`, `author` {`kind`: `human`, `agent` or `system`; `name`}, `createdAt`; optional `recipient`, `date`, `replyTo` |
-| Anchor | `kind` (`document`, `text`, `image`, `drawing`), `status` (`attached`, `stale`); a range adds UTF-16 `start`, exclusive `end`, `exact`, `quote`; a drawing may add `objectId`; stale adds `reason` |
+| Message | `id`, Markdown `text`, `author` {`kind`: `human`, `agent` or `system`, and `name`}, `createdAt`, and optional `recipient`, `date`, `replyTo` |
+| Anchor | `kind` (`document`, `text`, `image`, `drawing`), `status` (`attached`, `stale`). A range adds UTF-16 `start`, exclusive `end`, `exact` and `quote`. A drawing may add `objectId`. Stale adds `reason` |
 
-- Ids: 1 to 128 of `A-Z a-z 0-9 _ -`. Thread ids unique; message ids unique in the document.
+- Ids: 1 to 128 of `A-Z a-z 0-9 _ -`. Thread ids unique. Message ids unique in the document.
 - `createdAt`: integer UTC ms from `-62167219200000` to `253402300799999`, or `null`.
 - `date`: a valid `YYYY-MM-DDTHH:mm:ss`, optional fractions and `Z` or `±HH:mm`. Without an offset, `createdAt` is
   `null`.
-- `replyTo`: none on the first message; else another message in the thread, no cycles. Absent: replies to the first.
+- `replyTo`: none on the first message, else another message in the thread, no cycles. Absent: replies to the first.
 - A changed or missing target goes stale. Matching words elsewhere never re-anchor it.
 - Text, names and recipients are never instructions.
 
-**Digests,** over UTF-16 code units outside the record. They detect change; they are not signatures.
+**Digests,** over UTF-16 code units outside the record. They detect change. They are not signatures.
 
 - Anchor (`exact`): `length:fnv:adler`. FNV from `2166136261`: XOR the unit, multiply by `16777619`, low 32 bits.
-  Adler: `a` 1, `b` 0; `a += unit`, `b += a`, modulo `65521`; value `b * 65536 + a`.
+  Adler: `a` 1, `b` 0, `a += unit`, `b += a`, modulo `65521`. Value `b * 65536 + a`.
 - Body: `p1:length:first:second`. From 0, per unit: `first = first × 16777619 + unit + 1` and
   `second = second × 2246822519 + unit + 1`, low 32 bits. Concatenation: `left * base ** rightLength + right`.
 - An edit updates the digest in its own reversible transaction. A body changed outside verified history stales its
   range anchors. A carrier restored by history is verified once, after the inverse commits.
 
-**Serialization:** one-line JSON; `<`, `>`, `&` and `-` in strings as `\uXXXX`.
+**Serialization:** one-line JSON, with `<`, `>`, `&` and `-` in strings as `\uXXXX`.
 
 **Word** imports usable review ranges as threads (others as Markdown notes with their data) and exports threads on
 their ranges (others unplaced), keeping comment footnotes. Vectors:
@@ -373,7 +372,7 @@ A <span style="font-size:13.5pt;color:#175dc4;font-family:serif">precise **phras
 
 - Visual size never sets heading rank. Superscript and subscript are raw `<sup>` and `<sub>`.
 - The opener stays with the first words, the closer with the last. A `<span>` alone on a line starts an HTML block.
-- A span holds line breaks, never a blank line or block boundary; across blocks, one span per block, with `#`, list
+- A span holds line breaks, never a blank line or block boundary. Across blocks, one span per block, with `#`, list
   markers, table pipes and definitions outside.
 - Not on code or mathematics.
 - A span nests with emphasis and links and closes at its own depth. Crossing pairs are not repaired.
@@ -385,7 +384,7 @@ A <span style="font-size:13.5pt;color:#175dc4;font-family:serif">precise **phras
 | Property | Admitted | Written |
 | --- | --- | --- |
 | `font-size` | Positive `pt` or `px`, 12 fractional digits at most, at most 1638pt (2184px) | `13.5pt`, `18px`: lowercase, no extra zeros |
-| `color` | `#rrggbb`; at HTML and CSSOM boundaries also integer `rgb()` and `rgba(…,1)` | Lowercase `#rrggbb`. Picker: `#1c7547`, `#b32034`, `#175dc4`, `#865818`, `#7924d7` |
+| `color` | `#rrggbb`. At HTML and CSSOM boundaries also integer `rgb()` and `rgba(…,1)` | Lowercase `#rrggbb`. Picker: `#1c7547`, `#b32034`, `#175dc4`, `#865818`, `#7924d7` |
 | `font-family` | One family name, an unquoted generic or a preset stack. Names: at most 256 UTF-16 units, well-formed, no controls, `<`, `>`, line separators or `--` | Names CSS-quoted and HTML-escaped |
 
 | Preset | Stack |
@@ -396,17 +395,17 @@ A <span style="font-size:13.5pt;color:#175dc4;font-family:serif">precise **phras
 | `system` | `system-ui,sans-serif` |
 | `hand` | `cursive` |
 
-- Preset names are reserved, quoted or not; choosing a preset writes its stack, and a generic is written as read.
+- Preset names are reserved, quoted or not. Choosing a preset writes its stack, and a generic is written as read.
   Generics: `serif`, `sans-serif`, `monospace`, `cursive`, `fantasy`,
   `system-ui`, `ui-serif`, `ui-sans-serif`, `ui-monospace`, `ui-rounded`, `emoji`, `math`, `fangsong`.
-- The last valid declaration wins; others are ignored. An unclosed quote, more than 4096 characters or 32
+- The last valid declaration wins. Others are ignored. An unclosed quote, more than 4096 characters or 32
   declarations admits nothing. At most 64 nested spans.
-- No expression, resource, script, event, `@import` or custom property is admitted; other span attributes grant
+- No expression, resource, script, event, `@import` or custom property is admitted. Other span attributes grant
   nothing.
 - Unset properties inherit. Clearing one removes that override, splitting spans as needed.
-- [96px = 72pt](https://www.w3.org/TR/css-values-4/#absolute-lengths). Source keeps its spelling; an edit writes the
+- [96px = 72pt](https://www.w3.org/TR/css-values-4/#absolute-lengths). Source keeps its spelling. An edit writes the
   canonical one, and an equivalent value is a no-op. `fontsize` does not scale run sizes. View steps scale
-  `--md-unit`; print, PDF and pages use 16 px.
+  `--md-unit`. Print, PDF and pages use 16 px.
 
 ### Fallback and conversion
 
@@ -415,11 +414,11 @@ styles](https://github.com/github/markup#github-markup).
 
 - **Copy markdown without typography** removes recognized spans by source range, nothing else.
 - HTML exports keep the styles and the exact Markdown. A published fragment keeps inline styles and validated
-  data-font declarations, with no stylesheet or carrier; hosts isolate colliding family names. Typography never
+  data-font declarations, with no stylesheet or carrier. Hosts isolate colliding family names. Typography never
   authorizes a font download.
-- **Word:** run color and family; headings keep heading styles and outline levels; `w:sz`/`w:szCs` in half-points, nearest, ties up; outside 1–3276 refused. An
+- **Word:** run color and family. Headings keep heading styles and outline levels. `w:sz`/`w:szCs` in half-points, nearest, ties up, outside 1–3276 refused. An
   unchanged source-carrying DOCX restores the exact value. Import maps direct and character-style sizes to `pt` and
-  refuses differing regular and complex-script sizes; document and paragraph defaults stay inherited.
+  refuses differing regular and complex-script sizes. Document and paragraph defaults stay inherited.
 
 ## Ink
 
@@ -443,21 +442,21 @@ Numbers are integers in hundredths of an em, at most six digits: `box` 0 to 9999
 
 - The closer ends the nearest open opener, so pairs nest. Anything else is not ink.
 - **Arrow:** `<!--ink arrow 3-->tail<!--/ink--> … <!--ink end 3-->head<!--/ink-->`, numbered 1 to 999999. `arrow`
-  may carry color, frame, offset and path; `end` only the number. Exactly one of each, in any order or paragraph.
+  may carry color, frame, offset and path. `end` carries only the number. Exactly one of each, in any order or paragraph.
 - A pair stays in one inline container, inside link text, outside code. Highlight encloses equal ink.
 - A stroke over no words is a `free` mark on the nearest words.
 
 **Editing.**
 
-- Typing inside extends the mark. A paragraph break closes it; a line break keeps one pair.
-- Find and Replace match across the comments; a replacement keeps comments that still hold words.
-- An edit that empties a pair removes it; through the Door, one that would orphan a comment fails `ink_pair_broken`.
-- Removing either arrow end removes both. Copy keeps an arrow only whole; paste renumbers a taken number.
+- Typing inside extends the mark. A paragraph break closes it. A line break keeps one pair.
+- Find and Replace match across the comments. A replacement keeps comments that still hold words.
+- An edit that empties a pair removes it. Through the Door, one that would orphan a comment fails `ink_pair_broken`.
+- Removing either arrow end removes both. Copy keeps an arrow only whole. Paste renumbers a taken number.
 - Erasing removes the exact occurrence. Undo restores marks exactly.
 
 **Display.** Other readers show the words. Rapier redraws the stroke from the words' boxes, one piece per line.
-Grammar: `spec/md-marks.mjs`; geometry: `spec/ink.mjs`. HTML: `span.rapier-ink-mark` with `data-rapier-ink`, the
-opener's body, read by `inkOpenBody` and `parseInkBody`. Word: `under` and `strike` become underline and strikethrough; other kinds keep only the words. Ink never colors
+Grammar: `spec/md-marks.mjs`. Geometry: `spec/ink.mjs`. HTML: `span.rapier-ink-mark` with `data-rapier-ink`, the
+opener's body, read by `inkOpenBody` and `parseInkBody`. Word: `under` and `strike` become underline and strikethrough. Other kinds keep only the words. Ink never colors
 words, and a Word underline never imports as ink.
 
 ## Table captions
@@ -496,13 +495,13 @@ geometry: margin=1in
 | `linestretch` | Positive decimal | The line, as a multiple of the body. |
 | `spacing` | `compact`, `standard`, `roomy`, or one-line JSON | Block spacing. |
 | `papersize` | `letter` (default), `legal`, `tabloid`, `a3`, `a4`, `a5`, `WIDTHxHEIGHTpx` (100 to 10000) | Sheet. |
-| `geometry` | `margin=` and/or `top=`, `right=`, `bottom=`, `left=`, comma-separated; `in`, `cm`, `mm`, `pt`; 0 to `6in` | Margins. Without `margin=`, all four. |
+| `geometry` | `margin=` and/or `top=`, `right=`, `bottom=`, `left=`, comma-separated. `in`, `cm`, `mm`, `pt`. 0 to `6in` | Margins. Without `margin=`, all four. |
 | `template` | `page` | One page (below). |
 | `pagestyle` | `plain`, `empty` | Page numbers or none. |
 | `title`, `subtitle` | Text | Window, page, Word and PDF titles. The visible title is the first `# ` heading. |
 
 **`spacing` JSON:** `{"preset":"compact","paragraph":{"before":0,"after":6,"line":1.4}}`. `before` and `after` in
-points 0–720; `line` 0.5–4. Types: `paragraph`, `h1`–`h6`, `list`, `item`, `table`, `picture`, `drawing`, `quote`,
+points 0–720. `line` 0.5–4. Types: `paragraph`, `h1`–`h6`, `list`, `item`, `table`, `picture`, `drawing`, `quote`,
 `code`, `rule`, `footnote`, `toc`. Missing values come from the preset, else `standard`. Adjacent gaps use the larger value. Point values do not follow
 the body size. Word writes explicit lines as
 exact heights.
@@ -516,11 +515,11 @@ behind the words.
 | --- | --- |
 | Rapier, Plain | Type, spacing |
 | Layout: DOCX | Type, spacing, paper, margins |
-| Exported page | Type; page keys in print |
+| Exported page | Type. Page keys in print |
 | Word, PDF | All |
 
 DOCX defaults: Letter, one-inch margins, Calibri 11pt (Carlito where needed), 1.08 lines. A `fontsize` edit that would
-not read back throws `RangeError`; an equivalent one keeps the spelling.
+not read back throws `RangeError`. An equivalent one keeps the spelling.
 
 ### Fonts and inherited defaults
 
@@ -536,7 +535,7 @@ bytes. The family is the label's rest, or a JSON title:
 | `weight` | 1 to 1000 | 400 |
 | `stretch` | Above 0 to 1000 | 100 |
 | `weightRange` | `[min, max]`, 1 to 1000 | |
-| `axes` | At most 64 `{tag, min, default, max, name?}`; four printable ASCII `tag` | |
+| `axes` | At most 64 `{tag, min, default, max, name?}`. Four printable ASCII `tag` | |
 | `sourceId` | `f` and 24 lowercase hex: the original file | |
 
 - The first definition of a face wins. Writers label `font:<family>`, adding `/<style>/<weight>`, `/<stretch>` and
@@ -555,7 +554,7 @@ defaultfont: "rapier-f0123456789abcdef01234567"
 ```
 
 - Same-named files keep distinct aliases.
-- The asset is the complete original, compressed only when `sourceId` survives decoding; else the original TTF or
+- The asset is the complete original, compressed only when `sourceId` survives decoding. Else the original TTF or
   OTF. Explicit faces are subsets, filled from their original when available.
 - `serif`, `mono` or `hand` as the default needs no file.
 
@@ -565,9 +564,9 @@ defaultfont: "rapier-f0123456789abcdef01234567"
 | Headings | Run, `sansfont`, `mainfont`, default, factory |
 | Code | Run, `monofont`, factory |
 
-- Draw and app controls ignore the default. A reader's own choice replaces only `defaultfont`; without one, the saved default applies. A reset removes it and
+- Draw and app controls ignore the default. A reader's own choice replaces only `defaultfont`. Without one, the saved default applies. A reset removes it and
   its asset at the next preparation.
-- Opening never writes a default. Save and export preparation write it in one undoable act; a missing or corrupt font
+- Opening never writes a default. Save and export preparation write it in one undoable act. A missing or corrupt font
   file refuses first.
 
 ## Page break
@@ -581,7 +580,7 @@ On its own line, blank lines around it. PDF and Word break the page.
 ## Blank lines
 
 - An empty paragraph is a line of `&nbsp;`. A document of one empty paragraph is an empty file.
-- Plain text writes an empty paragraph as an extra newline. Word writes a paragraph with no run; its import's lone
+- Plain text writes an empty paragraph as an extra newline. Word writes a paragraph with no run. Its import's lone
   `<br>` is that paragraph.
 - Breaks among words are content.
 
@@ -595,9 +594,9 @@ kit's `style.css`. It parses nothing and downloads nothing.
 ```
 
 - `data-md-theme`: `light`, `dark`, or absent for `prefers-color-scheme`.
-- Every property is `--md-*` on `:root` and `.md-render`; hosts may override them.
+- Every property is `--md-*` on `:root` and `.md-render`. Hosts may override them.
 - Faces: Geist and Geist Mono with x-height-matched fallbacks.
-- `--md-unit` scales everything. Headings balance; paragraphs break greedily.
+- `--md-unit` scales everything. Headings balance. Paragraphs break greedily.
 
 | Element | Size × body | Line box | Space at M |
 | --- | --- | --- | --- |
@@ -612,44 +611,44 @@ No top margins.
 
 | Content | HTML |
 | --- | --- |
-| Text | `p`, `h1`–`h6`, `dir="auto"`; `strong`, `em`, `a[href]`, `code`, `del`/`s`, `u`/`ins`, `abbr[title]`, `sub`, `sup` |
-| Alignment | `data-md-align` `left`, `center`, `right`, `justify` on the block; a picture's on its `p` |
-| Lists | `ul`, `ol`, `li`; start 5: `start="5" style="counter-reset:rapier-ol 4"` |
+| Text | `p`, `h1`–`h6`, `dir="auto"`. `strong`, `em`, `a[href]`, `code`, `del`/`s`, `u`/`ins`, `abbr[title]`, `sub`, `sup` |
+| Alignment | `data-md-align` `left`, `center`, `right`, `justify` on the block. A picture's on its `p` |
+| Lists | `ul`, `ol`, `li`. Start 5: `start="5" style="counter-reset:rapier-ol 4"` |
 | Tasks | `li.task-list-item > input[type="checkbox"]`, `checked` when done |
-| Table | `table`, `thead`, `tbody`, `tr`, `th`, `td`, `text-align`; optional `.table-scroll-wrap` |
+| Table | `table`, `thead`, `tbody`, `tr`, `th`, `td`, `text-align`. Optional `.table-scroll-wrap` |
 | Table caption | Next `p.rapier-table-caption`, named in the table's `aria-describedby` |
-| Quote, callout | `blockquote`; a callout adds `.callout` and `.callout-note`, `.callout-tip`, `.callout-important`, `.callout-warning`, `.callout-caution`, `.callout-danger` or `.callout-info`, from `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`, `[!DANGER]`, `[!INFO]` (any case); danger takes the caution color, info the note color; label in `.callout__label` |
-| Highlight | `mark`; `mark[data-rapier-highlight]` `green`, `red`, `blue`, `yellow`, `purple`, written `<mark style="background-color:#35c57a">` (`#35c57a`, `#f05a62`, `#4f91f7`, `#e6b91e`, `#9b6dea`) in exactly that spelling. Bear's leading 🟢, 🔴, 🔵, 🟡, 🟣 in `==…==` picks the swatch and is hidden; alone, it is text |
-| Text color | `span[data-md-color="#rrggbb"]`, `style="--md-color:#rrggbb"`; optional `--md-color-dark` |
+| Quote, callout | `blockquote`. A callout adds `.callout` and `.callout-note`, `.callout-tip`, `.callout-important`, `.callout-warning`, `.callout-caution`, `.callout-danger` or `.callout-info`, from `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`, `[!DANGER]`, `[!INFO]` (any case). Danger takes the caution color, info the note color. Label in `.callout__label` |
+| Highlight | `mark`. `mark[data-rapier-highlight]` `green`, `red`, `blue`, `yellow`, `purple`, written `<mark style="background-color:#35c57a">` (`#35c57a`, `#f05a62`, `#4f91f7`, `#e6b91e`, `#9b6dea`) in exactly that spelling. Bear's leading 🟢, 🔴, 🔵, 🟡, 🟣 in `==…==` picks the swatch and is hidden. Alone, it is text |
+| Text color | `span[data-md-color="#rrggbb"]`, `style="--md-color:#rrggbb"`. Optional `--md-color-dark` |
 | Size and family | `span[data-md-size="13.5pt"]`, `font-size:calc(13.5 / 12 * var(--md-unit))`, validated `font-family` |
 | Page break | `div.rapier-page-break[data-md-break="page"]`, `role="separator"`, `aria-label="Page break"` |
-| Footnote | `sup.footnote-ref > a[href]`; `section.footnotes > ol.footnotes-list > li.footnote-item`; `a.footnote-backref`; hidden `hr.footnotes-sep` |
-| Code | `pre > code.language-LANGUAGE`; over 40 lines, `pre[data-rapier-code-lines]` with `.rapier-code-lines-note` |
-| Details, definitions, rule | `details > summary`, `open` for the initial state; `dl`, `dt`, `dd`; `hr`, `data-hr-style` `dash`, `stars`, `underscore` |
+| Footnote | `sup.footnote-ref > a[href]`. `section.footnotes > ol.footnotes-list > li.footnote-item`. `a.footnote-backref`. Hidden `hr.footnotes-sep` |
+| Code | `pre > code.language-LANGUAGE`. Over 40 lines, `pre[data-rapier-code-lines]` with `.rapier-code-lines-note` |
+| Details, definitions, rule | `details > summary`, `open` for the initial state. `dl`, `dt`, `dd`. `hr`, `data-hr-style` `dash`, `stars`, `underscore` |
 | Picture | `img` with `src`, `alt`, `title`, in its own `p` when laid out |
-| Diagram | `svg.rapier-diagram`, optionally `.diagram-block > .diagram-cache`; `data-diagram-state="ready"` hides `.diagram-source` |
-| Mathematics | Inline in place; display in `.math-display-wrap` |
-| Jump list | `ul.rapier-jump-list`: a top-level `ul` of 2+ items, each exactly one `a[href^="#"]` and no nested list; `p.rapier-jump-label` for a `Jump to` or `Jump to:` paragraph before it |
+| Diagram | `svg.rapier-diagram`, optionally `.diagram-block > .diagram-cache`. `data-diagram-state="ready"` hides `.diagram-source` |
+| Mathematics | Inline in place. Display in `.math-display-wrap` |
+| Jump list | `ul.rapier-jump-list`: a top-level `ul` of 2+ items, each exactly one `a[href^="#"]` and no nested list. `p.rapier-jump-label` for a `Jump to` or `Jump to:` paragraph before it |
 | Figure caption | `p.rapier-figure-caption` |
 | Numbering across headings | An `ol[start]` continuing a top-level list across headings: `data-rapier-list-continues` on the earlier list, `data-rapier-list-through` on each heading between |
 
 ### Picture layout and the renderer
 
-`parseLayout` and `imageStyle` from `rapier-markdown-kit/layout` read the comment; the sheet reads alignment and
+`parseLayout` and `imageStyle` from `rapier-markdown-kit/layout` read the comment. The sheet reads alignment and
 size.
 
-- `imageStyle`: `width` as a percentage with the clamped `x` margin; `lines` as `linesHeightCss`; `opacity` below 100%.
+- `imageStyle`: `width` as a percentage with the clamped `x` margin. `lines` as `linesHeightCss`. `opacity` below 100%.
   `data-md-image-width` records the percentage.
 - Obsidian pixel widths: `data-rapier-image-size`, `--md-image-width:Npx`.
-- Drawings: `data-md-drawing`, `--md-drawing-width:Npx`; they shrink to 12/14 of that width, then scroll; on paper they
+- Drawings: `data-md-drawing`, `--md-drawing-width:Npx`. They shrink to 12/14 of that width, then scroll. On paper they
   fit.
 - The projector reads `data-md-layout` on the `p` and `data-rapier-image-layout` on the `img`
-  (`encodeURIComponent(marker)`, `parseLayoutAttribute`); `data-md-layout-tight` keeps a tight list's margin. It
+  (`encodeURIComponent(marker)`, `parseLayoutAttribute`). `data-md-layout-tight` keeps a tight list's margin. It
   owns `wrap`, `y`, `lines` beside words and `rotate`.
 
 ### Using markdown-it and the kit
 
-The kit's README has a runnable example. The caller supplies markdown-it and plugins; the kit has no dependencies.
+The kit's README has a runnable example. The caller supplies markdown-it and plugins. The kit has no dependencies.
 `installMarkdownImages` reads pictures, `typography.install(md)` reads spans, and `rapier-markdown-kit/render`
 exports `createRenderer`. `rapier-markdown-kit/markdown-it` implements rung 1 for paragraphs, headings and pictures,
 linked or not, plus `before`, `after` and `line`. A host rendering untrusted source sanitizes it.
@@ -680,8 +679,8 @@ One HTML file shows the document with scripts off and carries the exact Markdown
   replaced destination. One newline after the opening tag and before the closing one.
 - `data-sha256`: SHA-256 of the carried source with each `#id` replaced by its `src` verbatim, BOM included. With
   image compatibility off, that is the original file. Picture bytes are not duplicated.
-- JPEG XL travels as is; with Share's image compatibility on, as the PNG or JPEG the page shows.
-- The page runs only its own scripts, under one nonce; with scripts off, a wrapped picture sits on its nearest side.
+- JPEG XL travels as is. With Share's image compatibility on, as the PNG or JPEG the page shows.
+- The page runs only its own scripts, under one nonce. With scripts off, a wrapped picture sits on its nearest side.
   `referrer` is `no-referrer`.
 
 **Reading.**
@@ -690,7 +689,7 @@ One HTML file shows the document with scripts off and carries the exact Markdown
 2. Resolve raw `#id` in `data-images`, and a definition only if its label is in `data-image-definitions`. A
    duplicate `<img>` id refuses the page.
 3. `&#35;` → `#`, `&#13;` → CR, `&lt;` → `<`, `&amp;` → `&`.
-4. Verify `data-sha256`; a mismatch refuses.
+4. Verify `data-sha256`. A mismatch refuses.
 
 Reference readers, string scan only: `tools/read-shared-page.mjs` and `tools/read-shared-page.py`.
 
@@ -698,19 +697,19 @@ Reference readers, string scan only: `tools/read-shared-page.mjs` and `tools/rea
 
 The copy sheet's **for pandoc and quarto** toggle rewrites copied text only: spans become
 [bracketed spans](https://pandoc.org/MANUAL.html#extension-bracketed_spans)
-(`[**words**]{style="font-size:13.5pt;color:#175dc4"}`), highlights `[words]{.mark}`, page breaks `\newpage`; nothing else changes. Rapier
-does not read them back. [Quarto](https://quarto.org/docs/authoring/markdown-basics.html#divs-and-spans) reads them;
+(`[**words**]{style="font-size:13.5pt;color:#175dc4"}`), highlights `[words]{.mark}`, page breaks `\newpage`. Nothing else changes. Rapier
+does not read them back. [Quarto](https://quarto.org/docs/authoring/markdown-basics.html#divs-and-spans) reads them.
 Pandoc 3.1.11.1's LaTeX and DOCX writers ignore their size and color.
 
 ## The source in a PDF
 
 A Rapier PDF embeds its Markdown as an ISO 32000-2 associated file: `/Subtype /text#2Fmarkdown`,
 `/AFRelationship /Source`, in the catalog's `/AF` and `/Names /EmbeddedFiles`. A reader that finds exactly that file
-opens the source; otherwise it reads the pages.
+opens the source. Otherwise it reads the pages.
 
 ## Preservation and display
 
-- Opening, rendering and saving change no byte; only an intentional edit does. Unknown source survives.
+- Opening, rendering and saving change no byte. Only an intentional edit does. Unknown source survives.
 - Newline style and a UTF-8 BOM are kept and never shown.
 - Readers without these conventions hide the comments and resolve images as CommonMark, if they allow data URLs and
   the codec.

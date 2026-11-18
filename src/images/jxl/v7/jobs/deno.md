@@ -13,7 +13,7 @@ Why it helps: Deno on your OS and CPU.
    deno run -A npm:rapier-jxl@8.3.5 selftest
    ```
 
-   Deno 2.9 waits a day before it installs a new version; on release day, add `--min-dep-age=0` after `-A`.
+   Deno 2.9 waits a day before it installs a new version. On release day, add `--min-dep-age=0` after `-A`.
 
 3. Attach the file it writes, `rapier-jxl-selftest-deno.json`, to your issue, including failures.
 

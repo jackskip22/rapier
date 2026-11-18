@@ -4,7 +4,7 @@ import {editorSecretUsable, editorSecretKeyMaterial} from './editor-keys.mjs';
 export const GOVERNOR = Object.freeze({personPerDay: 2000, anonymousCallerPerDay: 2000, anonymousWorkspacePerDay: 500, doorPerDay: 80000,
 	doorSample: 16, anonymousCreatesStopAt: 0.8});
 export const DAILY_LIMIT_WORDS = 'Rapier\'s free server has done today\'s share for you. It resets at 8 am AWST (00:00 UTC). ' +
-	'Your document is safe in the editor; keep writing there.';
+	'Your document is safe in the editor. Keep writing there.';
 
 const day = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 const untilMidnight = (now = Date.now()) => Math.max(1, Math.ceil((Date.UTC(...(d => [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1])(new Date(now))) - now) / 1000));

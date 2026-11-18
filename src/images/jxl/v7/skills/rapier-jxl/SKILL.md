@@ -1,6 +1,6 @@
 ---
 name: rapier-jxl
-description: Convert PNG, JPEG and GIF files or folders to JPEG XL with npx rapier-jxl; JPEGs recompress losslessly and restore exactly. Node 20.16 or later.
+description: Convert PNG, JPEG and GIF files or folders to JPEG XL with npx rapier-jxl. JPEGs recompress losslessly and restore exactly. Node 20.16 or later.
 ---
 
 # rapier-jxl CLI
@@ -12,11 +12,11 @@ npx rapier-jxl hero.png --max-bytes 100KB --json      # fit under a byte budget
 npx rapier-jxl photo.jxl --out photo.jpg              # the original JPEG
 ```
 
-Options: `--quality 1-100` (default 90; JPEGs default to lossless recompression), `--effort 1-9` (default 7),
+Options: `--quality 1-100` (default 90, JPEGs default to lossless recompression), `--effort 1-9` (default 7),
 `--lossless`, `--max-bytes`, `--out`, `--jobs 0-16`.
 
 Originals are never changed and automatic names never overwrite. A rerun skips finished files. One failure does not stop
-the rest; the exit code is 1 if any file failed.
+the rest. The exit code is 1 if any file failed.
 
 ## `--json`
 

@@ -130,97 +130,97 @@ const clone = cloneSource;
 const bytes = value => encoder.encode(value).byteLength;
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 export const HINTS = {
-  query_invalid: 'Use at most 512 Unicode characters. Source word/code searches need words; empty comparison or Markdown-kind queries list items.',
-  case_sensitive_not_applicable: 'case_sensitive applies only to source word searches; omit it with kind or comparison scope.',
-  within_not_applicable: 'within narrows source searches only; omit it for comparison scope.',
-  draw_create_patch_conflict: 'Create with figures or recipe; shapes patches require an edit target with recipe_handle.',
+  query_invalid: 'Use at most 512 Unicode characters. Source word/code searches need words. Empty comparison or Markdown-kind queries list items.',
+  case_sensitive_not_applicable: 'case_sensitive applies only to source word searches. Omit it with kind or comparison scope.',
+  within_not_applicable: 'within narrows source searches only. Omit it for comparison scope.',
+  draw_create_patch_conflict: 'Create with figures or recipe. shapes patches require an edit target with recipe_handle.',
   context_has_no_block: 'This handle touches no source block. Omit target.context_handle to append before image definitions, or read an existing paragraph and use its handle to create after that block.',
   draw_recipe_figures_conflict: 'Send recipe or figures, not both.',
-  draw_edit_recipe_conflict: 'Edit with recipe, shapes or operations; omit figures and do not combine recipe with shapes.',
+  draw_edit_recipe_conflict: 'Edit with recipe, shapes or operations. Omit figures and do not combine recipe with shapes.',
   draw_direction_conflict: 'Use the same direction in the call and recipe, or omit the call direction.',
   draw_edit_empty: 'Supply alt, recipe, a nonempty shapes patch or operations for the inspected drawing.',
-  compare_byte_limit: 'The two sources exceed the ' + (LIMITS.compareBytes / 1024 / 1024) + ' MiB comparison limit; compare smaller documents.',
+  compare_byte_limit: 'The two sources exceed the ' + (LIMITS.compareBytes / 1024 / 1024) + ' MiB comparison limit. Compare smaller documents.',
   compare_line_limit: 'Keep the two comparison sources within ' + LIMITS.compareLines + ' combined lines.',
   compare_too_complex: 'Compare fewer unrelated line changes, or show a smaller retained act.',
-  compare_change_limit: 'A comparison holds at most ' + LIMITS.compareChanges + ' change regions; compare fewer differences or a smaller retained act.',
-  return_unavailable: 'Return links belong to hosted workspaces; here use export to deliver an independent file.',
-  pairing_hosted_only: 'Pairing a browser belongs to hosted workspaces; this editor needs no pairing.',
-  save_unavailable: 'This host has no bound save destination; use export for an independent file.',
+  compare_change_limit: 'A comparison holds at most ' + LIMITS.compareChanges + ' change regions. Compare fewer differences or a smaller retained act.',
+  return_unavailable: 'Return links belong to hosted workspaces. Here use export to deliver an independent file.',
+  pairing_hosted_only: 'Pairing a browser belongs to hosted workspaces. This editor needs no pairing.',
+  save_unavailable: 'This host has no bound save destination. Use export for an independent file.',
   object_layout_dropped: 'Keep the object\'s md-layout:v1 line after its fence, or edit that line alone to change or remove placement.',
-  context_missing: 'This handle is unknown here or was consumed; read again for a fresh handle.',
+  context_missing: 'This handle is unknown here or was consumed. Read again for a fresh handle.',
   context_expired: 'This reference has expired. For read, omit since. Otherwise, repeat the original discovery call for a fresh ref or handle.',
   context_has_no_block: 'Read a nonempty source block and use its handle to place the drawing after that block, or omit context_handle to append.',
-  cursor_missing: 'This page cursor is unknown here or was consumed; repeat the original read, search or listing without a cursor.',
-  block_missing: 'No block has this id. read {as:"outline"} lists the headings and fences; a fence\'s id is on its opening line.',
-  heading_missing: 'No heading has this title; candidates lists close ones. read {as:"outline"} lists every heading.',
-  reference_missing: 'This ref is unknown here; read {as:"outline"} or read {query} again for a fresh ref.',
-  document_replaced: 'The document was replaced; read again before editing.',
-  document_changed: 'The document changed since this handle was read; read again and resend.',
-  foreground_hand_wins: 'The person is editing this range; wait for their hand to settle, then resend the same edit.',
-  invocation_key_collision: 'This operation already has a receipt; inspect the current document before starting another operation.',
-  target_changed: 'The passage changed since it was read; read again and resend.',
-  draw_surface_changed: 'The settled drawing changed; read its current occurrence again before editing.',
+  cursor_missing: 'This page cursor is unknown here or was consumed. Repeat the original read, search or listing without a cursor.',
+  block_missing: 'No block has this id. read {as:"outline"} lists the headings and fences. A fence\'s id is on its opening line.',
+  heading_missing: 'No heading has this title. candidates lists close ones. read {as:"outline"} lists every heading.',
+  reference_missing: 'This ref is unknown here. read {as:"outline"} or read {query} again for a fresh ref.',
+  document_replaced: 'The document was replaced. Read again before editing.',
+  document_changed: 'The document changed since this handle was read. Read again and resend.',
+  foreground_hand_wins: 'The person is editing this range. Wait for their hand to settle, then resend the same edit.',
+  invocation_key_collision: 'This operation already has a receipt. Inspect the current document before starting another operation.',
+  target_changed: 'The passage changed since it was read. Read again and resend.',
+  draw_surface_changed: 'The settled drawing changed. Read its current occurrence again before editing.',
   operation_retry_expired: 'The retry receipt has expired. Inspect the current document before starting another operation.',
   context_handle_wrong_kind: 'This handle is not for this call: edit with a handle from read, read a comparison with a change handle, edit a drawing with its recipe_handle.',
-  authority_mismatch: 'This handle or ref belongs to another caller; obtain your own with read.',
-  change_missing: 'No such change; read lists changes since your last successful observation or supplied cursor.',
-  compare_not_open: 'No comparison is open; use show with target:comparison and text or an act.',
-  edits_overlap: 'Two edits cover the same text; merge them into one edit.',
+  authority_mismatch: 'This handle or ref belongs to another caller. Obtain your own with read.',
+  change_missing: 'No such change. read lists changes since your last successful observation or supplied cursor.',
+  compare_not_open: 'No comparison is open. Use show with target:comparison and text or an act.',
+  edits_overlap: 'Two edits cover the same text. Merge them into one edit.',
   batch_too_large: 'Send fewer edits in one call.',
-  draw_shape_limit: 'A drawing holds 1 to 128 shapes; send fewer.',
+  draw_shape_limit: 'A drawing holds 1 to 128 shapes. Send fewer.',
   draw_alt_required: 'Give alt, a short caption of the drawing.',
   draw_requires_markdown: 'Drawings live in Markdown documents only.',
-  draw_create_patch_conflict: 'Create with figures and alt first; shapes patches need target kind edit and recipe_handle from a complete drawing read.',
-  comment_anchor_missing: 'The on words are not in the document; quote exact words from a fresh read, or omit on to comment on the whole document.',
-  comment_anchor_ambiguous: 'The on words occur more than once; quote more of the passage so they occur once.',
+  draw_create_patch_conflict: 'Create with figures and alt first. shapes patches need target kind edit and recipe_handle from a complete drawing read.',
+  comment_anchor_missing: 'The on words are not in the document. Quote exact words from a fresh read, or omit on to comment on the whole document.',
+  comment_anchor_ambiguous: 'The on words occur more than once. Quote more of the passage so they occur once.',
   act_and_turn_conflict: 'Pass act or turn_id, not both.',
   act_or_turn_required: 'Pass act (from edit) or turn_id.',
   note_fields_and_changes: 'With note, send fields or changes, not both.',
-  draw_session_open: 'The person has a drawing open in Draw; ask them to finish it with Done, then try again.',
-  revision_unknown: 'This document has not reached that revision; pass revision exactly as your latest read or open returned it.',
-  paint_strokes_invalid: 'Read the paint guide. A paint figure uses kind, id and seed with strokes, or mode water with paper and actions; geometry belongs in path points, not figure x/y/w/h.',
-  paint_kept_recipe_changed: 'Read the current block and keep its native material markers. To continue a layer, use shapes.replace with its id and new strokes or Water actions; shapes.add starts a new layer.',
-  material_busy: 'Another painting in this document still waits for its editor. Check read {state:true}; paint again once it is committed or has expired.',
-  material_request_expired: 'The material request expired without commitment. Once a visible editor is available, reread the target and use a new operation_id; Water also needs WebGPU.',
+  draw_session_open: 'The person has a drawing open in Draw. Ask them to finish it with Done, then try again.',
+  revision_unknown: 'This document has not reached that revision. Pass revision exactly as your latest read or open returned it.',
+  paint_strokes_invalid: 'Read the paint guide. A paint figure uses kind, id and seed with strokes, or mode water with paper and actions. Geometry belongs in path points, not figure x/y/w/h.',
+  paint_kept_recipe_changed: 'Read the current block and keep its native material markers. To continue a layer, use shapes.replace with its id and new strokes or Water actions. shapes.add starts a new layer.',
+  material_busy: 'Another painting in this document still waits for its editor. Check read {state:true}. Paint again once it is committed or has expired.',
+  material_request_expired: 'The material request expired without commitment. Once a visible editor is available, reread the target and use a new operation_id. Water also needs WebGPU.',
   paint_history_full: 'This layer has reached its editable history limit. Continue on a new layer with shapes.add.',
   paint_layer_full: 'This layer has reached its image size limit. Continue on a new layer with shapes.add.',
   paint_mode_mismatch: 'Use mode:water and actions for a Water layer, or strokes for a Paint layer. Add a new layer with shapes.add to use another mode.',
   paint_sheet_invalid: 'Read the drawing again for its current material, or add a new layer with shapes.add.',
-  paint_too_large_for_server: 'This painting is larger than Rapier\'s server can open (about 2 megapixels). The person\'s editor opens it; ask them to work on it there. The drawing is unchanged.',
+  paint_too_large_for_server: 'This painting is larger than Rapier\'s server can open (about 2 megapixels). The person\'s editor opens it. Ask them to work on it there. The drawing is unchanged.',
   paint_sample_unavailable: 'Material sampling is unavailable in this editor. Read the drawing recipe for its pigment and paper settings.',
   paint_sample_invalid: 'Sample an existing Paint or Water layer at a point in its drawing coordinates.',
   water_webgpu_unavailable: 'Water needs WebGPU, and the browser running this editor has none. The drawing is unchanged. Do not paint it another way: give the person editor_url and ask them to open it in a browser with WebGPU on (such as current Chrome or Edge) and paint the Water there.',
   water_pro_unavailable: 'Specialty pigments, Pro papers and Trace are only in the Android app, which agents cannot reach. Use the standard pigments and papers. The drawing is unchanged.',
-  WATER_BUDGET: 'This Water operation exceeds the live material budget. Use a smaller stroke or a new layer; the drawing is unchanged.',
-  WATER_REPLAY_BUDGET: 'This Water journal is full. Continue on a new layer; the drawing is unchanged.',
-  WATER_GPU_MEMORY: 'The graphics device could not allocate this Water operation. Use a smaller layer; the drawing is unchanged.',
-  WATER_GPU_FAILED: 'The graphics device refused this Water operation. The drawing is unchanged; reopen the editor before retrying.',
-  WATER_DEVICE_LOST: 'The Water graphics device is no longer available. The drawing is unchanged; reopen the editor before retrying.',
+  WATER_BUDGET: 'This Water operation exceeds the live material budget. Use a smaller stroke or a new layer. The drawing is unchanged.',
+  WATER_REPLAY_BUDGET: 'This Water journal is full. Continue on a new layer. The drawing is unchanged.',
+  WATER_GPU_MEMORY: 'The graphics device could not allocate this Water operation. Use a smaller layer. The drawing is unchanged.',
+  WATER_GPU_FAILED: 'The graphics device refused this Water operation. The drawing is unchanged. Reopen the editor before retrying.',
+  WATER_DEVICE_LOST: 'The Water graphics device is no longer available. The drawing is unchanged. Reopen the editor before retrying.',
   paint_replay_unavailable: 'This turn cannot be replayed separately from the retained material. The current drawing is unchanged.',
   figures_invalid: 'Each figure names a kind from kinds and the fields the tool description lists for it.',
   recipe_invalid: 'Send figures, or a recipe exactly as read returned it.',
   target_over_edit_budget: 'Read the block, then edit it with shapes or operations instead of a whole recipe.',
-  document_law: 'The Will protects the source range named by start and end; keep it and edit another passage.',
-  human_edit_in_progress: 'The person is editing; wait for their input to settle, then read and retry.',
-  visual_render_unavailable: 'The page could not draw this as a picture; it may be showing the source. Read the text, or ask the person for the formatted view with show {target:"view", view:"formatted"}.',
-  editor_not_present: 'No editor is paired with this document. Share editor_url; if the person reads you a code, send show {target:"pair", code}. Or deliver a file with export.',
+  document_law: 'The Will protects the source range named by start and end. Keep it and edit another passage.',
+  human_edit_in_progress: 'The person is editing. Wait for their input to settle, then read and retry.',
+  visual_render_unavailable: 'The page could not draw this as a picture. It may be showing the source. Read the text, or ask the person for the formatted view with show {target:"view", view:"formatted"}.',
+  editor_not_present: 'No editor is paired with this document. Share editor_url. If the person reads you a code, send show {target:"pair", code}. Or deliver a file with export.',
   editor_unavailable: 'Open the paired Rapier editor and keep it visible for painting, sampling, visual inspection, Word or PDF. Without an editor, export markdown, html or txt.',
-  export_render_limit: 'This document is too large for the worker to write as txt or page; export markdown or html, or open it in Rapier for Word or PDF.',
-  export_render_unavailable: 'This host could not write the txt or page file; export markdown or html instead.',
-  presentation_already_pending: 'A reveal is already pending; check its view status with read before another.',
-  wait_already_pending: 'One wait at a time; the earlier wait must finish first.',
-  notes_folder_unreadable: 'Notes could not answer just now; try again later.',
+  export_render_limit: 'This document is too large for the worker to write as txt or page. Export markdown or html, or open it in Rapier for Word or PDF.',
+  export_render_unavailable: 'This host could not write the txt or page file. Export markdown or html instead.',
+  presentation_already_pending: 'A reveal is already pending. Check its view status with read before another.',
+  wait_already_pending: 'One wait at a time. The earlier wait must finish first.',
+  notes_folder_unreadable: 'Notes could not answer just now. Try again later.',
   notes_not_read: 'Read the whole note first, then write against its current source.',
   notes_changed: 'The note changed after your read. Read it again before writing.',
   notes_open: 'The live note is unavailable to this call. Read its current source before writing.',
   notes_history_unavailable: 'The note\'s History could not retain the current words. The note is unchanged.',
-  world_changed: 'The document changed during the call; call again.',
-  kind_not_applicable: 'Code kinds search code, Markdown kinds search Markdown, and an open comparison takes no kind; search words with no kind.',
-  outline_changed: 'The document changed during the call; read {as:"outline"} again.',
-  search_changed: 'The document changed during the call; read {query} again.',
-  read_snapshot_changed: 'The document changed during the call; read again.',
+  world_changed: 'The document changed during the call. Call again.',
+  kind_not_applicable: 'Code kinds search code, Markdown kinds search Markdown, and an open comparison takes no kind. search words with no kind.',
+  outline_changed: 'The document changed during the call. read {as:"outline"} again.',
+  search_changed: 'The document changed during the call. read {query} again.',
+  read_snapshot_changed: 'The document changed during the call. Read again.',
   comment_missing: 'Read the rapier-comment blocks for current thread ids before replying or resolving.',
-  comments_record: 'That range holds the document\'s comment threads; edit the text around it, and edit its rapier-comment blocks for discussions.',
+  comments_record: 'That range holds the document\'s comment threads. Edit the text around it, and edit its rapier-comment blocks for discussions.',
   comment_text_invalid: 'Send a nonempty comment of at most 4096 UTF-8 bytes.',
   comment_anchor_invalid: 'Read the exact passage or drawing again, then use that handle and an existing object id.',
   comments_appendix_unavailable: 'Finish the unclosed Markdown block at the end of the document before adding a comment.',
@@ -1414,7 +1414,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       if (fresh) Object.assign(value, {handle: fresh.id, expires_in_ms: LIMITS.lifetimeMs});
     }
     return {current: value, ...(value.handle
-      ? {hint: 'The passage changed; inspect current.text, then resend the intended edit with current.handle.'} : {})};
+      ? {hint: 'The passage changed. Inspect current.text, then resend the intended edit with current.handle.'} : {})};
   }
 
   function prune() {
@@ -5042,7 +5042,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       for (const row of documentAssets(text).blocks) retained.set(row.source, (retained.get(row.source) || 0) + 1);
       for (const row of hidden) {
         const count = retained.get(row.source) || 0;
-        if (!count) return failure('asset_definition_boundary', 'refused', {hint: 'Keep a blank line before retained image definitions; finish the inserted text with a line break.'});
+        if (!count) return failure('asset_definition_boundary', 'refused', {hint: 'Keep a blank line before retained image definitions. Finish the inserted text with a line break.'});
         retained.set(row.source, count - 1);
       }
       if (whole) {
@@ -5126,7 +5126,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const was = orphans(before, state.text), lost = [...orphans(after, text)].filter(id => !was.has(id) && (before.references[id] || /^IMAGE-[0-9A-F]{64}-[0-9A-F]{12}$/.test(id)));
     return lost.length ? failure('asset_definition_missing', 'refused', {labels: lost.slice(0, 8).map(id => id.toLowerCase()),
-      hint: 'This write leaves a picture with no definition. Keep each drawing as its fence from read, or remove the whole picture; undo {act} restores an earlier loss.'}) : {};
+      hint: 'This write leaves a picture with no definition. Keep each drawing as its fence from read, or remove the whole picture. undo {act} restores an earlier loss.'}) : {};
   }
 
   function givenRevision(value, current = surfaceRevision()) {
@@ -5170,7 +5170,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
       while (low < high) {const mid = Math.ceil((low + high) / 2); if (exactMatches(source, needle.slice(0, mid), scope, 1).length) low = mid; else high = mid - 1;}
       facts.hint = 'The text was not found. Copy the exact text from a fresh read.';
       if (low >= 8 && low * 2 >= needle.length) {facts.matched = low; start = exactMatches(source, needle.slice(0, low), scope, 1)[0]; end = start + low;
-        facts.hint = 'The first ' + low + ' of ' + needle.length + ' characters of old are found (the context shows where); the text differs after them.';}
+        facts.hint = 'The first ' + low + ' of ' + needle.length + ' characters of old are found (the context shows where). The text differs after them.';}
       if (change.heading !== undefined || change.block) {
         const outside = exactMatches(source, needle, undefined, 2);
         if (outside.length === 1) facts.outside = {line: lines.number(outside[0])};
@@ -5248,7 +5248,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
 
   async function doorRead(input, who, context) {
     if (input.query !== undefined && input.search !== undefined) return failure('read_selector_conflict', 'invalid', {field: 'query',
-      hint: 'query finds text in this document; search lists Notes. Choose one reader.'});
+      hint: 'query finds text in this document. search lists Notes. Choose one reader.'});
     if (input.guide || input.cursor && state.cursors[input.cursor]?.kind === 'guide') return doorGuide(input, who, context);
     const notesCursor = input.cursor && /^notes-(list|read|history)$/.test(state.cursors[input.cursor]?.kind) ? state.cursors[input.cursor] : null;
     if (input.search !== undefined || notesCursor?.kind === 'notes-list') return notesList({query: input.search, cursor: input.cursor, limit: input.limit}, who, context);
@@ -5540,7 +5540,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     }
     const empty = (input.changes || []).findIndex(row => row && row.old === '');
     if (empty >= 0) return failure('old_empty', 'invalid', {index: empty,
-      hint: 'old must be existing text. To insert, use {after, insert} (after:"" in an empty document); to replace everything, use {text}.'});
+      hint: 'old must be existing text. To insert, use {after, insert} (after:"" in an empty document). To replace everything, use {text}.'});
     const moved = input.revision !== surfaceRevision(projection), plan = moved ? untouchedTextPlan(input, projection, targets, who) : planTextChanges(source, input.changes, targets);
     if (!plan) return surfaceFailure('revision_changed', source, input, {}, targets);
     if (plan.reason) return surfaceFailure(plan.reason, source, input, plan, targets);
@@ -5563,7 +5563,7 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
     return {...result, revision: surfaceRevision(), ...(removed.length ? {removed} : {}), ...(input.filename && ['applied', 'rebased'].includes(result.outcome) ? {renamed: state.filename} : {}),
       ...(['applied', 'rebased', 'unchanged'].includes(result.outcome) ? {lines: plan.lines, ...(spread ? {lines_written: plan.written} : {}), ...(moved ? {others: plan.others} : {}), ...(compiled.options.drawAssets?.length ? {blocks: writtenBlocks(projection)} : {})} : {}),
       ...(written ? {hash: publicSurface().digest ??= sha256(written), ...(passage ? {passage} : {})} : {}),
-      ...(previews.length ? {previews, hint: 'Inspect each picture, then adjust. For detail, read {as:"image",block:id}; undo an unwanted act before repainting.'} : {})};
+      ...(previews.length ? {previews, hint: 'Inspect each picture, then adjust. For detail, read {as:"image",block:id}. Undo an unwanted act before repainting.'} : {})};
   }
 
   function passageHandle(input, who) {

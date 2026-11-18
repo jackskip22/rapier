@@ -62,7 +62,7 @@ Windows and Linux. A person and an agent edit the same document; the person's ty
 
 ## First calls
 
-1. \`open {text, filename}\` creates the document with its whole first text, drawings included. Share \`editor_url\`.
+1. \`open {text, filename}\` creates the document with its whole first text, drawings included. Use the in-chat editor where the host shows one (ChatGPT, Claude). Offer \`editor_url\` only when no view shows or the person asks for a browser. Keep \`document\` private and reuse it on later turns.
 2. \`read {document}\` returns the exact text and its revision.
 3. \`edit {document, revision, changes: [{old, new}]}\` applies one undoable act. Keep its \`act\`.
 4. \`undo {document, act}\` takes back only that act.

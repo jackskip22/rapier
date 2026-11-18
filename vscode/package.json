@@ -97,7 +97,7 @@
         "toolReferenceName": "rapier-read",
         "displayName": "Read Rapier",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines; a drawing's block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. query finds lines here. search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -144,7 +144,7 @@
             "search": {
               "type": "string",
               "maxLength": 2048,
-              "description": "Search the Notes store; \"\" lists all."
+              "description": "Search the Notes store. \"\" lists all."
             },
             "as": {
               "type": "string",
@@ -176,7 +176,7 @@
             },
             "preferences": {
               "type": "boolean",
-              "description": "Include editor preferences in state; omitted by default."
+              "description": "Include editor preferences in state. Omitted by default."
             },
             "history": {
               "type": "boolean"
@@ -206,7 +206,7 @@
             "guide": {
               "type": "string",
               "maxLength": 32,
-              "description": "Instructions only; use no other read selectors and no document.",
+              "description": "Instructions only. Use no other read selectors and no document.",
               "enum": [
                 "overview",
                 "draw",
@@ -216,7 +216,7 @@
             },
             "agent": {
               "type": "string",
-              "description": "Your display name on acts; never grants authority."
+              "description": "Your display name on acts. Never grants authority."
             },
             "operation_id": {
               "type": "string",
@@ -232,7 +232,7 @@
         "toolReferenceName": "rapier-edit",
         "displayName": "Edit Rapier",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Use this to change a document the person is working on in Rapier: the change shows at once, marked as yours, and undoes alone. Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this to change a document the person is working on in Rapier: the change shows at once, marked as yours, and undoes alone. Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since. Whole-document replacement needs the current revision. A conflict returns current context. Decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text. A rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document. Painting needs an open editor and an operation_id, and its result shows the painting. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -241,7 +241,7 @@
                 "integer",
                 "string"
               ],
-              "description": "From your latest read or open; a Note's is its sha256."
+              "description": "From your latest read or open. A Note's is its sha256."
             },
             "changes": {
               "type": "array",
@@ -399,7 +399,7 @@
                     "object",
                     "null"
                   ],
-                  "description": "App only; {at} in ms."
+                  "description": "App only, with {at} in ms."
                 }
               },
               "additionalProperties": false,
@@ -411,7 +411,7 @@
             },
             "agent": {
               "type": "string",
-              "description": "Your display name on acts; never grants authority."
+              "description": "Your display name on acts. Never grants authority."
             },
             "operation_id": {
               "type": "string",
@@ -437,16 +437,16 @@
             "act": {
               "type": "string",
               "maxLength": 256,
-              "description": "From edit; pass act or turn_id."
+              "description": "From edit. Pass act or turn_id."
             },
             "turn_id": {
               "type": "string",
               "maxLength": 160,
-              "description": "Undo a whole turn; pass act or turn_id."
+              "description": "Undo a whole turn. Pass act or turn_id."
             },
             "agent": {
               "type": "string",
-              "description": "Your display name on acts; never grants authority."
+              "description": "Your display name on acts. Never grants authority."
             },
             "operation_id": {
               "type": "string",
@@ -462,7 +462,7 @@
         "toolReferenceName": "rapier-show",
         "displayName": "Show or ask in Rapier",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Use this to point the person to a place in their Rapier document, ask them something there, or pair their browser with a 4-letter code. Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired; only paired confirms pairing. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this to point the person to a place in their Rapier document, ask them something there, or pair their browser with a 4-letter code. Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:\"pair\"). A connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired. Only paired confirms pairing. Inspect actual presentation. A request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -601,7 +601,7 @@
                 "string",
                 "boolean"
               ],
-              "description": "preferences: the setting; playback: false pauses, true plays."
+              "description": "preferences: the setting. playback: false pauses, true plays."
             },
             "note": {
               "type": "string",
@@ -631,7 +631,7 @@
             },
             "agent": {
               "type": "string",
-              "description": "Your display name on acts; never grants authority."
+              "description": "Your display name on acts. Never grants authority."
             },
             "operation_id": {
               "type": "string",

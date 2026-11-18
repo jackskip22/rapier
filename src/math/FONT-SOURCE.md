@@ -24,13 +24,13 @@ The generator's font and GUST license URLs are under
 <https://www.latex-project.org/lppl/lppl-1-3c.txt>. Each download is checked against its content hash.
 The Mono input comes from
 <https://ftp.riken.jp/CTAN/fonts/lm/fonts/opentype/public/lm/lmmono10-regular.otf> and the hook from
-<https://ftp.riken.jp/CTAN/fonts/lm/fonts/type1/public/lm/lmmi10.pfb>;
-their [complete original package](https://mirrors.ctan.org/fonts/lm.zip) is also available from CTAN.
+<https://ftp.riken.jp/CTAN/fonts/lm/fonts/type1/public/lm/lmmi10.pfb>.
+Their [complete original package](https://mirrors.ctan.org/fonts/lm.zip) is also available from CTAN.
 
 `FONT-LICENSE.txt` starts with the source fonts' exact copyrights, followed by the conversion notice and the complete,
 unmodified GUST Font License and LPPL 1.3c. The same text is kept in the `/*! ... */` header of `font.js`,
 the plug-in and its license sheet. Preserve this notice when packaging. The conversion has a different filename
-and identifies its changes; the original font authors do not maintain it. Rapier's separate typesetter is MIT.
+and identifies its changes. The original font authors do not maintain it. Rapier's separate typesetter is MIT.
 
 The calibration font is the editor's exact Geist file, from the pinned public source at
 <https://raw.githubusercontent.com/jackskip22/rapier/326a7387a190b011543fae5f5f2c6144f6163b3d/src/shell/fonts/Geist.wght400-700.woff2>.
@@ -59,9 +59,9 @@ substitutions that the math syntax does not select are not included. Thirty-five
 **4,776**. The math font's 62 mathematical monospace letters and digits exactly match the Mono source's original
 outlines and advances. Its 32 ASCII punctuation characters, U+2423 visible space and U+00DF sharp s have no
 mathematical monospace code points, so `styledGlyphs.monospace` selects their Mono outlines and 525-unit advances.
-The visible-space contour also matches Computer Modern Typewriter's visible space; `\verb*` assigns that command's
+The visible-space contour also matches Computer Modern Typewriter's visible space. `\verb*` assigns that command's
 TeX height and depth without changing its ink. The small `arrowhookleft` outline supplies amsmath's extensible hooked
-arrow; the composer assigns its five-mu advance and three-mu join. The outline-only hook record has zero advance,
+arrow. The composer assigns its five-mu advance and three-mu join. The outline-only hook record has zero advance,
 italic correction and accent attachment, and retains the original path.
 
 The exact-outline claim applies to this font asset. Separately, the typesetter's `fallbacks.js` composes 29
@@ -74,11 +74,11 @@ Styled accented letters combine mathematical alphabet glyphs with accent marks. 
 LuaTeX's default precomposed text-font letters for those two commands.
 
 Latin Modern Math has uppercase script and bold-script alphabets but no lowercase glyphs in either style.
-The typesetter retains its existing ordinary-letter fallback for those lowercase requests; it cannot supply
+The typesetter retains its existing ordinary-letter fallback for those lowercase requests. It cannot supply
 the absent calligraphic forms. Its unencoded glyphs contain no alternative lowercase script alphabet.
 
 Different zlib versions can encode the same exact data differently. The package budget is measured with
-Node 22.23.3 by `src/tools/build-math.mjs`; the packed stream always decodes to the original coordinates and metrics.
+Node 22.23.3 by `src/tools/build-math.mjs`. The packed stream always decodes to the original coordinates and metrics.
 
 ## Height and optical forms
 
@@ -88,13 +88,13 @@ Math therefore scales by **530/431**, approximately **1.2296983758700697**, rela
 The font's italic `x` retains its designed overshoot, with bounds −11–442.
 
 Geist's nominal height remains 530 across its weight axis. Its drawn `x` reaches 532 at weight 500, 535 at 650,
-and 536 at 700; the normalization uses the nominal height. It applies continuously at every text size.
+and 536 at 700. The normalization uses the nominal height. It applies continuously at every text size.
 Latin Modern supplies 70% and 50% optical script scales. Screen layout can enlarge scripts while retaining the
 appropriate `ssty` outlines. The source's fraction and radical rule thicknesses are 40 units.
 
 ## Runtime schema
 
-The asset initializes `MATH_FONT`. Paths use upward-positive font coordinates; SVG rendering reverses the
+The asset initializes `MATH_FONT`. Paths use upward-positive font coordinates. SVG rendering reverses the
 vertical axis. Measurements are in design units unless specified otherwise.
 
 | Field | Value |
@@ -103,9 +103,9 @@ vertical axis. Measurements are in design units unless specified otherwise.
 | `textUnits`, `textXHeight` | Geist units per em and nominal x-height. |
 | `chars` | Decimal Unicode code point to glyph index. |
 | `styledGlyphs` | A style's exceptional Unicode mappings: monospace punctuation, visible space and sharp s select original Mono outlines. |
-| `arrowHook` | The original small math-italic hook outline; the arrow composer supplies its advance. |
+| `arrowHook` | The original small math-italic hook outline. The arrow composer supplies its advance. |
 | `glyph(id)` | Demand-decoded `[advance, xMin, yMin, xMax, yMax, italicCorrection, topAccent, path]`. Missing IDs return `undefined`. |
-| `constants` | The 48 consumed original OpenType `MathConstants`; percentage constants remain percentages. |
+| `constants` | The 48 consumed original OpenType `MathConstants`. Percentage constants remain percentages. |
 | `vertical`, `horizontal` | Glyph index to `{variants, assembly?}`. |
 | `variants` | `[glyphIndex, advanceMeasurement]` pairs in font order. |
 | `assembly` | `{italic, parts}`. |
@@ -117,50 +117,50 @@ vertical axis. Measurements are in design units unless specified otherwise.
 | `verticalBounds` | Sparse `[bottom, top]` control bounds, in font units, for vertical glyphs whose LuaTeX box differs from their exact ink bounds. |
 
 Outline bounds round outward to whole units. The outlines themselves are unchanged, including exact fractional
-coordinates if present. Missing italic corrections are zero; missing accent attachments use half the advance.
+coordinates if present. Missing italic corrections are zero. Missing accent attachments use half the advance.
 Assembly parts retain the OpenType order: bottom to top vertically, left to right horizontally. Latin Modern has
 no MATH Device adjustments. Hint programs and general text shaping tables are not used by the SVG renderer.
 
 The asset stores no per-glyph ink bounds. The decoder derives them from the outline with the arithmetic of fontTools'
-`BoundsPen`, operation for operation in IEEE double precision; for this font every derived bound equals the
+`BoundsPen`, operation for operation in IEEE double precision. For this font every derived bound equals the
 value the 2.2.0 asset stored. The contour profiles earlier versions derived (ink edges in 32-unit strips) are
 gone from the asset since 2.6.0: layout places scripts by TeX's rules, and only the typesetting verifier
 measures ink gaps, deriving the same strips from each outline itself.
 
 LuaTeX 1.17.0's CFF loader uses Bézier control points to measure its font boxes. Most vertical glyphs have the same
-box under both rules; twelve of the 325 vertical bases and variants differ. `verticalBounds` preserves those twelve
+box under both rules. Twelve of the 325 vertical bases and variants differ. `verticalBounds` preserves those twelve
 boxes, derived by fontTools' `ControlBoundsPen`, independently of the ink decoder. Large operators use the semantic
-height and depth when centering on the axis; ink extents and original paths remain unchanged. The affected large
+height and depth when centering on the axis. Ink extents and original paths remain unchanged. The affected large
 operators are the small and large forms of `\bigtimes`, `\bigvee` and `\bigwedge`.
 
 Character mappings, optical substitutions, stretch constructions and record offsets
 occupy a compact index decoded at module load. Glyph metrics and outlines stay in independent raw DEFLATE pages
 until requested. Every page
 ends at a record boundary and contains at most 16,384 decoded bytes. The complete set of pages travels in the
-same asset; rare characters, stretch parts and optical forms require no additional download.
+same asset. Rare characters, stretch parts and optical forms require no additional download.
 
 Outlines share exactly matching contours after translation. The 8,166 ordered contour references use 5,013
 unique contour records. A record either stores its original command structure and relative coordinates, or
 exact differences from an earlier contour with the same structure. Parent chains have at most four links.
 The generator prefers small coordinate differences as well as short records, because the smallest initial
 record does not necessarily produce the smallest compressed page. Glyph assembly restores the original
-absolute `M/L/H/V/C/Z` paths, including contour order; existing outline-part consumers use those commands.
-A contour whose closing curve ends at its start omits that end point; the decoder returns the curve to the start.
+absolute `M/L/H/V/C/Z` paths, including contour order. Existing outline-part consumers use those commands.
+A contour whose closing curve ends at its start omits that end point. The decoder returns the curve to the start.
 
 Glyph metrics use a reversible half-advance accent predictor with a median origin per metric field.
 They retain the complete original advance, italic and accent measurements. Signed record integers
 use zigzag values: values below 240 take one byte, the next 3,840 values take two bytes, and larger values use
-an escape followed by unsigned LEB128. The coordinate unit is exact; this encoding performs no quantization.
+an escape followed by unsigned LEB128. The coordinate unit is exact. This encoding performs no quantization.
 
 Each inflated page and completed glyph record stays for the life of the module, so the font
 itself bounds these caches: the pages inflate to about 520 KB. Temporary parent coordinates and page views are
-discarded after a glyph is assembled; cached glyphs keep the completed path and metrics.
+discarded after a glyph is assembled. Cached glyphs keep the completed path and metrics.
 These caches contain font data only. They retain no formula source, parse tree, layout result, SVG element or
 document. Returned internal records are read-only to consumers.
 
 The synchronous decoder checks compressed input, output size, record boundaries and parent depth. It requires
 no network, font installation, font parser or platform font shaping at runtime. `glyph` is an
-internal font accessor; the public parser and rendering API remain independent of this storage format.
+internal font accessor. The public parser and rendering API remain independent of this storage format.
 
 The format follows the [OpenType MATH specification](https://learn.microsoft.com/en-us/typography/opentype/spec/math)
 and [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951). The generator omits eight unconsumed constants:

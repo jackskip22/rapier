@@ -16,7 +16,7 @@ A connected agent can help. It uses Rapier's tools and follows your Will: Intent
 
 ## Your work stays yours
 
-No account or server is needed to write, draw or save. The editor works offline; installing it and optional math,
+No account or server is needed to write, draw or save. The editor works offline. Installing it and optional math,
 diagram or PDF resources may need a download.
 
 - **Save** writes Markdown any text editor can read, with pictures inside. Other Markdown apps may show layout and
@@ -27,14 +27,14 @@ diagram or PDF resources may need a download.
 
 Your browser can clear notes it stores. To keep a separate copy:
 
-1. Open **Notes settings** and tap **BACKUP**. Each backup is a new file, named with the date and time; it never
+1. Open **Notes settings** and tap **BACKUP**. Each backup is a new file, named with the date and time. It never
    replaces an earlier one.
 2. Save the file somewhere you control, and check that it arrived.
 
 A local save or an open share sheet is not a backup. Without browser storage, notes last only until you close the page.
 
 **Sync**, in Notes settings, writes your notes as plain Markdown files to cloud storage you choose, which Rapier never
-sees. Anyone with access to that storage can read them. Sync is not a backup; keep backing up.
+sees. Anyone with access to that storage can read them. Sync is not a backup. Keep backing up.
 
 ## Put it on your phone
 

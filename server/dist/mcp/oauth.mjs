@@ -320,7 +320,7 @@ async function consent(request, env, api) {
     const callbackSource = ['https:', 'http:'].includes(redirect.protocol) ? redirect.origin : redirect.protocol;
     return html(200, 'Connect Rapier',
       `<p><strong><bdi>${escapeHTML(description.clientName)}</bdi></strong> asks to ${write ? 'read and edit' : 'read'} your Rapier documents${write ? '' : '. It cannot change them'}.</p>` +
-      '<p>No account is needed. To open a document in a browser, open the link your assistant gives you; the page shows a four-letter code to tell your assistant.</p>' +
+      '<p>No account is needed. To open a document in a browser, open the link your assistant gives you. The page shows a four-letter code to tell your assistant.</p>' +
       (offline ? '<p>The connection stays between chats until you revoke it on the <a href="/oauth/disconnect" target="_blank" rel="noopener noreferrer">connections page</a>.</p>' : '') +
       `<p class="where">Returns to <bdi>${escapeHTML(description.redirectHost)}</bdi>${description.clientDomain ? '<br>Client domain <bdi>' + escapeHTML(description.clientDomain) + '</bdi>' : ''}` +
       (description.redirectIsLoopback ? '<br>An app on this computer: any local process could be listening at that address.' : '') + '</p>' +
@@ -531,6 +531,7 @@ export async function handleOAuth(request, env, ctx, next) {
       return new Response(null, {status: 303, headers: headers({Location: error.redirectTo})});
     }
     if (error?.name === 'AuthorizationError' || error?.name === 'OAuthError') return json(400, {error: 'invalid_request', message: 'The authorization request is invalid or has expired.'});
+    if (error?.name === 'CimdFetchError') return json(400, {error: 'invalid_client', message: 'The client metadata document could not be fetched or read.'});
     return json(503, {error: 'authentication_unavailable'});
   }
   return next(request, authority);

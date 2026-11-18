@@ -57,5 +57,5 @@ export async function closedPageRead(kv, now = Date.now(), {args = {}, caller, k
   }
   const read = await kept.kernel.invoke('read', args, caller);
   return {...read, source: 'checkpoint', checkpointAt: new Date(checkpoint.at).toISOString(),
-    hint: 'This is the page as it was when it last closed; the person may have changed it since. Edits wait for the page.'};
+    hint: 'This is the page as it was when it last closed. The person may have changed it since. Edits wait for the page.'};
 }

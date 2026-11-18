@@ -9,12 +9,12 @@ to source or history without the person's permission.
 available to you, open an issue titled "security" with no details in it and a maintainer will reach you. Please do not
 post the details in a public issue or discussion until a fix has shipped.
 
-**What helps:** the smallest document, file or message that shows it; the browser and version; whether it needs the
+**What helps:** the smallest document, file or message that shows it. The browser and version, whether it needs the
 Android app, the exported page, an embed, or the MCP door. A witness row that reproduces it is the best report there
 is ([`CONTRIBUTING.md`](CONTRIBUTING.md) says how rows work).
 
 **What you can expect:** an answer within a few days, a fix in the next release when the report is right, and your
-name in the release notes if you want it there. There is no bounty; there is thanks.
+name in the release notes if you want it there. There is no bounty. There is thanks.
 
 **Scope.** `rapier.website`, `mcp.rapier.website`, the published page, the Android app, the npm packages
 (`rapier-html`, `rapier-markdown-kit`, `rapier-embed`, `rapier-jxl`), the Claude and OpenAI plugins. Third-party sites

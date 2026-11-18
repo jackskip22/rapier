@@ -19,7 +19,7 @@ function headOf(kv, now) {
 
 export function pendingReceipt(entry) {
   return {outcome: 'pending', reason: 'page_closed', pending: {kind: 'page', requestId: entry.id},
-    hint: "Applies when the person's page opens; the person sees it as your act and can undo it.",
+    hint: "Applies when the person's page opens. The person sees it as your act and can undo it.",
     expiresAt: new Date(entry.expiresAt).toISOString()};
 }
 

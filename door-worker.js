@@ -77,7 +77,7 @@ export const DOORS = Object.freeze({
 		lead: 'This page opens a watercolor canvas. Wet color spreads across textured paper, pigments blend, and washes dry with darker edges. Paint with a finger, a mouse or a pen.',
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
-			Object.freeze(['Does it work on a phone?', 'Yes. Paint with your finger or a stylus. Watercolor needs WebGPU; without it, Rapier paints with Brushes.']),
+			Object.freeze(['Does it work on a phone?', 'Yes. Paint with your finger or a stylus. Watercolor needs WebGPU. Without it, Rapier paints with Brushes.']),
 			Object.freeze(['Can I save my painting?', saved + ' as an editable drawing.']),
 		])}),
 	// /paint answers "paint online" with Watercolor first: the page opens on Watercolor where the device runs it, on Brushes
@@ -88,13 +88,13 @@ export const DOORS = Object.freeze({
 		h1: 'Paint online for free', view: 'paint', related: ['/watercolor', '/draw', '/jxl', '/notes'],
 		lead: 'This page opens a watercolor canvas. Wet pigment flows across textured paper, blends and dries with darker edges. Paint with a finger on a phone, or a mouse or pen on a computer. Brushes adds oil, bristle, scumble, pencil and pen from MyPaint. Nothing to download or sign up for.',
 		howTo: Object.freeze(['How to paint online with watercolor', Object.freeze([
-			'Open this page. Watercolor is ready where your device has WebGPU; without it, Brushes opens.',
+			'Open this page. Watercolor is ready where your device has WebGPU. Without it, Brushes opens.',
 			'Choose a pigment and a brush size, then paint. Add another color while the first is wet to blend them.',
 			'For oil, pencil or pen, tap Watercolor at the top left, then Brushes.',
 			'Press Done to download the painting or add it to your document.'])]),
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
-			Object.freeze(['Can I paint with watercolor online?', 'Yes. This page opens on Watercolor. It needs WebGPU; without it, Rapier paints with Brushes.']),
+			Object.freeze(['Can I paint with watercolor online?', 'Yes. This page opens on Watercolor. It needs WebGPU. Without it, Rapier paints with Brushes.']),
 			Object.freeze(['Does it work on a phone?', 'Yes. Paint with your finger or a stylus.']),
 			Object.freeze(['Do I need to download an app?', 'No. It runs in your browser. On Android you can also install Rapier from Google Play.']),
 			Object.freeze(['Can kids use it?', 'Yes. No account, no tracking, no ads.']),
@@ -106,22 +106,22 @@ export const DOORS = Object.freeze({
 		description: 'Convert PNG, JPG, GIF and video to JPEG XL (JXL), or make an animated JXL from GIFs, videos and pictures. Free, in your browser, offline.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Free JPEG XL converter', view: 'jxl', encoder: Object.freeze({name: 'rapier-jxl', repository: 'https://github.com/jackskip22/rapier-jxl', package: 'https://www.npmjs.com/package/rapier-jxl'}), related: ['/paint', '/draw', '/notes'],
-		features: Object.freeze(['JPG, PNG, GIF, WebP, AVIF and APNG to JPEG XL', 'MP4, WebM and MOV to animated JPEG XL', 'Animated JPEG XL maker: GIFs, videos and pictures in one frame strip; reorder, skip, copy, reverse, boomerang; delays and loops', 'Lossless, High or Medium quality', 'Exact JPEG recompression', 'Keeps transparency, 16-bit PNG, color profiles and HDR', 'Runs offline on your device', 'Many files at once, zip download']),
-		lead: 'Convert PNG, JPG, GIF and video to JPEG XL (JXL), free. Files are made on your device, offline; nothing is uploaded. Choose the quality: Lossless, High or Medium. Under Lossless a JPEG gets smaller and the original restores exactly.',
+		features: Object.freeze(['JPG, PNG, GIF, WebP, AVIF and APNG to JPEG XL', 'MP4, WebM and MOV to animated JPEG XL', 'Animated JPEG XL maker: GIFs, videos and pictures in one frame strip. Reorder, skip, copy, reverse, boomerang, delays and loops', 'Lossless, High or Medium quality', 'Exact JPEG recompression', 'Keeps transparency, 16-bit PNG, color profiles and HDR', 'Runs offline on your device', 'Many files at once, zip download']),
+		lead: 'Convert PNG, JPG, GIF and video to JPEG XL (JXL), free. Files are made on your device, offline. Nothing is uploaded. Choose the quality: Lossless, High or Medium. Under Lossless a JPEG gets smaller and the original restores exactly.',
 		howTo: Object.freeze([
 			Object.freeze(['How to convert PNG or JPG to JPEG XL', Object.freeze(['Choose or drop pictures: JPG, PNG, WebP, AVIF or any picture your browser opens.', 'Choose the quality: Lossless, High or Medium. Effort keeps the picture: more effort makes a smaller file and takes longer. Under Lossless a JPEG converts exactly.', 'Download each .jxl file, or all of them as one zip.'])]),
 			Object.freeze(['How to convert a video to animated JPEG XL', Object.freeze(['Choose or drop an MP4, WebM or MOV.', 'The first time, download JPEG XL complete: free, once, then offline.', 'Up to 30 frames a second, without sound. A long or large video is scaled down or cut, and its row says so.', 'Download the .jxl file.'])]),
 			Object.freeze(['How to convert a GIF to animated JXL', Object.freeze(['Choose or drop an animated GIF, APNG or animated WebP.', 'The first time, download JPEG XL complete: free, once, then offline.', 'Choose the quality: Lossless, or High or Medium for a smaller file. Frame timing is kept.', 'Download the .jxl file.'])]),
-			Object.freeze(['How to make an animated JPEG XL', Object.freeze(['Tap animated at the top.', 'Choose or drop a GIF, APNG, animated WebP, a video or several pictures (JPG, PNG, WebP, HEIC). For a video, set the start, the end, the frames a second and the size.', 'Drag frames to reorder them; skip, copy or delete them; set a delay for one, several or all, and the loops.', 'Tap Make JPEG XL, compare it with the original, then Download.'])]),
+			Object.freeze(['How to make an animated JPEG XL', Object.freeze(['Tap animated at the top.', 'Choose or drop a GIF, APNG, animated WebP, a video or several pictures (JPG, PNG, WebP, HEIC). For a video, set the start, the end, the frames a second and the size.', 'Drag frames to reorder them. Skip, copy or delete them. Set a delay for one, several or all, and the loops.', 'Tap Make JPEG XL, compare it with the original, then Download.'])]),
 		]),
 		faq: Object.freeze([
 			Object.freeze(['Is it free?', free]),
 			Object.freeze(['Is my picture uploaded?', 'No. Files are converted on your device.']),
-			Object.freeze(['Does it work offline?', 'Yes. The encoder is inside Rapier. Videos and animations need JPEG XL complete, a one-time download; after that they convert offline too.']),
+			Object.freeze(['Does it work offline?', 'Yes. The encoder is inside Rapier. Videos and animations need JPEG XL complete, a one-time download. After that they convert offline too.']),
 			Object.freeze(['Is JPEG XL lossless?', 'Lossless is. High and Medium are lossy and much smaller. A JPEG converted under Lossless restores exactly.']),
 			Object.freeze(['How much smaller is JPEG XL?', 'An exact JPEG: usually 10 to 20% smaller. A 710 KB PNG painting: 428 KB lossless, 73 KB at High, 35 KB at Medium.']),
 			Object.freeze(['What does it keep?', 'Transparency, 16-bit PNG (Lossless), color profiles such as Display P3 and Adobe RGB, and HDR PNGs (PQ or HLG). Video sound is dropped.']),
-			Object.freeze(['How many pictures can I convert?', 'Any number. Rapier converts a few at a time; Cancel stops it. If the device runs out of memory, finished files are kept.']),
+			Object.freeze(['How many pictures can I convert?', 'Any number. Rapier converts a few at a time. Cancel stops it. If the device runs out of memory, finished files are kept.']),
 			Object.freeze(['Which browsers open JPEG XL?', 'Chrome 155, Firefox 158 and Safari 17 and later. Safari does not play animated JPEG XL. Any browser can make the files here.']),
 			Object.freeze(['How do I make an animated JPEG XL?', 'Tap animated, then choose or drop a GIF, APNG, animated WebP, a video or several pictures. Order the frames, set their delays, then Make JPEG XL and download the .jxl file.']),
 			Object.freeze(['Why does my viewer show a still picture?', 'Some viewers and image libraries decode only the first frame of a JPEG XL. Open the file in a browser that plays it, or in a viewer built on libjxl with animation turned on.']),
@@ -130,12 +130,12 @@ export const DOORS = Object.freeze({
 		sections: Object.freeze([
 			Object.freeze(['How it works', 'The JPEG XL encoder is part of Rapier, which is one offline HTML file. Your browser reads each picture, or plays each video frame by frame, and the encoder writes the JPEG XL file on your device. Nothing is uploaded. A JPEG is carried into JPEG XL without decoding it, then restored and checked against the original before you download.']),
 			Object.freeze(['Why JPEG XL', 'In Lossless mode a JPEG converts to a smaller file and restores the exact original. Other pictures come out smaller at the same quality. JPEG XL also holds transparency, high dynamic range and animation.']),
-			Object.freeze(['What is rapier-jxl?', 'This page turns your pictures, GIFs and videos into JPEG XL files that are smaller, and still look as good as a high-quality JPEG. It runs on your device. Nothing is uploaded. Lossless keeps every pixel. High and Medium make a smaller file; start with High if you want it to look as good as possible. For a JPEG, Lossless can shrink the file and still restore the original exactly. The upload encoder is about 224 KB, over twice as fast as libvips in the browser, and uses about half the memory for a 12-megapixel picture. Measured against wasm-vips 0.0.19.']),
+			Object.freeze(['What is rapier-jxl?', 'This page turns your pictures, GIFs and videos into JPEG XL files that are smaller, and still look as good as a high-quality JPEG. It runs on your device. Nothing is uploaded. Lossless keeps every pixel. High and Medium make a smaller file. Start with High if you want it to look as good as possible. For a JPEG, Lossless can shrink the file and still restore the original exactly. The upload encoder is about 224 KB, over twice as fast as libvips in the browser, and uses about half the memory for a 12-megapixel picture. Measured against wasm-vips 0.0.19.']),
 			Object.freeze(['Save a 3D scene', 'A WebGL scene saved as JPEG XL while it keeps drawing, on this device: the view on screen or the whole world as a 4096 by 2048 panorama, exact, fast or smallest. Each file is opened again and compared with the scene. With a VR headset, the panorama surrounds you.']),
 			Object.freeze(['Large pictures and panoramas', 'With the full encoder, firstRegion puts a chosen rectangle earlier in the file so it can appear sooner. Use it for the first view of a large picture or panorama. It does not track the viewer or stream separate tiles.']),
 			Object.freeze(['Keep HDR image data', 'The full encoder accepts floating-point image data, keeping bright lighting values for later rendering instead of flattening them into an 8-bit screenshot. Describe the color space correctly. Showing HDR brightness still needs a compatible display and viewer.']),
-			Object.freeze(['Save a GPU texture', 'Pass a supported WebGPU texture and its device to the full encoder; the texture needs COPY_SRC usage. This avoids an intermediate PNG or JPEG, not GPU readback. Keep the texture alive until encoding finishes. The upload module does not accept GPU textures.']),
-			Object.freeze(['Use rapier-jxl in your site or app', 'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies. It encodes lossless and lossy pictures and animations, carries a JPEG exactly, and keeps alpha and HDR. The upload encoder is about 182 KB gzipped; the full encoder about 294 KB. Run npm install rapier-jxl, then import {encode} from rapier-jxl/upload: encode(file) returns the JPEG XL bytes.', Object.freeze([Object.freeze(['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl']), Object.freeze(['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl']), Object.freeze(['SnapDOM JPEG XL plugin', 'https://snapdom.dev/plugins/jxl/']), Object.freeze(['EmDash JPEG XL plugin', 'https://plugins.emdashcms.com/plugins/@rapier.website/jxl'])])]),
+			Object.freeze(['Save a GPU texture', 'Pass a supported WebGPU texture and its device to the full encoder. The texture needs COPY_SRC usage. This avoids an intermediate PNG or JPEG, not GPU readback. Keep the texture alive until encoding finishes. The upload module does not accept GPU textures.']),
+			Object.freeze(['Use rapier-jxl in your site or app', 'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies. It encodes lossless and lossy pictures and animations, carries a JPEG exactly, and keeps alpha and HDR. The upload encoder is about 182 KB gzipped. The full encoder is about 294 KB. Run npm install rapier-jxl, then import {encode} from rapier-jxl/upload: encode(file) returns the JPEG XL bytes.', Object.freeze([Object.freeze(['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl']), Object.freeze(['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl']), Object.freeze(['SnapDOM JPEG XL plugin', 'https://snapdom.dev/plugins/jxl/']), Object.freeze(['EmDash JPEG XL plugin', 'https://plugins.emdashcms.com/plugins/@rapier.website/jxl'])])]),
 		])}),
 	// /diff answers the comparison searches (diff checker, compare text, compare two Word documents).
 	// Its words say compare, never diff (many people do not know the word), but for the searched phrase "diff checker":
@@ -148,7 +148,7 @@ export const DOORS = Object.freeze({
 		features: Object.freeze(['Compare pasted text, Markdown, code, Word (.docx) and PDF', 'Word by word, not just line by line', 'A moved paragraph shows as a move', 'Word documents compared as formatted pages, pictures included', 'Documents side by side on a computer, one column on a phone', 'Runs offline on your device: nothing uploaded', 'Open either side in Rapier to edit it']),
 		lead: 'Paste two texts, or choose two files, and see what changed, word by word. Word documents and PDFs are read on your device, not uploaded. A paragraph that moved shows as one move, with any words changed inside it, not as a deletion and an insertion. Free, with no account or limits.',
 		howTo: Object.freeze([
-			Object.freeze(['How to compare two texts', Object.freeze(['Paste the original text on the left, or the top on a phone.', 'Paste the changed text on the right.', 'Tap Compare. Step through the changes with the arrows at the top; close the comparison to change either text.'])]),
+			Object.freeze(['How to compare two texts', Object.freeze(['Paste the original text on the left, or the top on a phone.', 'Paste the changed text on the right.', 'Tap Compare. Step through the changes with the arrows at the top. Close the comparison to change either text.'])]),
 			Object.freeze(['How to compare two Word documents', Object.freeze(['Choose or drop the original .docx on the first side.', 'Choose or drop the changed .docx on the second side.', 'Tap Compare. Each change shows on the page as the document draws it, old beside new, with the changed words marked.'])]),
 		]),
 		faq: Object.freeze([
@@ -161,7 +161,7 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Can I edit the result?', 'Yes. Open either side in Rapier, a free Markdown editor, and keep writing.']),
 		]),
 		sections: Object.freeze([
-			Object.freeze(['How it works', 'Rapier compares words, not just lines, then groups the edits into changes a person reads: a replaced word, an added sentence, a moved paragraph. It runs inside Rapier, one offline HTML file. Your browser reads each file; nothing is sent anywhere.']),
+			Object.freeze(['How it works', 'Rapier compares words, not just lines, then groups the edits into changes a person reads: a replaced word, an added sentence, a moved paragraph. It runs inside Rapier, one offline HTML file. Your browser reads each file. Nothing is sent anywhere.']),
 			Object.freeze(['Use rapier-diff in your site or app', 'rapier-diff is the comparison engine inside Rapier: plain JavaScript, MIT licensed, no dependencies. Run npm install rapier-diff, then import {diff} from rapier-diff: diff(before, after) returns the exact edits and the changes they make.', Object.freeze([Object.freeze(['rapier-diff on GitHub', 'https://github.com/jackskip22/rapier-diff']), Object.freeze(['rapier-diff on npm', 'https://www.npmjs.com/package/rapier-diff'])])]),
 		])}),
 	// The converter (interchange/convert-view.js) at its hub and its four pair addresses: one view, each address choosing what it makes
@@ -181,7 +181,7 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Is it free?', free]),
 			Object.freeze(['Are my files uploaded?', 'No. Files are converted on your device, so private documents never reach a server or an AI service.']),
 			Object.freeze(['Can I give the Markdown to ChatGPT or Claude?', 'Yes. Markdown keeps headings, lists and tables as plain text, which AI tools and LLMs read well. Convert here, then paste or attach the .md file.']),
-			Object.freeze(['Does it work offline?', 'Yes. Word, HTML and Markdown convert offline. PDF to Markdown needs the free PDF reader, downloaded once; then it works offline too.']),
+			Object.freeze(['Does it work offline?', 'Yes. Word, HTML and Markdown convert offline. PDF to Markdown needs the free PDF reader, downloaded once. Then it works offline too.']),
 			Object.freeze(['What happens to pictures?', 'Pictures from Word and PDF go inside the Markdown file in their own format, so one .md carries them. Markdown to Word, PDF or HTML keeps them as they look on the page.']),
 			Object.freeze(['Can I convert HTML to Markdown, or Markdown to HTML?', 'Yes. Drop an .html file and choose Markdown: headings, lists, tables, links and code become Markdown. Drop an .md file and choose HTML for a web page that opens offline.']),
 		])}),
@@ -263,7 +263,7 @@ export const DOORS = Object.freeze({
 		description: 'Write Mermaid and see it drawn: flowcharts, sequence, class, state, ER and Gantt diagrams. Export SVG or PNG. Free, offline, no sign-up, nothing uploaded.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
 		h1: 'Free diagram maker', view: 'diagrams', related: ['/draw', '/jxl', '/diff', '/'],
-		features: Object.freeze(['Mermaid live editor: the diagram is drawn as you type', 'Flowchart, sequence, class, state, ER, Gantt, pie, mind map, timeline, journey, Git, quadrant, XY chart, Sankey and Kanban', 'Export SVG or PNG', 'Copy as a Markdown mermaid block, or open it in the editor', 'Draw diagrams by hand with arrows that stay attached', 'Runs offline on your device; nothing uploaded, no sign-up']),
+		features: Object.freeze(['Mermaid live editor: the diagram is drawn as you type', 'Flowchart, sequence, class, state, ER, Gantt, pie, mind map, timeline, journey, Git, quadrant, XY chart, Sankey and Kanban', 'Export SVG or PNG', 'Copy as a Markdown mermaid block, or open it in the editor', 'Draw diagrams by hand with arrows that stay attached', 'Runs offline on your device. Nothing uploaded, no sign-up']),
 		lead: 'Write Mermaid and the diagram is drawn as you type: flowcharts, sequence, class, state and ER diagrams, Gantt charts, mind maps and more. Save it as SVG or PNG, copy it as Markdown, or open it in the editor and export the document as PDF or Word. Rather move boxes by hand? Draw makes diagrams with arrows that stay attached. It all runs on your device: nothing is uploaded, and there is no sign-up.',
 		howTo: Object.freeze([
 			Object.freeze(['How to make a diagram from Mermaid', Object.freeze(['Pick an example, such as Flowchart or Sequence, or paste your Mermaid.', 'Change the words and the drawing follows as you type.', 'Tap SVG or PNG to download it, or Copy Markdown for a mermaid block.'])]),
@@ -279,7 +279,7 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Can I use it on my phone?', 'Yes. It is made for phones first, and works the same on a computer.']),
 		]),
 		sections: Object.freeze([
-			Object.freeze(['How it works', 'Rapier is one offline HTML file. Flowcharts are drawn by Rapier itself; the other kinds by Pele, an MIT Mermaid renderer, in Rapier\'s plug-in. Both run in your browser, so your diagram never leaves your device.']),
+			Object.freeze(['How it works', 'Rapier is one offline HTML file. Flowcharts are drawn by Rapier itself. The other kinds are drawn by Pele, an MIT Mermaid renderer, in Rapier\'s plug-in. Both run in your browser, so your diagram never leaves your device.']),
 			Object.freeze(['Put diagrams in your site or app', 'rapier-embed puts the Rapier editor, diagrams included, in your web app. It runs from your own copy and saves to your storage.', Object.freeze([Object.freeze(['Rapier on GitHub', 'https://github.com/jackskip22/rapier']), Object.freeze(['rapier-embed on npm', 'https://www.npmjs.com/package/rapier-embed'])])]),
 		]),
 		}),
@@ -300,7 +300,7 @@ export const STANDALONE = Object.freeze({
 	'/gallery': Object.freeze({name: 'Gallery', file: 'gallery.html', title: 'Free vintage page templates and drop letters in SVG | Rapier',
 		description: 'Thousands of free ornaments, page borders and decorative capital letters, traced from old books. Open any piece in Rapier or download it as SVG.',
 		image: 'og.png', imageSize: [1200, 630], imageAlt: 'The Rapier logo',
-		h1: 'Gallery', lead: 'Borders, ornaments and decorative letters, free in Rapier: page borders and title frames; corners, dividers, flourishes, cartouches, rosettes and vignettes; illuminated, Gothic, Renaissance, Baroque and Art Nouveau initials. Every piece is public domain SVG, traced from old books.'}),
+		h1: 'Gallery', lead: 'Borders, ornaments and decorative letters, free in Rapier: page borders, title frames, corners, dividers, flourishes, cartouches, rosettes, vignettes, and illuminated, Gothic, Renaissance, Baroque and Art Nouveau initials. Every piece is public domain SVG, traced from old books.'}),
 });
 // Every page of the site but home, for the links and the site's data.
 export const SITE_PAGES = Object.freeze({...PAGES, ...STANDALONE});

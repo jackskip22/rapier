@@ -57,7 +57,7 @@ maintainers, except anything You conspicuously mark "Not a Contribution".
 
 **How you sign.** You sign once: on your first pull request to a Rapier repository the CLA check asks you to comment
 "I have read the CLA Document and I hereby sign the CLA", and records your GitHub name in `signatures/cla.json`. Your signature covers every later contribution. Until it is signed, a pull request stays open and
-unmerged; nothing else happens to it.
+unmerged. Nothing else happens to it.
 
 **What this does not do.** It does not take your copyright. It does not stop you using your own contribution anywhere
 else, under any licence you like. It does not oblige you to anything beyond the contributions you choose to make.

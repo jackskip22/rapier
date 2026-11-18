@@ -19,7 +19,7 @@ export function pendingTurnAnswer(operation, args) {
   const painting = operation === 'edit' && paints(args);
   return {outcome: 'pending', reason: 'editor_unavailable', ...(painting ? {painting: true} : {}),
     retry: painting ? 'Still painting in the editor. Send the same call with the same operation_id to receive the finished painting.'
-      : 'Send the same call with the same operation_id once the editor is open; it answers what the page decided.'};
+      : 'Send the same call with the same operation_id once the editor is open. It answers what the page decided.'};
 }
 
 export class PageRelay {

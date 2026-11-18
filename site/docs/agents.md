@@ -6,13 +6,13 @@ Rapier is a free Markdown editor your user keeps working in while you help. This
 
 Seven tools. Each line is the tool's own description, word for word.
 
-- **`open`**: Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account, in the chat or any browser. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:"new", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:"pair", code}. Share editor_url when available; keep document private.
-- **`read`**: Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:"outline") or a PNG (as:"image") of the page or of the named block, heading or lines; a drawing's block gives it at full detail, even while it is open in Draw. query finds lines here; search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence; after_revision with wait_ms waits for their next change. guide returns instructions; guide resource URIs are not document IDs.
-- **`edit`**: Use this to change a document the person is working on in Rapier: the change shows at once, marked as yours, and undoes alone. Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since; whole-document replacement needs the current revision. A conflict returns current context; decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text; a rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document; painting needs an open editor and an operation_id, and its result shows the painting.
+- **`open`**: Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account. Shows as an editor inside the chat where the host can show one. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:"new", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page. Otherwise a document map. A browser code goes to show {target:"pair", code}. Keep the document private. Share editor_url only when no view shows or the person asks for a browser.
+- **`read`**: Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:"outline") or a PNG (as:"image") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. query finds lines here. search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs.
+- **`edit`**: Use this to change a document the person is working on in Rapier: the change shows at once, marked as yours, and undoes alone. Apply unique exact-text changes atomically as one undoable act (act is its id string), rename with filename, or set Note fields with note. At a moved numeric revision, literal edits apply if untouched since. Whole-document replacement needs the current revision. A conflict returns current context. Decide afresh. Drawings, painting, Water, comments and HTML objects use fenced text. A rapier-draw diagram stays live for the person, who drags its boxes and retypes its labels in the document. Painting needs an open editor and an operation_id, and its result shows the painting.
 - **`undo`**: Use this when the person wants a change of yours in Rapier taken back. Undo one act or one turn (act or turn_id, not both), preserving later work.
-- **`show`**: Use this to point the person to a place in their Rapier document, ask them something there, or pair their browser with a 4-letter code. Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:"pair"); a connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired; only paired confirms pairing. Inspect actual presentation; a request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.
-- **`export`**: Use this when the person wants their Rapier document as a file to keep: Markdown, Word, PDF, plain text, or one HTML file that opens and edits offline. to:"file" (default) delivers markdown, html, page, txt, docx or pdf (html is the whole editor with the document inside, editable offline); to:"save" saves to the bound destination; to:"clipboard" copies a passage as plain, markdown, formatted or complete. to:"sync" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor; a self-hosted server can provide a renderer. Inspect delivery; export never publishes a website.
-- **`convert`**: Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures; omit it to let the person pick them. quality: lossless, high (default) or medium; effort 1-9 (default 7: higher is smaller and slower). To convert files in your own sandbox, run npx rapier-jxl <file|folder>: it prints each size before and after.
+- **`show`**: Use this to point the person to a place in their Rapier document, ask them something there, or pair their browser with a 4-letter code. Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:"pair"). A connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired. Only paired confirms pairing. Inspect actual presentation. A request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.
+- **`export`**: Use this when the person wants their Rapier document as a file to keep: Markdown, Word, PDF, plain text, or one HTML file that opens and edits offline. to:"file" (default) delivers markdown, html, page, txt, docx or pdf (html is the whole editor with the document inside, editable offline). to:"save" saves to the bound destination. to:"clipboard" copies a passage as plain, markdown, formatted or complete. to:"sync" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor. A self-hosted server can provide a renderer. Inspect delivery. Export never publishes a website.
+- **`convert`**: Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures. Omit it to let the person pick them. quality: lossless, high (default) or medium. effort 1-9 (default 7, higher is smaller and slower). To convert files in your own sandbox, run npx rapier-jxl <file|folder>: it prints each size before and after.
 
 Together they cover the whole product:
 
@@ -26,14 +26,14 @@ Together they cover the whole product:
 
 ## JPEG XL for agents
 
-`convert` turns pictures into JPEG XL and JPEG XL back into pictures. Everything converts on the person's device; nothing reaches Rapier's server.
+`convert` turns pictures into JPEG XL and JPEG XL back into pictures. Everything converts on the person's device. Nothing reaches Rapier's server.
 
-- **Both directions.** The file's kind decides. A JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL; a video becomes an animated JPEG XL. A JPEG at `lossless` can be restored exactly. A `.jxl` that carries its JPEG gives that JPEG back; any other `.jxl` gives a PNG.
-- **Settings.** `quality`: `lossless`, `high` (default) or `medium`. `effort`: 1 to 9 (default 7); higher is smaller and slower.
-- **Hosted server** (`https://mcp.rapier.website/door/mcp`): `convert` opens the converter in the app's view. Pass the chat's pictures as `files` and they convert at once, or omit `files` and the person picks them. Without a view it answers with the converter's link, https://rapier.website/jxl. The call returns once the converter is open; the converted files stay with the person.
-- **Page tools** (WebMCP, `window.RapierAgentBrowser`, an MCP App's view): pass `files` as `{name, data}`, `data` the exact bytes in base64. Up to 32 files, 32 MB and 400 megapixels in all per call. It returns each file's name, sizes and what was kept; the files go to the person.
-- **Animation and video** need JPEG XL complete, a one-time download; after that they convert offline.
-- **Shell.** `npx rapier-jxl <file|folder>` converts PNG, JPEG and GIF files and prints each size before and after. `--json` prints one line per file, then a summary: `input`, `output`, `inputBytes`, `outputBytes`, `kept` (`jpeg-bytes`, `pixels` or `lossy`), `error.hint` on failure. Also `--quality 1-100`, `--lossless`, `--effort 1-9`, `--out`. A `.jxl` that carries its JPEG gives it back; any other `.jxl` gives a PNG.
+- **Both directions.** The file's kind decides. A JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL. A video becomes an animated JPEG XL. A JPEG at `lossless` can be restored exactly. A `.jxl` that carries its JPEG gives that JPEG back. Any other `.jxl` gives a PNG.
+- **Settings.** `quality`: `lossless`, `high` (default) or `medium`. `effort`: 1 to 9 (default 7). Higher is smaller and slower.
+- **Hosted server** (`https://mcp.rapier.website/door/mcp`): `convert` opens the converter in the app's view. Pass the chat's pictures as `files` and they convert at once, or omit `files` and the person picks them. Without a view it answers with the converter's link, https://rapier.website/jxl. The call returns once the converter is open. The converted files stay with the person.
+- **Page tools** (WebMCP, `window.RapierAgentBrowser`, an MCP App's view): pass `files` as `{name, data}`, `data` the exact bytes in base64. Up to 32 files, 32 MB and 400 megapixels in all per call. It returns each file's name, sizes and what was kept. The files go to the person.
+- **Animation and video** need JPEG XL complete, a one-time download. After that they convert offline.
+- **Shell.** `npx rapier-jxl <file|folder>` converts PNG, JPEG and GIF files and prints each size before and after. `--json` prints one line per file, then a summary: `input`, `output`, `inputBytes`, `outputBytes`, `kept` (`jpeg-bytes`, `pixels` or `lossy`), `error.hint` on failure. Also `--quality 1-100`, `--lossless`, `--effort 1-9`, `--out`. A `.jxl` that carries its JPEG gives it back. Any other `.jxl` gives a PNG.
 
 ## Rules
 
@@ -43,7 +43,7 @@ Together they cover the whole product:
 - For an edit, use the current revision and change only the requested passage. Each batch is one undoable act.
 - A request is not proof the person saw it. Inspect the result.
 - If something is missing or the revision changed, say what you need.
-- Keep `document` private. Share `editor_url` when you get one.
+- Keep `document` private. Use the in-chat editor where the host shows one (ChatGPT, Claude). Offer `editor_url` only when no view shows or the person asks for a browser.
 
 ## Connect a client
 
@@ -68,15 +68,15 @@ Rapier is also a free [Android app](https://play.google.com/store/apps/details?i
 
 ## Connect
 
-- `https://mcp.rapier.website/door/mcp`: Streamable HTTP MCP, with or without OAuth; supports MCP Apps when the host does.
-- WebMCP: The page registers tools on `document.modelContext` (`navigator.modelContext` where only the older name exists); embeds need `agent: true`. Inside an MCP App the page registers every tool but `open` for the host, so an agent there can use them directly.
+- `https://mcp.rapier.website/door/mcp`: Streamable HTTP MCP, with or without OAuth. Supports MCP Apps when the host does.
+- WebMCP: The page registers tools on `document.modelContext` (`navigator.modelContext` where only the older name exists). Embeds need `agent: true`. Inside an MCP App the page registers every tool but `open` for the host, so an agent there can use them directly.
 - In-page: `window.RapierAgentBrowser.invoke(name, input)`.
 
 Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/website.rapier%2Fmarkdown-editor-draw-paint-jpeg-xl/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `website.rapier/markdown-editor-draw-paint-jpeg-xl`.
 
 The [catalog](https://rapier.website/AGENT-TOOLS.json) has seven tools: `open`, `read`, `edit`, `undo`, `show`, `export` and `convert`. If your
 host reads MCP resources, `rapier://guide`, `rapier://guide/blocks`, `rapier://guide/draw` and `rapier://guide/water`
-hold the contracts; the Water resource also carries the current brush registry. Otherwise use this page and the tool
+hold the contracts. The Water resource also carries the current brush registry. Otherwise use this page and the tool
 schemas. Optional prompts: `write-brief`, `diagram-process`, `paint-illustration` and `compare-drafts`.
 
 ### Open a document
@@ -86,27 +86,27 @@ Call `open` with one source:
 - New `text`, with an optional `filename`.
 - The private `document` value from an earlier `open`.
 - An authorized same-door `url`.
-- `file: {name,resourceUri}` from the host. The editor reads it through the host; the server never fetches a file
+- `file: {name,resourceUri}` from the host. The editor reads it through the host. The server never fetches a file
   URL.
 
 `open` returns the revision, an outline, the text of small documents, `document`, and `editor_url` when available.
 
-- Keep `document` private and pass it on later MCP calls. Without OAuth it is the workspace's secret; with OAuth, a
+- Keep `document` private and pass it on later MCP calls. Without OAuth it is the workspace's secret. With OAuth, a
   copied value gives no access to another owner.
-- Share `editor_url` when you get one. The self-hosted server uses its MCP Apps editor transport instead of a
+- Use the in-chat editor where the host shows one (ChatGPT, Claude). Offer `editor_url` only when no view shows or the person asks for a browser. The self-hosted server uses its MCP Apps editor transport instead of a
   paired-page link. Creating a workspace doesn't prove an editor opened.
 - `title` is only for a new Note: `open {note:"new",title,text}`. `title` alone refuses with `OPEN_ARGUMENTS_CONFLICT`.
 - Anonymous `createToken` values need at least 22 random URL-safe characters. A retry with the same token resumes
-  the same workspace at its current head; it doesn't replay creation or replace source. Without `createToken`,
-  `open` creates a new workspace; `operation_id` alone doesn't deduplicate creation.
+  the same workspace at its current head. It doesn't replay creation or replace source. Without `createToken`,
+  `open` creates a new workspace. `operation_id` alone doesn't deduplicate creation.
 - Opening or creating a Note, and syncing, use the current workspace and the person's configured store.
-- In the page or over WebMCP, `open {}` reads the current document and can open or create Notes or sync; the hosted
+- In the page or over WebMCP, `open {}` reads the current document and can open or create Notes or sync. The hosted
   `document`, `url`, `file`, `filename` and `createToken` arguments don't apply. Use `show {target:"file"}` to ask for
   a device file.
 
 ### OAuth
 
-OAuth on the OpenAI connector and Muse supports `rapier:read`, `rapier:write` and optional `offline_access`. The person can grant read only; a
+OAuth on the OpenAI connector and Muse supports `rapier:read`, `rapier:write` and optional `offline_access`. The person can grant read only. A
 read-only connection can't create or edit a workspace. The host keeps credentials out of tool arguments.
 
 - Access tokens last 15 minutes.
@@ -122,7 +122,7 @@ An Owner can connect every member at once, with no approval page:
 2. In its **Authentication**, choose **Set up** on **Managed authorization**, then **Claude-issued**.
 
 There is nothing to enter in Rapier: your organization's issuer registers itself at the first sign-in. Rapier knows
-each member by your organization and their Claude email address. Access lasts an hour and renews without asking; a
+each member by your organization and their Claude email address. Access lasts an hour and renews without asking. A
 member removed from the organization loses access within that hour.
 
 - A member whose address changes starts with no documents. Documents made under the old address stay with it.
@@ -141,7 +141,7 @@ The browser that approved the connection can open `editor_url`. Another browser 
 3. The person taps **Allow** in the new browser.
 
 A code sent without `target:"pair"` is an ordinary `show` and reports `editor_not_present` until a browser is
-admitted. Other `show` targets need no pairing. A code lasts one minute and works once; five wrong codes lock that
+admitted. Other `show` targets need no pairing. A code lasts one minute and works once. Five wrong codes lock that
 window. Pairing lasts one day. Your request is not the person's approval.
 
 ### Install
@@ -157,10 +157,10 @@ The offline editor needs no account. Connecting a workspace doesn't set up Notes
 
 - Gemini app: on a computer, open [gemini.google.com](https://gemini.google.com), then **Settings**, **Connected Apps**
   and, under **Custom apps**, **Add a custom app**. Enter `https://mcp.rapier.website/door/mcp` and choose **Next**. In a
-  chat, type **@** and choose **Rapier**; the app on your phone has it too. Gemini asks you to confirm each change. Custom
+  chat, type **@** and choose **Rapier**. The app on your phone has it too. Gemini asks you to confirm each change. Custom
   apps need a personal Google Account, age 18 or over, the United States, English and Keep Activity turned on.
 - Gemini CLI: `gemini mcp add --transport http rapier https://mcp.rapier.website/door/mcp`.
-- Antigravity: `agy plugin install https://github.com/jackskip22/rapier-plugins` adds the skills and the server;
+- Antigravity: `agy plugin install https://github.com/jackskip22/rapier-plugins` adds the skills and the server.
   `agy mcp add rapier https://mcp.rapier.website/door/mcp` adds only the server.
 - Gemini Enterprise: an administrator opens **Settings & help**, **Manage team**, **Connected apps**, adds an MCP server
   with that URL and **No authentication**, and turns the connector on.
@@ -174,11 +174,11 @@ The offline editor needs no account. Connecting a workspace doesn't set up Notes
 - `lines`: `[first,last]`, one-based and inclusive.
 - `query`: literal matches, returned as lines.
 
-Follow `next_cursor` with `cursor` alone; it keeps the selection. Don't repeat `heading`, `block` or `lines`. A
-document map lists heading and fence lines in order; maps and query results carry line numbers. Keep the exact
+Follow `next_cursor` with `cursor` alone. It keeps the selection. Don't repeat `heading`, `block` or `lines`. A
+document map lists heading and fence lines in order. Maps and query results carry line numbers. Keep the exact
 revision, including string revisions for a live drawing or note.
 
-- `read {state:true}` reports receipts and pending work; `history:true` adds acts.
+- `read {state:true}` reports receipts and pending work. `history:true` adds acts.
 - `read {comparison:true}` returns the open comparison's current and alternative text.
 - On MCP, `read {after_revision, wait_ms}` waits up to `wait_ms` (at most 20,000) for the person's next change after
   that revision.
@@ -188,7 +188,7 @@ revision, including string revisions for a live drawing or note.
   the whole human context: check `continuation.person.intentsComplete`, `omittedIntents` and other omissions. Follow
   `continuation.person.intentsRead` with `read {}` and its text continuations, and `continuation.next` with its
   `read` arguments (`since`). On MCP these reads still need `document`.
-- Will intent can narrow your task; it never grants authority. Human foreground work is checked again.
+- Will intent can narrow your task. It never grants authority. Human foreground work is checked again.
 
 ```js
 // MCP calls also carry the private document value returned by open.
@@ -206,23 +206,23 @@ await call('undo', {document, act: changed.act});
 `edit` takes a `revision` and `changes`: unique `{old,new}`, `{after,insert}`, or one `{text}` that replaces the whole
 document.
 
-- All changes address the same text before the edit; their order doesn't matter. Each `old` or `after` must occur
+- All changes address the same text before the edit. Their order doesn't matter. Each `old` or `after` must occur
   exactly once, optionally scoped by `heading` or `block` (not for a whole replacement).
 - There is no normalization or fuzzy matching. Overlapping changes refuse together. An empty `after` inserts into an
   empty document.
-- A batch is atomic. Use separate calls for separately undoable acts; `turn_id` groups related acts and `label`
+- A batch is atomic. Use separate calls for separately undoable acts. `turn_id` groups related acts and `label`
   describes them.
 - If the revision moved, literal changes still apply when their matches are untouched and history reaches back.
   Whole replacements, Notes and live drawings need the current revision.
-- A conflict returns the current revision and exact context or candidate lines; decide again.
+- A conflict returns the current revision and exact context or candidate lines. Decide again.
 - Success returns `act` as an id string and the changed lines. Changed drawing blocks keep their canonical text.
 - `edit {revision, filename}` alone renames the document at the current revision and keeps its extension.
 - `undo {act}` or `undo {turn_id}` keeps later work.
-- Keep unrelated bytes and opaque asset markers. Unfinished human fences stay readable; an incomplete block index
+- Keep unrelated bytes and opaque asset markers. Unfinished human fences stay readable. An incomplete block index
   says so.
 
 `operation_id` names one call. After an uncertain reply, retry the identical arguments with the same id. A mutation
-receipt lasts 24 hours; an expired id never runs again.
+receipt lasts 24 hours. An expired id never runs again.
 
 ## Show
 
@@ -230,7 +230,7 @@ receipt lasts 24 hours; an expired id never runs again.
 | --- | --- | --- |
 | `passage`, `block` | `text`, `heading` or `block` | Asks the editor to reveal it. |
 | `pointer` | `text` or `act`, `words`, `lifetime` (1–30 s) | Points at a place. |
-| `comparison` | the alternative as `text` with an optional `name`, or `act`/`turn_id`; `close:true` closes | Shows a diff; source is unchanged. |
+| `comparison` | the alternative as `text` with an optional `name`, or `act`/`turn_id`. `close:true` closes | Shows a diff. The source is unchanged. |
 | `view` | `view`: `formatted`, `source` or `notes` | Switches the view. |
 | `preferences` | `preference`, `value` | The person's editor applies or refuses it. |
 | `ask` | `question`, `wait` (`message` or `selection`), `timeout_ms` | One bounded wait. Never edit approval, never a subscription. |
@@ -238,31 +238,31 @@ receipt lasts 24 hours; an expired id never runs again.
 | `read_aloud` | `text`, `heading` or `block` | Reads aloud. |
 | `return` | | One expiring channel for an offline copy. |
 | `note` | `note` | Opens the original note. |
-| `pair` | `code` | Pairs a browser; the person still confirms. |
+| `pair` | `code` | Pairs a browser. The person still confirms. |
 | `playback` | `block`, `revision`, `value` (`false` pauses, `true` plays) | Pauses or plays an animated preview. No source or history change. |
-| `plugin` | `name` | Asks the editor to install a plugin; PDF and OCR still ask the person. A request is not proof it installed. |
+| `plugin` | `name` | Asks the editor to install a plugin. PDF and OCR still ask the person. A request is not proof it installed. |
 
 Receipts say what actually happened. Later human navigation wins.
 
 ## Notes
 
 1. `read {search:"words tag:work"}` finds notes in the person's configured store. It needs the connected local or
-   owned Notes endpoint; the public hosted workspace can't read encrypted Notes and says so.
+   owned Notes endpoint. The public hosted workspace can't read encrypted Notes and says so.
 2. Pass the returned `note_ref` as `note` to `read` or `edit`. On MCP every Notes call also passes `document`.
-3. `read {note,versions:true}` lists history; `version` picks retained text. A note's revision is its exact content
+3. `read {note,versions:true}` lists history. `version` picks retained text. A note's revision is its exact content
    digest.
 4. `edit {note,revision,changes}` keeps concurrent changes and history. `edit {note,revision,fields}` changes allowed
    note controls as one separate act.
 5. Create a note with `open {document,note:"new",title,text}`.
 
-`export {to:"sync"}` alone runs the existing sync connection; it never signs in or enrolls a store. Sync can replace
+`export {to:"sync"}` alone runs the existing sync connection. It never signs in or enrolls a store. Sync can replace
 files, so run it only when the person asks, and report the changed files. A locked or unavailable store is not an
 empty library. Permanent deletion and Skills stay the person's decisions.
 
 ## Tool classification for hosts
 
 For hosts that ask for approval by effect, such as Muse's Read, Write and Sensitive write. A tool that mixes effects
-takes the highest. Rapier adds no approval step of its own; the host's still apply.
+takes the highest. Rapier adds no approval step of its own. The host's still apply.
 
 | Tool | Class | Effect |
 |---|---|---|
@@ -270,8 +270,8 @@ takes the highest. Rapier adds no approval step of its own; the host's still app
 | `open` | Write | Creates or resumes a private workspace, or creates a Note. Doesn't change existing source. |
 | `edit` | Write | A revision-bound batch of exact changes, recorded as one undoable act. |
 | `undo` | Write | Reverses an act or turn, keeps later work, and reports conflicts. |
-| `show` | Sensitive write | Presents a passage, comparison or request. `target:"pair"` admits another browser (the person still taps Allow); `target:"file"` opens a device picker. |
-| `export` | Sensitive write | Makes a file or download link. `to:"sync"` runs the person's sync and can replace files; saving to a bound destination overwrites it. |
+| `show` | Sensitive write | Presents a passage, comparison or request. `target:"pair"` admits another browser (the person still taps Allow). `target:"file"` opens a device picker. |
+| `export` | Sensitive write | Makes a file or download link. `to:"sync"` runs the person's sync and can replace files. Saving to a bound destination overwrites it. |
 
 Errors return a stable code and a recovery hint. Pending work isn't done until `read {state:true}` reports it
 committed or refused. Rate limits are per-minute tool budgets and hourly creation and registration budgets (see
@@ -280,7 +280,7 @@ Privacy and terms).
 ## Fenced blocks
 
 Blocks are the editable text view of Rapier's portable Markdown data. Markdown exports keep the ordinary drawing,
-image and discussion data, including pixels. Reads name retained pixels; they never return them as text.
+image and discussion data, including pixels. Reads name retained pixels. They never return them as text.
 
 Give each block a unique stable id and a caption:
 
@@ -306,15 +306,15 @@ HTML previews use ordinary fences with Pandoc attributes:
 ```
 
 - Set `height` in document lines, or `height=auto`. A block is full width by default.
-- `resize=scale viewport=640x360` keeps that CSS viewport and scales the result; `resize=reflow` lets CSS respond to
+- `resize=scale viewport=640x360` keeps that CSS viewport and scales the result. `resize=reflow` lets CSS respond to
   the outer width. Overflow is clipped.
 - A layout comment on the line after the closing fence, such as
   `<!--md-layout:v1 width=40% wrap=around x=80%-->`, places and wraps it like a picture.
 - Read and edit it by `block:"prices"`. A comment the person adds to the selected block comes back through `read`,
   anchored to `#prices`. Other CommonMark readers show readable code.
 - Previews render self-contained HTML, CSS and SVG in an opaque sandbox. Scripts, event handlers, forms and
-  navigation do nothing; network and document access are denied. Use embedded images and styles. Script, canvas,
-  output, iframe and form submission are removed from the preview, and the source is kept; `read {block}` and the
+  navigation do nothing. Network and document access are denied. Use embedded images and styles. Script, canvas,
+  output, iframe and form submission are removed from the preview, and the source is kept. `read {block}` and the
   edit that wrote it list them in `removed`. Exported pages and the reader use the same rules.
 
 ## Draw
@@ -331,23 +331,23 @@ A block can hold `recipe` (the whole native drawing), `shapes` (`set`, `add`, `r
 (native edits). Replacing a shape needs the whole shape. Operations: `move`, `resize`, `rotate`, `set_look`,
 `set_label`, `set_step`, `connect`, `properties`, `group`, `ungroup`, `lock`, `unlock`, `unlockAll`, `delete`,
 `front`, `back`, `forward`, `backward`, `duplicate`, `align`, `distribute`, `flip`, `clean` and `unclean`. A text edit
-of the block is still one source act through Draw. Painting goes through Draw's material pipeline; accepted work has
+of the block is still one source act through Draw. Painting goes through Draw's material pipeline. Accepted work has
 not yet committed.
 
 ### Refracted light
 
 A drawing or shape can carry an `effect` with `type: "refraction"` and a Glass, Prism, Ripple or Soft glass preset.
 The SVG keeps editable geometry, text and the original Paint or Water pixels beside the finished PNG and a lossless
-JPEG XL copy. Block reads show the editable source and settings; derived pixels stay private.
+JPEG XL copy. Block reads show the editable source and settings. Derived pixels stay private.
 
 - Set the whole drawing with `shapes.set.effect`. Set selected objects with
-  `operations: [{type: "set_look", ids: ["object-id"], effect: {type: "refraction", preset: "glass"}}]`;
+  `operations: [{type: "set_look", ids: ["object-id"], effect: {type: "refraction", preset: "glass"}}]`,
   `properties.effect` works the same way.
 - A preset fills every setting you leave out. `samples` is 3–100 (default 100). `whiteBalance`, `adaptive` and `crop`
   are booleans (default true). `edge` is `reflect` (default), `tile`, `transparent` or `clamp`.
 - `lens` is `source` (default) or `shape:<id>`. `matteSource` is `none` (default), `source` or `shape:<id>`.
-- A shape reference reads the original artwork without its effect; a Paint piece reads all its layer's pieces in
-  drawing order, so references never recurse. Every named source must exist once in the same drawing; external URLs
+- A shape reference reads the original artwork without its effect. A Paint piece reads all its layer's pieces in
+  drawing order, so references never recurse. Every named source must exist once in the same drawing. External URLs
   and ambiguous or missing ids are refused.
 - Duplicate remaps included sources and keeps external ones that still exist. Paste gives included sources new ids.
   Deleting a source resets lens references to `source` and matte references to `none` in the same Undo step.
@@ -357,16 +357,16 @@ The hosted door prepares refraction through the material handoff. A pending requ
 the editor answer, then retry with the same operation id. The answer is only rendered pixels for the requested canvas,
 shape or layer, tied to the exact recipe and revision. A source edit invalidates earlier pixels. Cancellation or a
 newer human edit keeps the source and Undo intact. A result over the hosted 24 MiB material limit refuses as
-`material_too_large`; the renderer's own pixel limit doesn't raise the hosted document or storage budget.
+`material_too_large`. The renderer's own pixel limit doesn't raise the hosted document or storage budget.
 
 Copy and Cut make a portable SVG with finished renditions of the copied source.
 
 - A subset under a whole-drawing effect renders from that subset, so its lens and pixels can change.
 - Cut removes the selection only after the clipboard accepts it and the drawing, session and selection still match.
-  If the clipboard fails, use Download; the source stays.
+  If the clipboard fails, use Download. The source stays.
 - Include referenced lens and matte artwork, with every piece of a referenced Paint layer, in a copy. An incomplete
   selection is refused before copying.
-- A copied whole-drawing refraction belongs in the document as its own drawing; pasting it into another Draw canvas
+- A copied whole-drawing refraction belongs in the document as its own drawing. Pasting it into another Draw canvas
   is refused. Per-object effects paste with their included references.
 - The color sampler reads the renderer's pixels from the current source.
 
@@ -379,16 +379,16 @@ color, an optional size 0–100 and points `[x,y]` or `[x,y,pressure]`, for exam
 `rapier-draw` block.
 
 - Each Water path point is `[x,y,pressure,tick]`. Ticks are integers at 60 per second and never decrease within an
-  action; a new action can restart them.
+  action. A new action can restart them.
 - Geometry goes in path points, never `x`/`y`/`w`/`h` on a paint figure. Coordinates are drawing units.
 - The `rapier://guide/water` registry lists the real brushes, papers, pigments, defaults and budgets. Your host must
-  read MCP resources (or use `read {guide:"water"}`); this page doesn't include it.
+  read MCP resources (or use `read {guide:"water"}`). This page doesn't include it.
 - Start with a small coordinate span and brush size. Keep pressure and ticks exactly.
 
-A visible, authorized editor computes the paint; watercolor needs WebGPU. A pending edit returns `editor_url` and what it
+A visible, authorized editor computes the paint. Watercolor needs WebGPU. A pending edit returns `editor_url` and what it
 needs to finish. `read {state:true}` reports waiting, committed or expired work. Never call a pending painting
 finished. `operation_id` collects the same job without starting a second one. If the request expires, read the current
-text and use a new id once the editor is available. Text reads never include the raster; use `read {as:"image"}` for
+text and use a new id once the editor is available. Text reads never include the raster. Use `read {as:"image"}` for
 pixels.
 
 ## Export and return a copy
@@ -404,23 +404,23 @@ pixels.
 | `docx` | Word, with the exact source attached. |
 | `pdf` | Rendered pages with searchable text and the exact source attached. |
 
-- `page`, `docx` and `pdf` need the person's open editor, or a self-hosted `rapier-server`'s isolated renderer;
-  without one they refuse with `editor_unavailable`. Browser Print/PDF is different and doesn't keep recoverable Markdown.
+- `page`, `docx` and `pdf` need the person's open editor, or a self-hosted `rapier-server`'s isolated renderer.
+  Without one they refuse with `editor_unavailable`. Browser Print/PDF is different and doesn't keep recoverable Markdown.
 - Offline editors and pages carry everything they need, and refuse when something is missing.
-- `to:"save"` saves to the bound location; check `destination` and `verified`. `to:"clipboard"` copies an exact
-  passage as `plain`, `formatted` or `complete`; a complete copy needs inspected context.
+- `to:"save"` saves to the bound location. Check `destination` and `verified`. `to:"clipboard"` copies an exact
+  passage as `plain`, `formatted` or `complete`. A complete copy needs inspected context.
 - On MCP the download is the `resource_link.uri` in `content`: share that link. `resources/read` returns the whole file
-  as base64 with its MIME type; that doesn't prove the person received it.
+  as base64 with its MIME type. That doesn't prove the person received it.
 - Hosted files are at most 16 MiB and last up to 24 hours, within the workspace's lifetime. Connection-bound links
   need that connection. Local blob URLs have their own lifetime and scope. Download to keep a copy.
 
 `npx rapier-html notes.md` writes `notes.rapier.html`: the whole editor with the exact source, for offline editing,
-drawing, painting and saving. `--drawing sketch.svg` carries a drawing; `--compare original.md` carries the original
+drawing, painting and saving. `--drawing sketch.svg` carries a drawing. `--compare original.md` carries the original
 for an exact comparison. Keep image bytes in [Self-contained Markdown](markdown-standard.md).
 
 `show {target:"return"}` makes a one-use channel that expires within 24 hours and the workspace's lifetime. Pass
 `return_url` and `return_expires_at` to `rapier-html --return` and `--return-expires-at`. The person confirms the
-upload in their connected browser, where the credential stays; an anonymous return URL is its own one-use grant. The
+upload in their connected browser, where the credential stays. An anonymous return URL is its own one-use grant. The
 returned copy is kept separately and never overwrites the workspace.
 
 `show {target:"ask"}` waits once for a selection or message, or returns a page already received. `timeout_ms` is
@@ -432,7 +432,7 @@ can't wake you after your turn ends. An expired return never deletes the person'
 ## Long calls and cancellation
 
 Cancel a pending MCP request with your client's cancellation. Legacy HTTP clients keep the `Mcp-Session-Id` from
-initialization and send `notifications/cancelled`; modern HTTP clients cancel the response body. Cancellation applies
+initialization and send `notifications/cancelled`. Modern HTTP clients cancel the response body. Cancellation applies
 only to the original caller and request. It waits for cleanup, keeps any act already committed, and keeps the
 original receipt for an unchanged retry. If cleanup fails, the cancellation is not reported as successful.
 
@@ -440,33 +440,33 @@ The hosted modern doors advertise `io.modelcontextprotocol/tasks` when available
 capabilities to let `show {target:"ask"}`, `read {as:"image"}` and Word or PDF `export` return `resultType: "task"`
 with a `taskId`. Without it, calls stay direct. Legacy, paired-page and local-server profiles don't offer tasks.
 
-- `tasks/get` returns status and the kept final `result` or `error`; `tasks/cancel` stops a working task. Both need
+- `tasks/get` returns status and the kept final `result` or `error`. `tasks/cancel` stops a working task. Both need
   `taskId`, the task capability and a matching `Mcp-Name` header.
 - Canceling the creating request doesn't stop a published task.
 - `tasks/update` accepts `inputResponses`, but these operations never request input, so they have no effect.
-- Results expire 24 hours after creation; operation deadlines don't change. After a lost creation reply, reuse the
+- Results expire 24 hours after creation. Operation deadlines don't change. After a lost creation reply, reuse the
   same operation id and arguments.
 - Keep task handles private. Task results and export links keep their original authority and expiry.
 
 ## Authority and receipts
 
 The seven tools are separate from the editor's private `/editor` channel. Sync, human commits and context,
-acknowledgements, access management, rotation and deletion need editor authority. Hosted Apps use workspace tickets;
-a paired page uses scoped browser cookies at `/editor/<id>`. A tool call can't create an editor acknowledgement or a
+acknowledgements, access management, rotation and deletion need editor authority. Hosted Apps use workspace tickets.
+A paired page uses scoped browser cookies at `/editor/<id>`. A tool call can't create an editor acknowledgement or a
 human grant.
 
 Each tool has input and output schemas and effect annotations. Results carry `structuredContent` and matching JSON
-text; read `isError`, `outcome`, `reason` or `code`, and the receipt. A result can be a refusal, conflict, pending job
+text. Read `isError`, `outcome`, `reason` or `code`, and the receipt. A result can be a refusal, conflict, pending job
 or unavailable device. Acceptance, source commitment, presentation, saving and file delivery are separate facts. A
-pending painting or accepted device request is not finished. A source receipt is not a visual check; use
+pending painting or accepted device request is not finished. A source receipt is not a visual check. Use
 `read {as:"image"}`.
 
 **Ask about this** in the editor sends the person's request. Ordinary comments and edits don't start an agent turn.
-Comments and continuation briefs travel with the source; keep the person's words.
+Comments and continuation briefs travel with the source. Keep the person's words.
 
-A kept mutation replays its original receipt for the same `operation_id`; after it expires, the call refuses instead
+A kept mutation replays its original receipt for the same `operation_id`. After it expires, the call refuses instead
 of running again. A fresh read sees later human work. **Disconnect agents** ends the current authority. Workspaces
-expire after 30 idle days; exported files keep their own expiry, and downloaded copies stay independent.
+expire after 30 idle days. Exported files keep their own expiry, and downloaded copies stay independent.
 
 ## Limits and recovery
 
@@ -478,10 +478,10 @@ Hosted defaults:
 | Paired editor tool calls | 1,200 per minute under editor authority, separate from model calls. |
 | Document source | 64 MiB of UTF-8. |
 | Hosted export | 16 MiB. |
-| Edit batch | Up to 32 changes; a whole-document replacement must be alone. |
-| Text read | Up to 32 KiB, or 4 KiB over WebMCP; follow `next_cursor`. JSON and metadata have their own budgets. |
-| Workspace creation | 100 per principal per hour; 5,000 per deployment per hour. Reopening is free. |
-| OAuth registration | 20 per network address per hour; 5,000 per deployment per hour. |
+| Edit batch | Up to 32 changes. A whole-document replacement must be alone. |
+| Text read | Up to 32 KiB, or 4 KiB over WebMCP. Follow `next_cursor`. JSON and metadata have their own budgets. |
+| Workspace creation | 100 per principal per hour. 5,000 per deployment per hour. Reopening is free. |
+| OAuth registration | 20 per network address per hour. 5,000 per deployment per hour. |
 | OAuth consent | 5,000 per deployment per hour. |
 | New pairing windows | 5 per network address per minute. Five wrong codes lock a window. |
 
@@ -492,12 +492,12 @@ fields and `Retry-After`. Never split a retried mutation into different argument
 | --- | --- |
 | Invalid arguments | Fix the named field using the tool schema and the `rapier://guide` resources. |
 | Stale or conflicting content | Read the current text and keep newer human work before editing again. |
-| Will refusal | Respect the protected text; another tool doesn't change that. |
+| Will refusal | Respect the protected text. Another tool doesn't change that. |
 | HTTP 401 or 403, insufficient scope | Use the host's connection flow for the right scope. Never put credentials in tool text or URLs. |
-| HTTP 429, `TOOL_BUDGET_EXCEEDED` | Wait for `Retry-After`. Retries also spend quota; keep their arguments and `operation_id`. |
+| HTTP 429, `TOOL_BUDGET_EXCEEDED` | Wait for `Retry-After`. Retries also spend quota. Keep their arguments and `operation_id`. |
 | Editor or renderer unavailable | Open the returned editor link and check it is available before repeating the action. |
 | `material_request_expired` | Read the current drawing and source, then retry with a new operation id. |
-| `export_too_large` | Check `limitBytes`; pick another format or a smaller scope. Source is unchanged. |
+| `export_too_large` | Check `limitBytes`. Pick another format or a smaller scope. Source is unchanged. |
 | `CREATE_BUDGET_EXCEEDED` | Resume an existing workspace, or create one after the hourly quota resets. |
 | Timed-out or uncertain change | Retry the identical arguments with the same `operation_id`, or read before any new write. |
 | Notes locked or unavailable | Report the real state. Don't treat it as empty or enroll another store. |

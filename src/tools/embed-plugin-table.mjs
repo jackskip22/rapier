@@ -18,7 +18,7 @@ export function pluginTable(manifest) {
 		const opt = (OPTIONAL.reader || []).includes(plugin.name) ? ' (the reader: only with `--with ' + plugin.name + '`)' : '';
 		rows.push('| `' + plugin.name + '` | ' + String(plugin.adds || '').replace(/\|/g, '\\|') + ' | ' + mb(bytes) + (plugin.files.length > 1 ? ' (' + plugin.files.length + ' files)' : '') + ' | ' + where + opt + ' |');
 	}
-	rows.push('', 'Totals: the reader, ' + mb(totals.reader - optional.reader) + ' (' + mb(totals.reader) + ' with `ocr`); `rapier.html`, ' + mb(totals.full) +
+	rows.push('', 'Totals: the reader, ' + mb(totals.reader - optional.reader) + ' (' + mb(totals.reader) + ' with `ocr`). `rapier.html`, ' + mb(totals.full) +
 		'. Release ' + manifest.release + '.');
 	return rows.join('\n');
 }

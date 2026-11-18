@@ -511,13 +511,13 @@ function agentReport(head) {
 function pairingReport(head) {
   const now = Date.now(), pairing = head.pairing;
   if (pairing?.confirmedUntil > now) return !head.bearer && pairing.ownerRequired
-    ? {status: 'owner_approval_required', next: 'The person approves at owner_approval_url, then chooses ALLOW; their typing reaches you only after that.'}
-    : {status: 'awaiting_allow', next: 'The person chooses ALLOW on the page; their typing stays in their browser until then.'};
+    ? {status: 'owner_approval_required', next: 'The person approves at owner_approval_url, then chooses ALLOW. Their typing reaches you only after that.'}
+    : {status: 'awaiting_allow', next: 'The person chooses ALLOW on the page. Their typing stays in their browser until then.'};
   if (head.pairedAt) return head.collaboration?.presence?.active && head.collaboration.presence.expiresAt > now
     ? {status: 'paired', page: 'reporting', pairedAt: new Date(head.pairedAt).toISOString()}
     : {status: 'paired', page: 'silent', pairedAt: new Date(head.pairedAt).toISOString(),
       next: 'The paired page is not reporting: it is closed, in the background or stalled, and unsent typing stays in that browser. Ask the person to bring the page to the front.'};
-  if (pairing?.codeUntil > now) return {status: 'code_shown', next: 'A browser shows a code; ask for it and send show {target:"pair", code}.'};
+  if (pairing?.codeUntil > now) return {status: 'code_shown', next: 'A browser shows a code. Ask for it and send show {target:"pair", code}.'};
   return {status: 'none'};
 }
 
@@ -529,17 +529,17 @@ function drawingTurn(value) {
 function materialWait(value, editorUrl, named = true, apps = false) {
   const seconds = MATERIAL_LIMITS.lifetimeMs / 1000;
   const retry = named ? 'retry this exact call with the same operation_id'
-    : 'read the document (this call had no operation_id, so retrying it would paint again; when the painting is in the text it is done)';
-  const pairing = value.pairing?.status, then = '; then ' + retry + ' within ' + seconds + ' seconds. After that it expires and nothing is drawn.';
+    : 'read the document (this call had no operation_id, so retrying it would paint again, and the painting is done once it is in the text)';
+  const pairing = value.pairing?.status, then = ' Then ' + retry + ' within ' + seconds + ' seconds. After that it expires and nothing is drawn.';
   return {...(editorUrl ? {editor_url: editorUrl} : {}), wait_ms: MATERIAL_LIMITS.lifetimeMs, next: value.collaboration?.presence?.active
     ? 'An open editor is painting this. To collect the result, ' + retry + ' within ' + seconds + ' seconds.'
-    : pairing === 'code_shown' ? 'An editor is open but not paired; ask for its code and send show {target:"pair", code}' + then
+    : pairing === 'code_shown' ? 'An editor is open but not paired. Ask for its code and send show {target:"pair", code}' + then
     : pairing === 'awaiting_allow' || pairing === 'owner_approval_required' ? 'An editor is pairing. ' + value.pairing.next.replace(/\.$/, '') + then
-    : pairing === 'paired' ? 'The paired editor is not reporting; ask the person to bring it to the front' + then
-    : apps ? 'No editor is open yet. Rapier\'s view in this chat paints it once it shows: ask the person to keep it on screen; then ' + retry +
+    : pairing === 'paired' ? 'The paired editor is not reporting. Ask the person to bring it to the front' + then
+    : apps ? 'No editor is open yet. Rapier\'s view in this chat paints it once it shows: ask the person to keep it on screen, then ' + retry +
       ' within ' + seconds + ' seconds. Give editor_url only when read {state:true} shows human.water "unavailable" or no view shows.'
     : 'No editor is open. ' + (editorUrl ? 'The person opens editor_url (or an MCP Apps host shows the editor)' : 'An MCP Apps host shows the editor') + ' within ' + seconds +
-      ' seconds to finish this paint; then ' + retry + '. After that it expires and nothing is drawn.'};
+      ' seconds to finish this paint. Then ' + retry + '. After that it expires and nothing is drawn.'};
 }
 
 function materialReport(head) {
@@ -578,7 +578,7 @@ function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollabo
   if (modelFacing && collaboration?.drawingIntent) collaboration = {...collaboration, drawingIntent: drawingTurn(collaboration.drawingIntent)};
   const result = { ...value, outcome: value.outcome || 'ok', ...(head ? { documentId: head.documentId, revision: value.revision ?? head.revision, documentRevision: value.documentRevision ?? head.revision, ...(value.replayed && value.documentRevision !== undefined ? {currentRevision: head.revision} : {}), version: head.version, filename: head.filename, docKind: head.docKind, chars: head.chars, ...(collaboration !== undefined ? {collaboration} : {}), ...(head.viewIntent ? { view: { ...value.view, id: head.viewIntent.id, kind: head.viewIntent.kind, revision: head.viewIntent.revision, status: head.viewIntent.status, ...(head.viewIntent.view ? {requested: head.viewIntent.view} : {}), ...(head.viewIntent.reason ? { reason: head.viewIntent.reason } : {}) } } : {}), expiresAt: new Date(head.expiresAt).toISOString() } : {}) };
   if (head && result.pairing === undefined) result.pairing = pairingReport(head);
-  const message = typeof result.message === 'string' ? result.message : typeof result.reason === 'string' ? result.reason : `${result.outcome}${head ? `; document revision ${head.revision}` : ''}`;
+  const message = typeof result.message === 'string' ? result.message : typeof result.reason === 'string' ? result.reason : `${result.outcome}${head ? `, document revision ${head.revision}` : ''}`;
   return { content: [{ type: 'text', text: message }], structuredContent: result, ...(isError ? { isError: true } : {}), ...(Object.keys(meta).length ? { _meta: { rapier: meta } } : {}) };
 }
 
@@ -1050,7 +1050,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const page = authority.source === 'page' ? authority : null, anonymous = authority.source === 'anonymous';
   const create = !page && name === 'open' && args.document === undefined;
   if (create && args.note) return toolError(failure('INVALID_DOCUMENT', 'Notes require the current document returned by open.'));
-  if (name === 'open' && args.file && ['document', 'text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a host file with file alone; its contents are read by the editor through the host.'));
+  if (name === 'open' && args.file && ['document', 'text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a host file with file alone. Its contents are read by the editor through the host.'));
   if (name === 'open' && args.file && (/[\\/\u0000-\u001f\u007f]/.test(args.file.name) || !args.file.resourceUri.trim())) return toolError(failure('INVALID_DOCUMENT_INPUT', 'A host file needs a filename without a path and a nonempty resource URI.'));
   if (!page && name === 'read' && args.guide && args.document === undefined) {
     try {validateInput(descriptor.inputSchema, args, 'arguments', true);} catch (error) {if (error.code === 'invalid_arguments') return invalidInput(error); throw error;}
@@ -1079,7 +1079,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (refusal) return toolError(failure('INVALID_CREATE_TOKEN', refusal));
   }
   if (!create && args.createToken !== undefined) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'createToken belongs to a create. Reopening uses the existing document value.'));
-  if (!create && name === 'open' && args.note !== 'new' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone; create with text and no document; replace content with edit.'));
+  if (!create && name === 'open' && args.note !== 'new' && ['text', 'filename', 'docKind'].some(key => Object.hasOwn(args, key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Reopen with document alone. Create with text and no document. Replace content with edit.'));
   if (!page && ['open', 'read'].includes(name)) {
     try {validateInput(descriptor.inputSchema, args, 'arguments', true);} catch (error) {
       if (error.code !== 'invalid_arguments') throw error;
@@ -1158,8 +1158,8 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     const identity = ['operation_id', 'commitId', 'decisionId', 'createToken'].find(key => args[key] !== undefined);
     const retryable = Boolean(identity) || !create && (EDITOR_ONLY_TOOLS.has(name) || descriptor.annotations.readOnlyHint);
     const recovery = identity ? `Retry unchanged arguments with the same ${identity}.`
-      : create ? 'Creation may have succeeded; without createToken a retry creates another workspace.'
-      : retryable ? 'Retry with unchanged arguments.' : 'This call may have succeeded; read current state before another operation.';
+      : create ? 'Creation may have succeeded. Without createToken a retry creates another workspace.'
+      : retryable ? 'Retry with unchanged arguments.' : 'This call may have succeeded. Read current state before another operation.';
     return toolError(failure('WORKSPACE_UNACKNOWLEDGED', 'The workspace did not acknowledge this operation (HTTP ' + response.status + '). ' + recovery,
       {retryable, ...(identity ? {retryIdentity: identity} : {})}));
   }
@@ -1169,7 +1169,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     const editor_url = new URL('/d/' + pageId(documentAddress), request.url).href, pairing = result.structuredContent.pairing;
     result.structuredContent = {...result.structuredContent, reason: 'editor_unavailable', editor_url,
       hint: 'No editor is open for this document. ' + (pairing?.status && pairing.status !== 'none' && pairing.next ? pairing.next + ' '
-        : 'If the host shows the Rapier view, ask the person to open it fullscreen. Otherwise share editor_url; if they read you a code, send show {target:"pair", code}. ') +
+        : 'If the host shows the Rapier view, ask the person to open it fullscreen. Otherwise share editor_url. If they read you a code, send show {target:"pair", code}. ') +
         (name === 'read' ? 'Without an editor, read the text.' : 'Without an editor, export markdown, html or txt.')};
   }
   if (!page && (authority.source !== 'server' || env.LOCAL_EDITOR_PAGE === true) && result.structuredContent?.reason === 'water_webgpu_unavailable')
@@ -1266,10 +1266,10 @@ function editorCapabilityScopes(meta, value) {
     return {scope, ...(Number.isFinite(until) ? {expiresAt: new Date(until).toISOString()} : {}), lifetime};
   };
   const documentLifetime = 'Ends when the document expires, is deleted, or its access is revoked.';
-  const keyLifetime = 'At most 24 hours from issue; ends sooner with document access, connection revocation, or deployment key rotation.';
+  const keyLifetime = 'At most 24 hours from issue. Ends sooner with document access, connection revocation, or deployment key rotation.';
   const liveLifetime = keyLifetime + ' Stop live also revokes this value.';
-  if (meta.editorKey) scopes.editorKey = describe('Editor operations for this document and connection; not proof of a person.', meta.editorKey, keyLifetime);
-  if (meta.editorDocument) scopes.editorDocument = describe('Document selector for the editor transport; hosted document values also grant the caller document access.', null, documentLifetime);
+  if (meta.editorKey) scopes.editorKey = describe('Editor operations for this document and connection. Not proof of a person.', meta.editorKey, keyLifetime);
+  if (meta.editorDocument) scopes.editorDocument = describe('Document selector for the editor transport. Hosted document values also grant the caller document access.', null, documentLifetime);
   if (meta.editorTransport?.ticket) scopes['editorTransport.ticket'] = describe('Private /editor transport for this document with the original caller permissions.', meta.editorKey, keyLifetime);
   if (meta.open?.document) scopes['open.document'] = describe('Same document access as the public document value.', null, documentLifetime);
   for (const [key, scope] of Object.entries({key: 'Read and edit this live document.', stopKey: 'Disconnect live sharing and agent access for this document.', custodyKey: 'Editor custody of this document.'}))
@@ -2050,7 +2050,7 @@ async function handleRequest(request, env, authority, observation = null) {
     const file = link ? await handleRequest(new Request(link.uri), env, authority) : null;
     const text = file?.ok ? await file.text() : null;
     if (text !== null) result.content[0].text += '\n' + (text.length <= MUSE_EXPORT_TEXT_CHARS ? text
-      : `The Markdown is ${text.length} characters, more than one result carries; read it in pages with read.`);
+      : `The Markdown is ${text.length} characters, more than one result carries. Read it in pages with read.`);
   }
   if (request.signal.aborted) return refuseRpc(id, REQUEST_CANCELLED, 'Request canceled.');
   result = complete(result);
@@ -3213,7 +3213,7 @@ export class RapierDocument {
       const text = await readTextBody(request, MAX_TEXT_BYTES, 'returned document', 'RETURN_TOO_LARGE', true);
       if (grant.expiresAt <= Date.now() || head.expiresAt <= Date.now()) return returnRefused('This return address has expired.', 410);
       const bytes = contentBytes(text);
-      if ((head.returnBytes || 0) + bytes > MAX_TEXT_BYTES) return returnRefused('This session’s return storage is full. The earlier documents are retained; send this file to the agent separately.', 507);
+      if ((head.returnBytes || 0) + bytes > MAX_TEXT_BYTES) return returnRefused('This session’s return storage is full. The earlier documents are retained. Send this file to the agent separately.', 507);
       head.returnSequence = (head.returnSequence || 0) + 1;
       Object.assign(grant, { sequence: head.returnSequence, name, receivedAt: new Date().toISOString(), bytes, chars: text.length, parts: Math.ceil(text.length / CHUNK_CHARS) });
       head.returnBytes = (head.returnBytes || 0) + bytes;
@@ -3771,7 +3771,7 @@ export class RapierDocument {
       catch (error) { return toolError(failure('INVALID_DOCUMENT_INPUT', String(error?.message || 'A Rapier block is malformed.').slice(0, 200))); }
       const budget = await takeCreateBudget(this.env, {...input.createBudget, anonymous: input.bearer === true});
       if (budget === 'no-binding') return toolError(failure('WORKSPACE_CREATION_UNAVAILABLE', 'The workspace creation budget binding is unavailable.'));
-      if (budget === 'uncertain') return toolError(failure('WORKSPACE_UNAVAILABLE', input.createBudget.retryable ? 'The creation budget did not answer. Retry with the same createToken.' : 'The creation budget did not answer, so no workspace was made. Retry; a createToken makes the next create retryable.'));
+      if (budget === 'uncertain') return toolError(failure('WORKSPACE_UNAVAILABLE', input.createBudget.retryable ? 'The creation budget did not answer. Retry with the same createToken.' : 'The creation budget did not answer, so no workspace was made. Retry. A createToken makes the next create retryable.'));
       if (budget !== 'ok') return toolError(failure('CREATE_BUDGET_EXCEEDED', budget === 'exceeded-day' ? 'The creation budget is full for today. Reopen an existing document capability, or create tomorrow.' : 'The creation budget is full for this hour. Reopen an existing document capability, or create later.'));
       const kernel = createKernel({ state: createState({ id: crypto.randomUUID(), filename: args.filename ?? 'Untitled.md', text: fenced ? '' : args.text ?? '', docKind: args.docKind }), host: {retainHistory: true, liveSession: true}, clock: Date.now, mintId });
       const observation = await initialObservation(kernel, input);

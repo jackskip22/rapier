@@ -1,6 +1,6 @@
 # The public edit-ledger format
 
-The edit ledger and its carried parts. MIT, no dependencies; part of
+The edit ledger and its carried parts. MIT, no dependencies. Part of
 `rapier-markdown-kit`. The editor and this module use the **same** record validator,
 splice replayer, root transition and interval transport. This is not a second history store.
 
@@ -36,31 +36,31 @@ transaction: {id, documentAuthority, baseRevision, revision, actor: {kind, id},
 
 `format` is `rapier-ledger/2`. `start.text` is the exact text before the first
 retained record. Every outgoing record carries its own splices, including Undo and
-Redo. Offsets and ranges count UTF-16 code units; no boundary may cut a surrogate
+Redo. Offsets and ranges count UTF-16 code units. No boundary may cut a surrogate
 pair. Splices execute in their recorded order. UTF-8 checksums preserve CRLF, tabs,
-NUL and non-ASCII text. The canonical text limit is 25 MiB; each record has at most
+NUL and non-ASCII text. The canonical text limit is 25 MiB. Each record has at most
 64 splices. A metadata state is `{filename, docKind}`. A record may carry assignments such as
 `metadata: {filename: {before: "A.md", after: "B.md"}}`. Metadata-only records keep equal source roots
-and empty splices. An equal-value assignment is retained when another real effect admits the act; a wholly
+and empty splices. An equal-value assignment is retained when another real effect admits the act. A wholly
 unchanged replacement creates no act. Inverse records reference retained earlier act IDs in
 `sourceTransactionId` or `sourceTransactionIds`, each at most 256 characters. Active inverse references
-withdraw assignments even when later work hides their visible effect; reversing an inverse restores that
+withdraw assignments even when later work hides their visible effect. Reversing an inverse restores that
 same identity. Stable `turnId` groups by original author and turn identity, independently of a record's label.
 File handles, overwrite permission and save-binding state never enter portable metadata.
 
 An optional `authored: {basis, source, splices}` preserves an act's original placement
 when concurrent transport changes its physical `record.splices`. `basis` is the sorted,
-minimal frontier of canonical act IDs observed at authoring; its causal closure is
+minimal frontier of canonical act IDs observed at authoring. Its causal closure is
 reconstructed from these same records, including metadata-only acts and inverse
 dependencies. `source` is the SHA-256 of the exact UTF-8 source before the original
-sequential `splices`. An ordinary untransported record omits this field; its retained
+sequential `splices`. An ordinary untransported record omits this field. Its retained
 prefix supplies the same evidence. Transport preserves the evidence and the original
 act ID, author, time, turn, label, metadata choices and inverse targets. It neither
 copies the growing prefix into each record nor creates another journal.
 
 Use `readLedger` or `exportLedger` to validate retained history and `merge` or
 `transposeAuthored` to transport it. Validation proves the causal closure, source
-hash and exact original-to-physical placement; field shape or equal final text alone
+hash and exact original-to-physical placement. Field shape or equal final text alone
 is insufficient. Do not attach new authored evidence to an arbitrary physical copy.
 Selective Undo uses this evidence to preserve concurrent insertions at their original
 gaps, even when a replacement split into several physical splices.
@@ -78,15 +78,15 @@ actual document. Source and metadata replay must agree at every record, includin
 `rootAfter(priorRoot, splice)`, matching the source store. A later root is **not**
 a fresh hash of the whole current text. SHA-256 of the exact checkpoint text is
 separate. This distinction preserves the editor's actual format rather than the
-earlier design shorthand. A nonzero start names a retained checkpoint; it does not
+earlier design shorthand. A nonzero start names a retained checkpoint. It does not
 claim to reconstruct discarded events. `complete: false` also permits a stated
-revision gap from an explicitly incomplete retained input; each
+revision gap from an explicitly incomplete retained input. Each
 remaining splice and metadata assignment must still replay exactly. It is never a claim about missing edits.
 
 `actor.kind` is `human`, `agent` or `system`. Canonical doors mint an opaque provenance
 `actor.id` independent of the private principal and retain a supplied display name
 separately as `actor.name` (host names at most 96 characters). The private principal-to-author
-mapping stays in the existing private owner; neither raw nor hashed access credentials
+mapping stays in the existing private owner. Neither raw nor hashed access credentials
 belong in portable authorship. The name is a **host-supplied claim**, not a verified identity. Timestamps are supplied record times, not independently attested.
 Checksums detect inconsistency/corruption, **not forgery**: anyone able to rewrite a
 file can rewrite its checksums and labels. Importing a label never grants a live
@@ -114,7 +114,7 @@ to `system/unattributed`, time zero. Insertions take the inserting record's acto
 and time, except text an Undo or Redo puts back: a splice inserting exactly the text
 that a splice of the referenced act removed keeps the runs that text had. Deleted
 runs disappear. Thus the projection contains **no removed text**.
-An authorship-only import becomes a clearly incomplete insertion ledger; future
+An authorship-only import becomes a clearly incomplete insertion ledger. Future
 attribution is again derived from that one ledger, never a mutable blame database.
 
 A Markdown file carries the same optional JSON at EOF, outside its exact source:
@@ -128,8 +128,8 @@ A Markdown file carries the same optional JSON at EOF, outside its exact source:
 
 ```
 
-The writer escapes `<` and `>` in that JSON. This versioned EOF marker is reserved;
-an unfinished marker is refused, not silently imported as prose. The reader strips
+The writer escapes `<` and `>` in that JSON. This versioned EOF marker is reserved.
+An unfinished marker is refused, not silently imported as prose. The reader strips
 only that exact suffix, validates it against the remaining exact text, and treats a
 leading BOM as file metadata. Other Markdown readers ignore the comment. Plain
 saves without a choice are unchanged. For executable code, use a web
@@ -143,7 +143,7 @@ replaces current source. `rapier-html --compare original.md revised.md` packages
 A comparison may also carry `data-fonts`, an HTML-attribute-escaped JSON string of
 canonical embedded `[font:]` reference definitions. The admitted base record exposes
 this as `fonts`. These resources belong to the exact comparison, outside its text,
-digest and revision; they never become a source edit or ledger record. Font preparation
+digest and revision. They never become a source edit or ledger record. Font preparation
 validates their actual bytes and reads font usage only from the original comparison.
 Existing source-owned assets remain authoritative. A missing personal-library font is
 embedded here when available, otherwise export refuses. Reopening and resaving need
@@ -155,33 +155,33 @@ no library or network, and never substitute the current device's default font.
 the shared interval transport. It preserves the first's ancestry and incoming
 actors/times, minting local revision/root links. Both the public reader and the
 editor's restore reader can replay the result. Both merge orders yield the same
-text for independently edited nonoverlapping ranges; their ordered ledgers need
+text for independently edited nonoverlapping ranges. Their ordered ledgers need
 not be identical. Repeated imports retain the same act identities. Mixed shared and unseen tails prove each shared act at its transported position and append only unseen original acts. An unprovable order returns the original ledger unchanged.
 
 A same-field divergent metadata assignment returns a typed conflict with the original document and ledger
-unchanged. Copies with untransportable source edits can be compared without mutating source; no review mode or
+unchanged. Copies with untransportable source edits can be compared without mutating source. No review mode or
 proposal grants write authority. An explicitly requested clean copy import commits source, metadata and its
-proven ledger atomically. The live document is checked again at commit. A stale import mutates nothing; failed
+proven ledger atomically. The live document is checked again at commit. A stale import mutates nothing. Failed
 installation restores source, metadata, source-store identity and the entire Undo window. Copies without a proven
 common checkpoint are refused by this API.
 
 ## Host integration and retention
 
-The embed helper accepts `agentName`; the checked `rapier-connect` message carries
+The embed helper accepts `agentName`. The checked `rapier-connect` message carries
 `agent: {name}`. WebMCP uses the registration owner's supplied client name. Modern
-MCP uses the request's client metadata, outside tool arguments; a request without a supplied name stays unnamed. MCP editor snapshots include the
+MCP uses the request's client metadata, outside tool arguments. A request without a supplied name stays unnamed. MCP editor snapshots include the
 server's retained journal only in editor metadata, not in model-facing tool results.
 The browser proves a replay suffix before preserving remote writers under local
-revision links; missing remote events never become an invented complete history.
+revision links. Missing remote events never become an invented complete history.
 
 Rapier's live history supports before previews and Undo for individual acts or turns, preserving later edits.
 The durable canonical owner retains acts beyond the former 500-record / 4-MiB window. Bounded projections
 may evict cached results, but never journal rows. Reopening preserves all admitted records. The module
 preserves an explicitly incomplete input start and never fabricates the missing history. Full history includes removed text and can be much larger than
-the current document; it is opt-in for each outgoing file, never a persistent
+the current document. It is opt-in for each outgoing file, never a persistent
 preference. Authorship is also opt-in. Neither option implies signatures, identity
 verification, a relay server or automatic synchronization. Storage-capacity failures refuse a write before
-publication rather than removing older acts. Only this format is read; older or unprovable envelopes are
+publication rather than removing older acts. Only this format is read. Older or unprovable envelopes are
 explicitly unsupported. The editor recovery envelope uses schema 5 and anchors the same metadata.
 
 ## Persistence version boundary
@@ -190,13 +190,13 @@ The current reader accepts `rapier-ledger/2` only. The editor Undo recovery enve
 
 ### Recovery publication boundary
 
-Browser recovery publishes the current source and full schema-5 Undo envelope in the same IndexedDB transaction on every flush, not only explicit snapshots. Native recovery publishes one `RPR2` envelope at the existing `recovery/current` owner: a bounded JSON header, exact UTF-8 source bytes, then the full schema-5 Undo envelope. The header binds both payload lengths and the source/history checkpoint identity. History has no 4 MiB or row-count truncation. Provider quota refusal retains the previous value; an unacknowledged native write fences retries and clearing until a fresh open establishes the durable value.
+Browser recovery publishes the current source and full schema-5 Undo envelope in the same IndexedDB transaction on every flush, not only explicit snapshots. Native recovery publishes one `RPR2` envelope at the existing `recovery/current` owner: a bounded JSON header, exact UTF-8 source bytes, then the full schema-5 Undo envelope. The header binds both payload lengths and the source/history checkpoint identity. History has no 4 MiB or row-count truncation. Provider quota refusal retains the previous value. An unacknowledged native write fences retries and clearing until a fresh open establishes the durable value.
 
-The browser's localStorage safety copy uses schema 5 and carries the full canonical ledger with its exact source, metadata, authority and revision. A newer safety copy can recover its own history after an IndexedDB quota refusal. Alternating checkpoints and downloaded-document recovery drafts also retain matching history. Source and Undo are read together at boot; unsupported source-only safety copies remain untouched.
+The browser's localStorage safety copy uses schema 5 and carries the full canonical ledger with its exact source, metadata, authority and revision. A newer safety copy can recover its own history after an IndexedDB quota refusal. Alternating checkpoints and downloaded-document recovery drafts also retain matching history. Source and Undo are read together at boot. Unsupported source-only safety copies remain untouched.
 
-Open and New retain unsaved work in the existing held-checkpoint store. Each slot is keyed by its canonical ledger digest, so equal source with different metadata or acts stays distinct. Restore preserves original acts, authority and document kind, requires Save As, and detaches stale file bindings. A source-only download does not retire the retained history. Canonical source history remains available when the Markdown formatted projection is unavailable; no block identity is inferred from that projection.
+Open and New retain unsaved work in the existing held-checkpoint store. Each slot is keyed by its canonical ledger digest, so equal source with different metadata or acts stays distinct. Restore preserves original acts, authority and document kind, requires Save As, and detaches stale file bindings. A source-only download does not retire the retained history. Canonical source history remains available when the Markdown formatted projection is unavailable. No block identity is inferred from that projection.
 
 This native wire format deliberately refuses the former split `RPR1`/`undo/current` format. Existing bytes are not removed or rewritten by failed admission, and no compatibility reader is supplied.
 
-Embedded local recovery retains this same full canonical ledger in the existing sessionStorage draft owner. Its slot is stable for the authenticated host/document/session; source, metadata, history and acknowledged host revision replace together. Equal-source and clean histories are retained, without the former 4 MiB/age discard. Quota refusal keeps the previous complete value and prevents a close-success acknowledgment when history was not retained. Reopen validates the original authority, source, metadata and all records before installing the carried ledger. Old per-revision source-only drafts and a retained slot for a different host revision refuse explicitly without decoding or removing their bytes. Session recovery does not promise persistent history support from an arbitrary embedding host; browser session lifetime remains its storage boundary.
+Embedded local recovery retains this same full canonical ledger in the existing sessionStorage draft owner. Its slot is stable for the authenticated host/document/session. Source, metadata, history and acknowledged host revision replace together. Equal-source and clean histories are retained, without the former 4 MiB/age discard. Quota refusal keeps the previous complete value and prevents a close-success acknowledgment when history was not retained. Reopen validates the original authority, source, metadata and all records before installing the carried ledger. Old per-revision source-only drafts and a retained slot for a different host revision refuse explicitly without decoding or removing their bytes. Session recovery does not promise persistent history support from an arbitrary embedding host. Browser session lifetime remains its storage boundary.
 

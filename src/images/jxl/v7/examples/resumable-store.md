@@ -1,6 +1,6 @@
 # Durable checkpoints with the public resumable API
 
-[resumable-store.mjs](./resumable-store.mjs) is a source example for a host that already has a linearizable compare-and-set store. Copy it into the host project alongside its declaration file and install rapier-jxl. This example is kept in the source repository; it is not an exported package API.
+[resumable-store.mjs](./resumable-store.mjs) is a source example for a host that already has a linearizable compare-and-set store. Copy it into the host project alongside its declaration file and install rapier-jxl. This example is kept in the source repository. It is not an exported package API.
 
 The imported operation is the ordinary public verb, such as capture from rapier-jxl/capture or encode from rapier-jxl/upload. The public resumable driver owns the operation's steps, source validation, immutable parts, result metadata and checkpoint format. The example saves the returned checkpoint unchanged and never reads its private fields.
 
@@ -56,11 +56,11 @@ The same store supplies two host methods:
 
 Versions must never repeat. Deletion keeps a new versioned tombstone so a delayed worker cannot recreate a deleted job using its old version.
 
-The public start and advance calls await every new immutable write before this example attempts the checkpoint CAS. A failed write leaves the prior checkpoint authoritative. Concurrent workers can leave harmless unreferenced parts; only one checkpoint save wins.
+The public start and advance calls await every new immutable write before this example attempts the checkpoint CAS. A failed write leaves the prior checkpoint authoritative. Concurrent workers can leave harmless unreferenced parts. Only one checkpoint save wins.
 
 ## Cancellation, completion and delivery
 
-cancel uses the same source-generation and store-version fence. If cancellation saves first, a worker cannot commit a later checkpoint. Once a completed checkpoint is saved, completion wins and cancel observes it. An AbortSignal stops one invocation; it does not undo an already committed host write.
+cancel uses the same source-generation and store-version fence. If cancellation saves first, a worker cannot commit a later checkpoint. Once a completed checkpoint is saved, completion wins and cancel observes it. An AbortSignal stops one invocation. It does not undo an already committed host write.
 
 finish assembles the ordinary result and then reads the authority again. It returns no result if the source generation or store version changed during assembly. Assembly may read the complete output and is outside the bounded advance call.
 
