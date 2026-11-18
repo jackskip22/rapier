@@ -1005,7 +1005,12 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     if (Object.keys(args).some(key => !['url', 'agent', 'operation_id'].includes(key))) return toolError(failure('OPEN_ARGUMENTS_CONFLICT', 'Open a document link with url alone.'));
     let url; try {url = new URL(args.url);} catch {}
     const id = url && url.origin === new URL(request.url).origin && PAIRED_PATH.exec(url.pathname)?.[1];
-    if (!id || url.username || url.password || !(['oauth', 'server'].includes(authority.source) || env.ACCESS_PROFILE === true && ['access', 'browser'].includes(authority.source))) return toolError(failure('DOCUMENT_UNAVAILABLE', 'A document link requires its authorized connection. Otherwise use the private document value.'));
+    if (!id || url.username || url.password || !(['oauth', 'server'].includes(authority.source) || env.ACCESS_PROFILE === true && ['access', 'browser'].includes(authority.source))) {
+      const hint = id && !url.username && !url.password && authority.source === 'anonymous'
+        ? 'This is a browser editor link, not permission to edit from this chat. Return to the chat that opened the document to continue there.'
+        : 'A document link requires its authorized connection. Otherwise use the private document value.';
+      return toolError(failure('DOCUMENT_UNAVAILABLE', hint));
+    }
     const resolved = await resolveOwnerLink(env, pageAddress(id), authority);
     if (!resolved?.document) return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document is unavailable to this connection.'));
     args = {document: resolved.document, ...(args.agent ? {agent: args.agent} : {}), ...(args.operation_id ? {operation_id: args.operation_id} : {})};
@@ -1163,7 +1168,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     const editor_url = new URL('/d/' + pageId(documentAddress), request.url).href, pairing = result.structuredContent.pairing;
     result.structuredContent = {...result.structuredContent, reason: 'editor_unavailable', editor_url,
       hint: 'No editor is open for this document. ' + (pairing?.status && pairing.status !== 'none' && pairing.next ? pairing.next + ' '
-        : 'Share editor_url with the person; if they read you a code, send show {target:"pair", code}. ') +
+        : 'In ChatGPT, if the Rapier view is available, ask the person to open it fullscreen. Otherwise share editor_url; if they read you a code, send show {target:"pair", code}. ') +
         (name === 'read' ? 'Without an editor, read the text.' : 'Without an editor, export markdown, html or txt.')};
   }
   if (!page && (authority.source !== 'server' || env.LOCAL_EDITOR_PAGE === true) && result.structuredContent?.reason === 'water_webgpu_unavailable')

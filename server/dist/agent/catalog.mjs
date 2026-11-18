@@ -125,7 +125,10 @@ export function mcpDescriptors({uiResource, auth = 'anonymous', editor = false} 
     const {effect, class: toolClass, visibility, ...descriptor} = entry;
     const security = auth === 'server-bearer' ? {} : {securitySchemes: auth === 'anonymous' ? [{type: 'noauth'}]
       : [{type: 'oauth2', scopes: effect === 'read' ? ['rapier:read'] : ['rapier:read', 'rapier:write']}]};
+    const hostedOpen = entry.name === 'open' && !editor && uiResource;
     return {...descriptor, ...(entry.name === 'convert' && !editor ? {description: HOSTED_CONVERT} : {}),
+      ...(hostedOpen ? {description: descriptor.description.replace('Share editor_url when available; keep document private.',
+        'In ChatGPT with a Rapier view, stay in chat. Use fullscreen for writing or painting and return to chat as needed. Keep the private document value for later turns. In ChatGPT, offer editor_url only when the view cannot serve the task or the person asks. In other clients, use the browser editor link.')} : {}),
       inputSchema: editor ? entry.inputSchema : hostedSchema(entry),
       annotations: {title: entry.title, ...annotations(effect, 'mcp', entry.name)}, ...security,
       _meta: {...security, 'website.rapier/tool-class': toolClass, ...(editor ? {'openai/widgetAccessible': true} : {}), ui: {visibility: editor ? ['app'] : ['model', 'app'],

@@ -276,7 +276,7 @@ async function _rapierWaterProFind() {
 	if (!state.open || state.session !== session) return;
 	const palette = state.waterPalettePanel && state.waterPalettes?.palettes.find(row => row.id === state.waterPaletteId);
 	const paints = palette ? palette.entries.map(entry => ({name:entry.name,pigment:entry.pigment,...(typeof entry.pigment === 'string' ? {id:entry.pigment,coefficients:engine.waterPigmentById(entry.pigment).coefficients} : {coefficients:entry.pigment.coefficients})}))
-		: engine.WATER_PIGMENTS.filter(row => row.id !== 'white-gouache').map(row => ({id:row.id,name:row.name,pigment:row.id,coefficients:row.coefficients}));
+		: _rapierWaterPigmentsOrdered(engine.WATER_PIGMENTS).filter(row => row.id !== 'white-gouache').map(row => ({id:row.id,name:row.name,pigment:row.id,coefficients:row.coefficients}));
 	await _rapierDrawOpenDropper('water', hex => {
 		if (!state.open || state.session !== session) return;
 		const mixes = engine.waterMixes([1,3,5].map(i => parseInt(hex.slice(i,i + 2),16) / 255),paints);

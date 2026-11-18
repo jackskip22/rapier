@@ -565,7 +565,9 @@
 	}
 	const say = text => { if (view) view.help.textContent = text; };
 	const face = Object.freeze({open, close, save, configure, say, settled: fn => { if (view) view.settled = fn; }, add: files => add([...files]), has: file => !!view?.rows.some(row => row.file === file),
-		complete: state => completeFor(state, null)(), get state() { return Object.freeze({open: !!view}); }});
+		complete: state => completeFor(state, null)(),
+		ownsInputTarget: node => !!view && node instanceof Element && view.root.isConnected && view.root.contains(node) && !node.closest('[inert]'),
+		get state() { return Object.freeze({open: !!view}); }});
 	_rapierJxlPart = face;
 	if (_rapierJxlDoor?.born) _rapierBootFactsPublished.then(open, open);
 })();

@@ -3,6 +3,8 @@ const RAPIER_WATER_DRY_ICON = RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="12" r="
 const RAPIER_WATER_FILL_ICON = RAPIER_DRAW_ICON_WRAP('<path d="M19 11l-8 -8l-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8 .8 2 .8 2.8 0l8.6 -8.6z"></path><path d="M5 2l5 5"></path><path d="M2 13h15"></path><path d="M22 20a2 2 0 0 1 -4 0c0 -1.1 2 -3 2 -3s2 1.9 2 3z"></path>');
 const RAPIER_WATER_KEY = 'rapier:draw.water';
 const RAPIER_WATER_DEFAULT_BRUSH = 'water/round', RAPIER_WATER_DEFAULT_PIGMENT = 'ultramarine';
+const RAPIER_WATER_FIRST_PIGMENTS = ['ultramarine', 'pyrrol-scarlet'];
+const _rapierWaterPigmentsOrdered = rows => [...RAPIER_WATER_FIRST_PIGMENTS.map(id => rows.find(row => row.id === id)), ...rows.filter(row => !RAPIER_WATER_FIRST_PIGMENTS.includes(row.id))].filter(Boolean);
 const _rapierWaterGlyphs = new Map(), _rapierWaterGlyphPending = new Set();
 let _rapierWaterGlyphWork = Promise.resolve();
 function _rapierWaterEngine() { return globalThis.RapierDrawWater; }
@@ -182,7 +184,7 @@ function _rapierWaterUpdate() {
 	} else if (panel === 'waterPigments') {
 		const selected = engine.waterPigmentById(settings.pigment), row = surface.querySelector('.rapier-draw-water-pigments');
 		if (state.waterPalettePanel && _rapierWaterProAvailable()) _rapierWaterProPalettesRender(row);
-		else row.innerHTML = '<div class="rapier-draw-water-pigment-name"><span>' + _rapierDrawEscapeAttr(selected?.name || 'Mixed pigment') + '</span><button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-water-act="sample" aria-label="Pick pigment from the painting" aria-pressed="' + settings.sampling + '">' + RAPIER_DRAW_ICONS.dropper + '</button></div><div class="rapier-draw-palette">' + engine.WATER_PIGMENTS.map(pigment => '<button type="button" class="rapier-draw-swatch" data-water-pigment="' + pigment.id + '" aria-label="' + _rapierDrawEscapeAttr(pigment.name) + '" data-tip="' + _rapierDrawEscapeAttr(pigment.name) + '" aria-pressed="' + (settings.pigment === pigment.id) + '"><span style="background:' + pigment.colour + '"></span></button>').join('') + '</div>' + _rapierWaterProPigmentsHTML();
+		else row.innerHTML = '<div class="rapier-draw-water-pigment-name"><span>' + _rapierDrawEscapeAttr(selected?.name || 'Mixed pigment') + '</span><button type="button" class="rapier-draw-swatch rapier-draw-swatch--dropper" data-water-act="sample" aria-label="Pick pigment from the painting" aria-pressed="' + settings.sampling + '">' + RAPIER_DRAW_ICONS.dropper + '</button></div><div class="rapier-draw-palette">' + _rapierWaterPigmentsOrdered(engine.WATER_PIGMENTS).map(pigment => '<button type="button" class="rapier-draw-swatch" data-water-pigment="' + pigment.id + '" aria-label="' + _rapierDrawEscapeAttr(pigment.name) + '" data-tip="' + _rapierDrawEscapeAttr(pigment.name) + '" aria-pressed="' + (settings.pigment === pigment.id) + '"><span style="background:' + pigment.colour + '"></span></button>').join('') + '</div>' + _rapierWaterProPigmentsHTML();
 	}
 	const stop = engine.waterStrengthOf(settings.load, settings.water), stops = [...surface.querySelectorAll('[data-water-mix]')];
 	for (const button of stops) { const on = button.dataset.waterMix === stop?.id; button.setAttribute('aria-checked', String(on)); button.tabIndex = on || (!stop && button === stops[0]) ? 0 : -1; }

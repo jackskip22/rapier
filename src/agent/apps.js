@@ -521,11 +521,15 @@
     }
   }
 
+  let displayModeIntent = 0;
   async function requestDisplayMode(mode) {
     if (!['inline', 'fullscreen'].includes(mode)) return false;
+    const intent = ++displayModeIntent;
     let result = await request('ui/request-display-mode', {mode}).catch(() => null);
+    if (intent !== displayModeIntent) return result?.mode === mode;
     if (result?.mode !== mode && typeof window.openai?.requestDisplayMode === 'function')
       result = await window.openai.requestDisplayMode({mode}).catch(() => null) || result;
+    if (intent !== displayModeIntent) return result?.mode === mode;
     if (['inline', 'fullscreen'].includes(result?.mode)) updateContext({displayMode: result.mode});
     if (result?.mode !== mode && mode === 'fullscreen') host.notify('Fullscreen isn\u2019t available here.', 'info');
     return result?.mode === mode;
@@ -3018,6 +3022,9 @@
     updateSafeArea();
     const blockBeforeOpen = event => {
       if (base && !switching) return;
+      if (!base && status === 'converter' && !pairedId && !pairDialog && !switching && !closing && !closed &&
+          !homeDialog && !fileDialog && ['keydown', 'beforeinput', 'cut', 'paste', 'drop'].includes(event.type) &&
+          typeof _rapierJxlPart !== 'undefined' && _rapierJxlPart?.ownsInputTarget?.(event.target)) return;
       const own = notice.contains(event.target) || pairDialog?.contains(event.target) ||
         homeDialog?.overlay.contains(event.target) || fileDialog?.overlay.contains(event.target);
       if (event.type === 'keydown' && (event.key === 'Tab' ||

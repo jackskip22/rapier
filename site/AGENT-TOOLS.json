@@ -1,5 +1,5 @@
 {
-  "release": "1.2.72",
+  "release": "1.2.73",
   "core": [
     {
       "name": "open",
@@ -866,7 +866,7 @@
     {
       "name": "open",
       "title": "Open Rapier",
-      "description": "Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account, in the chat or any browser. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:\"pair\", code}. Share editor_url when available; keep document private.",
+      "description": "Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account, in the chat or any browser. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page; otherwise a document map. A browser code goes to show {target:\"pair\", code}. In ChatGPT with a Rapier view, stay in chat. Use fullscreen for writing or painting and return to chat as needed. Keep the private document value for later turns. In ChatGPT, offer editor_url only when the view cannot serve the task or the person asks. In other clients, use the browser editor link.",
       "inputSchema": {
         "type": "object",
         "properties": {
