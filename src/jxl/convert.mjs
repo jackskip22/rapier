@@ -225,8 +225,10 @@ const carriedSize = carried => globalThis.RapierImageAssets.imageDimensions(carr
 const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
 export const exhausted = error => error?.code === 'JXL_MEMORY' || error instanceof RangeError || /out of memory|allocation failed|Array buffer allocation/i.test(String(error?.message || ''));
 export const EFFORT = Object.freeze({min: 1, max: 9, start: 7});
+export const STILL_EFFORT = Object.freeze({min: 1, max: 10, start: 7, long: 9, slow: 10});
+export const SLOW_WORDS = 'A 12 MP photo can take 20 to 30 minutes, depending on your device.';
 export const PREVIEW_EFFORT = 6;
-export const effortOf = value => Math.min(EFFORT.max, Math.max(EFFORT.min, Math.round(Number(value)) || EFFORT.start));
+export const effortOf = (value, range = EFFORT) => Math.min(range.max, Math.max(range.min, Math.round(Number(value)) || range.start));
 
 export async function pixelsOf(file, {raw = false} = {}) {
 	const bitmap = await createImageBitmap(file, {premultiplyAlpha: 'none', ...raw && {colorSpaceConversion: 'none'}});
@@ -264,7 +266,7 @@ async function opens(bytes) {
 }
 
 export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, onPreview, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
-	const effort = effortOf(asked), effortFor = () => effort;
+	const effort = effortOf(asked, STILL_EFFORT), effortFor = () => effortOf(effort);
 	if (effort >= PREVIEW_EFFORT && typeof onPreview === 'function') {
 		const call = codec;
 		codec = (operation, input, options, work) => {

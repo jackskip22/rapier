@@ -1331,6 +1331,7 @@ function rapierConfirm(options) {
 			secondaryLabel: opts.secondaryLabel ? String(opts.secondaryLabel) : '',
 			destructive: !!opts.destructive,
 			plain: !!opts.plain,
+			bare: !!opts.bare,
 		});
 	});
 }

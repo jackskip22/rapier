@@ -1,43 +1,51 @@
 {
-  "rebuild": "node tools/jxl-vendor.mjs --write 8.4.1",
-  "version": "8.4.1",
+  "rebuild": "node tools/jxl-vendor.mjs --write 8.5.0",
+  "version": "8.5.0",
   "source": {
     "registry": "https://registry.npmjs.org/jpegxl",
-    "shasum": "db03ab7d2248f34e3af2c9396ee911c2f586f016",
-    "digest": "39287a2fec507eac677657550a6a9b69f8d584a7fbf76761e8714edba849f5c3"
+    "shasum": "d7288b71f14a7c2e8c971e79241f7a9f479dd847",
+    "digest": "19da1044e7e9955f0df0cb0db191a0aa48c0a1f7d9dad95970e4cb28f27d0263"
   },
   "files": {
     "index.mjs": {
-      "bytes": 1567197,
-      "sha256": "a18f55abdd52612c517c8b71a0c52eea2a6ed04ee1a4d8edda3f614acd7bf160"
+      "bytes": 1751375,
+      "sha256": "d96ebf043758c321739808eb2b1dd5e2a3375e299c63bf8e3e811a350a412869"
     },
     "index.browser.mjs": {
-      "bytes": 54158,
-      "sha256": "2d9400f0ef34f1af1d7845b1ee9afc2030576033b14381e0d94312e06ba87dd3"
+      "bytes": 61398,
+      "sha256": "18651fe10a043df1fa498ed4a9896671359ac2a408f89866294976e4e04e7618"
     },
     "jpeg.mjs": {
-      "bytes": 528566,
-      "sha256": "e9562b872a6f4f68a4b0b965bff98427ffeb4290f2b58ec5f268aaaf8451510c"
+      "bytes": 588629,
+      "sha256": "e19b0b043db09417063ea655ff8636a006c20edfc3a73b3add986b8d3f50e77e"
     },
     "jpeg.browser.mjs": {
-      "bytes": 27154,
-      "sha256": "5dbabdb003ab1965314225e1d6067817c7c14d55567808f497010500646316d7"
+      "bytes": 33160,
+      "sha256": "38156bbf22fd46f6a107196a83e78cee912574ace7a252751e9e075e1bdaf657"
     },
     "decode.mjs": {
-      "bytes": 375552,
-      "sha256": "8ad0abff1da2787f52677b1733da0556d3e7829d240aeab444db93e24fc039ff"
+      "bytes": 394312,
+      "sha256": "a841ce54c054256f06205dec501448e3dd30d8385256ab690dddc527ce498b34"
     },
     "decode.browser.mjs": {
-      "bytes": 26831,
-      "sha256": "d6a473333629e8601d4a1ce76d0e7743ec1a68efe0a17bdc231eac2bdbce443b"
+      "bytes": 32833,
+      "sha256": "66a9ca40f22ba0f3b0f8b29a0cc64075f8ab9230bdc52dce7eadb807097d3a33"
     },
     "animation.mjs": {
-      "bytes": 1625808,
-      "sha256": "617ed2173357ffac87f898b670f99e082af374b4bf5711be507e3d64203140be"
+      "bytes": 1832097,
+      "sha256": "5a97bc7cd98b678a8b955e4a2f82f8f415b1a61679dd586b40bf6096301164ff"
     },
     "animation.browser.mjs": {
-      "bytes": 62271,
-      "sha256": "899ce02b6f46aecb5d7a17ac4866e5ff03d5c23c185571c099a522aded610a6d"
+      "bytes": 74908,
+      "sha256": "146b97342300529546b6c92b12a1b923a08f2451ffebb65b5fcff950d77fe759"
+    },
+    "max.mjs": {
+      "bytes": 1880950,
+      "sha256": "af8fae476607420af56931bdaea6fe3ec9b14bd77dd80dff99103c3e90367611"
+    },
+    "max.browser.mjs": {
+      "bytes": 61417,
+      "sha256": "7c7aef3a1354b718dcfd87f0f13e7d2be78d6d09dd5f6b02ec69dbfdc73bd608"
     }
   }
 }

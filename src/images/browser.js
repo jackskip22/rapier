@@ -40,6 +40,7 @@ const _rapierEmbeddedImages = (() => {
     'rapier-jxl/decode': {client: 'decode.browser.mjs', file: 'decode.mjs', part: 'jxlcomplete'},
     'rapier-jxl/jpeg': {client: 'jpeg.browser.mjs', file: 'jpeg.mjs'},
     'rapier-jxl/animation': {client: 'animation.browser.mjs', file: 'animation.mjs', part: 'jxlcomplete'},
+    'rapier-jxl/max': {client: 'max.browser.mjs', file: 'max.mjs', part: 'jxlmax'},
   });
   const moduleFileSources = [];
   let pageFiles = null;
@@ -85,7 +86,10 @@ const _rapierEmbeddedImages = (() => {
     const ready = codecs.get(name);
     if (ready) { clearTimeout(ready.idle); return ready; }
     const spec = MODULE_FILES[name];
-    if (spec.part) { await RapierParts.need(spec.part); assertCurrent(stamp, identity); }
+    if (spec.part) {
+      await RapierParts.need(spec.part).catch(cause => { throw spec.part === 'jxlmax' ? Object.assign(new Error('JPEG XL effort 10 is not in this copy', {cause}), {code: 'JXL_UNAVAILABLE'}) : cause; });
+      assertCurrent(stamp, identity);
+    }
     const [source, clientSource] = spec.part ? [moduleFile(spec.file), moduleFile(spec.client)] : await Promise.all([pageFile(spec.file), pageFile(spec.client)]);
     if (!source || !clientSource) throw new Error('The bundled JPEG XL codec is missing');
     const client = await loadClient(clientSource);
@@ -95,7 +99,7 @@ const _rapierEmbeddedImages = (() => {
       ? '(function () {"use strict";\n' + source.replaceAll('import.meta.url', 'self.location.href').replace(/\bexport\s*\{[^{}]*\};?/, '') + '\n}).call(undefined);' : null;
     const type = classic && !classic.includes('import.meta') ? 'classic' : 'module';
     const url = URL.createObjectURL(new Blob([type === 'classic' ? classic : source], {type: 'text/javascript'}));
-    const room = name === 'rapier-jxl' ? {maxPixels: 268435456, maxPendingBytes: 268435456 * 4} : {};
+    const room = name === 'rapier-jxl' || name === 'rapier-jxl/max' ? {maxPixels: 268435456, maxPendingBytes: 268435456 * 4} : {};
     client.configure({...room, workerFactory: () => new Worker(url, {type, name: name + ' worker'})});
     const held = {codec: client, url, idle: 0, jobs: 0};
     codecs.set(name, held);
@@ -118,7 +122,8 @@ const _rapierEmbeddedImages = (() => {
       const controller = new AbortController(), abort = () => controller.abort(signal.reason);
       signal?.addEventListener('abort', abort, {once: true});
       let timer = 0;
-      const watch = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('Image processing took too long')), 45000 + megapixels * 15000); };
+      const patience = name === 'rapier-jxl/max' ? 8 : 1;
+      const watch = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('Image processing took too long')), (45000 + megapixels * 15000) * patience); };
       const onProgress = fraction => { if (!controller.signal.aborted) watch(); try { progress?.(fraction); } catch (_) {} };
       const preview = typeof onPreview === 'function' ? value => {
         if (controller.signal.aborted || stamp !== epoch || identity !== rapier.identity.authority) return;
@@ -151,6 +156,9 @@ const _rapierEmbeddedImages = (() => {
   }
   function codec(operation, input, options = {}, work = {}) {
     if (operation === 'encode' && Array.isArray(input?.frames)) return moduleJob('rapier-jxl/animation', 'encode', input, options, work);
+    if (options?.effort === 10 && (operation === 'encode' || operation === 'recompress'))
+      return operation === 'encode' ? moduleJob('rapier-jxl/max', 'encode', input, options, work)
+        : moduleJob('rapier-jxl/max', 'encode', new Blob([input], {type: 'image/jpeg'}), {...options, fidelity: 'exact'}, work);
     if (operation === 'encode') return moduleJob('rapier-jxl', 'encode', input, options, work);
     if (operation === 'recompress' || operation === 'restore') return moduleJob('rapier-jxl/jpeg', operation, input, options, work);
     if (operation === 'decode') return moduleJob('rapier-jxl/decode', 'decode', input, options, work);

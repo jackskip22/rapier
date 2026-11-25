@@ -9,7 +9,7 @@ import {stripperFor} from './strip-comments.mjs';
 import {JXL_HISTORY_BASELINE} from './changelog.mjs';
 
 const repo = fileURLToPath(new URL('..', import.meta.url)), codec = join(repo, 'images/jxl'), vendor = join(repo, 'images/vendor/rapier-jxl');
-export const VENDORED = Object.freeze(['index.mjs', 'index.browser.mjs', 'jpeg.mjs', 'jpeg.browser.mjs', 'decode.mjs', 'decode.browser.mjs', 'animation.mjs', 'animation.browser.mjs']);
+export const VENDORED = Object.freeze(['index.mjs', 'index.browser.mjs', 'jpeg.mjs', 'jpeg.browser.mjs', 'decode.mjs', 'decode.browser.mjs', 'animation.mjs', 'animation.browser.mjs', 'max.mjs', 'max.browser.mjs']);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export function sourceDigest() {
   const files = [];

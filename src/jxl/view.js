@@ -56,7 +56,7 @@
 		quick.append(openers, qualityDrop, effortDrop);
 		const effortRow = make('div', 'rapier-jxl-view__effort'), slider = make('input'), seek = make('span', 'rapier-draw-seek'), track = make('span', 'rapier-draw-seek-track'), head = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), level = make('output', 'rapier-jxl-view__effort-level');
 		effortRow.setAttribute('role', 'group'); effortRow.setAttribute('aria-label', 'Effort');
-		slider.type = 'range'; slider.min = String(C.EFFORT.min); slider.max = String(C.EFFORT.max); slider.step = '1'; slider.value = String(C.EFFORT.start); slider.setAttribute('aria-label', 'Effort');
+		slider.type = 'range'; slider.min = String(C.STILL_EFFORT.min); slider.max = String(C.STILL_EFFORT.max); slider.step = '1'; slider.value = String(C.STILL_EFFORT.start); slider.setAttribute('aria-label', 'Effort');
 		track.setAttribute('aria-hidden', 'true'); head.setAttribute('class', 'rapier-draw-seek-head'); head.setAttribute('viewBox', '0 0 24 24'); head.setAttribute('aria-hidden', 'true');
 		for (const [name, value] of [['cx', '12'], ['cy', '12'], ['r', '10']]) ring.setAttribute(name, value);
 		head.append(ring); seek.append(track, head, level, slider);
@@ -289,8 +289,10 @@
 		overall(); void run();
 	}
 	function seekTo(of) {
-		const {min, max} = C.EFFORT, value = C.effortOf(of.slider.value);
+		const {min, max, long, slow} = C.STILL_EFFORT, value = C.effortOf(of.slider.value, C.STILL_EFFORT);
 		of.seek.style.setProperty('--seek-frac', String((value - min) / (max - min)));
+		of.seek.classList.toggle('rapier-jxl-view__seek--slow', value === slow);
+		of.seek.classList.toggle('rapier-jxl-view__seek--long', value === long);
 		of.level.textContent = String(value);
 		of.slider.setAttribute('aria-valuetext', 'Effort ' + value);
 	}
@@ -419,7 +421,7 @@
 		view.slider.addEventListener('input', () => seekTo(view));
 		view.slider.addEventListener('pointerdown', () => view.seek.classList.add('rapier-draw-seek--active'));
 		for (const event of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) view.slider.addEventListener(event, () => view.seek.classList.remove('rapier-draw-seek--active'));
-		view.slider.addEventListener('change', () => { view.effort = C.effortOf(view.slider.value); paintQuick(view); remake(); });
+		view.slider.addEventListener('change', () => void effortChosen(view));
 		seekTo(view);
 		view.group.addEventListener('keydown', event => {
 			const step = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: 1, ArrowUp: -1}[event.key];
@@ -540,6 +542,15 @@
 		for (const node of done.inert) node.inert = false;
 		if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('jxl', false);
 		try { done.wasFocus?.focus({preventScroll: true}); } catch (_) {}
+	}
+	async function effortChosen(of) {
+		let chosen = C.effortOf(of.slider.value, C.STILL_EFFORT);
+		if (chosen === C.STILL_EFFORT.slow && chosen !== of.effort) {
+			const yes = await rapierConfirm({title: 'Effort 10', message: C.SLOW_WORDS, confirmLabel: 'Use effort 10', plain: true, bare: true}) === true;
+			if (view !== of) return;
+			if (!yes) { chosen = C.STILL_EFFORT.slow - 1; of.slider.value = String(chosen); seekTo(of); }
+		}
+		of.effort = chosen; paintQuick(of); remake();
 	}
 	function configure({mode, effort} = {}) {
 		if (!view) return;

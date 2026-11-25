@@ -23,6 +23,7 @@ export const PARTS = Object.freeze([
   {id: 'diagrams', label: 'Diagrams', scripts: ['diagrams/view.js'], styles: ['rapier-diagrams-style'], globals: {}},
   {id: 'diagramtheme', label: 'Diagram theme', scripts: [], styles: [], globals: {RapierDiagramTheme: 'shell/diagram-theme.mjs'}},
   {id: 'jxlcomplete', label: 'JPEG XL complete', scripts: ['jxl/complete.js'], styles: [], globals: {}},
+  {id: 'jxlmax', label: 'JPEG XL effort 10', scripts: ['jxl/max.js'], styles: [], globals: {}, fetched: true},
   {id: 'jxlscene', label: '3D scene', scripts: ['jxl/scene.js'], styles: [], globals: {RapierJxlScene: 'jxl/scene.mjs'}},
   {id: 'jxlexample', label: 'Animated example', scripts: [], styles: [], globals: {RapierJxlExample: 'jxl/example.mjs'},
     fetched: true},

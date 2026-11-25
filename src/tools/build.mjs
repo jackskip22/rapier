@@ -971,8 +971,8 @@ const vendorPacks = Promise.all(vendorIds.map((id, at) => packedSpans(id, 'text/
 const {checkVendor} = await import('./jxl-vendor.mjs');
 { const problems = checkVendor(); if (problems.length) throw new Error('images/vendor/rapier-jxl: ' + problems.join('; ')); }
 const JXL_PAGE_FILES = ['jpeg.mjs', 'index.mjs', 'jpeg.browser.mjs', 'index.browser.mjs'];
-const JXL_PART_FILES = {jxlcomplete: ['decode.mjs', 'animation.mjs', 'decode.browser.mjs', 'animation.browser.mjs']};
-const JXL_MARKS = {jxlcomplete: 'RAPIER_JXL_COMPLETE_FILES'};
+const JXL_PART_FILES = {jxlcomplete: ['decode.mjs', 'animation.mjs', 'decode.browser.mjs', 'animation.browser.mjs'], jxlmax: ['max.mjs', 'max.browser.mjs']};
+const JXL_MARKS = {jxlcomplete: 'RAPIER_JXL_COMPLETE_FILES', jxlmax: 'RAPIER_JXL_MAX_FILES'};
 const jxlPin = JSON.parse(await read('images/vendor/rapier-jxl/PIN.json'));
 const jxlVendored = Object.fromEntries(await Promise.all([...JXL_PAGE_FILES, ...Object.values(JXL_PART_FILES).flat()].map(async name => [name, await read('images/vendor/rapier-jxl/' + name)])));
 const jxlWorker = JXL_PAGE_FILES.map(name => jxlVendored[name]).join('\n');

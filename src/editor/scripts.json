@@ -52,6 +52,7 @@
   "jxl/maker.js",
   "jxl/view.js",
   "jxl/complete.js",
+  "jxl/max.js",
   "jxl/scene.js",
   "interchange/convert-door.js",
   "interchange/convert-view.js",

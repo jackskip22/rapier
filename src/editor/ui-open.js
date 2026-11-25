@@ -65,6 +65,7 @@ function renderConfirm(request) {
 	const refs = _rapierUi.refs;
 	if (!refs) return;
 	refs.confirmTitle.textContent = String(request.title || 'confirm').slice(0, 120);
+	refs.confirmTitle.parentElement.hidden = !!request.bare;
 	refs.confirmMessage.textContent = String(request.message || '');
 	refs.confirmMessage.style.whiteSpace = 'pre-line';
 	refs.confirmAccept.textContent = String(request.confirmLabel || 'continue').slice(0, 60);
