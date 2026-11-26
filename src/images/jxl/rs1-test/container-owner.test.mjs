@@ -82,7 +82,7 @@ test('ordinary and saved container collectors share fragment ordering, size and 
     keep(await codec().advance(checkpoint, host(), {units: 1}));
     assert.ok(++calls < 80, 'fragment batches make progress after JSON replay');
   }
-  const output = []; for await (const part of codec().outputParts(checkpoint, host())) output.push(part);
+  const output = []; output.push(await codec().output(checkpoint, host(), length => new Uint8Array(length)));
   assert.ok(calls > 4, 'the prefix map crosses completed-unit checkpoints');
   assert.deepEqual(join(output), stream);
 });

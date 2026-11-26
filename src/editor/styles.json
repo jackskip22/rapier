@@ -54,6 +54,10 @@
     "path": "editor/styles/rapier-jxl-maker.css"
   },
   {
+    "id": "rapier-jxl-glitch-style",
+    "path": "editor/styles/rapier-jxl-glitch.css"
+  },
+  {
     "id": "rapier-convert-style",
     "path": "editor/styles/rapier-convert.css"
   },

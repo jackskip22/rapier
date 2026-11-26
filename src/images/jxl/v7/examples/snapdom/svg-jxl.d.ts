@@ -6,7 +6,7 @@ export type {SvgJxlPicture} from 'rapier-jxl/svg-jxl';
 export type SvgJxlPluginOptions = {effort?: Effort; webgpu?: false | 'required'; codec?: CaptureEncoder};
 /** toSvg()'s options and rapier-jxl/svg-jxl's. */
 export type SvgJxlOptions = {quality?: number; exact?: boolean; scale?: number; width?: number; height?: number; effort?: Effort; signal?: AbortSignal;
-  onProgress?: (fraction: number) => void};
+  onProgress?: ((fraction: number) => void) | undefined};
 export type SnapdomSvgJxlRecord = SvgJxlRecord & {blob: Blob};
 export type SvgJxlContext = {export?: {requestedOptions?: SvgJxlOptions}};
 export type SnapDOMExports = {svg?(options: object): Promise<HTMLImageElement>; blob?(options: object): Promise<Blob>};

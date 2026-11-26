@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 import {ln, power, OPSIN, inverse, times} from './color-transform.mjs';
+import {inspectICC, prepareColorEncoding} from './color-info.mjs';
 import {stage, unit, readEach, unread} from './step-journal.mjs';
-export {P3_TRANSFORM, linearFromTransform, linearFromTransformPlanes} from './color-transform.mjs';
+export {P3_TRANSFORM, linearFromTransformPlanes} from './color-transform.mjs';
 
 const s15 = (view, at) => view.getInt32(at) / 65536;
 
@@ -22,8 +23,8 @@ function curveOf(view, offset, length, samples) {
     if (count === undefined || 12 + count * 4 > length) return null;
     const [g, a = 1, b = 0, c = 0, d = 0, e = 0, f = 0] = Array.from({length: count}, (_, i) => s15(view, offset + 12 + i * 4));
     if (form === 0) return x => power(x, g);
-    if (form === 1) return x => x >= -b / a ? power(a * x + b, g) : 0;
-    if (form === 2) return x => x >= -b / a ? power(a * x + b, g) + c : c;
+    if (form === 1) return x => a * x + b >= 0 ? power(a * x + b, g) : 0;
+    if (form === 2) return x => a * x + b >= 0 ? power(a * x + b, g) + c : c;
     if (form === 3) return x => x >= d ? power(a * x + b, g) : c * x;
     return x => x >= d ? power(a * x + b, g) + e : c * x + f;
   }
@@ -56,8 +57,9 @@ const columnsXYZ = columns => [columns[0][0], columns[1][0], columns[2][0], colu
 const readOrNull = run => { try { return run(); } catch (error) { if (unread(error)) throw error; return null; } };
 
 function readMatrixShaper(icc) {
+  if (!icc) return null;
+  inspectICC(icc);
   return readOrNull(() => {
-    if (!icc || icc.length < 132) return null;
     const view = new DataView(icc.buffer, icc.byteOffset, icc.byteLength), head = matrixHead(view);
     if (!head) return null;
     const {space, count} = head, tags = matrixTags(view, count, new Map());
@@ -87,8 +89,9 @@ export function profileTransform(icc) {
 function matrixTransform(profile) {
   if (!profile) return null;
   if (profile.gray) return {gray: true, tables: profile.tables, lms: Float64Array.from(OPSIN)};
-  const lms = times(OPSIN, times(SRGB_FROM_D50, profile.xyz));
-  return lms.every(Number.isFinite) ? {gray: false, tables: profile.tables, lms: Float64Array.from(lms)} : null;
+  const lms = times(OPSIN, times(SRGB_FROM_D50, profile.xyz)), [t0, t1, t2] = profile.tables;
+  const tables = [t0, t1.every((v, i) => v === t0[i]) ? t0 : t1, t2.every((v, i) => v === t0[i]) ? t0 : t2];
+  return lms.every(Number.isFinite) ? {gray: false, tables, lms: Float64Array.from(lms)} : null;
 }
 
 export function* profileTransformSteps(icc) {
@@ -149,6 +152,22 @@ export function linearSrgbProfile(icc) {
   if (profile.gray) return {gray: true, tables: profile.tables, curves: profile.curves, matrix: Float64Array.of(1, 0, 0, 0, 1, 0, 0, 0, 1)};
   const matrix = times(LCMS_SRGB_FROM_D50, profile.xyz);
   return matrix.every(Number.isFinite) ? {gray: false, tables: profile.tables, curves: profile.curves, matrix: Float64Array.from(matrix)} : null;
+}
+
+const ENCODING_WHITES = {d65: [0.3127, 0.329], e: [1 / 3, 1 / 3], dci: [0.314, 0.351]};
+const ENCODING_PRIMARIES = {srgb: [[0.64, 0.33], [0.3, 0.6], [0.15, 0.06]], rec2020: [[0.708, 0.292], [0.17, 0.797], [0.131, 0.046]],
+  'display-p3': [[0.68, 0.32], [0.265, 0.69], [0.15, 0.06]]};
+export function encodingSpace(encoding, colorData) {
+  if (!encoding || encoding.space !== 'rgb') return null;
+  const curve = encoding.gamma > 0 && (encoding.transferFunction === undefined || encoding.transferFunction === 'gamma') ? v => power(v, 1 / encoding.gamma)
+    : {linear: v => v, bt709, srgb: TRANSFERS[2][1]}[encoding.transferFunction];
+  const white = typeof encoding.whitePoint === 'string' ? ENCODING_WHITES[encoding.whitePoint] : encoding.whitePoint ?? ENCODING_WHITES.d65;
+  const primaries = typeof encoding.primaries === 'string' ? ENCODING_PRIMARIES[encoding.primaries] : encoding.primaries ?? ENCODING_PRIMARIES.srgb;
+  if (!curve || !white || !primaries) return null;
+  const table = Float64Array.from({length: 256}, (_, v) => Math.max(0, Math.min(1, curve(v / 255))));
+  const xyz = times(adaptation(XYZof(white), D50), primaryMatrix(primaries, white));
+  const transform = matrixTransform({gray: false, tables: [table, table, table], xyz});
+  return transform && {transform, header: {colorData, iccData: null}, colorChannels: 3};
 }
 
 export function spaceTransform(space) {
@@ -217,18 +236,29 @@ export function profileFields(icc) {
   }
   const chad = tags.get('chad'), wtpt = tags.get('wtpt');
   let whiteXYZ = D50;
-  if (chad && chad.length >= 44) whiteXYZ = apply(inverse(Array.from({length: 9}, (_, i) => s15(view, chad.offset + 8 + i * 4))), D50);
-  else if (wtpt && wtpt.length >= 20) whiteXYZ = [0, 1, 2].map(i => s15(view, wtpt.offset + 8 + i * 4));
+  if (chad) {
+    if (chad.length < 44 || textOf(view)(chad.offset) !== 'sf32') return null;
+    whiteXYZ = apply(inverse(Array.from({length: 9}, (_, i) => s15(view, chad.offset + 8 + i * 4))), D50);
+  } else if (wtpt) {
+    whiteXYZ = colorant(view, wtpt.offset, wtpt.length);
+    if (!whiteXYZ) return null;
+  }
   const whiteXY = xyOf(whiteXYZ);
   if (![...whiteXY].every(Number.isFinite)) return null;
   const whiteEnum = WHITES.find(([, xy]) => near(xy, whiteXY));
   const white = whiteEnum ? {enum: whiteEnum[0], xy: whiteEnum[1]} : {enum: 2, xy: millionths(whiteXY)};
   const fields = {gray: profile.gray, white, transfer, gamma, intent};
-  if (profile.gray) return fields;
-  const unadapted = times(adaptation(D50, XYZof(white.xy)), profile.xyz), found = [0, 1, 2].map(c => xyOf([unadapted[c], unadapted[3 + c], unadapted[6 + c]]));
-  if (!found.flat().every(Number.isFinite)) return null;
-  const set = PRIMARY_SETS.find(([, xys]) => xys.every((xy, c) => near(xy, found[c])));
-  fields.primaries = set ? {enum: set[0], xy: set[1]} : {enum: 2, xy: found.map(millionths)};
-  const rebuilt = times(adaptation(XYZof(white.xy), D50), primaryMatrix(fields.primaries.xy, white.xy));
-  return rebuilt.every((v, i) => Math.abs(v - profile.xyz[i]) < 2e-3) ? fields : null;
+  if (!profile.gray) {
+    const unadapted = times(adaptation(D50, XYZof(white.xy)), profile.xyz), found = [0, 1, 2].map(c => xyOf([unadapted[c], unadapted[3 + c], unadapted[6 + c]]));
+    if (!found.flat().every(Number.isFinite)) return null;
+    const set = PRIMARY_SETS.find(([, xys]) => xys.every((xy, c) => near(xy, found[c])));
+    fields.primaries = set ? {enum: set[0], xy: set[1]} : {enum: 2, xy: found.map(millionths)};
+    const rebuilt = times(adaptation(XYZof(white.xy), D50), primaryMatrix(fields.primaries.xy, white.xy));
+    if (!rebuilt.every((v, i) => Math.abs(v - profile.xyz[i]) < 2e-3)) return null;
+  }
+  return readOrNull(() => {
+    prepareColorEncoding({space: profile.gray ? 'gray' : 'rgb', whitePoint: white.xy,
+      ...(!profile.gray && {primaries: fields.primaries.xy}), ...(gamma !== undefined && {gamma})});
+    return fields;
+  });
 }

@@ -8,7 +8,7 @@ export function r2Store(inner, bucket) {
       options?.signal?.throwIfAborted();
       const object = await bucket.get(key, options?.range ? {range: options.range} : undefined);
       if (!object?.body && key.startsWith('__rapier_jxl__/'))
-        throw Object.assign(new Error('Private media object not found.'), {code: 'NOT_FOUND'});
+        throw Object.assign(new Error('private media object: missing'), {code: 'NOT_FOUND'});
       if (!object?.body) return target.download(key, options);
       return {body: object.body, ...(object.range ? {range: object.range} : {}), ...metadata(object)};
     };
@@ -23,7 +23,7 @@ export function r2Store(inner, bucket) {
   async function compareAndSet(key, body, {etag, contentType, signal} = {}) {
     if (!key.startsWith('__rapier_jxl__/') || !key.endsWith('.json') ||
         etag !== null && (typeof etag !== 'string' || !etag))
-      throw Object.assign(new Error('Private settings require their stored revision.'), {code: 'JXL_INPUT'});
+      throw Object.assign(new Error("revision: stored revision"), {code: 'JXL_INPUT'});
     signal?.throwIfAborted();
     const onlyIf = etag === null ? new Headers({'If-None-Match': '*'}) : {etagMatches: etag};
     return await bucket.put(key, body, {onlyIf, httpMetadata: {contentType}}) !== null;
@@ -37,7 +37,7 @@ export function r2Store(inner, bucket) {
     if (key.startsWith('__rapier_jxl__/') || !/\.(?:jpe?g|jpe|jfif)$/i.test(key) ||
         typeof expectedVersion !== 'string' || !expectedVersion || typeof etag !== 'string' || !etag ||
         !/^[a-f0-9]{32}$/.test(originalId ?? '') || !['jxl', 'jpeg'].includes(representation))
-      throw Object.assign(new Error('Original replacement requires its captured source and archive identity.'), {code: 'JXL_INPUT'});
+      throw Object.assign(new Error("replacement: source and archive identities"), {code: 'JXL_INPUT'});
     signal?.throwIfAborted();
     const before = await bucket.head(key);
     if (!before || before.version !== expectedVersion || before.etag !== etag) return null;

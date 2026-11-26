@@ -15,14 +15,16 @@ let serving;
 let order = Promise.resolve();
 const next = step => { order = order.then(async () => { if (await ok) await step(); }).catch(fatal); };
 async function whole({id, task}) {
+  const [{runCodec}, {lendEntropy}, {holdEntropy, releaseEntropy}] = await Promise.all([codec, kernels, import('./kernel-hooks.mjs')]);
+  holdEntropy(lendEntropy);
   try {
-    const {runCodec} = await codec;
     const result = await runCodec(task.operation, task.input, task.options, {maxPixels: task.maxPixels, webgpu: task.webgpu, onProgress: progress => port.postMessage({id, progress})});
     post({id, result}, ArrayBuffer.isView(result) ? [result.buffer] : [], error => ({id, error: described(error)}));
   } catch (error) { port.postMessage({id, error: described(error)}); }
+  finally { releaseEntropy(); }
 }
 const serve = data => {
-  if (data?.kernels !== undefined && data.input === undefined && data.task === undefined) { next(async () => { if (data.wasmModules) configureModules(data.wasmModules); (await kernels).configureKernels(data.kernels); }); return; }
+  if (data?.kernels !== undefined && data.input === undefined && data.task === undefined) { next(async () => { if (data.wasmModules) configureModules(data.wasmModules); (await kernels).ensureKernels(); }); return; }
   if (data?.task?.kind === 'whole') { order.then(async () => { if (await ok) await whole(data); }).catch(fatal); return; }
   if (data?.split !== undefined) {
     const answer = error => ({split: data.split, key: data.key, ticket: data.ticket, error: described(error)});

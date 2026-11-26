@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-import {createCodec} from './node_modules/rapier-jxl/dist/codec.mjs';
+import {encode, close} from './node_modules/rapier-jxl/dist/index.browser.mjs';
 
 const form = document.querySelector('#encode'), file = document.querySelector('#file');
 const start = document.querySelector('#start'), cancel = document.querySelector('#cancel');
 const status = document.querySelector('#status'), progress = document.querySelector('#progress');
 const numbers = document.querySelector('#numbers'), picture = document.querySelector('#picture');
 const download = document.querySelector('#download');
-let codec, controller, generation = 0, currentURL = null, currentImage = null, pending = null, painting = false;
+let controller, generation = 0, currentURL = null, currentImage = null, pending = null, painting = false;
 
 function releaseURL() {
   download.hidden = true; download.removeAttribute('href');
@@ -96,14 +96,13 @@ form.addEventListener('submit', async event => {
   let final = false;
   progress.hidden = false; progress.value = 0; cancel.disabled = false;
   try {
-    codec ??= createCodec({module: 'rapier-jxl'});
-    const result = await codec.encode(selected, {effort, fidelity: {quality}, signal,
+    const result = await encode(selected, {effort, fidelity: {quality}, signal,
       onProgress(fraction) { if (token === generation) progress.value = fraction; },
       onPreview(record) { if (!final && token === generation) return display(record, token).then(() => {}); },
     });
     final = true;
     if (token !== generation) return;
-    if (!result.fits) throw new Error(result.reason.message);
+    if (!result.meetsTarget) throw new Error(result.reason.message);
     await display(result, token, true, selected.name.replace(/\.[^.]*$/, '') + '.jxl');
   } catch (error) {
     if (token !== generation) return;
@@ -116,4 +115,4 @@ form.addEventListener('submit', async event => {
 
 cancel.addEventListener('click', () => stop('Canceled.'));
 file.addEventListener('change', () => stop(ready));
-window.addEventListener('pagehide', () => { stop(''); void codec?.close(); codec = null; });
+window.addEventListener('pagehide', () => { stop(''); void close(); });

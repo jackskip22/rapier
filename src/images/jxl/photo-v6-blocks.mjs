@@ -61,7 +61,7 @@ function refineEnergyOpen({hf, each}, open, planeRows, stride, rows) {
   return {weight: m.weight, weightDoubt: maskWeightDoubts(bound, stride, rows, m.eroded)};
 }
 
-export function* fullBlocksOnDevice({base, data, width, height, row, blockSearch, mask, own, ownWork, refineOpen, whileLevels, label = ''}) {
+function* fullBlocksOnDevice({base, data, width, height, row, blockSearch, mask, own, ownWork, refineOpen, whileLevels, label = ''}) {
   const request = {data, width, height, options: {...V6, ...GABORISH, ...row}, input: strategyInputs(base, width, height, blockSearch), search: blockSearch, ids: blockSearch.ids, scaledDCTBases, lowFrequencies,
     lib: {complete, photoXYBSteps, transformDCT8, dct8Basis, xyb: XYB_TABLES}};
   v6Trace(label + ' inputs and mask');

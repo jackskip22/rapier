@@ -19,6 +19,7 @@ import { paintAgentStrokes, agentPaintSheetHolds, agentPaintBrushRegistry, agent
 import { VERSION } from '../version.mjs';
 import { mcpServer, CURRENT_DOOR } from '../tools/discovery.mjs';
 import { convertOnDoor } from './convert-door.mjs';
+import { checkFeedback, storeFeedback, FEEDBACK_REPLY } from './feedback-door.mjs';
 import { INSTRUCTIONS, GUIDE_RESOURCES, guideResource, guideResult, PROMPTS, promptResult } from '../agent/guide.mjs';
 import { RETURN_ORIGIN } from '../skills/rapier-html/return-address.mjs';
 import { wrap, portableNeeds } from '../skills/rapier-html/wrap.mjs';
@@ -594,6 +595,25 @@ function operationEnvelope(operation, recorded, head, {notesVersions = false} = 
   return result;
 }
 
+function documentValueRecovery(name, value) {
+  if (value === undefined || value === '') return `${name} needs document, the private value open returned earlier (rpr_ and 43 more characters). ` +
+    'Pass that same value again. Where Rapier\'s view shows, it is also in the view\'s context as rapier.document. ' +
+    'If that is null, the person disconnected agents: ask them to choose SHARE WITH AN AGENT in the editor. ' +
+    'A new document starts with open {text, filename}, never with a copy of theirs.';
+  return 'This is not a Rapier document value. Pass document exactly as open returned it: rpr_ and 43 more characters, unchanged. ' +
+    'documentId, editor_url and guide URIs are not document values.';
+}
+
+function viewRecovery(name, result) {
+  const value = result?.structuredContent;
+  if (!['show', 'export', 'read'].includes(name) || !plain(value) || value.reason !== 'editor_unavailable' || typeof value.editor_url !== 'string') return result;
+  const pairing = value.pairing?.status && value.pairing.status !== 'none' && value.pairing.status !== 'paired' ? value.pairing.next : null;
+  const hint = 'Rapier\'s view is not open on this document now. Call open {document} with the same value to show it in this chat again, then retry once it shows. ' +
+    (typeof pairing === 'string' && pairing ? pairing + ' ' : '') + 'Share editor_url only when the person asks for a browser. ' +
+    (name === 'read' ? 'Without the view, read the text.' : 'Without the view, export markdown, html or txt.');
+  return {...result, structuredContent: {...value, hint}};
+}
+
 function toolError(error, head, meta) {
   if (!error?.[PUBLIC_FAILURE]) error = failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry with the same operation identity.');
   const uncertain = ['WORKSPACE_UNAVAILABLE', 'WORKSPACE_UNACKNOWLEDGED'].includes(error.code);
@@ -980,8 +1000,16 @@ function observeToolOutcome(observation, result) {
   observation.outcome(['ok', 'applied', 'rebased', 'exported', 'saved', 'created', 'resumed', 'current', 'unchanged', 'shown', 'message'].includes(value.outcome) ? 'succeeded' : 'unknown');
 }
 
+const FEEDBACK_HINT = 'If Rapier failed the request, tell us with feedback.';
+const feedbackHint = receipt => ({...receipt, hint: typeof receipt.hint === 'string' ? receipt.hint + ' ' + FEEDBACK_HINT : FEEDBACK_HINT});
+
 async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null, toolAdmission = null, observation = null) {
-  const invalidInput = error => { observation?.outcome('tool_error', 'validation'); observation?.errorCode?.(error?.code); return inputErrorResult(error); };
+  const invalidInput = error => {
+    observation?.outcome('tool_error', 'validation'); observation?.errorCode?.(error?.code);
+    const message = typeof error?.message === 'string' ? error.message : '';
+    if (authority?.source === 'page' || !/(?:^|; )arguments: missing document(?:;|$)/.test(message)) return inputErrorResult(error);
+    return inputErrorResult({message: message + (message.endsWith('.') ? ' ' : '. ') + documentValueRecovery(name), path: error.path, omitted: error.omitted});
+  };
   if (authority?.source !== 'page') args = withoutNulls(args, TOOL_BY_NAME.get(name)?.inputSchema);
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   if (name === 'read' && plain(args) && (args.wait_ms !== undefined || args.after_revision !== undefined) && authority?.source !== 'page') {
@@ -1058,6 +1086,14 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     const guide = guideResult({topic: args.guide}, args.guide === 'water' ? agentPaintBrushRegistry() : null);
     return envelope(guide.outcome === 'ok' ? {guide: args.guide, instructions: guide.instructions, complete: true, next_cursor: null} : guide);
   }
+  if (!page && name === 'feedback') {
+    const fields = checkFeedback(args);
+    if (fields.error) return toolError(failure('INVALID_DOCUMENT_INPUT', fields.error));
+    const stored = await storeFeedback(env, fields);
+    if (stored === 'rate_limited') return toolError(failure('FEEDBACK_LIMIT', 'Many reports just arrived. Try again in a few minutes.'));
+    if (stored !== 'stored') return toolError(failure('FEEDBACK_UNAVAILABLE', 'The report could not be saved. Try again later.'));
+    return envelope({outcome: 'received', message: FEEDBACK_REPLY});
+  }
   if (!page && name === 'convert') {
     const answered = convertOnDoor(args, unpassed, observation?.family?.());
     observation?.pictures?.(args.files, answered.reply.pictures, answered.reply.unpassed, args.quality, args.effort);
@@ -1071,7 +1107,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     args = {...args, document: opened.document, cursor: opened.cursor};
     rawArgs = {...rawArgs, document: opened.document, cursor: opened.cursor};
   }
-  if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', 'Use the document value returned by open.'));
+  if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', page ? 'Use the document value returned by open.' : documentValueRecovery(name, args.document)));
   const connectedOwner = page || anonymous ? null : await digest(authority.ownerId);
   const createToken = typeof args.createToken === 'string' ? args.createToken : null;
   if (create && createToken !== null) {
@@ -1296,13 +1332,13 @@ function publicToolResult(name, result, door, {workspaceNotes = false, appsClien
     if (name === 'edit' && door !== '/muse' && typeof structuredContent.hash === 'string')
       value._meta = {...value._meta, rapier: {...value._meta?.rapier, edit: {revision: structuredContent.revision, hash: structuredContent.hash}}};
     result = {...value,
-      content: [{type: 'text', text: JSON.stringify(receipt) + (typeof text === 'string' ? '\n' + text : '')},
+      content: [{type: 'text', text: JSON.stringify(result.isError ? feedbackHint(receipt) : receipt) + (typeof text === 'string' ? '\n' + text : '')},
         ...(result.content || []).filter(item => ['image', 'resource', 'resource_link'].includes(item.type))]};
   } else if (['open', 'read', 'edit', 'undo', 'show', 'export'].includes(name) && result.isError && result.content?.[0]?.type === 'text') {
     let value; try {value = JSON.parse(result.content[0].text);} catch {}
     if (plain(value) && typeof value.code === 'string' && value.reason === undefined) {
       const {isError: _error, code, message, ...rest} = value;
-      result = {...result, content: [{type: 'text', text: JSON.stringify({outcome: rest.outcome, reason: code.toLowerCase(), ...(typeof message === 'string' ? {hint: message} : {}), ...rest})}, ...result.content.slice(1)]};
+      result = {...result, content: [{type: 'text', text: JSON.stringify(feedbackHint({outcome: rest.outcome, reason: code.toLowerCase(), ...(typeof message === 'string' ? {hint: message} : {}), ...rest}))}, ...result.content.slice(1)]};
     }
   }
   if (result._meta?.rapier && !(['page', '/editor'].includes(door) &&
@@ -1778,7 +1814,10 @@ async function handleRequest(request, env, authority, observation = null) {
     if (request.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
     if (request.headers.get('Origin') !== url.origin || !['same-origin', null].includes(request.headers.get('Sec-Fetch-Site'))) return refuseRpc(null, -32000, 'Origin is not allowed.', 403);
   }
-  if (request.method !== 'POST') { observation?.outcome('protocol_error', 'validation'); return new Response(null, { status: 405, headers: { Allow: 'POST' } }); }
+  if (request.method !== 'POST') {
+    if (!['GET', 'DELETE'].includes(request.method)) observation?.outcome('protocol_error', 'validation');
+    return new Response(null, { status: 405, headers: { Allow: 'POST' } });
+  }
   if (!/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type') || '')) return refuseRpc(null, -32600, 'Content-Type must be application/json.', 415);
   const accept = (request.headers.get('Accept') || '').toLowerCase().split(',').filter(part => !/;\s*q=0(?:\.0*)?\s*(?:;|$)/.test(part)).map(part => part.split(';')[0].trim()).filter(Boolean);
   if (accept.length && !accept.some(type => ['application/json', 'application/*', '*/*'].includes(type))) return refuseRpc(null, -32600, 'Accept must allow application/json.', 406);
@@ -1819,7 +1858,9 @@ async function handleRequest(request, env, authority, observation = null) {
   const header = headerField(request.headers.get('MCP-Protocol-Version'));
   if (params._meta !== undefined && !plain(params._meta)) return refuseRpc(id ?? null, -32602, 'params._meta: expected an object.', id === undefined || header === MODERN_PROTOCOL_VERSION ? 400 : 200);
   const meta = params._meta || {};
-  const modern = header === MODERN_PROTOCOL_VERSION || Object.hasOwn(meta, META_VERSION);
+  const legacyDeclared = Object.hasOwn(meta, META_VERSION) && LEGACY_VERSIONS.includes(meta[META_VERSION]) &&
+    (header === null || header === meta[META_VERSION]) && !['server/discover', 'subscriptions/listen'].includes(message.method);
+  const modern = message.method !== 'initialize' && (header === MODERN_PROTOCOL_VERSION || Object.hasOwn(meta, META_VERSION) && !legacyDeclared);
   let appsClient, hostAgent = null;
   if (modern) {
     const requested = meta[META_VERSION];
@@ -1892,7 +1933,8 @@ async function handleRequest(request, env, authority, observation = null) {
       door, personOf(authority, params.arguments));
     switch (message.method) {
       case 'initialize':
-        if (modern) return refuseRpc(id, -32601, 'Method not found.', 404);
+        for (const [key, metaKey] of [['protocolVersion', META_VERSION], ['capabilities', META_CLIENT], ['clientInfo', 'io.modelcontextprotocol/clientInfo']])
+          if (params[key] === undefined && meta[metaKey] !== undefined) params[key] = meta[metaKey];
         if (typeof params.protocolVersion !== 'string' || !plain(params.capabilities) || !plain(params.clientInfo) || typeof params.clientInfo.name !== 'string' || typeof params.clientInfo.version !== 'string') return refuseRpc(id, -32602, 'initialize requires protocolVersion, capabilities, and clientInfo.');
         observation?.client(clientFamily(params.clientInfo.name));
         observation?.protocol?.(params.protocolVersion, 'legacy', params.capabilities);
@@ -1956,6 +1998,7 @@ async function handleRequest(request, env, authority, observation = null) {
         result = hostedTask
           ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door, observation)
           : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id, meta['rapier/visual'] ?? null, admission, observation);
+        if (appsClient && door !== 'page') result = viewRecovery(params.name, result);
         if (authority?.grant && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(authorityRequest, env));
         if (admission?.deferred && !admission.sent) {
           const refusal = await takeToolBudget(request, env, authority, params.name, params.arguments || {}, door, meta['rapier/editorKey']);

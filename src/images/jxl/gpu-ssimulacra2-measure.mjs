@@ -3,7 +3,7 @@ import {ssimulacra2, ssimulacra2Reference} from './ssimulacra2.mjs';
 import {GpuLinearPixels} from './gpu-metric-pixels.mjs';
 import {compileKernels} from './kernel-runtime.mjs';
 
-const unavailable = () => Object.assign(new Error('SSIMULACRA2 pixel owner is unavailable.'), {code: 'JXL_GPU'});
+const unavailable = () => Object.assign(new Error('owner unavailable'), {code: 'JXL_GPU'});
 
 export class Ssimulacra2Readback extends GpuLinearPixels {
   keepReference(reference) {

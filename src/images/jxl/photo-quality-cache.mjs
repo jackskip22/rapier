@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {kernelHooks} from './kernel-hooks.mjs';
+import {fault} from './fault.mjs';
 
 const PACKED_BYTES = 1 << 20, RESULTS = 1024, INVALID = {};
 const coordinates = ['x', 'y', 'width', 'height'];
@@ -38,19 +39,23 @@ function space(colorSpace, put) {
   if (colorSpace !== 'srgb' && colorSpace !== 'display-p3') throw INVALID;
   put(colorSpace === 'srgb' ? 0 : 1);
 }
-function lengthOf(walk) {
+export const ownedPixels = owned => owned && !(typeof Blob === 'function' && owned instanceof Blob) && typeof owned.rows !== 'function'
+  && (owned.data instanceof Uint8Array || owned.data instanceof Uint8ClampedArray) && owned.data.buffer instanceof ArrayBuffer
+  && owned.data.length === owned.width * owned.height * 4 ? owned.data : null;
+export function tupleLength(walk, remaining = PACKED_BYTES, stop = INVALID) {
   let length = 0;
-  try { walk(number => { if (!Number.isFinite(number) || ++length * 8 > PACKED_BYTES) throw INVALID; }); }
-  catch (error) { if (error !== INVALID) throw error; return null; }
+  try { walk(number => { if (!Number.isFinite(number) || ++length * 8 > remaining) throw stop; }); }
+  catch (error) { if (error !== stop) throw error; return null; }
   return length;
 }
-function matches(key, walk) {
+export function tupleMatches(key, walk, end = key?.length, stop = INVALID) {
+  if (!key) return false;
   let at = 0;
-  try { walk(number => { if (at >= key.length || !Object.is(key[at++], number)) throw INVALID; }); }
-  catch (error) { if (error !== INVALID) throw error; return false; }
-  return at === key.length;
+  try { walk(number => { if (at >= end || !Object.is(key[at++], number)) throw stop; }); }
+  catch (error) { if (error !== stop) throw error; return false; }
+  return at === end;
 }
-function packed(walk, length) {
+export function packTuple(walk, length) {
   const key = new Float64Array(length); let at = 0;
   walk(number => { key[at++] = number; }); return key;
 }
@@ -64,32 +69,30 @@ function finiteVector(answer) {
 }
 
 export function photoQualityMemo(owned) {
-  let pixels = owned && !(typeof Blob === 'function' && owned instanceof Blob) && typeof owned.rows !== 'function'
-    && (owned.data instanceof Uint8Array || owned.data instanceof Uint8ClampedArray) && owned.data.buffer instanceof ArrayBuffer
-    && owned.data.length === owned.width * owned.height * 4 ? owned.data : null;
+  let pixels = ownedPixels(owned);
   let buffer = pixels?.buffer ?? null;
   const offset = pixels?.byteOffset, size = pixels?.byteLength, sourceWidth = owned?.width;
   pixels = null; owned = null;
   const looks = [], crops = [];
   let bytes = 0, results = 0, closed = false;
-  const check = () => { if (closed) throw new Error('Photo quality memo is destroyed.'); };
+  const check = () => { if (closed) throw fault('JXL_INTERNAL', 'photo-quality-cache:destroyed'); };
   const owns = (data, width) => buffer && (data instanceof Uint8Array || data instanceof Uint8ClampedArray)
     && data.buffer === buffer && data.byteOffset === offset && data.byteLength === size && width === sourceWidth;
   const read = (entries, data, width, walk, compute, vector) => {
     check();
     if (!owns(data, width)) return compute();
-    const length = lengthOf(walk);
+    const length = tupleLength(walk);
     if (length === null) return compute();
-    const kernel = kernelHooks.rgbTiles, known = entries.find(entry => entry.kernel === kernel && matches(entry.key, walk));
+    const kernel = kernelHooks.rgbTiles, known = entries.find(entry => entry.kernel === kernel && tupleMatches(entry.key, walk));
     if (known) return vector ? Array.from(known.answer) : known.answer;
     let key = null, reserved = 0;
     try {
       if (results < RESULTS && bytes + length * 8 <= PACKED_BYTES) {
-        reserved = length * 8; bytes += reserved; key = packed(walk, length);
+        reserved = length * 8; bytes += reserved; key = packTuple(walk, length);
       }
       const answer = compute();
       check();
-      if (!key || !owns(data, width) || kernel !== kernelHooks.rgbTiles || !matches(key, walk) || results >= RESULTS
+      if (!key || !owns(data, width) || kernel !== kernelHooks.rgbTiles || !tupleMatches(key, walk) || results >= RESULTS
           || (vector ? !Array.isArray(answer) : !Number.isFinite(answer))) return answer;
       const extra = vector ? answer.length * 8 : 0;
       if (bytes + extra > PACKED_BYTES || vector && !finiteVector(answer)) return answer;
@@ -104,9 +107,9 @@ export function photoQualityMemo(owned) {
     look(args, compute) {
       check();
       if (!dense(args)) return compute();
-      const [data, width, r, reading, webp, dx = 0, dy = 0, exactRects = [], colorSpace = 'srgb', frameQuality = reading, boxes = []] = args;
+      const [data, width, r, reading, intent, dx = 0, dy = 0, exactRects = [], colorSpace = 'srgb', frameQuality = reading, boxes = []] = args;
       return read(looks, data, width, put => {
-        for (const number of [reading, webp, dx, dy, frameQuality]) put(number);
+        for (const number of [reading, intent, dx, dy, frameQuality]) put(number);
         space(colorSpace, put); rectangle(r, put); rectangles(exactRects, put, true); rectangles(boxes, put);
       }, compute, false);
     },

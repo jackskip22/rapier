@@ -2,16 +2,18 @@
 import {BitWriter, complete, part, packSigned, ceilLog2} from './bits.mjs';
 import {admitOptions, admitPixels, admitOutputSize, fault, job} from './admit.mjs';
 import {admitSampleFormat} from './admit-samples.mjs';
-import {inspectPixels, losslessSteps} from './lossless.mjs';
+import {inspectPixels, losslessSteps, planeFill} from './lossless.mjs';
 import {writeModularFrameHeader, groupLayout, groupRect, assembleCodestream} from './frame.mjs';
 import {writeImageHeader} from './icc-write.mjs';
 import {ALPHABET, leaf, writeTree, writeModularHeader, writeChannelHistograms} from './modular.mjs';
-import {screenResiduals, screenModel, writeScreenModel} from './screen-lz77.mjs';
+import {screenResiduals, screenModel} from './screen-lz77.mjs';
+import {writeCaptureStream} from './capture-modular-stream.mjs';
 import {screenSteps} from './screen-search.mjs';
 import {paletteSteps} from './palette-search.mjs';
 import {localScreenSteps} from './screen-local.mjs';
 const SCREEN = Object.freeze({paletteSteps, localScreenSteps});
 import {codeWeighted} from './weighted.mjs';
+import {colourTransform} from './rct-search.mjs';
 
 import {DELTA_IMPLICIT} from './implicit-palette.mjs';
 
@@ -77,10 +79,13 @@ function deltaPlan(planes, residuals, width, height, predictor, budget, maxColor
   const colors = new Map(), indices = new Int32Array(pixels), kinds = new Uint8Array(pixels);
   for (let i = 0; i < pixels; i++) {
     const difference = deltaKey(residuals, i);
-    if (deltas.has(difference)) { indices[i] = deltas.get(difference); continue; }
-    if (implicit?.differences.has(difference)) { indices[i] = implicit.differences.get(difference); continue; }
+    const delta = deltas.get(difference);
+    if (delta !== undefined) { indices[i] = delta; continue; }
+    const implicitDelta = implicit?.differences.get(difference);
+    if (implicitDelta !== undefined) { indices[i] = implicitDelta; continue; }
     const color = deltaColorKey(planes, i);
-    if (implicit?.colors.has(color)) { indices[i] = implicit.colors.get(color); kinds[i] = 2; continue; }
+    const implicitColor = implicit?.colors.get(color);
+    if (implicitColor !== undefined) { indices[i] = implicitColor; kinds[i] = 2; continue; }
     let entry = colors.get(color);
     if (!entry) {
       if (colors.size === maxColors) return null;
@@ -107,11 +112,8 @@ function deltaPlan(planes, residuals, width, height, predictor, budget, maxColor
 function deltaSection(plan, width, height, channels, single) {
   const writer = new BitWriter(256);
   if (single) { writer.write(1, 1); writer.write(1, 1); }
-  else writeModularHeader(writer, {useGlobalTree: false, transforms: plan.transforms});
-  const models = [screenModel(plan.table, plan.paletteWidth, channels, 16, 4), screenModel(plan.indices, width, height, 16, 4)];
-  const write = writeScreenModel(writer, models);
-  if (single) writeModularHeader(writer, {transforms: plan.transforms});
-  write();
+  const models = [...plan.paletteWidth ? [screenModel(plan.table, plan.paletteWidth, channels, 16, 4)] : [], screenModel(plan.indices, width, height, 16, 4)];
+  writeCaptureStream(writer, models, null, {global: single, transforms: plan.transforms});
   return writer.finish();
 }
 
@@ -131,15 +133,11 @@ function* deltaFrameSteps(rgba, width, height, shape, options) {
     for (let i = 0; i < layout.dcGroupsX * layout.dcGroupsY + 1; i++) sections.push(new Uint8Array(0));
   }
   const predictors = deltaPredictor === 'auto' ? [5, 1, 2, 6, 3] : [DELTA_PREDICTORS.get(deltaPredictor)];
-  const implicit = deltaImplicitMaps(shape.channels);
+  const implicit = deltaImplicitMaps(shape.channels), fill = planeFill({...shape, palette: null}, colourTransform(0, shape.channels));
   for (let g = 0; g < groups; g++) {
     const [x0, y0, w, h] = groupRect(layout, width, height, g, dim);
     const planes = Array.from({length: shape.channels}, () => new Int16Array(w * h));
-    for (let c = 0; c < shape.channels; c++) {
-      const sourceChannel = shape.colour === 1 && c === 1 ? 3 : c;
-      for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++)
-        planes[c][i] = rgba[((y0 + y) * width + x0 + x) * 4 + sourceChannel];
-    }
+    fill(planes, rgba, width, x0, y0, w, h);
     let best;
     for (let p = 0; p < predictors.length; p++) {
       const predictor = predictors[p], residuals = deltaPlaneResiduals(planes, w, h, predictor);
@@ -157,7 +155,7 @@ function* deltaFrameSteps(rgba, width, height, shape, options) {
     }
     if (!best) {
       if (paletteMode === 'auto') return null;
-      throw fault('JXL_SIZE', 'The group needs more palette entries: raise maxPaletteColors or maxDeltaEntries, or use paletteMode auto.');
+      throw fault('JXL_SIZE', 'palette overflow: raise limits or use paletteMode auto');
     }
     append(best);
   }
@@ -168,18 +166,18 @@ function deltaOptions(rgba, width, height, options = {}) {
   const {quality, colorSpace} = admitOptions(options);
   admitPixels(rgba, width, height);
   if (quality !== 100 || !admitSampleFormat(rgba, options).native8)
-    throw fault('JXL_INPUT', 'Delta palettes need exact straight RGBA8, sRGB transfer, sRGB or Display P3.');
+    throw fault('JXL_INPUT', 'delta palette: exact straight RGBA8 sRGB or Display P3');
   const paletteMode = options.paletteMode ?? 'auto', deltaPredictor = options.deltaPredictor ?? 'auto';
   const maxDeltaEntries = options.maxDeltaEntries ?? 256, maxPaletteColors = options.maxPaletteColors ?? 4096;
   const groupSize = options.groupSize ?? 1024, screenEffort = options.screenEffort ?? 5;
-  if (!['auto', 'explicit', 'implicit', 'hybrid'].includes(paletteMode)) throw fault('JXL_INPUT', 'paletteMode is auto, explicit, implicit or hybrid.');
-  if (deltaPredictor !== 'auto' && !DELTA_PREDICTORS.has(deltaPredictor)) throw fault('JXL_INPUT', 'deltaPredictor is auto, left, top, average, gradient or weighted.');
+  if (!['auto', 'explicit', 'implicit', 'hybrid'].includes(paletteMode)) throw fault('JXL_INPUT', 'paletteMode: auto, explicit, implicit or hybrid');
+  if (deltaPredictor !== 'auto' && !DELTA_PREDICTORS.has(deltaPredictor)) throw fault('JXL_INPUT', 'deltaPredictor: auto, left, top, average, gradient or weighted');
   if (!Number.isInteger(maxDeltaEntries) || maxDeltaEntries < 1 || maxDeltaEntries > 4096)
-    throw fault('JXL_INPUT', 'maxDeltaEntries is an integer from 1 to 4096.');
+    throw fault('JXL_INPUT', 'maxDeltaEntries: integer 1-4096');
   if (!Number.isInteger(maxPaletteColors) || maxPaletteColors < 1 || maxPaletteColors > 65536)
-    throw fault('JXL_INPUT', 'maxPaletteColors is an integer from 1 to 65536.');
-  if (![128, 256, 512, 1024].includes(groupSize)) throw fault('JXL_INPUT', 'groupSize is 128, 256, 512 or 1024.');
-  if (!Number.isInteger(screenEffort) || screenEffort < 1 || screenEffort > 9) throw fault('JXL_INPUT', 'screenEffort is an integer from 1 to 9.');
+    throw fault('JXL_INPUT', 'maxPaletteColors: integer 1-65536');
+  if (![128, 256, 512, 1024].includes(groupSize)) throw fault('JXL_INPUT', 'groupSize: 128, 256, 512 or 1024');
+  if (!Number.isInteger(screenEffort) || screenEffort < 1 || screenEffort > 9) throw fault('JXL_INPUT', 'screenEffort: integer 1-9');
   return {colorSpace, paletteMode, deltaPredictor, maxDeltaEntries, maxPaletteColors, groupSize, screenEffort};
 }
 
@@ -194,13 +192,13 @@ function* deltaEncodeSteps(rgba, width, height, options) {
     try {
       const screen = yield* part(screenSteps(rgba, width, height, shape, options.colorSpace, {effort: options.screenEffort, deep: SCREEN}), 1, 3);
       if (screen && (!best || screen.length < best.length)) best = screen;
-    } catch (error) { if (error.code !== 'JXL_SIZE' && (!(error instanceof RangeError) || error.code)) throw error; }
+    } catch (error) { if (error.code !== 'JXL_SIZE') throw error; }
   }
   if ((yield 2 / 3) && best) return best;
   try {
     const delta = yield* part(deltaFrameSteps(rgba, width, height, shape, options), 2, 3);
     if (delta && (!best || delta.length < best.length)) best = delta;
-  } catch (error) { if (error.code !== 'JXL_SIZE' && (!(error instanceof RangeError) || error.code)) throw error; }
+  } catch (error) { if (error.code !== 'JXL_SIZE') throw error; }
   if (!best) throw oversized;
   return best;
 }

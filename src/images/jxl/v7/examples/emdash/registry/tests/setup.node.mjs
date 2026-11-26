@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import plugin from "../src/plugin.ts";
 
@@ -23,4 +24,13 @@ test("unknown pages and interactions do not perform work", async () => {
 	]) {
 		assert.deepEqual(await handler({ input , request: {url: "https://site.test/_emdash/api/plugins/jxl/admin"} }, noBridge), { blocks: [] });
 	}
+});
+
+test("EmDash 1.5 exact peer and matching registry test host", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const descriptor = readFileSync(new URL("../emdash-plugin.jsonc", import.meta.url), "utf8");
+  assert.equal(manifest.peerDependencies.emdash, ">=1.5.0 <2.0.0");
+  assert.equal(manifest.devDependencies.emdash, "1.5.0");
+  assert.equal(manifest.devDependencies["@emdash-cms/plugin-test"], "0.2.12");
+  assert.ok(descriptor.includes('"env:emdash": ">=1.5.0 <2.0.0"'));
 });

@@ -12,7 +12,8 @@ Seven tools. Each line is the tool's own description, word for word.
 - **`undo`**: Use this when the person wants a change of yours in Rapier taken back. Undo one act or one turn (act or turn_id, not both), preserving later work.
 - **`show`**: Use this to point the person to a place in their Rapier document, ask them something there, or pair their browser with a 4-letter code. Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:"pair"). A connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired. Only paired confirms pairing. Inspect actual presentation. A request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.
 - **`export`**: Use this when the person wants their Rapier document as a file to keep: Markdown, Word, PDF, plain text, or one HTML file that opens and edits offline. to:"file" (default) delivers markdown, html, page, txt, docx or pdf (html is the whole editor with the document inside, editable offline). to:"save" saves to the bound destination. to:"clipboard" copies a passage as plain, markdown, formatted or complete. to:"sync" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor. A self-hosted server can provide a renderer. Inspect delivery. Export never publishes a website.
-- **`convert`**: Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures. Omit it to let the person pick them. quality: lossless, high (default) or medium. effort 1-9 (default 7, higher is smaller and slower). To convert files in your own sandbox, run npx rapier-jxl <file|folder>: it prints each size before and after.
+- **`convert`**: Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures. Omit it to let the person pick them. quality: lossless, high (default) or medium. effort 1-9 (default 7, higher is smaller and slower). To convert files in your own sandbox, run npx jpegxl <file|folder>: it prints each size before and after.
+- **`feedback`**: Tell the Rapier team, in one short line, when Rapier got in the way or did not do what the person asked. Never include document text or personal details.
 
 Together they cover the whole product:
 
@@ -33,7 +34,7 @@ Together they cover the whole product:
 - **Hosted server** (`https://mcp.rapier.website/door/mcp`): `convert` opens the converter in the app's view. Pass the chat's pictures as `files` and they convert at once, or omit `files` and the person picks them. Without a view it answers with the converter's link, https://rapier.website/jxl. The call returns once the converter is open. The converted files stay with the person.
 - **Page tools** (WebMCP, `window.RapierAgentBrowser`, an MCP App's view): pass `files` as `{name, data}`, `data` the exact bytes in base64. Up to 32 files, 32 MB and 400 megapixels in all per call. It returns each file's name, sizes and what was kept. The files go to the person.
 - **Animation and video** need JPEG XL complete, a one-time download. After that they convert offline.
-- **Shell.** `npx rapier-jxl <file|folder>` converts PNG, JPEG and GIF files and prints each size before and after. `--json` prints one line per file, then a summary: `input`, `output`, `inputBytes`, `outputBytes`, `kept` (`jpeg-bytes`, `pixels` or `lossy`), `error.hint` on failure. Also `--quality 1-100`, `--lossless`, `--effort 1-9`, `--out`. A `.jxl` that carries its JPEG gives it back. Any other `.jxl` gives a PNG.
+- **Shell.** `npx jpegxl <file|folder>` (Node 22.3 or later) converts PNG, JPEG and GIF files and prints each size before and after. `--json` prints one line per file, then a summary: `input`, `output`, `inputBytes`, `outputBytes`, `kept` (`jpeg-bytes`, `pixels` or `lossy`), `error.hint` on failure. Also `--quality 1-100`, `--exact` (every pixel kept), `--effort 1-10`, `--out`. A `.jxl` that carries its JPEG gives it back. Any other `.jxl` gives a PNG.
 
 ## Rules
 
@@ -74,7 +75,7 @@ Rapier is also a free [Android app](https://play.google.com/store/apps/details?i
 
 Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/website.rapier%2Fmarkdown-editor-draw-paint-jpeg-xl/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `website.rapier/markdown-editor-draw-paint-jpeg-xl`.
 
-The [catalog](https://rapier.website/AGENT-TOOLS.json) has seven tools: `open`, `read`, `edit`, `undo`, `show`, `export` and `convert`. If your
+The [catalog](https://rapier.website/AGENT-TOOLS.json) has eight tools: `open`, `read`, `edit`, `undo`, `show`, `export`, `convert` and `feedback` (a short line to the Rapier team when Rapier let the person down). If your
 host reads MCP resources, `rapier://guide`, `rapier://guide/blocks`, `rapier://guide/draw` and `rapier://guide/water`
 hold the contracts. The Water resource also carries the current brush registry. Otherwise use this page and the tool
 schemas. Optional prompts: `write-brief`, `diagram-process`, `paint-illustration` and `compare-drafts`.
@@ -450,7 +451,7 @@ with a `taskId`. Without it, calls stay direct. Legacy, paired-page and local-se
 
 ## Authority and receipts
 
-The seven tools are separate from the editor's private `/editor` channel. Sync, human commits and context,
+The eight tools are separate from the editor's private `/editor` channel. Sync, human commits and context,
 acknowledgements, access management, rotation and deletion need editor authority. Hosted Apps use workspace tickets.
 A paired page uses scoped browser cookies at `/editor/<id>`. A tool call can't create an editor acknowledgement or a
 human grant.
@@ -474,7 +475,7 @@ Hosted defaults:
 
 | Resource | Limit |
 | --- | --- |
-| Model tool calls | 600 per minute across the seven tools, per verified connection or anonymous network address. |
+| Model tool calls | 600 per minute across the eight tools, per verified connection or anonymous network address. |
 | Paired editor tool calls | 1,200 per minute under editor authority, separate from model calls. |
 | Document source | 64 MiB of UTF-8. |
 | Hosted export | 16 MiB. |

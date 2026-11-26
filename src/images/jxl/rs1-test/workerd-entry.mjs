@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {createJournalStepper} from '../resumable-journal.mjs';
 import {verbSteps} from '../v7/verb-steps-driver.mjs';
+import {tools} from '../v7/resumable-tools.mjs';
 import {capture} from '../v7/capture.mjs';
 import {capture as captureComplete} from '../v7/capture-complete.mjs';
 import {recompress, restore} from '../v7/jpeg.mjs';
@@ -11,6 +12,7 @@ import {prepareKernels} from '../kernels.mjs';
 import {wasmBytes} from '../wasm-text.mjs';
 import {KERNELS} from '../kernels-bytes.mjs';
 import {DECODE_KERNELS} from '../decode-kernels-bytes.mjs';
+import {JPEG_KERNELS} from '../jpeg-kernels-bytes.mjs';
 
 export const BUILD = 'b'.repeat(64);
 let job, steps, ready;
@@ -18,11 +20,11 @@ const jobOf = () => {
   if (!job) {
     steps = {capture, 'capture-complete': captureComplete, recompress, restore, encode, fit, variants}[globalThis.RS1_OPERATION ?? 'capture'][Symbol.for('rapier-jxl.steps')];
     if (steps.kind === 'verb') steps = verbSteps(steps);
-    job = createJournalStepper({id: steps.id, build: BUILD, normalize: steps.normalize, open: steps.open, run: steps.run, eager: steps.eager});
+    job = createJournalStepper({id: steps.id, build: BUILD, normalize: steps.normalize, open: steps.open, run: steps.run, eager: steps.eager, tools});
   }
   return job;
 };
-export const start = (...args) => jobOf().start(...args), outputParts = (...args) => jobOf().outputParts(...args);
+export const start = (...args) => jobOf().start(...args), output = (...args) => jobOf().output(...args);
 export async function advance(...args) {
   jobOf(); await (ready ??= prepareKernels()); await steps.prepare?.();
   const t = performance.now(), result = await job.advance(...args);
@@ -33,4 +35,4 @@ export function configureCaptureKernels(modules) {
   configureModules(modules);
   if (!prepareCaptureKernels()) throw new Error('The host-compiled capture kernel could not be prepared.');
 }
-export const captureKernelBytes = () => ({kernels: wasmBytes(KERNELS), decode: wasmBytes(DECODE_KERNELS)});
+export const captureKernelBytes = () => ({kernels: wasmBytes(KERNELS), decode: wasmBytes(DECODE_KERNELS), jpeg: wasmBytes(JPEG_KERNELS)});

@@ -5,7 +5,8 @@ import {v6Image, v6Options} from './photo-v6.mjs';
 import {v6For} from './photo-v6-settings.mjs';
 import {fixedStrategyImage, lazyStrategyImage, materialize} from './varblock-core.mjs';
 import {estimateBytes} from './coefficient-ans.mjs';
-import {writeImage, writeImageSteps} from './photo-image-write.mjs';
+import {writeImageSteps} from './photo-image-write.mjs';
+import {spannedSteps} from './photo-measured-steps.mjs';
 import {journaling} from './step-journal.mjs';
 export {S2_MARGIN} from './photo-whole-policy.mjs';
 
@@ -15,10 +16,10 @@ export function stillPhotoProvider(prepared) {
   const {rgba, width, height} = prepared;
   return {
     width, height,
-    base(quality, {filter = 'gaborish', fieldScale, keepPlanes = false} = {}) {
+    base(quality, {filter = 'gaborish', fieldScale, keepPlanes = false, noLevels = false} = {}) {
       if (filter === 'plain') return complete(photoXYBSteps(rgba, width, height, quality,
         {...v6For(width, height), ...prepared.color, dctCache: prepared.dctPlain, ...(keepPlanes && {keepPlanes})}));
-      return v6Image(prepared, quality, {...(fieldScale !== undefined && {fieldScale}), ...(keepPlanes && {keepPlanes})});
+      return v6Image(prepared, quality, {...(fieldScale !== undefined && {fieldScale}), ...(keepPlanes && {keepPlanes}), ...(noLevels && {noLevels})});
     },
     *image(quality, options) { return this.base(quality, options); },
     blockOptions() { return {deadzone: v6Options(prepared, 75).deadzone, transforms: prepared.transforms ??= searchTransforms(prepared)}; },
@@ -28,7 +29,9 @@ export function stillPhotoProvider(prepared) {
       const exact = yield {varblocks: {kind: 'layout', base, width, height, options: deviceOptions, layout}};
       return fixedStrategyImage(base, width, height, {...options, layout, ...(exact ? {exact} : {})}).image;
     },
-    *write(image, effort) { return journaling() ? yield* writeImageSteps(image, effort) : writeImage(image, effort); },
+    *write(image, effort) { return yield* (journaling() ? writeImageSteps(image, effort) : quietWriteSteps(image, effort)); },
     estimate(image) { return estimateBytes(materialize(image)); },
   };
 }
+
+const quietWriteSteps = (image, effort) => spannedSteps(writeImageSteps(image, effort));

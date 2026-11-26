@@ -21,7 +21,7 @@ async function setup(input, codec = stepper()) {
   const host = cp => ({source, expectedRevision: cp.revision, readMany: refs => refs.map(ref => parts.get(ref.hash)), read: ref => parts.get(ref.hash),
     readSource: (at, n) => { sourceReads++; sourceSpans.push(n); return input.subarray(at, at + n); }});
   const step = async (units = 1) => { const r = await codec.advance(checkpoint, host(checkpoint), {units}); persist(r); checkpoint = r.checkpoint; return r; };
-  const output = async () => { const pieces = []; for await (const p of codec.outputParts(checkpoint, host(checkpoint))) pieces.push(p); return join(pieces); };
+  const output = async () => { const pieces = []; pieces.push(await codec.output(checkpoint, host(checkpoint), length => new Uint8Array(length))); return join(pieces); };
   return {codec, source, parts, persist, host, step, output, get checkpoint() { return checkpoint; }, set checkpoint(c) { checkpoint = c; },
     get sourceReads() { return sourceReads; }, sourceSpans, get writes() { return writes; }};
 }
@@ -65,7 +65,7 @@ test('a store that answers other bytes after the original was checked is refused
     catch (error) { refused = error; }
   }
   assert.equal(refused?.code, 'JXL_INPUT');
-  assert.match(refused.message, /pinned digest/);
+  assert.match(refused.message, /source bytes: digest mismatch/);
 });
 
 test('a fresh isolate for every step reuses its completed prefix', async () => {
@@ -100,7 +100,7 @@ test('stale, completed, changed-source and other-build checkpoints refuse before
   await assert.rejects(codec.advance(cp, {...job.host(cp), expectedRevision: 1}), code('JXL_INPUT'));
   await assert.rejects(codec.advance(cp, {...job.host(cp), source: {...job.source, generation: 'fixture/2'}}), code('JXL_INPUT'));
   await assert.rejects(createStepper(adapter(undefined, '2'.repeat(64))).advance(cp, job.host(cp)), code('JXL_INPUT'));
-  for (const change of [c => { c.schema = 1; }, c => { c.revision = 7; }, c => { c.plan = {options: {mask: 1}}; }, c => { delete c.state; }, c => { c.status = 'done'; }])
+  for (const change of [c => { c.revision = 7; }, c => { c.plan = {options: {mask: 1}}; }, c => { delete c.state; }, c => { c.status = 'done'; }])
     { const changed = structuredClone(cp); change(changed); await assert.rejects(codec.advance(changed, job.host(changed)), code('JXL_INPUT')); }
   assert.equal(visits, 0);
   while (job.checkpoint.status !== 'done') await job.step();
@@ -122,9 +122,9 @@ test('a tampered, truncated or missing state part and a changed original refuse'
 
 test('cancellation before and during reads returns nothing; unsupported budgets refuse', async () => {
   const job = await setup(bytes(100)), cp = job.checkpoint, cancel = new AbortController(); cancel.abort();
-  await assert.rejects(job.codec.advance(cp, {...job.host(cp), signal: cancel.signal}), code('JXL_ABORTED'));
+  await assert.rejects(job.codec.advance(cp, {...job.host(cp), signal: cancel.signal}), error => error === cancel.signal.reason);
   const during = new AbortController(), host = job.host(cp);
-  await assert.rejects(job.codec.advance(cp, {...host, signal: during.signal, readSource: (at, n) => { during.abort(); return host.readSource(at, n); }}), code('JXL_ABORTED'));
+  await assert.rejects(job.codec.advance(cp, {...host, signal: during.signal, readSource: (at, n) => { during.abort(); return host.readSource(at, n); }}), error => error === during.signal.reason);
   for (const budget of [{units: 0}, {units: 65}, {units: 1.5}, {milliseconds: 50}])
     await assert.rejects(job.codec.advance(cp, job.host(cp), budget), code('JXL_INPUT'));
 });

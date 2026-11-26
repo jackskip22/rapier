@@ -1,9 +1,8 @@
+import {jpegKernels} from './jpeg-kernels.mjs';
 // Rapier's JPEG XL encoder: token coding over many contexts. MIT (images/jxl/LICENSE).
 import {buildCode, uintConfig, hybridToken, writeHybrid, writeHistograms} from './prefix.mjs';
 import {BitWriter, floorLog2, complete} from './bits.mjs';
 import {unit, carried, stage, PASSED} from './step-journal.mjs';
-import {entropyLog2} from './entropy-log.mjs';
-export {entropyLog2};
 
 const CONFIGS = [uintConfig(0), uintConfig(1), uintConfig(2), uintConfig(3), uintConfig(4), uintConfig(4, 1, 1), uintConfig(4, 2, 0), uintConfig(4, 1, 2), uintConfig(5, 1, 1), uintConfig(2, 0, 1), uintConfig(3, 0, 1)];
 export const ANS_CONFIGS = [...CONFIGS, uintConfig(3, 1, 0), uintConfig(4, 0, 1), uintConfig(4, 1, 0), uintConfig(4, 2, 1), uintConfig(5, 1, 0), uintConfig(5, 2, 0), uintConfig(5, 2, 1)];
@@ -49,6 +48,7 @@ export class TokenCounts {
     }
   }
   tokens(contexts, config, size = 128) {
+    if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) return;
     const freqs = new Uint32Array(size);
     for (const ctx of contexts) {
       const base = ctx * 64;
@@ -74,10 +74,12 @@ export class TokenCounts {
     result.totals[0] = sum;
     return result;
   }
-  cost(contexts, config) {
+  cost(contexts, config = CLUSTER_CONFIG) {
+    if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) return;
     return entropyBits(this.tokens(contexts, config)) + this.rawBits(contexts, config);
   }
   rawBits(contexts, config) {
+    if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) return;
     let bits = 0;
     for (const ctx of contexts) {
       const base = ctx * 64;
@@ -96,7 +98,7 @@ const clusterTokenOf = v => v < 64 ? CLUSTER_TOKEN_BELOW_64[v] : hybridTokenOf(C
 
 const NLOG2 = new Float64Array(65536);
 export const populationBits = n => n < 2 ? 0 : n < NLOG2.length
-  ? NLOG2[n] || (NLOG2[n] = n * entropyLog2(n)) : n * entropyLog2(n);
+  ? NLOG2[n] || (NLOG2[n] = n * Math.log2(n)) : n * Math.log2(n);
 function entropyBits(freqs) {
   let total = 0, bits = 0;
   for (const f of freqs) if (f) { total += f; bits -= populationBits(f); }
@@ -154,19 +156,13 @@ function packContexts(contexts) {
 }
 const unpackContexts = ({ctx, ends, runs}) => Array.from(ctx, (c, i) => ({ctx: c, sparse: Array.from(runs.subarray(i ? ends[i - 1] : 0, ends[i]))}));
 
-function* refineClusters(clusters, contexts, maxClusters, symbolCosts, modelCost, passes = 2, switchCost = 0, kernel = null, numContexts = 8192, ready = () => {}) {
+function* refineClusters(clusters, contexts, maxClusters, symbolCosts, modelCost, passes = 2, switchCost = 0, kernel = null, numContexts = 8192, ready = () => {}, postMerge = 0) {
   const merges = yield* unit('merge', () => {
   ready(clusters);
-  const length = clusters.length, pairs = kernel ? null : new Float64Array(length * length), merged = MERGED_SCRATCH;
-  const price = (a, b) => mergedBits(clusters[a].freqs, clusters[b].freqs, Math.max(clusters[a].last, clusters[b].last)) - clusters[a].bits - clusters[b].bits;
-  if (kernel) kernel.pairsInit(length);
-  else for (let a = 0; a < length; a++) for (let b = a + 1; b < length; b++) pairs[a * length + b] = price(a, b);
+  const length = clusters.length, merged = MERGED_SCRATCH;
+  kernel.pairsInit(length);
   for (let remaining = length; remaining > 1; remaining--) {
-    let left = -1, right = -1, best = Infinity;
-    if (kernel) [left, right, best] = kernel.pairMin(length);
-    else for (let a = 0; a < length; a++) if (clusters[a]) for (let b = a + 1; b < length; b++) if (clusters[b] && pairs[a * length + b] < best) {
-      left = a; right = b; best = pairs[a * length + b];
-    }
+    const [left, right] = kernel.pairMin(length);
     const a = clusters[left], b = clusters[right];
     if (remaining <= maxClusters) {
       for (let s = 0; s < 64; s++) merged[s] = a.freqs[s] + b.freqs[s];
@@ -177,8 +173,7 @@ function* refineClusters(clusters, contexts, maxClusters, symbolCosts, modelCost
     a.contexts.push(...b.contexts); a.last = Math.max(a.last, b.last);
     for (let s = 0; s < a.freqs.length; s++) a.freqs[s] += b.freqs[s];
     a.bits = entropyBits(a.freqs); a.cost = -1; clusters[right] = null;
-    if (kernel) { kernel.row(left, a.freqs, a.bits); kernel.alive(right, false); kernel.pairsUpdate(length, left); }
-    else for (let i = 0; i < length; i++) if (clusters[i] && i !== left) pairs[Math.min(i, left) * length + Math.max(i, left)] = price(i, left);
+    kernel.row(left, a.freqs, a.bits); kernel.alive(right, false); kernel.pairsUpdate(length, left);
   }
   clusters = clusters.filter(Boolean);
   return null;
@@ -187,40 +182,21 @@ function* refineClusters(clusters, contexts, maxClusters, symbolCosts, modelCost
   const assignments = new Int32Array(numContexts).fill(-1);
   clusters.forEach((cluster, i) => { for (const ctx of cluster.contexts) assignments[ctx] = i; });
   let ordered = null;
-  if (switchCost > 0) {
+  if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || switchCost > 0) {
     const at = new Array(numContexts);
     for (const context of contexts) at[context.ctx] = context;
     ordered = [];
     for (let ctx = 0; ctx < numContexts; ctx++) if (at[ctx]) ordered.push(at[ctx]);
   }
-  const flat = kernel && ordered ? kernel.flatten(ordered) : null;
+  const flat = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || (kernel && ordered)) ? kernel.flatten(ordered) : null;
   for (let pass = 0; pass < passes; pass++) {
     let changed = false;
     const saved = yield* carried('pass', () => {
     const costs = clusters.map(cluster => symbolCosts(cluster.freqs));
     const next = clusters.map(() => ({contexts: [], freqs: new Uint32Array(64), bits: 0, last: 0, cost: -1}));
-    if (switchCost > 0) {
+    if ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || switchCost > 0) {
       const n = ordered.length, k = costs.length;
-      let back, at = 0;
-      if (flat) [at, back] = kernel.assign(flat, costs, switchCost);
-      else {
-        back = new Int16Array(n * k);
-        let best = new Float64Array(k), next2 = new Float64Array(k);
-        for (let t = 0; t < n; t++) {
-          let low = Infinity, lowAt = 0;
-          for (let i = 0; i < k; i++) if (best[i] < low) { low = best[i]; lowAt = i; }
-          const {sparse} = ordered[t];
-          for (let i = 0; i < k; i++) {
-            const table = costs[i];
-            let cost = 0;
-            for (let at = 0; at < sparse.length; at += 2) cost += sparse[at + 1] * table[sparse[at]];
-            const stay = t ? best[i] : 0, change = t ? low + switchCost : 0;
-            if (stay <= change) { next2[i] = cost + stay; back[t * k + i] = i; } else { next2[i] = cost + change; back[t * k + i] = lowAt; }
-          }
-          [best, next2] = [next2, best];
-        }
-        for (let i = 1; i < k; i++) if (best[i] < best[at]) at = i;
-      }
+      let [at, back] = kernel.assign(flat, costs, switchCost);
       for (let t = n - 1; t >= 0; t--) {
         const {ctx, sparse} = ordered[t], cluster = next[at];
         cluster.contexts.push(ctx);
@@ -252,15 +228,53 @@ function* refineClusters(clusters, contexts, maxClusters, symbolCosts, modelCost
     if (!(typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true) && saved !== null) { clusters = unpackClusters(saved.clusters); assignments.set(saved.assignments); changed = saved.changed; }
     if (!changed) break;
   }
+  if ((typeof __RAPIER_JXL_RECOMPRESS__ === 'undefined' || __RAPIER_JXL_RECOMPRESS__ === true) && postMerge > 0 && clusters.length > 1) {
+    const post = yield* unit('post-merge', () => {
+      const merged = MERGED_SCRATCH;
+      for (const c of clusters) {
+        c.last = c.freqs.findLastIndex(Boolean) + 1;
+        c.bits = entropyBits(c.freqs);
+        c.cost = modelCost(c.freqs, CLUSTER_CONFIG);
+      }
+      while (clusters.length > 1) {
+        const candidates = [];
+        for (let a = 0; a < clusters.length; a++) for (let b = a + 1; b < clusters.length; b++) {
+          const ca = clusters[a], cb = clusters[b];
+          const est = mergedBits(ca.freqs, cb.freqs, Math.max(ca.last, cb.last)) - ca.bits - cb.bits;
+          if (est < 48) candidates.push([est, a, b]);
+        }
+        if (!candidates.length) break;
+        candidates.sort((x, y) => x[0] - y[0]);
+        let bestDelta = 0, bestA = -1, bestB = -1, bestCost = 0;
+        for (const [, a, b] of candidates.slice(0, 8)) {
+          const ca = clusters[a], cb = clusters[b];
+          for (let s = 0; s < 64; s++) merged[s] = ca.freqs[s] + cb.freqs[s];
+          const mCost = modelCost(merged, CLUSTER_CONFIG);
+          const delta = mCost - ca.cost - cb.cost - postMerge;
+          if (delta < bestDelta) { bestDelta = delta; bestA = a; bestB = b; bestCost = mCost; }
+        }
+        if (bestA < 0) break;
+        const ca = clusters[bestA], cb = clusters[bestB];
+        ca.contexts.push(...cb.contexts);
+        ca.last = Math.max(ca.last, cb.last);
+        for (let s = 0; s < 64; s++) ca.freqs[s] += cb.freqs[s];
+        ca.bits = entropyBits(ca.freqs);
+        ca.cost = bestCost;
+        clusters.splice(bestB, 1);
+      }
+      return null;
+    }, (typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true) ? undefined : () => packClusters(clusters));
+    if (!(typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true) && post !== null) clusters = unpackClusters(post);
+  }
   return clusters;
 }
 
 export const clusterTokenCounts = (counts, options, modelCost, symbolCosts, shapedCost) => complete(clusterTokenCountsSteps(counts, options, modelCost, symbolCosts, shapedCost));
 export const clusterTokenCountsSteps = (counts, options, modelCost, symbolCosts, shapedCost) => stage('cluster', () => clusterSteps(counts, options, modelCost, symbolCosts, shapedCost));
-const SEED_CHUNK = 128;
-function* clusterSteps(counts, {maxClusters = 48, newClusterCost = 320, seeds: seedCap = 96, passes, switchCost, everyConfig = false, shapedMerge = false, jpeg = null, kernels = null} = {}, modelCost, symbolCosts, shapedCost) {
+const SEED_CHUNK = 128, KERNEL_SEED_CHUNK = 768, HISTOGRAM_CHUNK = 16;
+function* clusterSteps(counts, {maxClusters = 48, newClusterCost = 320, seeds: seedCap = 96, passes, switchCost, postMerge = 0, everyConfig = false, shapedMerge = false, jpeg = null, kernels = null} = {}, modelCost, symbolCosts, shapedCost) {
   passes ??= symbolCosts ? 4 : 2; switchCost ??= symbolCosts ? 4 : 0;
-  const kernel = kernels && (symbolCosts ? Math.min(seedCap, maxClusters * 2) : maxClusters) <= kernels.clusters ? kernels : null;
+  const kernel = kernels ?? ((typeof __RAPIER_JXL_METADATA__ !== 'undefined' && __RAPIER_JXL_METADATA__ === true) ? null : jpegKernels());
   const totals = counts.totals, size = counts.contexts, contexts = [];
   let n = 0;
   for (let ctx = 0; ctx < size; ctx++) if (totals[ctx] > 0) n++;
@@ -277,51 +291,21 @@ function* clusterSteps(counts, {maxClusters = 48, newClusterCost = 320, seeds: s
     if (saved === null || saved === PASSED) return;
     clusters = unpackClusters(saved.clusters); contexts.length = 0; contexts.push(...unpackContexts(saved.contexts));
   };
-  if (kernel?.seedAll && used.length) restore(yield* unit('seeds', () => {
-    const seeded = kernel.seedAll(used, counts, clusterTokenOf, seeds, newClusterCost / (symbolCosts ? 2 : 1));
+  if (used.length) for (let from = 0; from < used.length; from += KERNEL_SEED_CHUNK) restore(yield* carried('seeds', () => {
+    ready(clusters);
+    const part = used.slice(from, from + KERNEL_SEED_CHUNK), seeded = kernel.seedAll(part, counts, clusterTokenOf, seeds, newClusterCost / (symbolCosts ? 2 : 1), clusters);
     clusters = kernel[LOADED] = seeded.clusters;
     if (symbolCosts) {
       const {runs, offsets} = seeded;
-      for (let t = 0; t < used.length; t++) contexts.push({ctx: used[t], sparse: runs.subarray(2 * offsets[t], 2 * offsets[t + 1])});
+      for (let t = 0; t < part.length; t++) contexts.push({ctx: part[t], sparse: runs.subarray(2 * offsets[t], 2 * offsets[t + 1])});
     }
     return null;
   }, state));
-  else for (let from = 0; from < used.length; from += SEED_CHUNK) restore(yield* carried('seeds', () => {
-  ready(clusters);
-  for (let at = from; at < Math.min(used.length, from + SEED_CHUNK); at++) {
-    const ctx = used[at];
-    const own = counts.tokens([ctx], CLUSTER_CONFIG, 64), ownBits = entropyBits(own), last = kernel ? 0 : own.findLastIndex(Boolean) + 1;
-    if (symbolCosts) {
-      const sparse = [];
-      for (let s = 0; s < own.length; s++) if (own[s]) sparse.push(s, own[s]);
-      contexts.push({ctx, sparse});
-    }
-    let best = -1, bestIncrease = Infinity;
-    if (kernel) { kernel.own(own); [best, bestIncrease] = kernel.seedBest(clusters.length, ownBits); }
-    else for (let i = 0; i < clusters.length; i++) {
-      const cluster = clusters[i], increase = mergedBits(cluster.freqs, own, Math.max(cluster.last, last)) - cluster.bits - ownBits;
-      if (increase < bestIncrease) { bestIncrease = increase; best = i; }
-    }
-    if (best < 0 || (clusters.length < seeds && bestIncrease > newClusterCost / (symbolCosts ? 2 : 1))) {
-      clusters.push({contexts: [ctx], freqs: own, bits: ownBits, last, cost: -1});
-      kernel?.row(clusters.length - 1, own, ownBits);
-    } else {
-      const cluster = clusters[best];
-      cluster.contexts.push(ctx); cluster.last = Math.max(cluster.last, last);
-      for (let t = 0; t < 64; t++) cluster.freqs[t] += own[t];
-      cluster.bits = entropyBits(cluster.freqs);
-      kernel?.row(best, cluster.freqs, cluster.bits);
-    }
-  }
-  if (kernel) kernel[LOADED] = clusters;
-  return null;
-  }, state));
-  if (symbolCosts && clusters.length > 1) clusters = yield* refineClusters(clusters, contexts, maxClusters, symbolCosts, shapedMerge && shapedCost ? shapedCost : modelCost, passes, switchCost, kernel, counts.contexts, ready);
-  return yield* unit('histograms', () => {
+  if (symbolCosts && clusters.length > 1) clusters = yield* refineClusters(clusters, contexts, maxClusters, symbolCosts, shapedMerge && shapedCost ? shapedCost : modelCost, passes, switchCost, kernel, counts.contexts, ready, postMerge);
   if (!clusters.length) clusters.push({contexts: [], freqs: new Uint32Array(64), bits: 0, last: 0, cost: -1});
-  const contextMap = new Uint8Array(counts.contexts);
-  const histograms = clusters.map((cluster, index) => {
-    for (const ctx of cluster.contexts) contextMap[ctx] = index;
+  const chosen = [];
+  for (let from = 0; from < clusters.length; from += HISTOGRAM_CHUNK)
+    chosen.push(...yield* unit('histogram-prices', () => clusters.slice(from, from + HISTOGRAM_CHUNK).map(cluster => {
     const aggregate = counts.aggregate(cluster.contexts);
     let config = CONFIGS[0], bestCost = Infinity, freqs, extra;
     const priced = [];
@@ -332,6 +316,13 @@ function* clusterSteps(counts, {maxClusters = 48, newClusterCost = 320, seeds: s
     const ansList = jpeg ? (top < (1 << 14) ? jpeg.configs : PHOTO_ANS_CONFIGS) : seedCap === 128 ? PHOTO_ANS_CONFIGS : ANS_CONFIGS;
     const priced0 = kernel?.priceConfigs && modelCost?.kernelTables && !everyConfig && top < (1 << 17) ? kernel.priceConfigs(values, weights, ansList, modelCost.kernelTables) : null;
     if (priced0 && !(jpeg && top >= 128)) return {config: ansList[priced0.index], freqs: priced0.tokens, extra: priced0.raw};
+    if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && everyConfig && !jpeg && kernel?.priceEvery && modelCost?.kernelTables && top < (1 << 17)) {
+      for (const p of kernel.priceEvery(values, weights, ansList, MORE_CONFIGS, top, modelCost.kernelTables)) {
+        const cost = p.raw + shapedCost(p.tokens, p.candidate);
+        if (cost < bestCost) { bestCost = cost; config = p.candidate; freqs = p.tokens; extra = p.raw; }
+      }
+      return {config, freqs, extra};
+    }
     const length = values.length, exponents = new Int32Array(length), mantissas = new Int32Array(length);
     for (let i = 0; i < length; i++) { const v = values[i]; if (v) { exponents[i] = floorLog2(v); mantissas[i] = v - (1 << exponents[i]); } }
     const split = (candidate, tokens) => {
@@ -384,7 +375,10 @@ function* clusterSteps(counts, {maxClusters = 48, newClusterCost = 320, seeds: s
       }
     }
     return {config, freqs, extra};
-  });
+  })));
+  return yield* unit('histograms', () => {
+  const contextMap = new Uint8Array(counts.contexts), histograms = chosen;
+  clusters.forEach((cluster, index) => { for (const ctx of cluster.contexts) contextMap[ctx] = index; });
   if (symbolCosts) {
     let first = 0;
     while (first < counts.contexts && !counts.totals[first]) first++;
@@ -438,7 +432,7 @@ export function prefixGroupWriter({contextMap, histograms}) {
   }};
 }
 
-export function buildTokenCoding(counts, options) {
+function tokenCoding(counts, options) {
   const {contextMap, histograms} = clusterTokenCounts(counts, options);
   let bits = 0;
   for (const histogram of histograms) {
@@ -450,7 +444,16 @@ export function buildTokenCoding(counts, options) {
   writeHistograms(header, {contextMap, histograms});
   bits += header.bitLength;
   const model = {kind: 'prefix', contextMap, histograms: histograms.map(({config, code}) => ({config, code}))};
-  const bare = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && !options?.strategy;
+  const bare = typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true;
   const {write, writeTokens} = bare ? {} : prefixGroupWriter(model), writeFilled = bare ? undefined : (options?.kernels?.prefixFilled?.(model) || undefined);
-  return {contextMap, histograms, model, write, writeTokens, writeFilled, bits, writeHistograms: w => w.append(header)};
+  return {contextMap, histograms, model, write, writeTokens, writeFilled, bits, header, writeHistograms: w => w.append(header)};
 }
+export const buildTokenCoding = /* @__PURE__ */ Object.assign(tokenCoding, {steps: function* (input, options) {
+  const made = yield* unit('prefix-coding', () => tokenCoding(typeof input === 'function' ? input() : input, options),
+    ({model, bits, header}) => ({contextMap: model.contextMap, histograms: model.histograms, bits, header: {...header, bytes: header.bytes.slice(0, header.at + 1)}}));
+  if (made.writeHistograms) return made;
+  const {contextMap, histograms, bits} = made, model = {kind: 'prefix', contextMap, histograms}, header = Object.assign(new BitWriter(0), made.header);
+  const bare = typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true;
+  const {write, writeTokens} = bare ? {} : prefixGroupWriter(model), writeFilled = bare ? undefined : (options?.kernels?.prefixFilled?.(model) || undefined);
+  return {contextMap, histograms, model, write, writeTokens, writeFilled, bits, header, writeHistograms: w => w.append(header)};
+}});

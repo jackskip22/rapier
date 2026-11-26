@@ -136,8 +136,10 @@ const _rapierEmbeddedImages = (() => {
         const value = await held.codec[operation](input, {...options, signal: controller.signal, onProgress, ...(preview && {onPreview: preview})});
         assertCurrent(stamp, identity);
         if (operation === 'decode') return value;
-        if (!(value?.bytes instanceof Uint8Array)) throw Object.assign(new Error(value?.reason?.message || 'No JPEG XL output'), {code: value?.reason?.code || 'JXL_TARGET'});
-        return value.bytes;
+        const record = operation === 'variants' ? value?.[0] : value;
+        if (!(record?.bytes instanceof Uint8Array)) throw Object.assign(new Error(record?.reason?.message || 'No JPEG XL output'), {code: record?.reason?.code || 'JXL_TARGET'});
+        if (operation === 'fit' || operation === 'variants') record.bytes.fidelity = record.fidelity;
+        return record.bytes;
       } catch (error) {
         if (error?.code === 'JXL_CLOSED') throw cancelled();
         throw error;
@@ -154,12 +156,25 @@ const _rapierEmbeddedImages = (() => {
     if (!display) queue = job.catch(() => {});
     return job.finally(() => { if (!optional) foregroundCodecs--; if (operation === 'decode') decodeJobs--; });
   }
+  let hdrModule = null;
+  async function readHdr(bytes, options, {signal} = {}) {
+    hdrModule ||= RapierParts.need('jxlcomplete').then(() => {
+      const source = moduleFile('hdr.mjs');
+      if (!source) throw Object.assign(new Error('This copy of Rapier cannot read HDR files'), {code: 'JXL_UNAVAILABLE'});
+      return loadClient(source);
+    });
+    hdrModule.catch(() => { hdrModule = null; });
+    const module = await hdrModule;
+    signal?.throwIfAborted();
+    return module.read(bytes, options);
+  }
   function codec(operation, input, options = {}, work = {}) {
     if (operation === 'encode' && Array.isArray(input?.frames)) return moduleJob('rapier-jxl/animation', 'encode', input, options, work);
     if (options?.effort === 10 && (operation === 'encode' || operation === 'recompress'))
       return operation === 'encode' ? moduleJob('rapier-jxl/max', 'encode', input, options, work)
         : moduleJob('rapier-jxl/max', 'encode', new Blob([input], {type: 'image/jpeg'}), {...options, fidelity: 'exact'}, work);
-    if (operation === 'encode') return moduleJob('rapier-jxl', 'encode', input, options, work);
+    if (operation === 'encode' || operation === 'fit' || operation === 'variants') return moduleJob('rapier-jxl', operation, input, options, work);
+    if (operation === 'read-hdr') return readHdr(input, options, work);
     if (operation === 'recompress' || operation === 'restore') return moduleJob('rapier-jxl/jpeg', operation, input, options, work);
     if (operation === 'decode') return moduleJob('rapier-jxl/decode', 'decode', input, options, work);
     return Promise.reject(Object.assign(new Error('Unknown JPEG XL operation: ' + operation), {code: 'JXL_OPTIONS'}));

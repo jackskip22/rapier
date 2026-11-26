@@ -12,6 +12,6 @@ describe("setup companion", () => {
 		expect(result.blocks.some((block) => block.type === "stats")).toBe(false);
 		const tabs = result.blocks.find((block) => block.type === "tab");
 		expect(tabs?.type === "tab" && tabs.panels.find((panel) => panel.label === "Coding agent")?.blocks)
-			.toEqual([{ type: "code", code: "Add rapier-jxl to my EmDash site with npx rapier-jxl add emdash." }]);
+			.toEqual([{ type: "code", code: "Add jpegxl to my EmDash site with npx jpegxl add emdash." }]);
 	});
 });

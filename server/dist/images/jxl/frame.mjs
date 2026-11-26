@@ -1,6 +1,7 @@
 // Rapier's JPEG XL encoder: the codestream around a frame. MIT (images/jxl/LICENSE).
-import {BitWriter, float16Bits, packSigned, FRAME_SIZE} from './bits.mjs';
-import {admitOutputSize} from './admit.mjs';
+import {float16Bits, packSigned, FRAME_SIZE} from './bits.mjs';
+import {admitOutputSize, fault} from './admit.mjs';
+import {signalFields} from './color-signal.mjs';
 
 export const GROUP_DIM = 256, DC_GROUP_DIM = 2048;
 export const GROUP_TOKENS = 3 * 32 * 32 * 64;
@@ -10,6 +11,7 @@ function writeSize(w, size) {
 }
 
 export function writeHeaderFields(w, width, height, colour, alpha, {xyb = false, orientation = 1, colorSpace, bitDepth = 8, exponentBits = 0, transferFunction = 'srgb', intensityTarget = 255, alphaPremultiplied = false, modular16bit = bitDepth <= 12 && !exponentBits, colorData, toneData, iccData, imageFields, extraChannelData, transformData} = {}, profileHeader) {
+  if (typeof colorSpace === 'string' && colorSpace.includes(';')) ({colorSpace, transferFunction, intensityTarget, alphaPremultiplied} = signalFields(colorSpace));
   if (colorSpace && typeof colorSpace === 'object') ({colorData, iccData} = profileHeader(colorSpace, xyb));
   w.write(16, 0x0AFF);
   w.write(1, 0);
@@ -74,7 +76,7 @@ function writeColorEnum(w, value) { w.writeU32([[0, 0], [0, 1], [4, 2], [6, 18]]
 
 export function fullFrame(crop, canvas) {
   if (!crop) return true;
-  if (!canvas) throw new Error('A crop needs its canvas.');
+  if (!canvas) throw fault('JXL_INTERNAL', 'frame:canvas');
   return crop.x <= 0 && crop.y <= 0 && crop.x + crop.width >= canvas.width && crop.y + crop.height >= canvas.height;
 }
 
@@ -89,7 +91,7 @@ export function writeModularFrameHeader(w, {alpha, shift = 1, extraChannels = Nu
 export function writeFrameHeaderEnd(w, alpha, epf = 0, passes, epfIterations = 1, gab = null, placement) {
   const channels = typeof alpha === 'number' ? alpha : Number(!!alpha);
   const {crop, canvas, last = true, reference = 0, mask = false} = placement ?? {}, full = fullFrame(crop, canvas);
-  if (mask && channels !== 1) throw new Error('A mask is one extra channel.');
+  if (mask && channels !== 1) throw fault('JXL_INTERNAL', 'frame:mask');
   if (passes) w.append(passes); else w.write(2, 0);
   w.write(1, crop ? 1 : 0);
   if (crop) {
@@ -115,10 +117,9 @@ export function writeFrameHeaderEnd(w, alpha, epf = 0, passes, epfIterations = 1
   w.write(4, 0);
 }
 
-export function writeTOCSizes(w, sizes, from = 0, to = sizes.length) {
+function writeTOCSizes(w, sizes, from = 0, to = sizes.length) {
   for (let i = from; i < to; i++) w.writeU32([[10, 0], [14, 1024], [22, 17408], [30, 4211712]], sizes[i]);
 }
-export const tocMaxBytes = entries => entries * 4 + 2;
 export const varDCTSectionCount = (groups, dcGroups, passes) => groups === 1 && passes === 1 ? 1 : 2 + dcGroups + groups * passes;
 export function writeTOC(w, sizes) {
   w.write(1, 0);
@@ -162,6 +163,7 @@ export function codestreamFromParts(head, sections, level = 5, join = null) {
   const prefix = level === 10 ? 49 : 0;
   const length = prefix + head.length + sizes.reduce((a, b) => a + b, 0);
   admitOutputSize(length);
+  if (prefix && length - 41 > 0xffffffff) throw fault('JXL_SIZE', 'codestream: over 4 GiB');
   const out = new Uint8Array(join ? prefix : length);
   if (prefix) {
     out.set([0,0,0,12,74,88,76,32,13,10,135,10,
@@ -174,4 +176,13 @@ export function codestreamFromParts(head, sections, level = 5, join = null) {
   let at = prefix + head.length;
   for (const section of sections) { out.set(section, at); at += section.length; }
   return out;
+}
+
+export function assembleByteSections(header, sections) {
+  writeTOC(header, sections.map(section => section.length));
+  const head = header.finish(), length = head.length + sections.reduce((sum, section) => sum + section.length, 0);
+  admitOutputSize(length);
+  const bytes = new Uint8Array(length); bytes.set(head);
+  for (let i = 0, at = head.length; i < sections.length; at += sections[i++].length) bytes.set(sections[i], at);
+  return bytes;
 }

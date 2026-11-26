@@ -6,22 +6,22 @@ import {readFrames} from './framing.mjs';
 import {withCompressedMetadata} from './metadata.mjs';
 
 const invalid = message => fault('JXL_INPUT', message);
-const canceled = signal => { if (signal?.aborted) throw signal.reason ?? invalid('JPEG XL delivery was canceled.'); };
+const canceled = signal => { if (signal?.aborted) throw signal.reason ?? invalid('canceled'); };
 function bounded(length, maximum) {
-  if (!Number.isSafeInteger(length) || length > maximum) throw fault('JXL_SIZE', 'The progressive container exceeds maxBytes.');
+  if (!Number.isSafeInteger(length) || length > maximum) throw fault('JXL_SIZE', 'container: over maxBytes');
   return length;
 }
 function settings(options) {
-  if (!options || typeof options !== 'object' || Array.isArray(options)) throw invalid('Progressive container options are an object.');
+  if (!options || typeof options !== 'object' || Array.isArray(options)) throw invalid('options: object');
   const {chunkSize = 65536, maxBytes = Number.MAX_SAFE_INTEGER, maxBoxes = 65536, extended = false, metadataPlacement = 'after', signal, level, iccBitLength} = options;
-  if (!Number.isSafeInteger(chunkSize) || chunkSize < 1 || chunkSize > 0x7fffffff) throw invalid('chunkSize is an integer from 1 through 2147483647.');
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw invalid('maxBytes is a positive safe integer.');
-  if (!Number.isSafeInteger(maxBoxes) || maxBoxes < 1) throw invalid('maxBoxes is a positive safe integer.');
-  if (typeof extended !== 'boolean') throw invalid('extended is a boolean.');
-  if (metadataPlacement !== 'before' && metadataPlacement !== 'after') throw invalid('metadataPlacement is before or after.');
-  if (level !== undefined && level !== 5 && level !== 10) throw invalid('The JPEG XL level is 5 or 10.');
-  if (signal !== undefined && (!signal || typeof signal !== 'object' || typeof signal.aborted !== 'boolean')) throw invalid('signal is an AbortSignal.');
-  if (iccBitLength !== undefined && (!Number.isSafeInteger(iccBitLength) || iccBitLength < 1)) throw invalid('iccBitLength is a positive safe integer.');
+  if (!Number.isSafeInteger(chunkSize) || chunkSize < 1 || chunkSize > 0x7fffffff) throw invalid('chunkSize: integer 1-2147483647');
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw invalid('maxBytes: positive integer');
+  if (!Number.isSafeInteger(maxBoxes) || maxBoxes < 1) throw invalid('maxBoxes: positive integer');
+  if (typeof extended !== 'boolean') throw invalid('extended: boolean');
+  if (metadataPlacement !== 'before' && metadataPlacement !== 'after') throw invalid('metadataPlacement: before or after');
+  if (level !== undefined && level !== 5 && level !== 10) throw invalid('level: 5 or 10');
+  if (signal !== undefined && (!signal || typeof signal !== 'object' || typeof signal.aborted !== 'boolean')) throw invalid('signal: AbortSignal');
+  if (iccBitLength !== undefined && (!Number.isSafeInteger(iccBitLength) || iccBitLength < 1)) throw invalid('iccBitLength: positive integer');
   canceled(signal);
   return {chunkSize, maxBytes, maxBoxes, extended, metadataPlacement, signal, level, iccBitLength};
 }
@@ -68,7 +68,7 @@ function landmarks(parsed) {
 function prepare(bytes, options) {
   const state = settings(options), source = inspectContainer(bytes, {maxBytes: state.maxBytes, maxBoxes: state.maxBoxes}), stream = source.codestream;
   const level = state.level ?? source.level;
-  if (source.level === 10 && level !== 10) throw invalid('An existing level 10 declaration cannot be demoted.');
+  if (source.level === 10 && level !== 10) throw invalid('level: cannot demote 10');
   const parsed = readFrames(stream, {iccBits: state.iccBitLength}), milestones = landmarks(parsed);
   let ftyp;
   if (bytes[0] === 255 && bytes[1] === 10) {
@@ -93,7 +93,7 @@ function prepare(bytes, options) {
   for (const end of ends) {
     while (at < end) {
       const next = Math.min(end, at + state.chunkSize), overhead = (state.extended ? 16 : 8) + 4;
-      if (fragments.length >= 0x80000000) throw fault('JXL_SIZE', 'A JPEG XL stream has at most 2147483648 fragments.');
+      if (fragments.length >= 0x80000000) throw fault('JXL_SIZE', 'fragments: max 2^31');
       bounded(containerEnd + next - at + overhead + suffixBytes + stream.length - next, state.maxBytes);
       const fragment = {index: fragments.length, codestreamByteStart: at, codestreamByteEnd: next,
         containerByteStart: containerEnd, containerByteEnd: containerEnd + overhead + next - at, last: next === stream.length};

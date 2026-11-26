@@ -25,7 +25,7 @@ async function resumed(input, decoder = false) {
     assert.ok(++calls < 200, 'Brotli continuation makes progress');
   }
   const out = [];
-  for await (const bytes of codec(decoder).outputParts(checkpoint, host())) out.push(Buffer.from(bytes));
+  out.push(Buffer.from(await codec(decoder).output(checkpoint, host(), length => new Uint8Array(length))));
   return {bytes: new Uint8Array(Buffer.concat(out)), calls, outputs};
 }
 
@@ -46,5 +46,5 @@ test('Brotli restore resolves dictionary words on demand and retains exact refus
   assert.deepEqual((await resumed(input, true)).bytes, text);
   assert.throws(() => decompressBrotli(input), error => error.dictionary === true && error.code === 'JXL_INPUT');
   assert.throws(() => decompressBrotli(input, {maxOutputLength: text.length - 1}), {code: 'JXL_SIZE'});
-  assert.throws(() => decompressBrotli(Uint8Array.from([...input, 0]), {dictionary: brotliDictionary()}), /bytes follow the final meta-block/);
+  assert.throws(() => decompressBrotli(Uint8Array.from([...input, 0]), {dictionary: brotliDictionary()}), /trailing bytes/);
 });

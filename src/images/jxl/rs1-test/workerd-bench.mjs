@@ -41,10 +41,8 @@ for (const file of files) {
         checkpoint = measured.result.checkpoint; done = !!measured.result.done;
         calls.push({ms: measured.cpuMs, phase: measured.result.work?.[0]?.phase ?? 'start', work: measured.result.work?.[0] ?? null});
       }
-      const parts = [];
-      for await (const bytes of entryApi.outputParts(checkpoint, {source, expectedRevision: checkpoint.revision,
-        readMany: refs => refs.map(ref => host.parts.get(ref.hash)), read: async ref => host.parts.get(ref.hash)})) parts.push(bytes);
-      const bytes = Buffer.concat(parts), codec = calls.filter(c => c.phase === 'journal'), source_ = calls.filter(c => c.phase === 'source');
+      const bytes = Buffer.from(await entryApi.output(checkpoint, {source, expectedRevision: checkpoint.revision,
+        readMany: refs => refs.map(ref => host.parts.get(ref.hash)), read: async ref => host.parts.get(ref.hash)}, length => new Uint8Array(length))), codec = calls.filter(c => c.phase === 'journal'), source_ = calls.filter(c => c.phase === 'source');
       const worst = codec.reduce((a, c) => c.ms > a.ms ? c : a, {ms: 0});
       const row = {operation, page: file.split('/').pop(), width, height, effort, mode, equal: bytes.equals(Buffer.from(expected)), calls: calls.length,
         sourceCalls: source_.length, sourceWorstMs: +Math.max(...source_.map(c => c.ms)).toFixed(1),

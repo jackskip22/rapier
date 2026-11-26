@@ -23,7 +23,7 @@ const why = reason => REASONS[reason] ?? WORDS.failed;
 const failure = error => error.name === 'AbortError' ? WORDS.canceled : error.phase === 'rewrite' ? WORDS.linksNotUpdated : why(error.code);
 const activeRun = run => run && ['preparing', 'running', 'paused', 'canceling'].includes(run.state);
 const post = (path, body, signal) => api(ROUTE + path, {method: 'POST', signal, type: 'application/json', body: JSON.stringify(body)});
-const runsInBrowser = row => BROWSER.has(row.mimeType) || row.execution?.location === 'browser';
+const runsInBrowser = row => BROWSER.has(row.mimeType) || SERVER.has(row.mimeType) && row.execution?.location === 'browser';
 const browserReady = row => !row.nativeJob || Boolean(row.job?.done && !row.job?.canceled && !row.job?.publishing && !row.job?.blocked);
 const pollingJob = job => !job?.done && !job?.canceled && !job?.blocked && !job?.advanceError;
 
@@ -44,7 +44,7 @@ function createOriginalsClient({request, change = () => {}}) {
   const accept = next => {
     check(control.signal);
     if (!next || typeof next.available !== 'boolean' || typeof next.enabled !== 'boolean' || typeof next.desired !== 'boolean'
-      || !['idle', 'restoring', 'archiving'].includes(next.phase)) throw new Error('The originals policy is unavailable.');
+      || !['idle', 'restoring', 'archiving'].includes(next.phase)) throw new Error('originals policy: unavailable');
     if (held && held.stamp !== originalsStamp(next)) held = null;
     if (wanted !== undefined && next.desired === wanted) wanted = undefined;
     value = next; report(); return value;
@@ -71,7 +71,7 @@ function createOriginalsClient({request, change = () => {}}) {
     load: () => serial('originals-load', async () => accept(await call('/originals-policy'))),
     tick: () => serial('originals-advance', async () => {accept(await call('/originals-policy')); return advance();}),
     save: enabled => serial('originals-save', async () => {
-      if (typeof enabled !== 'boolean') throw new TypeError('The originals policy is a boolean.');
+      if (typeof enabled !== 'boolean') throw new TypeError('originals policy: boolean');
       if (!value) accept(await call('/originals-policy'));
       if (enabled && !value.available || value.phase === 'restoring') return value;
       wanted = enabled; held = null;
@@ -160,7 +160,7 @@ async function browserConvert(item, selected, signal, update, widthsOnly = false
   if (captured.mode === 'original' && !explicit || widthsOnly && captured.state !== 'sidecar') return captured;
   if (item.generation && captured.generation !== item.generation || item.deliveryRevision && captured.deliveryRevision !== item.deliveryRevision
     || claimed && captured.mode !== 'copies')
-    throw Object.assign(new Error('The picture or delivery setting changed.'), {code: 'key_changed'});
+    throw Object.assign(new Error('picture/delivery: changed'), {code: 'key_changed'});
   if (!widthsOnly && !claimed) {
     captured = {...captured, ...await post('/delivery', {...identity(item), generation: captured.generation,
       deliveryRevision: captured.deliveryRevision, mode: 'copies', inheritSettings: !explicit}, signal)};
@@ -180,27 +180,27 @@ async function browserConvert(item, selected, signal, update, widthsOnly = false
   const made = await workerResult(() => new Worker(new URL('./media-worker.mjs', import.meta.url), {type: 'module'}),
     {file, settings: workerSettings, archiveOriginals, ...(deliveryOnly && {deliveryOnly: true}), ...(widthsOnly && {widthsOnly: true, main})},
     {signal, progress: progress => update({progress: Math.max(0, Math.min(1, progress))})});
-  if (deliveryOnly && [made.result, ...made.copies].some(result => result?.fits && result.browserVerification?.verified !== true))
-    throw Object.assign(new Error('The browser verifier did not verify this delivery.'), {code: 'JXL_INPUT'});
+  if (deliveryOnly && [made.result, ...made.copies].some(result => result?.meetsTarget && result.browserVerification?.verified !== true))
+    throw Object.assign(new Error("delivery: verify original/candidate"), {code: 'JXL_INPUT'});
   const bound = {...item, generation: captured.generation, deliveryRevision: captured.deliveryRevision};
   let original;
-  if (!widthsOnly && archiveOriginals && !deliveryOnly && made.original?.fits)
+  if (!widthsOnly && archiveOriginals && !deliveryOnly && made.original?.meetsTarget)
     original = await attach(`${ROUTE}/attach?${query(bound)}&source=${made.source}`, made.original, signal);
-  if (original?.stored === 'pending' && !original.job?.id) throw new Error('Archive publication returned no saved job');
+  if (original?.stored === 'pending' && !original.job?.id) throw new Error('archive publication: missing job');
   let result = {stored: widthsOnly ? 'sidecar' : 'original', reason: made.result?.reason?.code};
   if (!widthsOnly && archiveOriginals && !deliveryOnly && made.archiveIsDelivery) {
-    if (!original) throw new Error('The selected JPEG archive was not submitted.');
+    if (!original) throw new Error('JPEG archive: not submitted');
     result = original;
-  } else if (!widthsOnly && made.result?.fits)
+  } else if (!widthsOnly && made.result?.meetsTarget)
     result = await attach(`${ROUTE}/attach?${query(bound)}&source=${made.source}`, made.result, signal);
   const variants = [];
-  if (result.stored === 'sidecar') for (const copy of made.copies) if (copy.fits)
+  if (result.stored === 'sidecar') for (const copy of made.copies) if (copy.meetsTarget)
     variants.push(await attach(`${ROUTE}/variant?${query(bound)}&width=${copy.width}&source=${made.source}`, copy, signal));
   const stored = await readStored(item, signal);
   const submitted = [original, result, ...variants];
   const pending = submitted.find(reply => reply?.stored === 'pending' && reply.job?.id === stored.nativeJob?.id);
   if (pending) {
-    if (!pending.job?.id) throw new Error('Publication returned no saved job');
+    if (!pending.job?.id) throw new Error('publication: missing job');
     update({...measured(item, stored, pending.job), progress: null});
     return stored;
   }
@@ -297,7 +297,7 @@ function useImages({settings, loaded, ready, background, importBusy, blocked}) {
         }
         const nextCursor = page.nextCursor;
         if (!nextCursor) break;
-        if (seenCursors.has(nextCursor) || nextCursor === cursor) throw new Error('Media pagination repeated a cursor');
+        if (seenCursors.has(nextCursor) || nextCursor === cursor) throw new Error('media page: repeated cursor');
         seenCursors.add(nextCursor); cursor = nextCursor;
       }
       check(control.signal);
@@ -468,7 +468,7 @@ function useImages({settings, loaded, ready, background, importBusy, blocked}) {
           records.current.set(row.id, admitted);
           enqueue({...current, ...measured(row, admitted)}, structuredClone(job.execution.settings), false, true, true);
         } else {
-          if (!job.id) throw new Error('Server conversion returned no saved job.');
+          if (!job.id) throw new Error('server conversion: missing job');
           jobViews.current.set(job.id, job);
           queue.update(row.id, {nativeJob: {id: job.id}, job, activity: job.done ? null : 'server'});
         }
@@ -534,7 +534,7 @@ function YourImages({images, background, ready, onImport}) {
           h(Button, {variant: 'primary', className: 'w-full', style: {justifyContent: 'center'}, disabled: !ready || background.busy, onClick: stage}, words(older.length === 1 ? WORDS.convertOlderOne : WORDS.convertOlder, {count: older.length})),
           h('p', {className: 'text-sm text-kumo-subtle'}, WORDS.serverNote))
         : !pending && rows.every(row => row.converted) && h('p', {className: 'text-sm text-kumo-subtle'}, WORDS.allConverted)),
-    h('div', {style: {display: 'flex', justifyContent: 'center'}}, h(Button, {variant: 'ghost', className: 'rapier-import-link', onClick: onImport}, WORDS.importWordPress)),
+    h('div', {style: {display: 'flex', justifyContent: 'center'}}, h(Button, {variant: 'ghost', className: 'rapier-import-link', onClick: onImport}, WORDS.importSiteExport)),
     images.error && h('div', {role: 'alert', style: {...line, justifyContent: 'center'}}, h('p', {className: 'text-sm'}, WORDS.imagesError),
       h(Button, {size: 'sm', variant: 'secondary', onClick: images.refresh}, WORDS.retry)));
 }
@@ -644,7 +644,7 @@ function Settings({settings, save, error, loaded, retry, draft}) {
     error && (!loaded || error.phase?.startsWith('originals-')) && h(Button, {variant: 'secondary', onClick: retry}, WORDS.retry));
 }
 
-function WordPress({open, setOpen, ready, refresh, setImportBusy, blocked}) {
+function ImportExport({open, setOpen, ready, refresh, setImportBusy, blocked}) {
   const queue = useQueue(), input = useRef(), [found, setFound] = useState(null), [message, setMessage] = useState(null);
   async function choose(event) {
     const file = event.target.files[0]; event.target.value = '';
@@ -674,7 +674,7 @@ function WordPress({open, setOpen, ready, refresh, setImportBusy, blocked}) {
   return h(Dialog.Root, {open, onOpenChange: setOpen},
     h(Dialog, {style: {width: 'min(32rem, calc(100vw - 32px))', maxWidth: 'calc(100vw - 32px)', padding: 24}},
       h('div', {style: column(16)},
-        h(Dialog.Title, null, WORDS.importWordPress),
+        h(Dialog.Title, null, WORDS.importSiteExport),
         h(Dialog.Description, null, WORDS.importDescription),
         h('div', {style: line}, h(Button, {variant: 'secondary', disabled: queue.busy || !ready, onClick: () => input.current.click()}, WORDS.chooseExport),
           h('input', {ref: input, type: 'file', accept: '.xml,application/xml,text/xml', hidden: true, onChange: choose}),
@@ -717,6 +717,6 @@ function ImagesPage() {
         ...originalsControl(originals), onCheckedChange: originals.setKeep}),
       h('label', {htmlFor: 'rapier-originals'}, WORDS.originals), h(Info, {label: WORDS.originals,
         text: WORDS.originalsInfo + (originals.value?.available === false ? ' ' + WORDS.originalsPaid : ''), side: 'top'})),
-    h(WordPress, {open: importOpen, setOpen: setImportOpen, ready, refresh: images.refresh, setImportBusy, blocked}));
+    h(ImportExport, {open: importOpen, setOpen: setImportOpen, ready, refresh: images.refresh, setImportBusy, blocked}));
 }
 export const pages = {'/jpeg-xl': ImagesPage};

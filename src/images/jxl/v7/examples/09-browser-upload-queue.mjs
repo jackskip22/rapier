@@ -1,6 +1,6 @@
-import {createCodec} from './node_modules/rapier-jxl/dist/codec.mjs';
+import * as queue from '../dist/upload.browser.mjs';
 
-const queue = createCodec({module: 'rapier-jxl/upload', maxPixels: 16_000_000, maxPendingBytes: 64 * 1024 * 1024, maxPendingJobs: 8});
+queue.configure({maxPixels: 16_000_000, maxPendingBytes: 64 * 1024 * 1024, maxPendingJobs: 8});
 let cancelAll = new AbortController();
 const list = document.querySelector('#list');
 
@@ -17,7 +17,7 @@ function upload(file, {signal = cancelAll.signal, effort = 3, quality = 82} = {}
   const view = row(file.name), progress = [];
   const onProgress = fraction => { progress.push(fraction); view.progress.value = fraction; };
   return queue.encode(file, {effort, fidelity: {quality}, signal, onProgress}).then(result => {
-    if (!result.fits) throw Object.assign(new Error(result.reason.message), {code: result.reason.code});
+    if (!result.meetsTarget) throw Object.assign(new Error(result.reason.message), {code: result.reason.code});
     view.done(`${result.bytes.length} bytes`);
     return {name: file.name, ok: true, bytes: result.bytes.length, progress,
       original: file, result, jxl: new Blob([result.bytes], {type: 'image/jxl'})};
@@ -57,5 +57,5 @@ window.run = async () => {
   const full = await queue.encode({data: new Uint8Array(4), width: 1, height: 1}).then(() => null, error => error.code);
   await Promise.all(blocker);
   return {results: results.map(({name, ok, bytes, code, progress}) => ({name, ok, bytes, code, progress})), order, queueFull: full,
-    stats: queue.stats, ms: Math.round(performance.now() - started)};
+    ms: Math.round(performance.now() - started)};
 };

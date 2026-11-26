@@ -44,7 +44,7 @@ test('a resumed value across pages is copied whole once (its arrays), not joined
     }
   } finally { globalThis.Uint8Array = Plain; Plain.prototype.slice = slice; }
   const output = [];
-  for await (const bytes of codec.outputParts(checkpoint, host())) output.push(...bytes);
+  for (const byte of await codec.output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, [0 + 100 + 200 + 300 & 255, 3]);
   assert.ok(most <= 1, `${most} whole copies in a call that reads it`);
 });

@@ -1,35 +1,26 @@
 // SPDX-License-Identifier: MIT
-export function requireDecode(condition, message = 'Invalid JPEG XL data.', reader) {
+import {fault} from './fault.mjs';
+export const TRUNCATED = /* @__PURE__ */ Symbol('truncated');
+export function requireDecode(condition, message = 'invalid data', reader, truncated = false) {
   if (condition) return;
   const error = Object.assign(new Error(message), {code: 'JXL_DECODE'});
   if (reader) error.bitOffset = reader.bit;
+  if (truncated) error[TRUNCATED] = true;
   throw error;
+}
+
+export function requireSize(condition, message) {
+  if (!condition) throw Object.assign(new Error(message), {code: 'JXL_DIMENSIONS'});
 }
 
 export const unpackSigned = value => (value >>> 1) ^ -(value & 1);
 
-export function borrowedBytes(source, begin = 0, end = source.length) {
-  if (ArrayBuffer.isView(source)) return new Uint8Array(source.buffer, source.byteOffset + begin, end - begin);
-  const length = end - begin, at = (v, fallback) => v === undefined ? fallback : Math.max(0, Math.min(length, v < 0 ? length + Math.trunc(v) : Math.trunc(v)));
-  const subarray = (from, to) => { const a = at(from, 0); return source.subarray(begin + a, begin + Math.max(a, at(to, length))); };
-  const known = {length, byteLength: length, byteOffset: 0, constructor: Uint8Array, subarray, slice: (a, b) => subarray(a, b).slice()};
-  let start = 0, window = new Uint8Array(0);
-  return new Proxy(new Uint8Array(0), {get: (_target, key) => {
-    if (Object.hasOwn(known, key)) return known[key];
-    if (key === Symbol.toStringTag) return 'Uint8Array';
-    if (typeof key !== 'string' || !/^\d+$/.test(key)) throw new Error('A borrowed decoder input is read by ranges.');
-    const n = +key;
-    if (n >= length) return undefined;
-    if (n < start || n >= start + window.length) { start = Math.floor(n / 16384) * 16384; window = subarray(start, Math.min(length, start + 16384)); }
-    return window[n - start];
-  }, getPrototypeOf: () => Uint8Array.prototype});
-}
 export const uint32View = bytes => ArrayBuffer.isView(bytes) ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   : {getUint32: at => (bytes[at] * 16777216 + (bytes[at + 1] << 16 | bytes[at + 2] << 8 | bytes[at + 3])) >>> 0};
 
 export class JxlBits {
   constructor(bytes, borrowed = false) {
-    if (!(bytes instanceof Uint8Array)) throw new TypeError('JPEG XL bytes must be a Uint8Array.');
+    if (!(bytes instanceof Uint8Array)) throw fault('JXL_INPUT', 'bytes: Uint8Array');
     this.bytes = bytes;
     this.borrowed = borrowed;
     const buf = !borrowed && bytes.length <= 67108864 ? new Uint8Array(bytes.length + 8) : bytes;
@@ -39,7 +30,7 @@ export class JxlBits {
   }
   get remaining() { return this.bytes.length * 8 - this.bit; }
   peek(n) {
-    if (!((n | 0) === n && n >= 0 && n <= 32)) requireDecode(false, 'Invalid JPEG XL bit count.', this);
+    if (!((n | 0) === n && n >= 0 && n <= 32)) requireDecode(false, 'bit count', this);
     if (!n) return 0;
     const at = this.bit < 4294967296 ? this.bit >>> 3 : Math.floor(this.bit / 8), shift = this.bit & 7, b = this.buf;
     let word = (b[at] >>> shift) | (b[at + 1] << (8 - shift)) |
@@ -48,25 +39,25 @@ export class JxlBits {
     return n === 32 ? word >>> 0 : word & ((1 << n) - 1);
   }
   skip(n) {
-    if (!(Number.isSafeInteger(n) && n >= 0 && n <= this.bytes.length * 8 - this.bit)) requireDecode(false, 'Truncated JPEG XL data.', this);
+    if (!(Number.isSafeInteger(n) && n >= 0 && n <= this.bytes.length * 8 - this.bit)) requireDecode(false, 'truncated', this, true);
     this.bit += n;
   }
   read(n) {
-    if (!((n | 0) === n && n >= 0 && n <= 32)) requireDecode(false, 'Invalid JPEG XL bit count.', this);
+    if (!((n | 0) === n && n >= 0 && n <= 32)) requireDecode(false, 'bit count', this);
     if (!n) return 0;
     const bit = this.bit;
-    if (n > this.bytes.length * 8 - bit) requireDecode(false, 'Truncated JPEG XL data.', this);
+    if (n > this.bytes.length * 8 - bit) requireDecode(false, 'truncated', this, true);
     const at = bit < 4294967296 ? bit >>> 3 : Math.floor(bit / 8), shift = bit & 7, b = this.buf;
     let word = (b[at] >>> shift) | (b[at + 1] << (8 - shift)) | (b[at + 2] << (16 - shift)) | (b[at + 3] << (24 - shift));
     if (shift) word |= b[at + 4] << (32 - shift);
     this.bit = bit + n;
     return n === 32 ? word >>> 0 : word & ((1 << n) - 1);
   }
-  expect(n, value) { requireDecode(this.read(n) === value, 'Invalid JPEG XL field.', this); }
+  expect(n, value) { requireDecode(this.read(n) === value, 'invalid field', this); }
   u32(choices) {
     const [bits, offset] = choices[this.read(2)];
     const value = this.read(bits) + offset;
-    requireDecode(value <= 0xffffffff, 'JPEG XL integer exceeds 32 bits.', this);
+    requireDecode(value <= 0xffffffff, 'integer: over 32 bits', this);
     return value;
   }
   u64BigInt() {
@@ -83,20 +74,20 @@ export class JxlBits {
   }
   u64() {
     const value = this.u64BigInt();
-    if (value > 9007199254740991n) throw Object.assign(new RangeError('JPEG XL integer exceeds the safe range.'),
+    if (value > 9007199254740991n) throw Object.assign(new RangeError('integer: over safe range'),
       {code: 'JXL_LIMIT', bitOffset: this.bit});
     return Number(value);
   }
   f16() {
     const bits = this.read(16), exponent = (bits >>> 10) & 31, mantissa = bits & 1023;
-    requireDecode(exponent !== 31, 'Nonfinite JPEG XL half float.', this);
+    requireDecode(exponent !== 31, 'nonfinite float16', this);
     const value = exponent ? (1024 + mantissa) * ((1 << exponent) >>> 0) / 33554432 : mantissa / 16777216;
     return bits & 32768 ? -value : value;
   }
   enum() { return this.u32([[0, 0], [0, 1], [4, 2], [6, 18]]); }
   align() { this.expect((-this.bit) & 7, 0); }
-  end() { this.align(); requireDecode(this.remaining === 0, 'Trailing JPEG XL section data.', this); }
-  endSection() { this.align(); while (this.remaining) requireDecode(this.read(8) === 0, 'Trailing JPEG XL section data.', this); }
+  end() { this.align(); requireDecode(this.remaining === 0, 'trailing section data', this); }
+  endSection() { this.align(); while (this.remaining) requireDecode(this.read(8) === 0, 'trailing section data', this); }
 }
 
 {

@@ -4,13 +4,19 @@ import {crc32} from '../images/crc32.mjs';
 import {readPng, isPng} from './png.mjs';
 import {embeddedProfile, avifColors, displayP3Profile, isSrgbProfile} from './profile.mjs';
 import {mediaKind, convertMedia, mediaNote as framesNote} from './frames.mjs';
+import {jpegWithoutLocation, metadataOf, metadataBytes, withMetadata} from './meta.mjs';
 export {createPicture} from './preview.mjs';
 
 export const CARRY_BYTES = 256 * 1024 * 1024, PIXELS = 268_435_456;
-export const QUALITY = Object.freeze({lossless: 100, high: 90, smaller: 75});
+export const QUALITY = Object.freeze({high: 90, veryhigh: 95, lossless: 100});
+export const qualityOf = value => Math.min(100, Math.max(1, Math.round(Number(value)) || QUALITY.high));
+export const ADVANCED = Object.freeze({
+	limits: Object.freeze([100e3, 250e3, 500e3, 1e6, 2e6]), limit: 500e3,
+	sides: Object.freeze([0, 1920, 1280, 640])});
+export const bytesWords = bytes => bytes >= 1e6 ? bytes / 1e6 + ' MB' : bytes / 1e3 + ' KB';
 export const ZIP_BYTES = 1024 * 1024 * 1024, ZIP_ENTRIES = 60000;
 
-export const LINKS = Object.freeze([['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl'], ['rapier-jxl on npm', 'https://www.npmjs.com/package/rapier-jxl'], ['SnapDOM JPEG XL plugin', 'https://snapdom.dev/plugins/jxl/'], ['EmDash JPEG XL plugin', 'https://plugins.emdashcms.com/plugins/@rapier.website/jxl']]);
+export const LINKS = Object.freeze([['rapier-jxl on GitHub', 'https://github.com/jackskip22/rapier-jxl'], ['jpegxl on npm', 'https://www.npmjs.com/package/jpegxl'], ['SnapDOM JPEG XL plugin', 'https://snapdom.dev/plugins/jxl/'], ['EmDash JPEG XL Image Optimizer plugin', 'https://plugins.emdashcms.com/plugins/@rapier.website/jxl']]);
 export const LOCAL_NOTE = Object.freeze([
 	'Runs locally on your device, no uploads.',
 	'Press X in the top right to go back to the Markdown editor.']);
@@ -19,8 +25,9 @@ export const COMPARE = Object.freeze({
 	lines: Object.freeze([
 		'This page turns your pictures, GIFs and videos into JPEG XL files that are smaller, and still look as good as a high-quality JPEG.',
 		'It runs on your device. Nothing is uploaded.',
-		'Lossless keeps every pixel. High and Medium make a smaller file; start with High if you want it to look as good as possible. For a JPEG, Lossless can shrink the file and still restore the original exactly.',
-		'The upload encoder is about 224 KB, over twice as fast as libvips in the browser, and uses about half the memory for a 12-megapixel picture.']),
+		'Lossless keeps every pixel. High and Very high make a smaller file, and Very high keeps fine detail when you zoom in. For a JPEG, Lossless can shrink the file and still restore the original exactly.',
+		'Effort levels are tuned differently from other encoders. Higher efforts take longer and make much smaller files. Effort 10 makes smaller lossless photos than any other image format\'s top effort, about 15 times faster than libjxl\'s effort 11.',
+		'The upload encoder is about {upload} KB, a little faster than libvips in the browser, and uses less than half the memory for a 12-megapixel picture.']),
 	basis: 'Measured against wasm-vips 0.0.19.'});
 export const SCENE = Object.freeze({
 	title: 'Save a 3D scene',
@@ -46,6 +53,7 @@ export const BIG = Object.freeze({
 	button: 'Load big JXL image',
 	alt: 'Earth from Apollo 17, a progressive JPEG XL',
 	width: 4579, height: 4579, plain: 706476, rate: 51200,
+	focus: Object.freeze([2500, 2050]), zoom: Object.freeze([600, 700]),
 	about: Object.freeze([
 		'A progressive JPEG XL stores a small whole picture first, at 1:8 of each side, then passes that add detail.',
 		'A browser can show each pass as its bytes arrive, so the picture appears long before its last byte.',
@@ -58,6 +66,7 @@ export const ABOUT = Object.freeze([
 	'rapier-jxl is the JPEG XL encoder inside Rapier: JavaScript and WebAssembly, WebGPU at high efforts, MIT licensed, no dependencies.',
 	'Rapier is a single HTML file that works offline, free and open source.',
 	'It encodes lossless and lossy pictures, carries a JPEG exactly, and keeps alpha and HDR.',
+	'Quality: High looks like the original at normal size. Very high is hard to tell from it even zoomed in, for larger files. Lossless keeps every pixel exactly.',
 	'In your own site or app: npm install rapier-jxl, then import {encode} from "rapier-jxl/upload". encode(file) returns the JPEG XL bytes.']);
 
 export const mediaNote = framesNote;
@@ -122,6 +131,7 @@ export function kindOf(bytes) {
 	if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'jpeg';
 	if (isPng(bytes)) return 'png';
 	if (bytes[0] === 0xFF && bytes[1] === 0x0A || bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 12 && bytes[4] === 0x4A && bytes[5] === 0x58 && bytes[6] === 0x4C) return 'jxl';
+	if (bytes[0] === 0x76 && bytes[1] === 0x2F && bytes[2] === 0x31 && bytes[3] === 0x01 || bytes[0] === 0x23 && bytes[1] === 0x3F && /^#\?(?:RADIANCE|RGBE)/.test(String.fromCharCode(...bytes.subarray(0, 10)))) return 'hdr';
 	return 'other';
 }
 
@@ -265,12 +275,16 @@ async function opens(bytes) {
 	try { (await createImageBitmap(new Blob([bytes], {type: 'image/jxl'}))).close(); return true; } catch (_) { return false; }
 }
 
-export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, onPreview, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
+export async function convert(file, {mode = 'lossless', quality: askedQuality, maxBytes = 0, side = 0, location = true, effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, onPreview, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
 	const effort = effortOf(asked, STILL_EFFORT), effortFor = () => effortOf(effort);
+	const quality = qualityOf(askedQuality ?? QUALITY[mode]), lossless = quality === 100;
+	mode = lossless ? 'lossless' : mode === 'lossless' ? 'high' : mode;
+	maxBytes = Number.isSafeInteger(maxBytes) && maxBytes > 0 ? maxBytes : 0;
+	side = Number.isSafeInteger(side) && side > 0 ? side : 0;
 	if (effort >= PREVIEW_EFFORT && typeof onPreview === 'function') {
 		const call = codec;
 		codec = (operation, input, options, work) => {
-			if (operation !== 'encode') return call(operation, input, options, work);
+			if (!['encode', 'fit', 'variants'].includes(operation)) return call(operation, input, options, work);
 			const lifetime = new AbortController();
 			const preview = {signal: work?.signal ? AbortSignal.any([work.signal, lifetime.signal]) : lifetime.signal};
 			return (async () => {
@@ -284,53 +298,83 @@ export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.s
 	}
 	const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
 	if (kindOf(head) === 'other' && mediaKind(head, file.type) === 'video')
-		return convertMedia(file, null, 'video', {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {})});
+		return convertMedia(file, null, 'video', {mode, quality, effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {})});
 	const bytes = new Uint8Array(await file.arrayBuffer());
 	const kind = kindOf(bytes), before = bytes.length;
 	const animation = kind === 'other' || kind === 'png' ? mediaKind(bytes, file.type) : '';
 	if (animation && animation !== 'video') {
-		const made = await convertMedia(file, bytes, animation, {mode, quality: QUALITY[mode], effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {}), colors: await animationColors(bytes, animation)});
+		const made = await convertMedia(file, bytes, animation, {mode, quality, effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {}), colors: await animationColors(bytes, animation)});
 		if (made) return made;
 	}
 	if (kind === 'jxl') return convertBack(bytes, {complete, signal, say, progress, codec});
 	if (kind === 'other' && /^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(new TextDecoder().decode(bytes.subarray(0, 1024)))) throw Object.assign(new Error('A vector drawing has no pixels to convert.'), {shown: true});
+	const fits = size => !maxBytes || size <= maxBytes;
+	const missed = () => Object.assign(new Error('Cannot fit under ' + bytesWords(maxBytes) + '.'), {shown: true});
+	let jpegSize = null;
+	if (kind === 'jpeg') try { jpegSize = globalThis.RapierImageAssets.imageDimensions(bytes.subarray(0, Math.min(bytes.length, 4 << 20)), 'image/jpeg', true); } catch (_) {}
+	const shrinks = !!side && (!jpegSize || Math.max(jpegSize.width, jpegSize.height) > side);
 	let exact = null;
-	if (kind === 'jpeg' && before <= CARRY_BYTES) {
+	if (kind === 'jpeg' && before <= CARRY_BYTES && !shrinks) {
+		const carry = location ? {bytes, removed: false} : jpegWithoutLocation(bytes);
 		try {
 			say('Carrying the JPEG');
-			const carried = await codec('recompress', bytes.slice(), {effort}, {signal, progress});
+			const carried = await codec('recompress', carry.bytes.slice(), {effort, ...effort < 10 && {gainMap: true}}, {signal, progress});
 			say('Checking it restores the original'); progress(1);
 			const restored = await codec('restore', carried.slice(), {}, {signal});
-			if (same(restored, bytes)) exact = {...resultOf(carried), before, exact: true, jpeg: true, mode: 'lossless', ...carriedSize(carried)};
+			if (same(restored, carry.bytes)) exact = {...resultOf(carried), before, exact: true, jpeg: true, mode: 'lossless', located: carry.removed, ...carriedSize(carried)};
 		} catch (error) { if (error?.name === 'AbortError' || exhausted(error)) throw error; }
-		if (exact && mode === 'lossless') return exact;
+		if (exact && mode === 'lossless' && fits(exact.size)) return exact;
 	}
 	say('Reading the picture'); progress(0);
-	const lossless = mode === 'lossless';
-	let own = null, profile = null, note = '';
+	let own = null, profile = null, note = '', hdr = null;
 	if (kind === 'png') {
 		own = await readPng(bytes, PIXELS);
 		if (!lossless && own?.data) own = lossyPng(own) || (note = 'colors', null);
-	} else if (kind !== 'jxl') profile = embeddedProfile(bytes);
-	const said = !own && !profile && kind === 'other' ? avifColors(bytes) : null, declared = said?.browser ? null : said;
+	} else if (kind === 'hdr') {
+		await complete?.();
+		const {data, width, height, parts: _, ...options} = await codec('read-hdr', bytes, {maxPixels: PIXELS}, {signal});
+		hdr = {data, width, height, options: Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined))};
+	} else profile = embeddedProfile(bytes);
+	const said = !own && !profile && !hdr && kind === 'other' ? avifColors(bytes) : null, declared = said?.browser ? null : said;
 	if (said?.browser) note = 'colors';
 	if (own?.browser) note = own.depth === 16 && lossless ? 'bits8' : 'colors';
-	let picture = own?.data ? own : profile ? {...await pixelsOf(file, {raw: true}), options: {icc: profile}} : declared ? {...await pixelsOf(file, {raw: true}), options: declared} : await pixelsOf(file);
+	let picture = hdr || (own?.data ? own : profile ? {...await pixelsOf(file, {raw: true}), options: {icc: profile}} : declared ? {...await pixelsOf(file, {raw: true}), options: declared} : await pixelsOf(file));
+	const meta = kind === 'jpeg' || kind === 'png' || kind === 'other' ? metadataOf(bytes, {location}) : null;
+	const room = maxBytes ? maxBytes - metadataBytes(meta) : 0;
+	if (maxBytes && room < 1) throw missed();
 	const shown = await globalThis.RapierEmbeddedImages.whenJxlDisplayKnown?.() === true;
 	for (let attempt = 0;; attempt++) {
 		const native = picture.options ? {...picture.bitDepth === 16 && {bitDepth: 16}, ...picture.options} : {};
-		const encode = (data, options) => codec('encode', {width: picture.width, height: picture.height, data, ...native}, {...options, maxPixels: PIXELS}, {signal, progress});
+		const input = data => ({width: picture.width, height: picture.height, data, ...native});
+		const work = {signal, progress};
+		const resize = side && Math.max(picture.width, picture.height) > side;
+		const sized = resize ? {[picture.width >= picture.height ? 'width' : 'height']: side} : null;
+		const encode = async (data, exactly) => {
+			const fidelity = exactly || lossless && !room ? 'exact' : {quality};
+			if (resize) return codec('variants', input(data), {outputs: [{...sized, ...room ? {maxBytes: room, fidelity: exactly ? 'exact' : {quality}} : {fidelity}}], effort: Math.min(effort, 9), maxPixels: PIXELS}, work);
+			if (room && !exactly) return codec('fit', input(data), {maxBytes: room, fidelity: {quality}, effort: Math.min(effort, 9), maxPixels: PIXELS}, work);
+			return codec('encode', input(data), {fidelity, effort, maxPixels: PIXELS}, work);
+		};
 		const again = shown && !lossless ? picture.data.slice() : null;
 		try {
 			say('Making the file');
-			let made = await encode(picture.data, lossless ? {fidelity: 'exact', effort} : {fidelity: {quality: QUALITY[mode]}, effort}), fallback = false, refused = false;
+			let made = await encode(picture.data), fallback = false, refused = false;
+			const madeLossless = made.fidelity ? made.fidelity === 'exact' : lossless;
 			if (shown && !await opens(made)) {
-				if (lossless) refused = true;
-				else { say('Making it lossless'); progress(0); made = await encode(again, {fidelity: 'exact', effort}); fallback = true; refused = !await opens(made); }
+				if (madeLossless) refused = true;
+				else {
+					say('Making it lossless'); progress(0);
+					const exactly = await encode(again, true).catch(error => { if (error?.code === 'JXL_TARGET') return null; throw error; });
+					if (exactly && fits(exactly.length + metadataBytes(meta)) && await opens(exactly)) { made = exactly; fallback = true; }
+					else refused = true;
+				}
 			}
-			const result = {...resultOf(made), before, exact: false, jpeg: kind === 'jpeg', mode: fallback ? 'lossless' : mode, fallback, refused, note, width: picture.width, height: picture.height};
-			return exact ? {...(result.size < exact.size && !result.refused ? result : {...exact, mode, exactKept: true}), also: exact} : result;
+			const size = sized ? {width: Math.max(1, Math.round(sized.width ?? picture.width * side / picture.height)), height: Math.max(1, Math.round(sized.height ?? picture.height * side / picture.width))} : {width: picture.width, height: picture.height};
+			const result = {...resultOf(withMetadata(made, meta)), before, exact: false, jpeg: kind === 'jpeg', mode: fallback || madeLossless ? 'lossless' : mode === 'lossless' ? 'high' : mode, fallback, refused, note, ...size,
+				...resize && {side}, located: !!meta?.removed};
+			return exact ? {...(result.size < exact.size && !result.refused || !fits(exact.size) ? result : {...exact, mode, exactKept: true}), also: exact} : result;
 		} catch (error) {
+			if (error?.code === 'JXL_TARGET') throw missed();
 			if (attempt || !picture.options?.icc || error?.name === 'AbortError' || exhausted(error) || !/^JXL_(INPUT|OPTIONS|SIZE|RGBA)$/.test(error?.code || '')) throw error;
 			console.warn('JPEG XL profile refused', error.code, error.message);
 			note = own?.depth === 16 || picture.bitDepth === 16 ? 'bits8' : 'colors';
@@ -338,4 +382,3 @@ export async function convert(file, {mode = 'lossless', effort: asked = EFFORT.s
 		}
 	}
 }
-

@@ -54,6 +54,7 @@
   "jxl/complete.js",
   "jxl/max.js",
   "jxl/scene.js",
+  "jxl/glitch.js",
   "interchange/convert-door.js",
   "interchange/convert-view.js",
   "editor/diff-door.js",

@@ -157,7 +157,8 @@ Seven tools. Each line is the tool's own description, word for word.
 - **`undo`**: Use this when the person wants a change of yours in Rapier taken back. Undo one act or one turn (act or turn_id, not both), preserving later work.
 - **`show`**: Use this to point the person to a place in their Rapier document, ask them something there, or pair their browser with a 4-letter code. Present work or ask the person. An omitted target is inferred from its fields. A 4-letter browser code pairs that editor (target:"pair"). A connected workspace's owner first approves at owner_approval_url, then the person chooses ALLOW. pairing.status: none, code_shown, owner_approval_required, awaiting_allow or paired. Only paired confirms pairing. Inspect actual presentation. A request is not proof the person saw it. A comparison leaves source unchanged. Later human navigation wins.
 - **`export`**: Use this when the person wants their Rapier document as a file to keep: Markdown, Word, PDF, plain text, or one HTML file that opens and edits offline. to:"file" (default) delivers markdown, html, page, txt, docx or pdf (html is the whole editor with the document inside, editable offline). to:"save" saves to the bound destination. to:"clipboard" copies a passage as plain, markdown, formatted or complete. to:"sync" alone syncs the Notes store and can replace files. On the hosted Door, page, docx and pdf need the person's paired, open editor. A self-hosted server can provide a renderer. Inspect delivery. Export never publishes a website.
-- **`convert`**: Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures. Omit it to let the person pick them. quality: lossless, high (default) or medium. effort 1-9 (default 7, higher is smaller and slower). To convert files in your own sandbox, run npx rapier-jxl <file|folder>: it prints each size before and after.
+- **`convert`**: Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures. Omit it to let the person pick them. quality: lossless, high (default) or medium. effort 1-9 (default 7, higher is smaller and slower). To convert files in your own sandbox, run npx jpegxl <file|folder>: it prints each size before and after.
+- **`feedback`**: Tell the Rapier team, in one short line, when Rapier got in the way or did not do what the person asked. Never include document text or personal details.
 
 Together they cover the whole product:
 
@@ -178,7 +179,7 @@ Together they cover the whole product:
 - **Hosted server** (`https://mcp.rapier.website/door/mcp`): `convert` opens the converter in the app's view. Pass the chat's pictures as `files` and they convert at once, or omit `files` and the person picks them. Without a view it answers with the converter's link, https://rapier.website/jxl. The call returns once the converter is open. The converted files stay with the person.
 - **Page tools** (WebMCP, `window.RapierAgentBrowser`, an MCP App's view): pass `files` as `{name, data}`, `data` the exact bytes in base64. Up to 32 files, 32 MB and 400 megapixels in all per call. It returns each file's name, sizes and what was kept. The files go to the person.
 - **Animation and video** need JPEG XL complete, a one-time download. After that they convert offline.
-- **Shell.** `npx rapier-jxl <file|folder>` converts PNG, JPEG and GIF files and prints each size before and after. `--json` prints one line per file, then a summary: `input`, `output`, `inputBytes`, `outputBytes`, `kept` (`jpeg-bytes`, `pixels` or `lossy`), `error.hint` on failure. Also `--quality 1-100`, `--lossless`, `--effort 1-9`, `--out`. A `.jxl` that carries its JPEG gives it back. Any other `.jxl` gives a PNG.
+- **Shell.** `npx jpegxl <file|folder>` (Node 22.3 or later) converts PNG, JPEG and GIF files and prints each size before and after. `--json` prints one line per file, then a summary: `input`, `output`, `inputBytes`, `outputBytes`, `kept` (`jpeg-bytes`, `pixels` or `lossy`), `error.hint` on failure. Also `--quality 1-100`, `--exact` (every pixel kept), `--effort 1-10`, `--out`. A `.jxl` that carries its JPEG gives it back. Any other `.jxl` gives a PNG.
 
 ## Rules
 
@@ -219,7 +220,7 @@ Rapier is also a free [Android app](https://play.google.com/store/apps/details?i
 
 Rapier is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/website.rapier%2Fmarkdown-editor-draw-paint-jpeg-xl/versions/latest) and the [GitHub MCP Registry](https://github.com/mcp) as `website.rapier/markdown-editor-draw-paint-jpeg-xl`.
 
-The [catalog](../site/AGENT-TOOLS.json) has seven tools: `open`, `read`, `edit`, `undo`, `show`, `export` and `convert`. If your
+The [catalog](../site/AGENT-TOOLS.json) has eight tools: `open`, `read`, `edit`, `undo`, `show`, `export`, `convert` and `feedback` (a short line to the Rapier team when Rapier let the person down). If your
 host reads MCP resources, `rapier://guide`, `rapier://guide/blocks`, `rapier://guide/draw` and `rapier://guide/water`
 hold the contracts. The Water resource also carries the current brush registry. Otherwise use this page and the tool
 schemas. Optional prompts: `write-brief`, `diagram-process`, `paint-illustration` and `compare-drafts`.
@@ -595,7 +596,7 @@ with a `taskId`. Without it, calls stay direct. Legacy, paired-page and local-se
 
 ## Authority and receipts
 
-The seven tools are separate from the editor's private `/editor` channel. Sync, human commits and context,
+The eight tools are separate from the editor's private `/editor` channel. Sync, human commits and context,
 acknowledgements, access management, rotation and deletion need editor authority. Hosted Apps use workspace tickets.
 A paired page uses scoped browser cookies at `/editor/<id>`. A tool call can't create an editor acknowledgement or a
 human grant.
@@ -619,7 +620,7 @@ Hosted defaults:
 
 | Resource | Limit |
 | --- | --- |
-| Model tool calls | 600 per minute across the seven tools, per verified connection or anonymous network address. |
+| Model tool calls | 600 per minute across the eight tools, per verified connection or anonymous network address. |
 | Paired editor tool calls | 1,200 per minute under editor authority, separate from model calls. |
 | Document source | 64 MiB of UTF-8. |
 | Hosted export | 16 MiB. |
@@ -2817,7 +2818,7 @@ Honor no-upload or no-host instructions. The workflow choices below are alternat
 Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. The helper is an ES module: `import {Rapier} from 'rapier-embed'` or `<script type="module">`. There is no classic script or UMD build. Your
 app owns the document and storage. Its agent edits live through WebMCP. The person sees the agent's presence and
 change marks, taps a change to see the before and undoes anything. Honor the person's Will/1 regions.
-The reader is one file of about 420 kB, `rapier.html` about 4.0 MB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
+The reader is one file of about 430 kB, `rapier.html` about 4.0 MB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
 buy a commercial license for other terms (`LICENSING.md` in the Rapier repository).
 
 Choose one of two builds:
@@ -2861,7 +2862,7 @@ sends Markdown only when saving. Change notifications contain no source.
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web, Windows and Linux.
 Collaborate over MCP and WebMCP, use optional plain-file sync to your own cloud storage, or embed the
-editor and lightweight reader (about 420 kB). The agent edits live. The person sees its presence and
+editor and lightweight reader (about 430 kB). The agent edits live. The person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
@@ -2956,7 +2957,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 <!-- PLUGIN_TABLE_BEGIN (tools/embed-plugin-table.mjs writes this table) -->
 | Plug-in | Adds | Size | Pages |
 | --- | --- | --- | --- |
-| `flowchart` | Draws Mermaid flowcharts and graphs natively, in the editor's own style. | 0.36 MB | The reader |
+| `flowchart` | Draws Mermaid flowcharts and graphs natively, in the editor's own style. | 0.37 MB | The reader |
 | `docx` | Opens a Word document (.docx) as a Markdown document: headings, lists, tables, pictures and comments. | 0.95 MB | The reader |
 | `math` | Typesets TeX math ($...$ and $$...$$) as SVG. | 0.74 MB | Both |
 | `diagrams` | Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more. | 1.14 MB (2 files) | Both |
@@ -2968,7 +2969,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.37 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.76.
+Totals: the reader, 9.38 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.77.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -4282,7 +4283,7 @@ Honor no-upload or no-host instructions. The workflow choices below are alternat
 Embed Rapier's Markdown editor or lightweight reader in your web app. Each build is one offline HTML file. The helper is an ES module: `import {Rapier} from 'rapier-embed'` or `<script type="module">`. There is no classic script or UMD build. Your
 app owns the document and storage. Its agent edits live through WebMCP. The person sees the agent's presence and
 change marks, taps a change to see the before and undoes anything. Honor the person's Will/1 regions.
-The reader is one file of about 420 kB, `rapier.html` about 4.0 MB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
+The reader is one file of about 430 kB, `rapier.html` about 4.0 MB, with optional fonts and plug-ins. The helper is MIT with no dependencies. The two builds it frames are AGPL-3.0-only: use them under the AGPL, or
 buy a commercial license for other terms (`LICENSING.md` in the Rapier repository).
 
 Choose one of two builds:
@@ -4326,7 +4327,7 @@ sends Markdown only when saving. Change notifications contain no source.
 Rapier is a phone-first Markdown editor for notes, diagrams, drawing and watercolor painting. It runs offline
 as one HTML file on Android, Web, Windows and Linux.
 Collaborate over MCP and WebMCP, use optional plain-file sync to your own cloud storage, or embed the
-editor and lightweight reader (about 420 kB). The agent edits live. The person sees its presence and
+editor and lightweight reader (about 430 kB). The agent edits live. The person sees its presence and
 changes, taps a change to see the before and undoes anything. Use `show {target:"comparison"}` to show a diff deliberately.
 
 1. **Work together live.** Connect to `https://mcp.rapier.website/door/mcp`, then call `open` to share one document with the person.
@@ -4421,7 +4422,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 <!-- PLUGIN_TABLE_BEGIN (tools/embed-plugin-table.mjs writes this table) -->
 | Plug-in | Adds | Size | Pages |
 | --- | --- | --- | --- |
-| `flowchart` | Draws Mermaid flowcharts and graphs natively, in the editor's own style. | 0.36 MB | The reader |
+| `flowchart` | Draws Mermaid flowcharts and graphs natively, in the editor's own style. | 0.37 MB | The reader |
 | `docx` | Opens a Word document (.docx) as a Markdown document: headings, lists, tables, pictures and comments. | 0.95 MB | The reader |
 | `math` | Typesets TeX math ($...$ and $$...$$) as SVG. | 0.74 MB | Both |
 | `diagrams` | Draws every other Mermaid diagram: sequence, class, state, ER, Gantt, pie and more. | 1.14 MB (2 files) | Both |
@@ -4433,7 +4434,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.37 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.76.
+Totals: the reader, 9.38 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.77.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -4837,274 +4838,524 @@ document as one offline file.
 
 # rapier-jxl
 
-[![npm](https://img.shields.io/npm/v/rapier-jxl)](https://www.npmjs.com/package/rapier-jxl)
-[![downloads](https://img.shields.io/npm/dw/rapier-jxl)](https://www.npmjs.com/package/rapier-jxl)
-[![license](https://img.shields.io/npm/l/rapier-jxl)](https://github.com/jackskip22/rapier-jxl/blob/main/LICENSE)
-[![types](https://img.shields.io/npm/types/rapier-jxl)](https://www.npmjs.com/package/rapier-jxl)
+[![npm](https://img.shields.io/npm/v/jpegxl)](https://www.npmjs.com/package/jpegxl)
+[![downloads](https://img.shields.io/npm/dw/jpegxl)](https://www.npmjs.com/package/jpegxl)
+[![license](https://img.shields.io/npm/l/jpegxl)](https://github.com/jackskip22/rapier-jxl/blob/main/LICENSE)
+[![types](https://img.shields.io/npm/types/jpegxl)](https://www.npmjs.com/package/jpegxl)
 
-JPEG XL in JavaScript and WebAssembly with WebGPU for high efforts.
+JPEG XL in WebAssembly + JS with optional WebGPU & parallel workers. Brotli: ~64 KB exact capture, ~318 KB complete capture, ~353 KB upload, ~548 KB full encoder. HDR, metadata, lossless JPEG, video/GIF to animation, resumable edge encoding, serve, polyfill, decode. Auto quality, exact text. CLI & npx jpegxl add: 22 platforms. No dependencies. MIT.
 
-Used by [SnapDOM's official JPEG XL plugin](https://snapdom.dev/plugins/jxl/) and the [EmDash image optimizer](https://plugins.emdashcms.com/plugins/@rapier.website/jxl). [Try it in your browser](https://rapier.website/jxl).
+rapier-jxl is the encoder inside [rapier.website](https://rapier.website), the free Markdown editor, drawing and painting app. Rapier is also a free [Android app](https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Djxl-readme) that opens and converts JPEG XL pictures.
 
-- Uploads over 2x faster than libvips.
-- 52 KB Brotli exact capture.
-- 244 KB Brotli complete capture.
-- 277 KB Brotli upload.
-- 361 KB Brotli full encoder with HDR and parallel workers. Used by [rapier.html](https://rapier.website)
-- Lossless JPEG transcoding, decoding, verification, serving, metadata, animation, polyfill, CLI and resumable encoding
-  for edge isolates. Modules are single files.
-- Browsers, workers, Node, Deno, Bun, Cloudflare Workers.
-- No dependencies.
-- MIT.
+It is also used by [SnapDOM's official JPEG XL plugin](https://snapdom.dev/plugins/jxl/) and the [EmDash JPEG XL Image Optimizer plugin](https://plugins.emdashcms.com/plugins/@rapier.website/jxl). [Try rapier-jxl in your browser](https://rapier.website/jxl).
 
 ```sh
-npm install rapier-jxl
+npm install jpegxl
 ```
 
-ESM. From CommonJS: `await import('rapier-jxl')`.
+ESM, Node 22.3+. From CommonJS: `await import('jpegxl')`.
+
+## Modules
+
+| Module | For | Brotli |
+| --- | --- | --- |
+| `jpegxl` | Still image encoder, efforts 1–9 | about 548 KB |
+| `jpegxl/max` | Effort 10, very slow for smallest files | 583 KB |
+| `jpegxl/upload` | Fast uploads in the browser, efforts 1–3 | 353 KB |
+| `jpegxl/capture` | Exact screenshots | 64 KB |
+| `jpegxl/capture-complete` | Screenshots with lossy photos and automatically exact text | 318 KB |
+| `jpegxl/animation` | Videos, GIFs and frames to animated JPEG XL | 572 KB |
+| `jpegxl/format` | Codestream features | 587 KB |
+| `jpegxl/jpeg` | JPEG recompression that restores exactly | 186 KB |
+| `jpegxl/decode` | Pixels and animation frames | 122 KB |
+| `jpegxl/verify` | A file checked against its source | 77 KB |
+| `jpegxl/serve` | JPEG XL served by `Accept` | 75 KB |
+| `jpegxl/resumable` | Encodes across short edge requests | 63 KB |
+| `jpegxl/metadata` | Headers, Exif, XMP and smaller sizes from a progressive file | 41 KB |
+| `jpegxl/polyfill` | JPEG XL and animated JPEG XL in every browser | 28 KB |
+| `jpegxl/hdr` | OpenEXR and Radiance files | 14 KB |
+
+## Efforts
+
+| Effort | Use it for |
+| --- | --- |
+| 1 | Live previews, fastest |
+| 2–3 | Uploads in the browser |
+| 4–5 | Quick batch jobs, landing on the look you ask for, with the built-in visual lexer |
+| 6 | Fast photos with variable block sizes |
+| 7 (default) | Photos and screenshots, the best balance of size and time, GPU accelerated where possible |
+| 8–9 | Smaller files from a build step or server |
+| 10 | The smallest possible files, made very slowly, best on a computer (`jpegxl/max`) |
+
+For lossless photos, effort 10 writes files about 1% smaller than libjxl's effort 11, about 15 times faster on the same computer, with a fifth of the memory. It doesn't need a GPU.
+
+## Visual lexer
+
+A small model trained on many photos reads the image and predicts how Effort 9's slow search would encode it. Efforts 4 to 6 use this built-in lexer to get a similar look with no slow search.
 
 ## Command line
 
 ```sh
-npx rapier-jxl photo.png                  # photo.jxl beside it
-npx rapier-jxl scan.jpg                   # scan.jxl, lossless; the original JPEG can be restored
-npx rapier-jxl photos/ --out dist/        # every PNG, JPEG and GIF in the folder
-npx rapier-jxl hero.png --max-bytes 100KB # lower quality to fit, keeping dimensions
-npx rapier-jxl scan.jxl --out back/       # back/scan.jpg, the original JPEG
-npx rapier-jxl photos/ --out dist/ --json  # one JSON line per file, then a summary
+npx jpegxl photo.png                   # photo.jxl alongside
+npx jpegxl scan.jpg                    # lossless: JPEG restores exactly
+npx jpegxl photos/ --out dist/         # every PNG, JPEG, GIF, HDR and EXR in the folder
+npx jpegxl hero.png --max-bytes 100KB  # best quality that fits
+npx jpegxl scan.jxl --out back/        # back/scan.jpg, original JPEG
+npx jpegxl site dist/                  # static site: .jxl files and <picture> in HTML
 ```
 
-`--quality 1–100` (default 90), `--effort 1–9` (default 7), `--lossless`, `--max-bytes`, `--out`, `--jobs` (helpers).
-Automatic output names never replace files.
-`--json` names what each file kept: `jpeg-bytes` (the JPEG restores exactly), `pixels` (exact) or `lossy`. A rerun
-leaves finished files untouched.
+Options: `--quality 1–100` (default 90, and a JPEG without it stays exact), `--effort 1–10` (default 7), `--max-bytes`, `--out`, `--keep-extension`, `--exact`, `--jpeg-pixels`, `--jobs`, `--verify`, `--json`. `--keep-extension` writes names such as `photo.jpg.jxl`. Effort 10 searches still pixels and cannot be combined with `--max-bytes`. Exact JPEG recompression uses at most effort 9. A different file is never replaced. WebP and AVIF need a runtime with `createImageBitmap` and `OffscreenCanvas`. Elsewhere, convert them to PNG first.
+
+## Add it to your project
+
+```sh
+npx jpegxl add <place>
+```
+
+Places: `emdash`, `wordpress`, `payload`, `astro`, `vite`, `void`, `webpack`, `next`, `netlify`, `workers`, `r2`, `agents`, `apache`, `nginx`, `caddy`, `android`, `ios`, `flutter`, `expo`, `capacitor`, `electron`, `tauri`. It works from the installed package (EmDash and Astro install what they lack), `--dry-run` shows what it would change, and `npx jpegxl remove <place>` undoes it.
+
+## No code required
+
+- [rapier.website/jxl](https://rapier.website/jxl) converts pictures in the browser, offline, on your device.
+- [JPEG XL Converter for VS Code](https://marketplace.visualstudio.com/items?itemName=rapier.jxl) converts files in a workspace.
+- [Rapier for Android](https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Djxl-readme) opens, converts and shares JPEG XL images.
+
+## Android
+
+```sh
+npx jpegxl add android
+```
+
+The same files run in an Android app with no native code. A hidden WebView runs the encoder in a worker, offline from the app's assets, and Kotlin passes files over a binary message port. Works for every processor with no NDK and no Internet permission. The encoder's files add about 1.2 MB to the APK.
+
+```js
+// assets/encoder.mjs, the WebView's worker
+import {encode} from './jpegxl/upload.mjs';
+import {recompress, restore} from './jpegxl/jpeg.mjs';
+
+onmessage = async ({data: {bytes, mime, jpegBytes}}) => { // from Kotlin's message port
+  const photo = await encode(new Blob([bytes], {type: mime}), {fidelity: {quality: 80}});
+  const smaller = await recompress(jpegBytes);
+  const original = await restore(smaller.bytes); // the exact same JPEG
+};
+```
+
+The [Android example](https://github.com/jackskip22/rapier-jxl/tree/main/examples/android) is one activity: pick or share a photo, save or share the `.jxl`, and recompress a JPEG with the restored file's SHA-256 checked in Kotlin. Android 8.0 or newer, WebView 116 or newer. The [Capacitor example](https://github.com/jackskip22/rapier-jxl/tree/main/examples/capacitor) uses the same modules unchanged.
+
+## iOS and macOS
+
+```sh
+npx jpegxl add ios
+```
+
+The same files run on macOS or iOS with no native code. A Swift package runs the encoder in a hidden WKWebView offline, with cancellable async calls. Nothing to compile, no libjxl, no binary frameworks.
+
+The [iOS example](https://github.com/jackskip22/rapier-jxl/tree/main/examples/ios) encodes photos, recompresses JPEGs losslessly and turns videos into animated JPEG XL.
+
+```swift
+import RapierJXL
+
+let codec = JXLCodec()
+let jxl = try await codec.encode(photo, quality: 80, effort: 3)   // Data (or UIImage on iOS) in, JPEG XL out
+let small = try await codec.recompress(jpeg: jpegData)            // the same JPEG back with restore
+let clip = try await codec.animate(video: movieURL)               // every frame, each with its time
+```
 
 ## Upload
 
-```js
-import {encode, fit} from 'rapier-jxl/upload';
+```ts
+import {encode, fit} from 'jpegxl/upload';
 
-// file: a File or Blob from an input, a drop or a fetch.
-const compress = async file => {
+async function compress(file: File): Promise<Blob> {
   const result = await encode(file, {fidelity: {quality: 82}});
-  if (!result.bytes) throw Object.assign(new Error(result.reason.message), {code: result.reason.code});
+  if (!result.meetsTarget) throw new Error(result.reason.message);
   return new Blob([result.bytes], {type: 'image/jxl'});
-};
-const small = file => fit(file, {maxBytes: 100_000}); // best quality under 100 KB; `fits` says whether it got there
+}
+const small = (file: File) => fit(file, {maxBytes: 100_000}); // `meetsTarget` says whether it fit
 ```
 
-`variants` makes several sizes from one upload. All calls accept `onProgress` and `signal`, for progress bars and
-cancelling. On Node and Deno, pass decoded pixels `{data, width, height}`. Only JPEGs with `fidelity: 'exact'` and
-PNGs with transparency or 16 bits can be passed as files.
+Efforts 1 to 3 (default 3). `variants` makes multiple sizes from one picture and never grows one past the source unless the output says `upscale: true`. Every encoding call takes `onProgress` and `signal`. On Node, Deno, Bun and Workers a JPEG needs `configureDecoder(decode, null, recompress)` first. Pixels and PNG work normally.
 
 ## Encode
 
-```js
+```ts
 import {writeFile} from 'node:fs/promises';
-import {encode} from 'rapier-jxl';
+import {encode} from 'jpegxl';
 
 const picture = {data: new Uint8Array([240, 120, 40, 255]), width: 1, height: 1};
-await writeFile('picture.jxl', (await encode(picture, {fidelity: {quality: 90}})).bytes);
+const {bytes} = await encode(picture, {fidelity: {quality: 90}});
+await writeFile('picture.jxl', bytes);
 ```
 
-Takes RGBA `{data, width, height}`, `ImageData`, a canvas (2D, WebGL or WebGPU), an `ImageBitmap`, a `VideoFrame`, a
-`Blob`, a decoded image or a GPU texture `{texture, device}`, and returns a result record with the output in `result.bytes`. 8 or 16-bit, `Float16Array`
-or `Float32Array` samples, including HDR. For animations, including an animated GIF `Blob`, use `rapier-jxl/animation`.
+Takes RGBA `{data, width, height}`, `ImageData`, a canvas, an `ImageBitmap`, a `VideoFrame`, a `Blob` or a GPU texture as `{texture, device}`, in 8 or 16 bits, `Float16Array` or `Float32Array` (HDR).
 
-- Lossless JPEG recompression is `recompress` from `rapier-jxl/jpeg`. In `rapier-jxl/upload`, `encode(jpegFile, {fidelity: 'exact'})` does the same. The full `encode` takes pixels.
-- `fidelity`: `{quality: 1–100}`, default 90. `'exact'` is lossless.
-- `effort`: 1–9, default 7. Lower is faster. Efforts 1–3 suit previews and uploads, 8–9 photography.
-- `webgpu`: efforts 7–9 use WebGPU when available. `'required'` fails without it. `false` turns it off.
-- `maxPixels`: default 40 MP, up to 268,435,456 pixels with neither side over 32,767. Very large images can be passed in strips with `rows(y, count)`.
-- `verify(original, result)` from `rapier-jxl/verify` checks a file against its source.
+- `fidelity`: `{quality: 1–100}`, default 90, or `'exact'`.
+- `effort`: 1–9, default 7 (`jpegxl/max` adds effort 10, its default, for a longer search on still pictures). Efforts 4 and up measure the look.
+- `webgpu`: lossy efforts 7–9 (`jpegxl/max` also lossy and 8-bit lossless effort 10) use WebGPU where it can. Phones use the CPU unless `'required'`. `'required'` refuses without a supported device path. `false` turns it off.
+- `progressive: true`: the first bytes show the whole picture, which sharpens as more of the file arrives (about 2 to 5% larger files).
+- `onPreview` receives better files while efforts 6–9 (`6–10` in `jpegxl/max`) search.
+- The host's memory is the limit.
+- A JPEG stays JPEG and restores exactly with `fidelity: 'exact'` or at a quality level when that can be smaller (efforts 6–9, and 10 in `jpegxl/max`). `jpeg: 'pixels'` encodes its pixels.
+- `jpegxl/animation` takes frames, an animated GIF or browser video, `jpegxl/hdr` reads OpenEXR and Radiance files, and `jpegxl/verify` checks a file against its source.
 
 ## Screenshots
 
-```js
-import {capture} from 'rapier-jxl/capture';
-import {capture as page} from 'rapier-jxl/capture-complete';
+```ts
+import {capture} from 'jpegxl/capture';
+import {capture as capturePage} from 'jpegxl/capture-complete';
+import {pageRects} from 'jpegxl/page-rects';
 
-const screenshot = canvas => capture(canvas); // lossless
-const smaller = (canvas, rects) => page(canvas, {fidelity: {quality: 92}, ...rects}); // lossy photos, lossless text
+const lossless = (canvas: HTMLCanvasElement) => capture(canvas);
+// Lossy photos, exact text. `element` is what a library drew to the canvas.
+const screenshot = (element: HTMLElement, canvas: HTMLCanvasElement) =>
+  capturePage(canvas, {...pageRects(element, canvas), fidelity: {quality: 92}});
 ```
 
-- Canvas (2D, WebGL or WebGPU), `ImageData`, an `ImageBitmap`, a `VideoFrame`, a `Blob` or 8-bit RGBA.
-- `rects` is `{exactRects, photoRects}`: the areas to keep lossless, such as text, and where the photos are.
-- `rapier-jxl/page-rects` finds both in a page element, for any library that draws one to a canvas.
-- Pages up to 32,767 pixels tall in one file. WebP stops at 16,383. Above 40 MP, raise `maxPixels`.
-- Efforts 6–9 check photo quality with the browser's JPEG XL decoder. In Node, Deno, Bun and desktop apps, the one setup
-  step is `configureDecoder(decode)`, with `decode` from `rapier-jxl/decode`.
+`pageRects` finds the text and photos in an element. `exactRects` and `photoRects` take the boxes by hand. Text is exact at every effort.
 
-| Effort | `capture-complete` |
-|---|---|
-| 1–3 | Fast. 3 is the default, 2 for quick saves, 1 for live previews. |
-| 4–5 | Deeper search: smaller text, graphics and photos without quality loss. |
-| 6–9 | Automatically finds the smallest file at the quality you choose. 7–9 also search block sizes. |
+## SnapDOM
+
+```js
+import {snapdom} from '@zumer/snapdom';
+import {jxl} from '@zumer/snapdom-plugins/jxl';
+
+const result = await snapdom(document.querySelector('#card'), {plugins: [jxl()]});
+await result.download({format: 'jxl', filename: 'card'});
+```
+
+[SnapDOM's official JPEG XL plugin](https://snapdom.dev/plugins/jxl/) captures any element as one file. It compresses images inside screenshots while automatically keeping text exact.
+
+## Animation
+
+```js
+import {encode} from 'jpegxl/animation';
+
+const gif = await (await fetch('cat.gif')).blob();
+const {bytes} = await encode(gif);
+```
+
+Upload a video or GIF to make it a much smaller animated JPEG XL without losing its quality. It keeps every frame's timing and the loop count. Frames can also be pixels: `{width, height, loops, frames: [{data, duration}]}`. Give `frames` as an async iterable and each frame is read as the encoder takes it, so an animation of any length converts on a phone. Long animated GIF, PNG and WebP files are read frame by frame the same way.
+
+Animated JPEG XL plays in every browser with `jpegxl/polyfill`, with no GIF, PNG or WebP stored beside it. A long animation plays frame by frame with flat memory.
 
 ## JPEG, decoding, metadata
 
-```js
-import {recompress, restore} from 'rapier-jxl/jpeg';
-import {decode} from 'rapier-jxl/decode';
-import {header} from 'rapier-jxl/metadata';
+```ts
+import {recompress, restore} from 'jpegxl/jpeg';
+import {decode} from 'jpegxl/decode';
+import {header} from 'jpegxl/metadata';
 
-// jpeg: a Uint8Array holding a JPEG file, up to 64 MP.
-const roundTrip = async jpeg => (await restore((await recompress(jpeg)).bytes)).bytes;
-const pixels = async file => decode(file); // {width, height, data}, RGBA
-const size = file => header(file); // synchronous, from a file or its first bytes
+async function roundTrip(jpeg: Uint8Array) {
+  const packed = await recompress(jpeg);
+  if (!packed.meetsTarget) throw new Error(packed.reason.message);
+  return (await restore(packed.bytes)).bytes; // the original JPEG
+}
+const pixels = async (file: Uint8Array) => (await decode(file)).data; // RGBA
+const size = (file: Uint8Array) => header(file); // synchronous
 ```
 
-`rapier-jxl/svg-jxl` converts the images inside any SVG to JPEG XL where that makes them smaller while automatically keeping shapes and text sharp.
-`{exact: true}` keeps the images lossless.
+`decode(file, {onFrame})` hands over each frame of an animation as it is decoded, so memory stays flat for any length.
+
+`recompress(jpeg)` stores a phone photo's HDR gain map as a JPEG XL gain map in `jhgm`, a little smaller, so viewers show the HDR glow. `restore` returns the exact JPEG, though libjxl restores it without the gain map. `{gainMap: false}` keeps the gain map inside `jbrd` only, so every decoder restores the whole JPEG. `jpegxl/resumable` and `jpegxl/max` do the same. `sourceMetadata(file)` from `jpegxl/metadata` reads a JPEG, PNG or WebP file's Exif and XMP, with Exif orientation set to normal, for `edit(bytes, await sourceMetadata(file))`. `slice` and `placeholder` from `jpegxl/metadata` cut a smaller size (1:2, 1:4 or 1:8) from a progressive file in milliseconds, without decoding.
+
+`jpegxl/svg-jxl` converts the pictures inside an SVG and keeps shapes and text sharp.
 
 ## Serving
 
-For recompressed JPEGs, `serve` sends JPEG XL to browsers that support it and the original JPEG to the rest, with
-`Vary: Accept`, ETag, `304` and `HEAD`.
-
-```js
+```ts
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
-import {serve} from 'rapier-jxl/serve';
+import {serve} from 'jpegxl/serve';
 
-// photo.jxl, made once: npx rapier-jxl photo.jpg
-const stored = await readFile('photo.jxl');
-createServer((req, res) => serve(stored, req, res)).listen(3000);
+const stored = await readFile('photo.jxl'); // made once: npx jpegxl photo.jpg
+createServer((req, res) => serve(stored, req, res).catch(console.error)).listen(3000);
 ```
 
-Cloudflare Workers, Deno and Bun: `return serve(stored, request)`. `cacheControl` sets `Cache-Control` (default
-`private, no-cache`).
+`serve` ranks JPEG XL, a restorable JPEG and any supplied fallback by `Accept`, with `Vary: Accept`, ETag, `304` and `HEAD`. Workers, Deno and Bun: `return serve(stored, request)`. A file with no JPEG inside refuses clients without JPEG XL unless you pass `fallback: {type: 'image/webp', bytes}` (bytes, or a function that returns them).
 
-## Resumable encoding
-
-For edge isolates with short time limits: an encode continues across requests in short steps and writes the same file
-as one call.
-
-```js
-import {start, advance, finish} from 'rapier-jxl/resumable';
-import {encode} from 'rapier-jxl/upload';
-import {verify} from 'rapier-jxl/verify';
-
-// store: the original and the job's parts (R2, KV, a database). input names the original:
-// {generation, sha256, byteLength}, with kind: 'file' for an uploaded file.
-const step = async (saved, store, input) => {
-  const job = {operation: encode, store, input, verify};
-  const {checkpoint, done} = await advance(saved ?? await start({...job, options: {fidelity: {quality: 82}}}), job);
-  return done ? {result: await finish(checkpoint, job)} : {checkpoint}; // save checkpoint for the next request
-};
-```
-
-- `capture`, `encode`, `fit`, `variants`, `recompress`, `restore` and `verify`.
-- Each `advance` runs for about 30 ms (`budget: {ms}`) and writes its parts to the store before it returns. A host that allows few store calls a request passes `budget.reads`: the call ends before more reads than that.
-- `verify` from `rapier-jxl/verify` in the job verifies in the advances. `finish` returns the whole-file verifier's
-  receipt in `result.verification` (one per variant). A failed check rejects with `error.verification`. Publish only a finished,
-  verified result. The saved plan keeps this choice for every request.
-- Pixel verification needs the browser's JPEG XL decoding or the host's configured decoder. On a server, call
-  `configureDecoder(decode, restore)` from `rapier-jxl/verify` with `decode` from `rapier-jxl/decode` and `restore` from
-  `rapier-jxl/jpeg` in each new isolate. The resumable module carries no decoder.
-- Keep the original immutable for its `generation` and SHA-256. Save the returned checkpoint with a revision check
-  after its parts are durable, and accept checkpoints only from your service. `finish` assembles the saved output.
-  Hashing, decoding and scoring have already finished in the advances.
-- `workerAdmission({operation, options, width, height})` says whether a job fits a Cloudflare Workers isolate (128 MB), from measured memory per operation, effort and size. A size not measured is not admitted. Convert it in the browser.
-
-For a candidate uploaded separately, use the existing `verify` verb. Store the candidate as immutable, ordered parts
-of at most 1 MiB, each named by its SHA-256. Pass its result metadata without `bytes` or a `verification` receipt:
-
-```js
-import {start, finish} from 'rapier-jxl/resumable';
-import {verify} from 'rapier-jxl/verify';
-
-const job = (store, input) => ({operation: verify, input, store});
-const begin = (store, input, result, parts) => start({...job(store, input), options: {result, parts}});
-// Persist and advance the checkpoint as above. When done, finish returns the receipt:
-const done = (checkpoint, store, input) => finish(checkpoint, job(store, input));
-```
-
-`finish` returns the same receipt as `verify(original, result)` and reads neither image. A failed check rejects with
-`error.verification`. The service verifies the original generation and candidate revision again before publication.
-Metadata supplied by the uploader is a claim to check.
-
-## EmDash
-
-Run in the site's folder:
-
-```sh
-npx rapier-jxl add emdash
-```
-
-For a coding agent: “Add rapier-jxl/emdash to this site, keeping its existing storage and EmDash options.”
-
-For manual setup with EmDash 1.4, install the package and its matching Kumo version:
-
-```sh
-npm install rapier-jxl @cloudflare/kumo@2.6.0
-```
-
-Keep the existing imports and options. Wrap `emdash({...})` with `jxl(emdash, {...})`:
-
-```js
-// astro.config.mjs
-import emdash from 'emdash/astro';
-import {jxl} from 'rapier-jxl/emdash';
-
-export default defineConfig({
-  integrations: [react(), jxl(emdash, {database: d1({binding: 'DB'}), storage: r2({binding: 'MEDIA'})})],
-});
-```
-
-Originals stay in the site's `r2()` storage on Cloudflare or `local()` storage on Node. Browsers that accept JPEG XL
-get verified copies. Other browsers get the original. Open **Plugins → JPEG XL Image Optimizer** to choose the goal, effort
-and widths or convert the existing library. Without `jxl()`, the site serves its originals.
+`width`, `maxBytes` or `responsive: true` send smaller screens a smaller size cut from the same progressive file.
 
 ## Workers and queues
 
-```js
-import {createCodec} from 'rapier-jxl/codec';
+```ts
+import {encode, configure, close} from 'jpegxl/upload';
 
-const queue = createCodec({module: 'rapier-jxl/upload', helpers: {count: 3, memoryBytes: 1 << 30}});
-const photo = (width, height) => ({data: new Uint8Array(width * height * 4).fill(200), width, height});
+configure({helpers: {count: 3, memoryBytes: 1 << 30}});
 try {
-  const files = await Promise.all([photo(1200, 900), photo(300, 225)].map(picture => queue.encode(picture)));
+  const photo = {data: new Uint8Array(1200 * 900 * 4).fill(200), width: 1200, height: 900};
+  const {bytes} = await encode(photo);
 } finally {
-  await queue.close();
+  await close();
 }
 ```
 
-- In browsers, the module runs in a worker (upload: 301 KB Brotli). Node, Deno and Bun run it in the calling thread.
-- With one module, import its codec from `rapier-jxl/codec/<module>`. Bundlers then ship only that module's files.
-- `helpers` adds up to 16 worker threads. `helpers: true` sizes them by the device.
-- Errors carry a `code`, such as `JXL_INPUT`, `JXL_OPTIONS`, `JXL_WASM` or `JXL_WEBGPU`.
+In browsers the module runs in its own worker. Node, Deno and Bun run it in the calling thread alongside `helpers`. `configure` sets a module's queue before its first call and `close()` ends its worker. Canceled calls reject with the signal's reason. Any number of helpers writes the same file as none.
+
+## Resumable encoding
+
+For edge isolates with short time limits: an encode continues across requests in steps and writes the same file as one call.
+
+```ts
+import {start, advance, finish, type ResumableStore} from 'jpegxl/resumable';
+import {encode} from 'jpegxl/upload';
+
+// A Map and store. In production: R2, KV or a database.
+const memoryStore = (original: Uint8Array): ResumableStore => {
+  const parts = new Map<string, Uint8Array>();
+  return {
+    readSource: (offset, length) => original.subarray(offset, offset + length),
+    read: ref => parts.get(ref.hash)!,
+    write: (ref, bytes) => void parts.set(ref.hash, bytes),
+  };
+};
+
+async function run(original: Uint8Array, sha256: string) {
+  const input = {generation: '1', sha256, byteLength: original.length, kind: 'file' as const};
+  const job = {operation: encode, store: memoryStore(original), input};
+  let state = await advance(await start({...job, options: {fidelity: {quality: 82}}}), job);
+  while (!state.done) state = await advance(state.checkpoint, job); // one request each: save the checkpoint
+  return finish(state.checkpoint, job);
+}
+```
+
+`capture`, `encode`, `fit`, `variants`, `recompress`, `restore` and `verify` all resume. An advance runs about 30 ms (`budget: {ms}`) and at least one step, which can take longer. `workerAdmission({operation: encode, width, height})` says whether a job fits a Workers isolate. Accept checkpoints only from your own service.
 
 ## Browsers
 
 ```html
 <script type="module">
-  import {encode} from 'https://cdn.jsdelivr.net/npm/rapier-jxl@8/dist/index.mjs';
-  const {bytes} = await encode(document.querySelector('canvas'));
+  import {encode} from 'https://cdn.jsdelivr.net/npm/jpegxl@8/dist/index.browser.mjs';
+  const canvas = document.querySelector('canvas');
+  if (canvas) await encode(canvas);
 </script>
 ```
 
-- Content Security Policy: `'wasm-unsafe-eval'`. `worker-src blob:` for `rapier-jxl/codec` from a CDN.
-- Every module needs WebAssembly with SIMD (`JXL_WASM` without it), except `restore` and `metadata`.
-- Without native JPEG XL: `import 'rapier-jxl/polyfill'`.
-- Vite, webpack 5, Next.js, Parcel and Astro work as is. A Vite 7 workspace that installs rapier-jxl above the app's
-  folder needs `optimizeDeps: {exclude: ['rapier-jxl']}`. Next.js edge routes: import modules directly, not
-  `rapier-jxl/codec`.
-- Angular: add `{"glob": "*.{worker,helper}.mjs", "input": "node_modules/rapier-jxl/dist", "output": "/"}` to the
-  build's `assets` in `angular.json`. With one module, the glob `<module>.*{worker,helper}.mjs`.
-- Rollup: `@web/rollup-plugin-import-meta-assets` with `assetFileNames: 'assets/[name][extname]'`.
-- esbuild: copy `rapier-jxl/dist/*.worker.mjs` and `*.helper.mjs` beside the bundle. With one module, its
-  `<module>.*{worker,helper}.mjs`.
+- The Content Security Policy needs `'wasm-unsafe-eval'`, and from a CDN `blob:` in `worker-src`.
+- WebAssembly with SIMD is needed.
+- Without native JPEG XL, `install()` from `jpegxl/polyfill` shows `.jxl` and `data:image/jxl` images, and `verify` needs `configureDecoder(decode, restore)` first.
+- Each module's file is its own worker. With esbuild, Rollup or Angular, copy it beside the bundle.
 
-Node 20.16+ or 22.3+, Deno, Bun, Cloudflare Workers.
+## EmDash
+
+```sh
+npx jpegxl add emdash
+```
+
+Originals stay in the site's storage. Browsers that accept JPEG XL get verified copies and the rest get the original. **Plugins → JPEG XL Image Optimizer** sets the goal, effort and widths, and converts the library. The package's `examples/emdash/astro.config.mjs` is a whole config.
+
+## WordPress
+
+```sh
+npx jpegxl add wordpress
+```
+
+Run it in the folder with `wp-config.php`, or add `--path <dir>`. Activate **JPEG XL Images** in **Plugins**. You can also upload the plugin ZIP from the [latest release](https://github.com/jackskip22/rapier-jxl/releases/latest) in **Plugins → Add New → Upload**.
+
+Each upload gets a JPEG XL copy. Browsers without JPEG XL get the original. **Space saver** keeps only JPEG XL. JPEGs restore exactly, and PNG and WebP come back as a JPEG, or a PNG where they need transparency or every pixel kept. **Restore originals** writes every removed file back from its JPEG XL.
+
+## Payload
+
+```sh
+npx jpegxl add payload
+```
+
+Writes a JPEG XL beside every uploaded image and each `imageSizes` size, on local disk or through Payload's storage adapters (S3, R2, Vercel Blob). JPEGs recompress losslessly and restore the original JPEG exactly. `<Picture>` renders `<picture>` with a `<source type="image/jxl">` for each size and the original as fallback, and Payload's file route sends `Vary: Accept`. `jxl({spaceSaver: true})` keeps JPEGs only as JPEG XL: after each upload is saved, a job in Payload's queue checks the stored JPEG against its JPEG XL and only then removes it. `restoreOriginals(payload)` puts every original back.
+
+## Astro
+
+```sh
+npx jpegxl add astro
+```
+
+Then `<Picture src={photo} formats={['jxl', 'webp']} alt="" />`: a browser without JPEG XL takes the WebP. Astro 6 and 7. `jxl({jpeg: 'exact'})` keeps each JPEG restorable exactly.
+
+- [Photos average 24% smaller than Astro's default WebP.](https://github.com/jackskip22/rapier-jxl/blob/main/bench/README.md#astro)
+- [JPEGs 18% smaller, lossless.](https://github.com/jackskip22/rapier-jxl/blob/main/bench/README.md#astro)
+
+## Vite
+
+```sh
+npx jpegxl add vite
+```
+
+Then `import hero from './hero.jpg?jxl'`. Add `?w=640&jxl` for one width or `?w=480;960;1440&jxl` for a `srcset`. Widths re-encode the picture at the selected quality. Vite 6, 7, 8 and Vite+.
+
+- [Photos 39% smaller than WebP and 11% smaller than AVIF at the same look.](https://github.com/jackskip22/rapier-jxl/blob/main/bench/README.md#vite)
+- [Camera JPEGs 17% smaller, lossless.](https://github.com/jackskip22/rapier-jxl/blob/main/bench/README.md#vite)
+
+## webpack
+
+```sh
+npx jpegxl add webpack
+```
+
+Then `import hero from './hero.jpg?jxl'`. webpack 5 and Rspack.
+
+## Next.js
+
+```sh
+npx jpegxl add next
+```
+
+`<Image>` serves JPEG XL to browsers that show it and Next's own image to the rest, with no component changes. After `next build`, each width next/image asks for is written once. Next.js 15 and 16.
+
+- Photos 24% smaller than Next's default WebP at the same look.
+
+## Netlify
+
+```sh
+npx jpegxl add netlify
+```
+
+After each build, every JPEG and PNG the site publishes gets a JPEG XL copy beside it, and browsers that show JPEG XL get that copy at the same address. Everyone else gets the original.
+
+- JPEGs about a fifth smaller, lossless.
+
+## Static sites (GitHub Pages, S3, any static host)
+
+```sh
+npx jpegxl site dist/
+npx jpegxl site dist/ --dry-run
+```
+
+Converts the folder's images with `--keep-extension` and rewrites each HTML file's `<img>` (with its `srcset` and `sizes`) to `<picture>` with `<source type="image/jxl">`, only where every candidate has its `.jxl`. Existing `<picture>` elements with a JPEG XL source stay untouched, and images inside `<script>`, `<template>`, comments or attribute text are never changed. A second run changes nothing. `--dry-run` lists what it would change.
+
+## Apache, nginx and Caddy
+
+```sh
+npx jpegxl public/ --keep-extension
+npx jpegxl add apache public/
+npx jpegxl add nginx public/
+npx jpegxl add caddy public/
+```
+
+Serves `.jxl` beside JPEG, PNG, WebP and GIF to browsers that send `Accept: image/jxl`, and the original to everyone else, with `Vary: Accept`. `add apache` updates `.htaccess` between `# BEGIN jpegxl` and `# END jpegxl` markers and works on LiteSpeed too. `add nginx` writes `jpegxl.conf` and `add caddy` writes `jpegxl.caddy`, printing the one `include` or `import` line and reload command. Add `--url https://example.com` to check whether a CDN in front of the site honors `Vary: Accept`.
+
+## Cloudflare Workers
+
+```sh
+npx jpegxl public/ --keep-extension
+npx jpegxl add workers --route example.com/*
+npx jpegxl add workers --paid --space-saver --route example.com/*
+```
+
+On Workers Free, the Worker serves the JPEG XL files to compatible browsers and the original to the rest. A request with a cookie or `Authorization` gets the site's own answer. `--paid` also encodes missing ones in the Worker and keeps them in R2. With `--space-saver` on Workers Paid, JPEGs are stored only as exact JPEG XL after restoring with `jpegxl/jpeg` and checking the SHA-256 against the stored JPEG (any mismatch keeps the original, and other formats keep their originals). The Worker rebuilds the original JPEG for browsers without JPEG XL and for share previews, with `Cache-Control` and `Vary: Accept`. Run `node jxl-space-saver.mjs public/` to retire JPEGs in a static folder and `node jxl-space-saver.mjs --restore public/` (or `restoreOriginals(env)` in R2) to rebuild every removed original.
+
+- [Phone JPEGs 18% smaller, lossless.](https://github.com/jackskip22/rapier-jxl/blob/main/bench/README.md#cloudflare-workers)
+
+## Cloudflare R2
+
+```sh
+npx jpegxl add r2 --bucket photos
+npx jpegxl add r2 --bucket photos --space-saver
+```
+
+Every JPEG and PNG put in the bucket gets a JPEG XL beside it: a JPEG's restores the original JPEG, a PNG's keeps every pixel. A picture too large for one Worker call runs as a Workflow, step by step from resumable checkpoints. Reads get the JPEG XL when the browser accepts it and the original otherwise. With `--space-saver` (`JXL_SPACE_SAVER="on"`), each JPEG is restored and its SHA-256 compared with the stored JPEG before removing the original, while PNGs and other formats keep their originals. Browsers without JPEG XL and share previews receive the rebuilt original JPEG with `Cache-Control` and `Vary: Accept`. Call `restoreOriginals(env)` or send `{"action":"RestoreOriginals"}` to the queue to rebuild every removed original.
+
+## Cloudflare Agents
+
+```sh
+npx jpegxl add agents
+```
+
+In an Agents SDK project: an MCP server with five JPEG XL tools, `jxl_convert`, `jxl_recompress`, `jxl_restore`, `jxl_verify` and `jxl_inspect`, and the same tools for an Agent class. Pictures stay in R2 and the tools pass their keys, never the bytes, through the conversation.
+
+## Flutter
+
+```sh
+npx jpegxl add flutter
+```
+
+A Dart package runs the encoder in a hidden web view, offline, with no native codec. Android 8.0, iOS 16.4 and macOS 13.3 or newer.
+
+```dart
+import 'package:rapier_jxl/rapier_jxl.dart';
+
+final codec = JXLCodec();
+final jxl = await codec.encode(photoBytes, quality: 80, effort: 3);
+final clip = await codec.animateVideo(mp4Bytes, type: 'video/mp4');
+```
+
+## React Native and Expo
+
+```sh
+npx jpegxl add expo
+```
+
+A hidden WebView runs the encoder, so Expo managed apps and Expo Go work unchanged. Nothing leaves the device.
+
+```tsx
+const App = () => <JXLProvider><Screen /></JXLProvider>;
+const jxl = useJXL(); // in Screen
+const out = await jxl.encode(photo, {quality: 80, effort: 3});
+```
+
+## Capacitor
+
+```sh
+npx jpegxl add capacitor
+```
+
+The encoder runs in web workers inside the app. Capacitor's Filesystem plug-in saves the file. There is no codec bridge.
+
+## Electron
+
+```sh
+npx jpegxl add electron
+```
+
+The browser files run in Electron's window as they are: no native codec and no rebuild. The Node files run in the main process too.
+
+## Tauri
+
+```sh
+npx jpegxl add tauri
+```
+
+The browser files run in Tauri 2's web view: WebView2 on Windows, WebKit on macOS, WebKitGTK on Linux. No Rust codec crate. The Rust side stays yours.
+
+Native code is faster. rapier-jxl doesn't need any and brings everything above to the phone: quality measured visually, text kept exact in screenshots and the same files as on the web.
+
+## Errors
+
+Every refusal carries a `code`:
+
+| Code | Meaning |
+| --- | --- |
+| `JXL_OPTIONS` | An option is unknown or not allowed. |
+| `JXL_INPUT` | The input is missing, empty, wrong for the call, or changed while read. |
+| `JXL_DIMENSIONS` | The picture is larger than the format or the host allows. |
+| `JXL_JPEG`, `JXL_DECODE` | Not a JPEG, or not a valid JPEG XL file. |
+| `JXL_RECONSTRUCTION` | No JPEG reconstruction data in the file. |
+| `JXL_TARGET` | The fidelity asked for cannot be reached. |
+| `JXL_PLATFORM` | This host cannot decode the input or lacks an API. |
+| `JXL_MEMORY`, `JXL_LIMIT` | Not enough memory, or a byte or queue bound you set. |
+| `JXL_WASM`, `JXL_WEBGPU` | No WebAssembly with SIMD, or `webgpu: 'required'` with no device. |
+| `JXL_WORKER`, `JXL_IO` | A worker would not start, or a Blob or image could not be read. |
+| `JXL_CLOSED` | The codec is closed. |
+| `JXL_SETUP` | `npx jpegxl add` or `remove` cannot recognize or safely change the project. Nothing was changed. |
+| `JXL_UNSUPPORTED` | A valid request this version does not do. |
+| `JXL_INTERNAL` | A fault in rapier-jxl. |
 
 ## License
 
 MIT. Third-party notices: `THIRD_PARTY_NOTICES`.
 
+## Agents
+
+```sh
+npx jpegxl photos/ --out out/ --json
+```
+
+The package contains an agent skill, `skills/rapier-jxl/SKILL.md` with files and folders, byte budgets and JPEGs restored exactly. With `--json` there is one JSON object per file and a summary, and nothing else on stdout. `npx jpegxl add <place>` sets up any of the 22 places above. In a chat, [Rapier's MCP server](https://rapier.website/agents) converts pictures to JPEG XL.
+
+## Help by testing on your phone
+
+It is very complicated to optimize encoder speed for every phone's GPU and rapier-jxl is meant to be great on every device. Open [rapier.website/docs/jxl-job.html](https://rapier.website/docs/jxl-job.html) on your phone and tap **Start**. It encodes a photo and a camera picture with and without WebGPU, checks that every file is the same, and logs the times automatically when it's done. All you have to do is leave the browser open for about 10 minutes on your iPhone or Android phone.
+
 ## Contributing
 
-Anybody is welcome to contribute to rapier-jxl, which is intended to be as universal as possible. You can also greatly assist the project by simply performing tests on your computer which is always turning up new edge cases to improve the encoder. Testing on every kind of device is essential for a universal encoder. Check the jobs/ folder in the repo root, open an issue with the job's name as its title if you've started work on it, then please submit your results by attaching them to that issue.
+Anybody is welcome to contribute to rapier-jxl, which is intended to be as universal as possible. You can also greatly assist the project by simply performing tests on your computer or phone which is always turning up new edge cases to improve the encoder. Testing on every kind of device is essential for a universal encoder. Check the jobs/ folder in the repo root, open an issue with the job's name as its title if you've started work on it, then please submit your results by attaching them to that issue.
 
 For feedback, requests or questions, feel free to join the discussion. The goal is to make rapier-jxl as easy, fast, small, powerful and reliable as possible for every use case, while keeping the architecture simple and general.
 

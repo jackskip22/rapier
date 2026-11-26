@@ -23,7 +23,7 @@ Windows and Linux, phone-first and offline. A person and an agent work in the sa
 
 ## Work with the person
 
-The public door has seven tools: `open`, `read`, `edit`, `undo`, `show`, `export` and `convert` (pictures to JPEG XL and back, no document).
+The public door has eight tools: `open`, `read`, `edit`, `undo`, `show`, `export`, `convert` (pictures to JPEG XL and back, no document) and `feedback` (a short line to the Rapier team when Rapier let the person down, no document).
 Read exact text and its revision before applying literal changes. Scope by heading or block when text repeats.
 A batch is atomic. A moved numeric revision can apply while its exact matches remain untouched and retained
 history reaches that revision. Conflicts return current context or candidate lines. Keep act as its id string. Preserve human typing and Will regions.

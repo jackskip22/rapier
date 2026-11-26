@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import test from 'node:test';
+import '../kernels.mjs';
 import assert from 'node:assert/strict';
 import {inspectPixels, shapeScan, shapeScanPixels, shapeResult} from '../lossless.mjs';
 

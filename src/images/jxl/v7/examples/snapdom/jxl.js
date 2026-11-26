@@ -1,23 +1,23 @@
 import { measure, pageRects } from 'rapier-jxl/page-rects';
 
 export function jxl(options = {}) {
-  const { module = 'rapier-jxl/capture-complete', codec, effort: preset, webgpu, helpers: asked } = options;
-  const helpers = asked && typeof asked === 'object'
-    ? { count: asked.count, ...(asked.memoryBytes !== undefined && { memoryBytes: asked.memoryBytes }) } : asked || undefined;
-  const id = JSON.stringify([module, helpers, preset, webgpu]);
+  const { module = 'rapier-jxl/capture-complete', codec, effort: preset, webgpu } = options;
+  const id = JSON.stringify([module, preset, webgpu]);
   const made = codec ? byCodec.get(codec) ?? byCodec.set(codec, new Map()).get(codec) : plugins;
-  if (!made.has(id)) made.set(id, create(module, codec, preset, webgpu, helpers));
+  if (!made.has(id)) made.set(id, create(module, codec, preset, webgpu));
   return made.get(id);
 }
 
 const plugins = new Map(), byCodec = new WeakMap();
 
-function create(module, codec, preset, webgpu, helpers) {
-  const key = JSON.stringify([module, helpers]);
+function create(name, codec, preset, webgpu) {
+  const module = typeof name === 'string' ? name.replace(/^jpegxl\//, 'rapier-jxl/') : name;
   const exactOnly = module === 'rapier-jxl/capture';
   const edges = module !== 'rapier-jxl/upload';
-  if (!DOORS[module]) throw new Error(`The jxl plugin's module is ${Object.keys(DOORS).join(', ')} or left out.`);
-  if (!codec) DOORS[module]().catch(() => {});
+  if (!MODULES.includes(module)) throw new Error(`The jxl plugin's module is ${MODULES.join(', ')} or left out.`);
+  if (webgpu !== undefined && module !== COMPLETE) throw new Error(`jxl({module: '${name}'}) runs on WebAssembly; remove webgpu.`);
+  if (!codec && module !== COMPLETE) throw new Error(`jxl({module: '${name}'}) needs its codec: import * as codec from '${name}' and pass {codec}.`);
+  if (!codec) door().catch(() => {});
   return {
     name: 'jxl',
     pure: true,
@@ -26,56 +26,92 @@ function create(module, codec, preset, webgpu, helpers) {
       afterClone(context) {
         const element = context.element;
         const keep = context.nodeMap ? new Set(context.nodeMap.values()) : undefined;
-        context[SNAPSHOT] = element ? { ...measured(measure, element, edges, keep), frame: frameOf(element, context.outerTransforms !== false) } : null;
+        try {
+          context[SNAPSHOT] = element ? { ...measured(measure, element, edges, keep), frame: frameOf(element, context.outerTransforms !== false) } : null;
+        } catch (error) {
+          context[SNAPSHOT] = { error };
+        }
       },
     }),
 
     defineExports: ({ exports }) => {
-      const encoded = async (context, options) => {
+      const encodedOnce = async (context, options, callbacks) => {
         const asked = context.export?.requestedOptions ?? {}, pick = k => options[k] !== undefined ? options[k] : asked[k];
         const effort = pick('effort') ?? preset, signal = pick('signal'), onProgress = pick('onProgress'), onEncoded = pick('onEncoded');
+        const observe = async (callback, value) => {
+          try { await abortable(Promise.resolve(callback(value)), signal); }
+          catch (error) { callbacks.failed = true; throw error; }
+        };
         signal?.throwIfAborted();
-        if (!codec && !codecs.has(key)) {
-          codecs.set(key, DOORS[module]().then(({ createCodec }) => createCodec({ module, maxPixels: MAX_PIXELS, ...(helpers !== undefined && { helpers }) }),
-            error => { codecs.delete(key); throw needs(error); }));
+        if (context[SNAPSHOT]?.error) throw context[SNAPSHOT].error;
+        const encoder = codec ?? await abortable(door(), signal);
+        (module === 'rapier-jxl/upload' ? encoder.prepare('capture') : encoder.prepare()).catch(() => {});
+        const drawOptions = { ...options }, suppliedCanvas = drawOptions.canvas;
+        let canvas;
+        try {
+          await abortable(Promise.resolve(exports.canvas(drawOptions)).then(drawn => {
+            if (signal?.aborted) {
+              if (drawn !== suppliedCanvas) free(drawn);
+              signal.throwIfAborted();
+            }
+            canvas = drawn;
+          }), signal);
+          signal?.throwIfAborted();
+
+          const quality = Number.isFinite(options.quality) && options.quality >= 0 && options.quality <= 1 ? options.quality : 0.92;
+          const photo = { quality: Math.max(1, quality * 100) };
+          const both = o => Number.isFinite(o?.width) && o.width > 0 && Number.isFinite(o?.height) && o.height > 0;
+          const fitted = both(context) && !safari(), exported = both(options) && firefox() && options;
+          const shot = inView(context[SNAPSHOT], context.meta, fitted, exported, options.crop);
+          const unclipped = shot && safari() && context.meta?.clip ? inView(context[SNAPSHOT], { ...context.meta, clip: null }, fitted, exported, options.crop) : null;
+          const area = {};
+
+          const naturalW = shot?.box.width, naturalH = shot?.box.height;
+          const below = !!(shot && naturalW && naturalH &&
+            (canvas.width < Math.floor(naturalW) || canvas.height < Math.floor(naturalH)));
+          const measured = [shot, unclipped].filter(Boolean).map(s => pageRects(s, canvas, { area, edges: !below && (effort ?? 3) >= 4 }));
+          let rects = quality < 1 && !exactOnly && measured.length
+            ? { exactRects: measured.flatMap(r => r.exactRects), photoRects: measured.flatMap(r => r.photoRects),
+              ...(measured.every(r => r.textComplete === true) && { textComplete: true }) } : null;
+          if (below && (!rects?.photoRects?.length || atLimit(canvas))) rects = null;
+          if (rects && !below) {
+            const under = await abortable(withoutText(context, options, canvas, rects), signal).catch(error => { if (signal?.aborted) throw error; return null; });
+            if (under) rects = { ...rects, withoutText: under };
+          }
+
+          const base = { ...(effort !== undefined && { effort }), ...(webgpu !== undefined && { webgpu }), ...(signal && { signal }) };
+          const rising = onProgress && (f => { if (f < 1) return observe(onProgress, f); });
+          const file = below && rects
+            ? await smaller(encoder, canvas, base, [{ fidelity: photo, ...rects }, { fidelity: 'exact' }], { signal, onProgress: rising })
+            : await encoder.capture(canvas, {
+              ...(rects ? { fidelity: photo, ...rects } : { fidelity: 'exact' }),
+              ...base, ...(rising && { onProgress: rising }),
+            });
+          signal?.throwIfAborted();
+          bytesOf(file);
+          const record = { exact: file.kept === 'pixels', ...(file.textMarks && { textMarks: file.textMarks }) }, { exact } = record;
+          if (onEncoded != null) await observe(onEncoded, record);
+          signal?.throwIfAborted();
+          if (onProgress != null) await observe(onProgress, 1);
+          signal?.throwIfAborted();
+          return { blob: new Blob([bytesOf(file)], { type: 'image/jxl' }), canvas, exact, own: canvas !== suppliedCanvas };
+        } catch (error) {
+          if (canvas !== suppliedCanvas) free(canvas);
+          throw error;
         }
-        const encoder = codec ?? await abortable(codecs.get(key), signal);
-        encoder.prepare('capture').catch(() => {});
-        const canvas = await abortable(exports.canvas({ ...options, backgroundColor: options.backgroundColor ?? '#ffffff' }), signal);
-        signal?.throwIfAborted();
-
-        const { quality = 0.92 } = options;
-        const photo = { quality: Math.max(1, quality * 100) };
-        const both = o => Number.isFinite(o.width) && Number.isFinite(o.height);
-        const fitted = both(context) && !safari(), exported = both(options) && firefox() && options;
-        const shot = inView(context[SNAPSHOT], context.meta, fitted, exported);
-        const unclipped = shot && safari() && context.meta?.clip ? inView(context[SNAPSHOT], { ...context.meta, clip: null }, fitted, exported) : null;
-        const area = {};
-
-        const naturalW = shot?.box.width, naturalH = shot?.box.height;
-        const below = !!(shot && naturalW && naturalH &&
-          (canvas.width < Math.floor(naturalW) || canvas.height < Math.floor(naturalH)));
-        const measured = [shot, unclipped].filter(Boolean).map(s => pageRects(s, canvas, { area, edges: !below && (effort ?? 3) >= 4 }));
-        let rects = quality < 1 && !exactOnly && measured.length
-          ? { exactRects: measured.flatMap(r => r.exactRects), photoRects: measured.flatMap(r => r.photoRects),
-            ...(measured.every(r => r.textComplete === true) && { textComplete: true }) } : null;
-        if (below && (!rects?.photoRects?.length || atLimit(canvas))) rects = null;
-
-        let exact = false;
-        const base = { ...(effort !== undefined && { effort }), ...(webgpu !== undefined && { webgpu }), ...(signal && { signal }) };
-        const hooks = { signal, onProgress, onEncoded: record => { exact = record?.exact; onEncoded?.(record); } };
-        const file = below && rects
-          ? await smaller(encoder, canvas, base, [{ fidelity: photo, ...rects }, { fidelity: 'exact' }], hooks)
-          : await encoder.capture(canvas, {
-            ...(rects ? { fidelity: photo, ...rects } : { fidelity: 'exact' }),
-            ...base, ...(onProgress !== undefined && { onProgress }), onEncoded: hooks.onEncoded,
-          });
-        signal?.throwIfAborted();
-        return { blob: new Blob([bytesOf(file)], { type: 'image/jxl' }), canvas, exact };
+      };
+      const encoded = async (context, options) => {
+        const callbacks = {failed: false};
+        try { return await encodedOnce(context, options, callbacks); } catch (error) {
+          if (callbacks.failed) throw error;
+          const asked = context.export?.requestedOptions ?? {}, signal = options.signal !== undefined ? options.signal : asked.signal;
+          if (!blankCanvas(error) || options.canvas || signal?.aborted) throw error;
+          return encodedOnce(context, options, callbacks);
+        }
       };
       const encode = async (context, options) => {
-        const { blob, canvas } = await encoded(context, options);
-        if (canvas !== options.canvas) free(canvas);
+        const { blob, canvas, own } = await encoded(context, options);
+        if (own) free(canvas);
         return blob;
       };
       const isJxl = (context, options) => {
@@ -88,8 +124,8 @@ function create(module, codec, preset, webgpu, helpers) {
 
       return {
         jxl: async (context, options = {}) => {
-          const { blob, canvas: drawn, exact } = await encoded(context, options);
-          return image(blob, drawn, drawn !== options.canvas, options.dpr || 1, signalOf(context, options), exact);
+          const { blob, canvas: drawn, exact, own } = await encoded(context, options);
+          return image(blob, drawn, own, options.dpr || 1, signalOf(context, options), exact);
         },
         blob: (context, options = {}) => isJxl(context, options) ? encode(context, options) : exports.blob(options),
         async download(context, options = {}) {
@@ -109,15 +145,12 @@ function create(module, codec, preset, webgpu, helpers) {
 const SNAPSHOT = Symbol('jxl measurement');
 const atLimit = ({ width, height }) => [16384, 32767].includes(Math.max(width, height)) || width * height > 0.99 * 16384 * 16384;
 const MAX_PIXELS = 16384 * 16384;
-const codecs = new Map();
-let decoder = null;
+let decoder = null, complete = null;
 
-const DOORS = {
-  'rapier-jxl/capture-complete': () => import('rapier-jxl/codec/capture-complete'),
-  'rapier-jxl/capture': () => import('rapier-jxl/codec/capture'),
-  'rapier-jxl/upload': () => import('rapier-jxl/codec/upload'),
-};
-const needs = error => new Error('The jxl plugin needs rapier-jxl 8.3.2 or later: npm install rapier-jxl', { cause: error });
+const COMPLETE = 'rapier-jxl/capture-complete';
+const MODULES = [COMPLETE, 'rapier-jxl/capture', 'rapier-jxl/upload'];
+const door = () => complete ??= import('rapier-jxl/capture-complete').catch(error => { complete = null; throw needs(error); });
+const needs = error => new Error('The jxl plugin needs rapier-jxl 8.4.0 or later: npm install rapier-jxl', { cause: error });
 
 function measured(measure, element, edges, keep) {
   const lift = keep ? liftOf(element) : 0;
@@ -223,14 +256,21 @@ function scaleSkew({ a, b, c, d }) {
   return new DOMMatrix([sx, 0, sy ? shear : 0, sy, 0, 0]);
 }
 
-function inView(shot, meta, fitted, exported) {
-  if (!shot?.frame || !meta || !Number.isFinite(meta.vbW)) return null;
+function inView(shot, meta, fitted, exported, crop) {
+  if (!shot?.frame || !meta || !(Number.isFinite(meta.vbW) && meta.vbW > 0 && Number.isFinite(meta.vbH) && meta.vbH > 0)) return null;
   const { contentX = 0, contentY = 0, vbW, vbH, clip, targetW, targetH } = meta, { toDrawn } = shot.frame;
-  let width = vbW, height = vbH;
+  let width = vbW, height = vbH, left = 0, top = 0;
   const fit = (w, h) => { const k = Math.min(w / width, h / height); width = w / k; height = h / k; };
-  if (fitted && targetW && targetH) fit(targetW, targetH);
-  if (exported) fit(exported.width, exported.height);
-  const dx = contentX - (clip?.x ?? 0) + (width - vbW) / 2, dy = contentY - (clip?.y ?? 0) + (height - vbH) / 2;
+  if (crop) {
+    if (fitted && targetW && targetH || exported) return null;
+    left = Math.max(0, crop.x); top = Math.max(0, crop.y);
+    width = Math.min(vbW, crop.x + crop.width) - left; height = Math.min(vbH, crop.y + crop.height) - top;
+    if (!(width > 0 && height > 0)) return null;
+  } else {
+    if (fitted && Number.isFinite(targetW) && targetW > 0 && Number.isFinite(targetH) && targetH > 0) fit(targetW, targetH);
+    if (exported) fit(exported.width, exported.height);
+  }
+  const dx = contentX - (clip?.x ?? 0) - left + (crop ? 0 : (width - vbW) / 2), dy = contentY - (clip?.y ?? 0) - top + (crop ? 0 : (height - vbH) / 2);
   const move = r => {
     const ps = [[r.left, r.top], [r.right, r.top], [r.left, r.bottom], [r.right, r.bottom]].map(([x, y]) => toDrawn({ x, y }));
     const xs = ps.map(p => p.x + dx), ys = ps.map(p => p.y + dy);
@@ -243,6 +283,60 @@ function inView(shot, meta, fitted, exported) {
     ...(shot.textComplete === true && { textComplete: true }),
     ...(shot.edges && { edges: shot.edges.map(move) }),
   };
+}
+
+const MASK = encodeURIComponent('@layer snapdom-mask{*{color:#fff!important;-webkit-text-fill-color:#fff!important;' +
+  'background:none!important;border-color:transparent!important;box-shadow:none!important;text-shadow:none!important;' +
+  'outline:none!important}img,video,canvas,iframe,foreignObject svg{visibility:hidden!important}}');
+async function withoutText(context, options, canvas, rects) {
+  if (typeof HTMLCanvasElement === 'undefined' || !(canvas instanceof HTMLCanvasElement)) return null;
+  const over = rects.exactRects.filter(r => !r.edge && rects.photoRects.some(p => r.x < p.x + p.width && p.x < r.x + r.width && r.y < p.y + p.height && p.y < r.y + r.height));
+  const url = over.length ? context.export?.url : null, meta = context.meta;
+  if (typeof url !== 'string' || !url.startsWith('data:image/svg+xml') || !meta || !Number.isFinite(meta.vbW)) return null;
+  const at = url.search(/%3Cstyle(%20|%3E)/), end = at < 0 ? -1 : url.indexOf('%3E', at) + 3;
+  if (end < 3) return null;
+  const img = new Image();
+  img.src = url.slice(0, end) + MASK + url.slice(end);
+  await img.decode();
+  const { width: w, height: h } = canvas, crop = options.crop, kx = img.naturalWidth / meta.vbW, ky = img.naturalHeight / meta.vbH;
+  const draw = document.createElement('canvas');
+  draw.width = w; draw.height = h;
+  const g = draw.getContext('2d', { willReadFrequently: true });
+  let alpha = null;
+  try {
+    for (let tries = 0; tries < 2 && !alpha; tries++) {
+      g.clearRect(0, 0, w, h);
+      if (crop) {
+        const x = Math.max(0, crop.x), y = Math.max(0, crop.y);
+        g.drawImage(img, x * kx, y * ky, (Math.min(meta.vbW, crop.x + crop.width) - x) * kx, (Math.min(meta.vbH, crop.y + crop.height) - y) * ky, 0, 0, w, h);
+      } else g.drawImage(img, 0, 0, w, h);
+      const a = g.getImageData(0, 0, w, h).data;
+      for (let i = 3; i < a.length; i += 4) if (a[i]) { alpha = a; break; }
+    }
+  } finally { free(draw); }
+  if (!alpha) return null;
+  const grow = safari() && /(box|text)-shadow%3A(?:[^%]|%(?!3B|7D|22))*?px/i.test(url) ? 2 : 0;
+  let mask = new Uint8Array(w * h);
+  for (let i = 0; i < mask.length; i++) mask[i] = alpha[i * 4 + 3] ? 1 : 0;
+  if (grow) {
+    const out = new Uint8Array(mask.length);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x])
+      for (let dy = Math.max(0, y - grow); dy <= Math.min(h - 1, y + grow); dy++) out.fill(1, dy * w + Math.max(0, x - grow), dy * w + Math.min(w - 1, x + grow) + 1);
+    mask = out;
+  }
+  const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data, under = new Uint8ClampedArray(data);
+  for (let y = 0; y < h; y++) {
+    let last = -1;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!mask[i]) { last = i; continue; }
+      let from = last;
+      if (from < 0) for (let r = x + 1; r < w; r++) if (!mask[y * w + r]) { from = y * w + r; break; }
+      if (from >= 0) under.set(data.subarray(from * 4, from * 4 + 4), i * 4);
+      if (under[i * 4] === data[i * 4] && under[i * 4 + 1] === data[i * 4 + 1] && under[i * 4 + 2] === data[i * 4 + 2]) under[i * 4] ^= 1;
+    }
+  }
+  return { data: under, width: w, height: h, rects: over.map(({ x, y, width, height }) => ({ x, y, width, height })) };
 }
 
 let showsJxl;
@@ -259,8 +353,7 @@ async function image(blob, drawn, own, dpr, signal, exact) {
       if (signal?.aborted) throw signal.reason;
       if (showsJxl === undefined) showsJxl = false;
       if (!exact) {
-        decoder ??= import('rapier-jxl/codec/decode').then(({ createCodec }) => createCodec({ module: 'rapier-jxl/decode', maxPixels: MAX_PIXELS }),
-          error => { decoder = null; throw needs(error); });
+        decoder ??= import('rapier-jxl/decode').catch(error => { decoder = null; throw needs(error); });
         const { data, width: w, height: h } = await wait((await wait(decoder)).decode(blob, { format: 'uint8', colorSpace: 'srgb', maxPixels: MAX_PIXELS, ...(signal && { signal }) }));
         decoded = document.createElement('canvas');
         decoded.width = w;
@@ -279,6 +372,8 @@ async function image(blob, drawn, own, dpr, signal, exact) {
   img.style.height = height || `${img.naturalHeight / dpr}px`;
   return img;
 }
+
+const blankCanvas = error => error?.code === 'JXL_PLATFORM' && /\bblank\b/.test(error?.message ?? '');
 
 function free(canvas) {
   if (typeof HTMLCanvasElement !== 'undefined' && canvas instanceof HTMLCanvasElement) canvas.width = canvas.height = 0;
@@ -316,39 +411,45 @@ async function save(blob, filename) {
 
 async function smaller(encoder, canvas, base, jobs, hooks) {
   const span = 1 / jobs.length;
-  let best = null, record = null;
+  let best = null;
   for (let i = 0; i < jobs.length; i++) {
-    let got = null;
     const result = await encoder.capture(canvas, {
       ...base, ...jobs[i],
-      onProgress: hooks.onProgress && (f => { if (f < 1) hooks.onProgress(i * span + f * span); }),
-      onEncoded: r => { got = r; },
+      onProgress: hooks.onProgress && (f => { if (f < 1) return hooks.onProgress(i * span + f * span); }),
     });
-    if (result.fits && result.bytes && (!best || result.bytes.byteLength < best.bytes.byteLength)) { best = result; record = got; }
+    if (result.meetsTarget && result.bytes && (!best || result.bytes.byteLength < best.bytes.byteLength)) best = result;
   }
   hooks.signal?.throwIfAborted();
   bytesOf(best);
-  hooks.onEncoded(record ?? { exact: false });
-  hooks.signal?.throwIfAborted();
-  hooks.onProgress?.(1);
   hooks.signal?.throwIfAborted();
   return best;
 }
 
 function bytesOf(result) {
-  if (!result?.fits || !result.bytes) {
-    throw Object.assign(new Error(result?.reason?.message ?? 'The JPEG XL file did not meet the requested target.'),
+  if (!result?.meetsTarget || !result.bytes) {
+    throw Object.assign(new Error(result?.reason?.message ?? "No output meets the target; adjust fidelity or size."),
       { code: result?.reason?.code ?? 'JXL_UNSUPPORTED' });
   }
   return result.bytes;
 }
 
 function abortable(promise, signal) {
-  if (!signal) return promise;
+  if (!signal) return Promise.resolve(promise);
   return new Promise((resolve, reject) => {
-    const stop = () => reject(signal.reason);
-    signal.addEventListener('abort', stop, { once: true });
-    if (signal.aborted) stop();
-    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
+    let done = false;
+    const finish = (settle, value) => {
+      if (done) return;
+      done = true;
+      try { signal.removeEventListener('abort', stop); }
+      catch (reason) { if (settle === resolve) { reject(reason); return; } }
+      settle(value);
+    };
+    const stop = () => {
+      try { if (signal.aborted) finish(reject, signal.reason); }
+      catch (reason) { finish(reject, reason); }
+    };
+    Promise.resolve(promise).then(value => finish(resolve, value), error => finish(reject, error));
+    try { signal.addEventListener('abort', stop, { once: true }); stop(); }
+    catch (reason) { finish(reject, reason); }
   });
 }

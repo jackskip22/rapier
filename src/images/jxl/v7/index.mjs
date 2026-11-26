@@ -1,12 +1,6 @@
-import {RAW_OPERATION} from './result-operation.mjs';
-export * from './still.mjs';
-import {encode, prepare as prepareStill} from './still.mjs';
-import {preparation} from './preparation.mjs';
-import {readPNG16} from '../source.mjs';
-import {orientSamples, resizeSamples} from '../sample-transforms.mjs';
-import {verbSteps, STEPS} from './verb-steps.mjs';
-
-export const {fit, variants} = preparation(encode[RAW_OPERATION], {deep: async () => ({readSource: bytes => readPNG16(bytes, {named: true}), orient: orientSamples}), orient: orientSamples, resize: resizeSamples, fitTarget: true});
-if (!(typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true)) Object.defineProperty(fit, STEPS, {value: verbSteps('fit:rapier-jxl', fit, {taken: ['maxBytes', 'fidelity', 'effort', 'readAs', 'maxPixels', 'features', 'webgpu'], rows: true, files: true})});
-if (!(typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true)) Object.defineProperty(variants, STEPS, {value: verbSteps('variants:rapier-jxl', variants, {taken: ['outputs', 'fidelity', 'effort', 'readAs', 'maxPixels', 'features', 'webgpu']})});
-export const prepare = (operation = 'encode') => prepareStill(operation === 'fit' || operation === 'variants' ? 'encode' : operation);
+// SPDX-License-Identifier: MIT
+import './engines.mjs';
+import {fullEntry} from './full-entry.mjs';
+export {supported} from './capture-support.mjs';
+export {configureDecoder} from '../shown-picture.mjs';
+export const {encode, fit, variants, prepare, configure, close} = fullEntry('rapier-jxl', () => new URL(import.meta.url));

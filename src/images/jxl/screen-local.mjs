@@ -6,7 +6,8 @@ import {ALPHABET, leaf, writeTree, writeModularHeader, writeChannelHistograms} f
 import {colourTransform} from './rct-search.mjs';
 import {transformRanking} from './capture-trees.mjs';
 import {screenPlan, lookupPalette} from './screen.mjs';
-import {screenModel, writeScreenModel} from './screen-lz77.mjs';
+import {screenModel} from './screen-lz77.mjs';
+import {writeCaptureStream} from './capture-modular-stream.mjs';
 import {admitOutputSize} from './admit.mjs';
 
 function localPlan(rgba, width, height, shape, mode) {
@@ -74,10 +75,10 @@ function* localScreenCandidate(rgba, width, height, shape, colorSpace,
       for (const [attempt, depth] of depths.entries()) {
         const writer = new BitWriter(256);
         if (layout.single) { writer.write(1, 1); writer.write(1, 1); }
-        else writeModularHeader(writer, {useGlobalTree: false, transforms: choice.transforms});
-        const write = writeScreenModel(writer, planes.map(({plane, width, height}) => screenModel(plane, width, height, depth, minLength)));
-        if (layout.single) writeModularHeader(writer, {transforms: choice.transforms});
-        write();
+        writeCaptureStream(writer, planes.map(({plane, width, height}) => screenModel(plane, width, height, depth, minLength)), null, {
+          global: layout.single,
+          transforms: choice.transforms,
+        });
         const bytes = writer.finish();
         candidates?.push({mode, depth, bytes: bytes.length});
         if (!best || bytes.length < best.length) { best = bytes; selected = {mode, depth, bytes: bytes.length}; }
@@ -96,7 +97,7 @@ function* localScreenCandidate(rgba, width, height, shape, colorSpace,
 export function* localScreenSteps(rgba, width, height, shape, colorSpace, options) {
   try { return yield* localScreenCandidate(rgba, width, height, shape, colorSpace, options); }
   catch (error) {
-    if (error.code === 'JXL_SIZE' || error instanceof RangeError && !error.code) return null;
+    if (error.code === 'JXL_SIZE') return null;
     throw error;
   }
 }

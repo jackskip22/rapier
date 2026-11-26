@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {fault} from './fault.mjs';
+import {sha256Start, sha256Update, sha256Finish} from './sha256.mjs';
 
 const RECORD_BYTES = 1 << 20, TOTAL_BYTES = 2 ** 32;
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
@@ -12,40 +13,40 @@ const invalid = message => fault('JXL_INPUT', message);
 
 function checked(run) {
   try { return run(); }
-  catch (error) { if (error?.code === 'JXL_INPUT') throw error; throw invalid('Invalid checkpoint data.'); }
+  catch (error) { if (error?.code === 'JXL_INPUT') throw error; throw invalid('checkpoint data'); }
 }
 
 function bytesOf(value, limit = TOTAL_BYTES) {
-  if (!(value instanceof Uint8Array)) throw invalid('Checkpoint bytes must be a Uint8Array.');
+  if (!(value instanceof Uint8Array)) throw invalid('checkpoint: Uint8Array');
   const length = byteLengthOf.call(value), buffer = bufferOf.call(value), offset = byteOffsetOf.call(value);
   bufferLengthOf.call(buffer);
-  if (length > limit) throw invalid('Checkpoint bytes exceed their limit.');
+  if (length > limit) throw invalid('checkpoint: too large');
   return new Uint8Array(buffer, offset, length);
 }
 
 function fields(value) {
-  if (value === null || typeof value !== 'object') throw invalid('A checkpoint record must contain plain data.');
+  if (value === null || typeof value !== 'object') throw invalid('checkpoint record: plain object');
   const proto = Object.getPrototypeOf(value);
-  if (proto !== Object.prototype && proto !== null) throw invalid('A checkpoint record must contain plain data.');
+  if (proto !== Object.prototype && proto !== null) throw invalid('checkpoint record: plain object');
   const keys = Reflect.ownKeys(value);
   if (keys.some(key => typeof key !== 'string'))
-    throw invalid('Invalid checkpoint fields.');
+    throw invalid('checkpoint fields');
   const entries = keys.map(key => {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw invalid('Checkpoint accessors and hidden fields are unsupported.');
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw invalid('checkpoint: plain fields only');
     return [key, descriptor.value];
   });
   return entries;
 }
 
 function arrayValues(value) {
-  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) throw invalid('A checkpoint array must contain plain data.');
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) throw invalid('checkpoint: plain array');
   const length = value.length;
-  if (length > (RECORD_BYTES >> 1) || Reflect.ownKeys(value).length !== length + 1) throw invalid('Invalid checkpoint array.');
+  if (length > (RECORD_BYTES >> 1) || Reflect.ownKeys(value).length !== length + 1) throw invalid('checkpoint array');
   const values = new Array(length);
   for (let i = 0; i < length; i++) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
-    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw invalid('Checkpoint arrays must be dense data arrays.');
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw invalid('checkpoint array: no holes');
     values[i] = descriptor.value;
   }
   return values;
@@ -65,7 +66,7 @@ function utf8Length(text) {
 
 const PLAIN = /^[ !#-[\]-~]*$/;
 function canonicalText(value, checkFields) {
-  const active = new Set(), over = () => invalid('A checkpoint record exceeds 1 MiB.');
+  const active = new Set(), over = () => invalid('checkpoint record: max 1 MiB');
   const quoted = text => PLAIN.test(text) ? '"' + text + '"' : JSON.stringify(text);
   let out = '';
   const append = text => { if ((out += text).length > RECORD_BYTES) throw over(); };
@@ -75,14 +76,14 @@ function canonicalText(value, checkFields) {
     const type = typeof v;
     if (type === 'boolean') return append(v ? 'true' : 'false');
     if (type === 'number') {
-      if (!Number.isFinite(v)) throw invalid('Checkpoint numbers must be finite.');
+      if (!Number.isFinite(v)) throw invalid('checkpoint number: finite');
       return append(Object.is(v, -0) ? '0' : '' + v);
     }
     if (type === 'string') {
       if (v.length > RECORD_BYTES) throw over();
       return append(quoted(v));
     }
-    if (type !== 'object' || checkFields && active.has(v)) throw invalid('Checkpoints cannot contain unsupported values or cycles.');
+    if (type !== 'object' || checkFields && active.has(v)) throw invalid('checkpoint: unsupported value or cycle');
     if (checkFields) active.add(v);
     if (Array.isArray(v)) { append('['); stack.push({v, items: checkFields ? arrayValues(v) : v, record: false, at: 0}); return; }
     const items = checkFields ? fields(v) : Object.keys(v).map(key => [key, v[key]]);
@@ -111,7 +112,7 @@ function canonicalText(value, checkFields) {
 export function encodeData(value) {
   return checked(() => {
     const bytes = encoder.encode(canonicalText(value, true));
-    if (bytes.length > RECORD_BYTES) throw invalid('A checkpoint record exceeds 1 MiB.');
+    if (bytes.length > RECORD_BYTES) throw invalid('checkpoint record: max 1 MiB');
     return bytes;
   });
 }
@@ -119,7 +120,7 @@ export function encodeData(value) {
 export function writeData(value, text = null) {
   return checked(() => {
     const bytes = encoder.encode(text ?? JSON.stringify(value));
-    if (bytes.length > RECORD_BYTES) throw invalid('A checkpoint record exceeds 1 MiB.');
+    if (bytes.length > RECORD_BYTES) throw invalid('checkpoint record: max 1 MiB');
     return bytes;
   });
 }
@@ -131,7 +132,7 @@ export function parseData(bytes) {
 export function decodeData(bytes) {
   return checked(() => {
     const text = decoder.decode(bytesOf(bytes, RECORD_BYTES)), value = JSON.parse(text);
-    if (text !== canonicalText(value, false)) throw invalid('Checkpoint JSON is not canonical.');
+    if (text !== canonicalText(value, false)) throw invalid('checkpoint JSON: not canonical');
     return value;
   });
 }
@@ -139,12 +140,12 @@ export function decodeData(bytes) {
 export async function digest(bytes) {
   const input = checked(() => bytesOf(bytes));
   try {
-    if (!globalThis.crypto?.subtle) throw invalid('SHA-256 is unavailable.');
+    if (!globalThis.crypto?.subtle) return sha256Finish(sha256Update(sha256Start(), input));
     const result = await globalThis.crypto.subtle.digest('SHA-256', input);
     return Array.from(new Uint8Array(result), byte => byte.toString(16).padStart(2, '0')).join('');
   } catch (error) {
     if (error?.code === 'JXL_INPUT') throw error;
-    throw invalid('Cannot hash checkpoint bytes.');
+    throw invalid('checkpoint hash failed');
   }
 }
 

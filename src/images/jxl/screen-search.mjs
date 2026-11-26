@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 import {screenLike, screenPlan, screenFrameSteps} from './screen.mjs';
-import {screenLZ77} from './screen-lz77.mjs';
 import {patchSteps} from './screen-patches.mjs';
 import {scaled} from './bits.mjs';
 import {fault} from './admit.mjs';
@@ -22,7 +21,7 @@ export function screenEligible(rgba, width, height, shape, effort = 3) {
 }
 
 export function* screenSteps(rgba, width, height, shape, colorSpace, {fastFloor = 0, effort = 3, deep} = {}) {
-  if (effort >= 8 && !deep) throw fault('JXL_INTERNAL', 'Efforts 8-9 need their screen candidates (palette-search.mjs, screen-local.mjs).');
+  if (effort >= 8 && !deep) throw fault('JXL_INTERNAL', 'screen-search:candidates');
   let best = null;
   for (const [pass, minLength] of [7, 4].entries()) {
     const steps = screenPass(rgba, width, height, shape, colorSpace, {fastFloor, effort, minLength, deep});
@@ -57,7 +56,7 @@ function* screenPass(rgba, width, height, shape, colorSpace, {fastFloor, effort,
     let steps;
     if (modes[i].startsWith('local-')) steps = deep.localScreenSteps(rgba, width, height, shape, colorSpace,
       {dim: modes[i] === 'local-fine' ? 512 : 1024, depths: modes[i] === 'local-copy' ? [64] : [64, 256], ceiling: best?.length ?? Infinity, minLength});
-    else if (modes[i] === 'patch-lz') steps = patchSteps(rgba, width, height, shape, colorSpace, {tokenCodec: screenLZ77, minLength});
+    else if (modes[i] === 'patch-lz') steps = patchSteps(rgba, width, height, shape, colorSpace, {tokenCodec: 1, minLength});
     else if (modes[i] === 'patch-deep') steps = patchSteps(rgba, width, height, shape, colorSpace, {search: {}, limit: best?.length ?? Infinity, minLength});
     else if (modes[i] === 'palette') steps = deep.paletteSteps(rgba, width, height, shape, colorSpace,
       {plan: plans.get('global'), ceiling: best?.length ?? Infinity});
@@ -67,7 +66,7 @@ function* screenPass(rgba, width, height, shape, colorSpace, {fastFloor, effort,
       const plan = plans.get(mode);
       if (!plan) continue;
       steps = screenFrameSteps(rgba, width, height, shape, colorSpace, plan, {
-        tokenCodec: modes[i].endsWith('-lz') ? screenLZ77 : null,
+        tokenCodec: modes[i].endsWith('-lz') ? 1 : null,
         search: deeper ? {depth: 64} : modes[i].endsWith('-deep') ? {} : null, minLength
       });
     }

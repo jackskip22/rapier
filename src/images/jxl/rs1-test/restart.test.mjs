@@ -28,7 +28,7 @@ for (const [name, verb, options] of [['encode e3', encode, {effort: 3, fidelity:
       }
       const result = await advance(JSON.parse(saved), {operation: verb, input, store, budget: {ms: 5}});
       if (calls === 2 || calls % 4 === 2 && !result.done) { lost++; continue; }
-      if (!result.done) await assert.rejects(finish(result.checkpoint, {operation: verb, input, store}), {code: 'JXL_INPUT', message: /not complete/});
+      if (!result.done) await assert.rejects(finish(result.checkpoint, {operation: verb, input, store}), {code: 'JXL_INPUT', message: /checkpoint: not done/});
       saved = JSON.stringify(result.checkpoint); done = result.done;
     }
     assert.ok(lost > 0 && failed > 0);

@@ -23,7 +23,7 @@ test('a file joined from saved values is written a part a call, as its bytes', a
   do { result = await codec.advance(checkpoint, {...host(checkpoint), deadline: performance.now() + 1}, {units: 64}); written.push(persist(result)); checkpoint = result.checkpoint; }
   while (!result.done);
   const file = [];
-  for await (const part of codec.outputParts(checkpoint, host(checkpoint))) file.push(Buffer.from(part));
+  file.push(Buffer.from(await codec.output(checkpoint, host(checkpoint), length => new Uint8Array(length))));
   assert.ok(Buffer.concat(file).equals(Buffer.concat([Buffer.of(1, 2, 3), Buffer.from(input.map(b => b ^ 91))])));
   assert.ok(Math.max(...written) < input.length / 2, `${Math.max(...written)} bytes written by one call`);
   assert.ok(written.at(-1) < 1 << 20, 'the last call writes at most a part');

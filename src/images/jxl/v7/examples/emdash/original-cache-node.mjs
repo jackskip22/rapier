@@ -8,6 +8,11 @@ export function originalFileCache(directory, {maxBytes = 32 * 1024 * 1024, maxFi
   async function trim() {
     const files = [];
     for (const name of await readdir(root)) {
+      if (/^[a-f0-9]{64}\.jpeg\.[0-9a-f-]{36}\.tmp$/.test(name)) {
+        const info = await stat(join(root, name)).catch(() => null);
+        if (info && Date.now() - info.mtimeMs > 60000) await unlink(join(root, name)).catch(() => {});
+        continue;
+      }
       if (!/^[a-f0-9]{64}\.jpeg$/.test(name)) continue;
       const filename = join(root, name), info = await stat(filename).catch(() => null);
       if (info?.isFile()) files.push({filename, size: info.size, time: info.mtimeMs});

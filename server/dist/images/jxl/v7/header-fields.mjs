@@ -1,6 +1,6 @@
 const COLOR = ['whitePoint', 'primaries', 'transferFunction', 'gamma', 'renderingIntent', 'iccSpace', 'invertedCMYK'];
 const copy = value => Array.isArray(value) ? value.map(copy) : value;
-export function colorFields(encoding) {
+function colorFields(encoding) {
   if (!encoding) return encoding;
   if (encoding.wantICC) {
     const out = {space: encoding.space, transferFunction: 'icc'};
@@ -19,6 +19,7 @@ export function headerFields(info) {
       dimShift, name, associated, ...(spotColor && {spotColor: [...spotColor]}), ...(cfaChannel !== undefined && {cfaChannel})})),
     colorEncoding: colorFields(info.colorEncoding), toneMapping: {...info.toneMapping}, reconstruction: info.reconstruction};
 }
+export function publicFrameFields(target) { target.colorEncoding = colorFields(target.colorEncoding); target.rgbaColorEncoding = colorFields(target.rgbaColorEncoding); return target; }
 export function publicDecoded(result) {
   const parsed = result.metadata, info = {...parsed, reconstruction: (result.boxes ?? []).some(box => box.type === 'jbrd')};
   const frame = target => { target.colorEncoding = colorFields(target.colorEncoding); target.rgbaColorEncoding = colorFields(target.rgbaColorEncoding); };

@@ -1,6 +1,6 @@
 import {DESCRIPTION, described, decodedFields} from './describe.mjs';
-import {ordinaryStillReader} from './ordinary-still-policy.mjs';
-import {bytes, check, dimensions, fail, object, isCaller, pixelLimit, jpegPixels, JPEG_PIXELS, NO_JPEG, JPEG_ELSEWHERE} from './primitives.mjs';
+import {ordinaryStillReader, predictedFacts} from './ordinary-still-policy.mjs';
+import {bytes, check, dimensions, fail, object, isCaller, pixelLimit, PIXELS, NO_JPEG, JPEG_ELSEWHERE, blobBytes, isBlob} from './primitives.mjs';
 import {exactFidelity, measuredFidelity} from './fidelity.mjs';
 import {encodeOptions, callOptions} from './encode-options.mjs';
 import {featureless} from './first-region-option.mjs';
@@ -10,6 +10,7 @@ import {needsBands} from './band-size.mjs';
 import {inspectPhone} from './phone-container.mjs';
 import {resultFacts} from './result-reference.mjs';
 import {MEASURED_EFFORT} from '../effort-level.mjs';
+import {captureRefused} from '../fault.mjs';
 
 async function preloadCaptureCoder(data, width, height, codec) {
   try {
@@ -46,9 +47,9 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
   const blocks = encoder && (options.effort ?? 7) >= 6 && !exactFidelity(options.fidelity) ? (cachedBlocks ||= import('../photo-v6-blocks.mjs')) : null;
   encoder?.catch(() => {}); blocks?.catch(() => {}); instant?.catch(() => {}); kernels?.catch(() => {});
   const {image, jpegDimensions, admitJpeg} = operation === 'decode' || operation === 'restore' ? {} : await import('./input.mjs');
-  let drain, acceleration, describedRoute;
+  let drain, acceleration, describedRoute, deviceAgain;
   const loadEncodeDeps = async () => {
-    [{drain}, {acceleration, describedRoute}] = await (cachedEncodeDeps ||= Promise.all([import('./common.mjs'), import('./acceleration.mjs')]));
+    [{drain}, {acceleration, describedRoute, deviceAgain}] = await (cachedEncodeDeps ||= Promise.all([import('./common.mjs'), import('./acceleration.mjs')]));
   };
   if (operation !== 'decode' && operation !== 'restore' && !exactScreen) await loadEncodeDeps();
   check(hooks.signal);
@@ -61,9 +62,9 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
     try {
       if (hooks.webgpu === 'required')
         await requireWebGPU('required', normalized.quality < 100 || normalized.target !== undefined, normalized.effort);
-      if (typeof Blob !== 'undefined' && input instanceof Blob && normalized.quality === 100 && normalized.target === undefined &&
+      if (isBlob(input) && normalized.quality === 100 && normalized.target === undefined &&
           options.readAs === undefined && options.features === undefined) {
-        const head = new Uint8Array(await input.slice(0, 2).arrayBuffer());
+        const head = await blobBytes(input, hooks.signal, 0, 2);
         check(hooks.signal);
         if (head[0] === 255 && head[1] === 216) throw fail('JXL_OPTIONS', JPEG_ELSEWHERE);
       }
@@ -77,8 +78,9 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
         await reader.project(normalized, picture);
       const {target, ...codec} = {...source,...normalized};
       if (intent !== undefined && codec.quality === 100) resultFacts(options, {kept: 'pixels', measurements: []});
+      else if (predictedFacts(codec)) resultFacts(options, predictedFacts(codec));
       if (target !== undefined && featured)
-        throw fail('JXL_INPUT', 'A measured fidelity takes no orientation, extra channels or features.');
+        throw fail('JXL_INPUT', "measured fidelity: remove orientation, extraChannels or features");
       if (exactScreen && typeof codec.colorSpace !== 'object' && codec.effort === 1 && !(codec.quality < 100)) {
         const {screenLike} = await import('../screen.mjs');
         if (screenLike(data, width, height)) {
@@ -86,7 +88,7 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
           try {
             const captured = await captureAnswer({data, width, height, colorSpace: codec.colorSpace}, hooks.signal);
             if (captured instanceof Uint8Array) return captured;
-          } catch (error) { check(hooks.signal); if (typeof error?.code !== 'string' || !error.code.startsWith('JXL_') || error.code === 'JXL_ABORTED') throw error; }
+          } catch (error) { check(hooks.signal); if (!captureRefused(error)) throw error; }
         }
       }
       if (!drain) await loadEncodeDeps();
@@ -94,39 +96,42 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
 
       if (featured) {
         if (codec.quality === 100 || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray))
-          throw fail('JXL_UNSUPPORTED', 'Orientation, extra channels and features need 8-bit lossy; use format({kind: \'channels\'}) for exact extra channels.');
+          throw fail('JXL_UNSUPPORTED', 'orientation/channels/features: 8-bit lossy; channels via format({kind: \'channels\'})');
         const {encodePhotoSteps} = await import('../photo-advanced.mjs');
         await acceleration(hooks.webgpu, 0, 0, codec.effort, 'codestream features');
         return await finish(encodePhotoSteps(data, width, height, {...codec,...options.features}));
       }
       await preloaded;
-      const encodePicture = async ({data, width, height}, hooks, coding = codec, whole = true) => {
-        const gpu = await acceleration(hooks.webgpu, width, height, coding.quality < 100 ? coding.effort : 0, describedRoute(data, coding));
+      const encodePicture = (picture, hooks, coding = codec, whole = true) =>
+        deviceAgain(hooks.webgpu, webgpu => encodeWith(picture, {...hooks, webgpu}, coding, whole));
+      const encodeWith = async ({data, width, height}, hooks, coding, whole) => {
+        const gpu = await acceleration(hooks.webgpu, width, height, coding.quality < 100 ? coding.effort : 0, describedRoute(data, coding), undefined, hooks.signal);
         if (whole && intent !== undefined && coding.effort >= MEASURED_EFFORT && coding.quality < 100) {
           const [{stillPhotoTargetSteps}, {effortJob}, {EXACT_LADDER}] = await Promise.all([
             import('./still-photo-target.mjs'), encoder ?? import('../effort-job.mjs'), import('../exact-ladder.mjs'),
           ]);
           const target = stillPhotoTargetSteps(data, width, height, coding, {intent, signal: hooks.signal, maxPixels: hooks.maxPixels,
             selected: facts => resultFacts(options, facts),
-            exact: () => effortJob(data, width, height, {...coding, quality: 100, effort: 4}, false,
+            exact: () => effortJob(data, width, height, {...coding, quality: 100, effort: 5}, false,
               undefined, undefined, undefined, EXACT_LADDER)});
           if (target) return drive ? drive(target, hooks, gpu, width * height, true) : drain(target, hooks, gpu);
         }
-        if (coding.lowWebp !== undefined && coding.quality < 100) {
+        if (coding.lowIntent !== undefined && coding.quality < 100) {
           const {lowPhotoSteps} = await import('./low-photo.mjs');
           const low = lowPhotoSteps(data, width, height, coding);
           if (low) return drive ? drive(low, hooks, gpu, width * height, true) : drain(low, hooks, gpu);
         }
+        const hdr = coding.quality < 100 && (data instanceof Float32Array || data instanceof Uint16Array || coding.sampleFormat === 'float16')
+          ? {...(await import('../photo-hdr.mjs')).HDR, report: facts => resultFacts(options, facts)} : null;
         if (coding.effort === 1) {
           const {coreSteps} = await (instant ?? import('./instant.mjs'));
-          return drain(coreSteps(data, width, height, coding, !!gpu), hooks, gpu);
+          return drain(coreSteps(data, width, height, coding, hdr), hooks, gpu);
         }
         const {effortJob} = await (encoder ?? import('../effort-job.mjs'));
-        const search = coding.quality < 100 && coding.effort >= 8 ? (await import('./search.mjs')).searchV6 : undefined;
+        const search = coding.quality < 100 && coding.effort >= 8 ? (await import('../photo-v6-search.mjs')).searchV6 : undefined;
         const writer = coding.quality < 100 && coding.effort >= 6 ? (await (blocks ?? (cachedBlocks ||= import('../photo-v6-blocks.mjs')))).photoAnsSteps : undefined;
         const deep = coding.effort >= 4 ? await (cachedDeep ||= import('../exact-ladder.mjs').then(({EXACT_LADDER}) => EXACT_LADDER)) : null;
         check(hooks.signal);
-        const hdr = coding.quality < 100 && (data instanceof Float32Array || coding.sampleFormat === 'float16') ? (await import('../photo-hdr.mjs')).HDR : null;
         const steps = effortJob(data, width, height, coding, !!gpu, undefined, search, writer, deep, hdr);
         return drive ? drive(steps, hooks, gpu, width * height) : drain(steps, hooks, gpu);
       };
@@ -141,7 +146,7 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
       if (needsBands(width, height, codec, data)) {
         const [{encodeBands}, {recodeBand}, {HDR}] = await Promise.all([import('./bands.mjs'), import('./band-recode.mjs'), import('../photo-hdr.mjs')]);
         const writer = codec.quality < 100 && codec.effort >= 6 ? (await (blocks ?? (cachedBlocks ||= import('../photo-v6-blocks.mjs')))).photoAnsSteps : undefined;
-        const search = codec.quality < 100 && codec.effort >= 8 ? (await import('./search.mjs')).searchV6 : undefined;
+        const search = codec.quality < 100 && codec.effort >= 8 ? (await import('../photo-v6-search.mjs')).searchV6 : undefined;
         return await encodeBands({width, height, read: (y, rows) => ({...source, data: data.subarray(y * width * 4, (y + rows) * width * 4), width, height: rows})},
           (band, bandHooks) => encodePicture(band, {...hooks, ...bandHooks}, codec, false), (band, target) => recodeBand(band, normalized, target, HDR, writer, search), drain, hooks);
       }
@@ -149,14 +154,14 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
     } finally { reader.destroy(); }
   }
   if (operation === 'recompress') {
-    const allowed = new Set(['effort','icc','maxPixels','signal','onProgress']);
-    for (const key of Object.keys(options)) if (!allowed.has(key)) throw fail('JXL_OPTIONS', `Unknown JPEG option: ${key}.`);
-    const {maxPixels: limit, ...jpegOptions} = options, queue = hooks.jpegPixels ?? Math.min(hooks.maxPixels ?? JPEG_PIXELS, JPEG_PIXELS);
-    hooks = {...hooks, maxPixels: limit === undefined ? queue : Math.min(jpegPixels(limit), queue)};
+    const allowed = new Set(['effort','maxPixels','signal','onProgress']);
+    for (const key of Object.keys(options)) if (!allowed.has(key)) throw fail('JXL_OPTIONS', `unknown option: ${key}`);
+    const {maxPixels: limit, ...jpegOptions} = options, queue = hooks.maxPixels ?? PIXELS;
+    hooks = {...hooks, maxPixels: limit === undefined ? queue : Math.min(pixelLimit(limit), queue)};
     options = jpegOptions;
-    if (typeof Blob !== 'undefined' && input instanceof Blob) {
+    if (isBlob(input)) {
       if (input.size) await admitJpeg(input, hooks.maxPixels, hooks.signal);
-      input = new Uint8Array(await input.arrayBuffer());
+      input = await blobBytes(input, hooks.signal);
     }
     bytes(input); jpegDimensions(input, hooks.maxPixels); check(hooks.signal);
     const {ansTranscodeSteps} = await import('../jpeg-ans-effort.mjs');
@@ -164,10 +169,10 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
     return finish(ansTranscodeSteps(input, {...options, effort: options.effort ?? 7}));
   }
   if (operation === 'restore' || operation === 'decode') {
-    if (operation === 'restore') for (const key of Object.keys(options)) if (key !== 'signal' && key !== 'onProgress' && key !== 'maxPixels') throw fail('JXL_OPTIONS', `Unknown restore option: ${key}.`);
-    if (operation === 'restore') { const queue = hooks.jpegPixels ?? Math.min(hooks.maxPixels ?? JPEG_PIXELS, JPEG_PIXELS); hooks = {...hooks, maxPixels: options.maxPixels === undefined ? queue : Math.min(jpegPixels(options.maxPixels), queue)}; }
+    if (operation === 'restore') for (const key of Object.keys(options)) if (key !== 'signal' && key !== 'onProgress' && key !== 'maxPixels') throw fail('JXL_OPTIONS', `unknown option: ${key}`);
+    if (operation === 'restore') { const queue = hooks.maxPixels ?? PIXELS; hooks = {...hooks, maxPixels: options.maxPixels === undefined ? queue : Math.min(pixelLimit(options.maxPixels), queue)}; }
     const bounds = options;
-    if (typeof Blob !== 'undefined' && input instanceof Blob) input = new Uint8Array(await input.arrayBuffer());
+    if (isBlob(input)) input = await blobBytes(input, hooks.signal);
     bytes(input);
     let result;
     if (operation === 'restore') {
@@ -185,7 +190,7 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
     } else {
       const [{decodeBands}, {decodeOptions}, {loadPart}, {decodeLimits}] = await (decodeModules ??= Promise.all([import('../decode-parallel.mjs'), import('../decode-image.mjs'), import('../decode-parts.mjs'), import('./decode-limits.mjs')]).catch(error => { decodeModules = undefined; throw error; }));
       check(hooks.signal);
-      const maxPixels = Math.min(bounds.maxPixels ?? Infinity, hooks.maxPixels ?? 40000000), limits = {...bounds, ...decodeLimits({...bounds, maxPixels}), maxPixels};
+      const maxPixels = Math.min(bounds.maxPixels ?? Infinity, hooks.maxPixels ?? PIXELS), limits = {...bounds, ...decodeLimits({...bounds, maxPixels}), maxPixels};
       if (bounds.region !== undefined) {
         const {admitRegion} = await import('./region.mjs');
         limits.region = admitRegion(bounds.region);
@@ -208,20 +213,22 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
     let settings;
     ({codec: settings, hooks} = callOptions(encodeOptions(options), hooks));
     const {target} = settings; delete settings.target;
-    if (hooks.webgpu === 'required') await requireWebGPU('required', settings.quality < 100, settings.effort);
+    if (hooks.webgpu === 'required') await requireWebGPU('required', settings.quality < 100, settings.quality < 100 ? settings.effort : 0);
     if (target !== undefined || options.features !== undefined)
-      throw fail('JXL_OPTIONS', 'An animation takes exact or a quality, and no features.');
+      throw fail('JXL_OPTIONS', "animation fidelity: exact|{quality}, no features");
     if (input.orientation !== undefined || input.extraChannels !== undefined)
-      throw fail('JXL_INPUT', 'An animation takes no orientation or extra channels.');
+      throw fail('JXL_INPUT', "animation: no orientation/extra channels");
     const codec = {...described(input), ...settings};
     dimensions(input?.width, input?.height, hooks.maxPixels);
     await acceleration(hooks.webgpu, 0, 0, codec.quality < 100 ? codec.effort : 0, 'an animation');
     const {encodeAnimationJob} = await import('../animation-steps.mjs');
-    if (codec.quality < 100 && codec.effort >= 8) (await import('../animation-frames.mjs')).useMeasuredSearch((await import('./search.mjs')).searchV6);
+    if (codec.quality < 100 && codec.effort >= 8) (await import('../animation-frames.mjs')).useMeasuredSearch((await import('../photo-v6-search.mjs')).searchV6);
     const {animationPhoto} = await import('./animation-photo.mjs');
     const answer = await animationPhoto(input, codec,
-      (coding, onProgress) => drain(encodeAnimationJob(input, coding), {...hooks, onProgress}), hooks);
-    resultFacts(options, {kept: answer.exact ? 'pixels' : 'lossy', measurements: answer.measurements});
+      (coding, onProgress) => drain(encodeAnimationJob(input, coding, true), {...hooks, onProgress}), hooks);
+    const [{animationTiming}, {displayedAnimationFrames}] = await Promise.all([import('../animation-frames.mjs'), import('../animation-timeline.mjs')]);
+    resultFacts(options, {kept: answer.exact ? 'pixels' : 'lossy', measurements: answer.measurements,
+      timing: animationTiming(displayedAnimationFrames(input).map(frame => frame.duration))});
     return answer.bytes;
   }
   if (operation === 'format') {
@@ -229,7 +236,7 @@ export async function runCodec(operation, input, options = {}, hooks = {}, drive
     const {author} = await import('./author.mjs');
     return author(input, options, hooks);
   }
-  throw fail('JXL_OPERATION', `Unknown operation: ${operation}.`);
+  throw fail('JXL_OPERATION', `operation: public function required`);
 }
 
 function clamped(frame) {

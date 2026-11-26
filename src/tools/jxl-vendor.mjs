@@ -4,12 +4,13 @@ import {readdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileS
 import {join, relative} from 'node:path';
 import {tmpdir} from 'node:os';
 import {execFileSync} from 'node:child_process';
+import {brotliCompressSync, constants} from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 import {stripperFor} from './strip-comments.mjs';
 import {JXL_HISTORY_BASELINE} from './changelog.mjs';
 
 const repo = fileURLToPath(new URL('..', import.meta.url)), codec = join(repo, 'images/jxl'), vendor = join(repo, 'images/vendor/rapier-jxl');
-export const VENDORED = Object.freeze(['index.mjs', 'index.browser.mjs', 'jpeg.mjs', 'jpeg.browser.mjs', 'decode.mjs', 'decode.browser.mjs', 'animation.mjs', 'animation.browser.mjs', 'max.mjs', 'max.browser.mjs']);
+export const VENDORED = Object.freeze(['index.mjs', 'index.browser.mjs', 'jpeg.mjs', 'jpeg.browser.mjs', 'decode.mjs', 'decode.browser.mjs', 'animation.mjs', 'animation.browser.mjs', 'max.mjs', 'max.browser.mjs', 'hdr.mjs']);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export function sourceDigest() {
   const files = [];
@@ -60,7 +61,9 @@ if (process.argv.includes('--write')) {
       const bytes = readFileSync(join(vendor, name));
       files[name] = {bytes: bytes.length, sha256: sha256(bytes)};
     }
-    const pin = {rebuild: 'node tools/jxl-vendor.mjs --write ' + version, version, source: {registry: 'https://registry.npmjs.org/jpegxl', shasum, digest}, files};
+    const upload = readFileSync(join(dist, 'upload.mjs'));
+    const sizes = {upload: brotliCompressSync(upload, {params: {[constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: upload.length}}).length};
+    const pin = {rebuild: 'node tools/jxl-vendor.mjs --write ' + version, version, source: {registry: 'https://registry.npmjs.org/jpegxl', shasum, digest}, sizes, files};
     writeFileSync(join(vendor, 'PIN.json'), JSON.stringify(pin, null, 2) + '\n');
     console.log('vendored rapier-jxl ' + version + ':', Object.entries(files).map(([name, {bytes}]) => name + ' ' + bytes).join(', '));
   } finally { rmSync(out, {recursive: true, force: true}); }

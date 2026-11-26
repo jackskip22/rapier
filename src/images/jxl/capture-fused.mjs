@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
+import {fault} from './fault.mjs';
 import {kernelModule} from './kernel-runtime.mjs';
 
-export const FRAME_ROWS_BUDGET = 512 * 65536;
+const FRAME_ROWS_BUDGET = 512 * 65536;
 const engines = new WeakMap();
 let own;
 const instance = memory => {
@@ -12,9 +13,13 @@ const instance = memory => {
 const ownArena = () => {
   if (own === undefined) try {
     const memory = new WebAssembly.Memory({initial: 1, maximum: FRAME_ROWS_BUDGET / 65536});
-    own = {memory, base: 0, limit: FRAME_ROWS_BUDGET, grow: end => memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536))};
+    const arena = {memory, base: 0, limit: FRAME_ROWS_BUDGET, grow: end => {
+      try { memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536)); }
+      catch (cause) { throw Object.assign(fault('JXL_MEMORY', 'frame rows arena: grow failed'), {cause}); }
+    }};
     instance(memory);
-  } catch { own = null; }
+    own = arena;
+  } catch { return null; }
   return own;
 };
 
@@ -35,13 +40,14 @@ export function fusedFrameRows(data, width, dx, dy, boxes, most = 256, arena = o
   const rowBytes = width * 4, frameBytes = rowWidth * 4;
   return (y, count) => {
     const end = band + frameBytes * count;
-    if (count > most) throw new RangeError('A band of more rows than the reader was made for.');
+    if (count > most) throw fault('JXL_INTERNAL', 'capture-fused:rows');
+    const src = data.buffer === memory.buffer ? Uint8Array.from(data) : data;
     if (end > memory.buffer.byteLength) arena.grow(end);
     const u8 = new Uint8Array(memory.buffer), u32 = new Uint32Array(memory.buffer);
     new Int32Array(memory.buffer, at, 4 * n).set(placed);
     for (let r = 0; r < count; r++) {
       const py = Math.max(0, y + r - dy) * rowBytes;
-      u8.set(data.subarray(py, py + rowBytes), band + r * frameBytes + dx * 4);
+      u8.set(src.subarray(py, py + rowBytes), band + r * frameBytes + dx * 4);
     }
     frameRows(band, rowWidth, count, y, dy, dx, width, at, n, tall, mask);
     if (rowWidth > fw) for (let r = 0; r < count; r++) { const last = (band >> 2) + r * rowWidth + fw - 1; u32.fill(u32[last], last + 1, last + 1 + rowWidth - fw); }

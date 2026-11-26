@@ -23,7 +23,7 @@ type PartStore<Store> = Store extends unknown ? Omit<Store, 'readSource'> : neve
 export type DurableStore<Input extends ResumableInput = ResumableInput> = PartStore<ResumableStore> & {
   /** Never-created is null/null. Deletion retains a new, non-null versioned tombstone. */
   getVersioned(key: string): Awaitable<Snapshot<StoredJob<Input>>>;
-  /** Versions never repeat; every successful write returns a fresh version. */
+  /** Versions never repeat. Every successful write returns a fresh version. */
   compareAndSet(key: string, expectedVersion: StoreVersion | null, value: StoredJob<Input>): Awaitable<
     {readonly ok: true; readonly version: StoreVersion} | {readonly ok: false}
   >;
@@ -33,11 +33,11 @@ type JobOf<Operation extends ResumableOperation> = StoredJob<InputOf<Operation>>
 export interface DriverOptions<Operation extends ResumableOperation> {
   readonly operation: Operation;
   readonly store: DurableStore<InputOf<Operation>>;
-  /** Resolve this saved immutable generation; never read a newer replacement under the same media key. */
+  /** Resolve this saved immutable generation. Never read a newer replacement under the same media key. */
   readonly readSource: (input: InputOf<Operation>, offset: number, length: number) => Awaitable<Uint8Array>;
 }
 export type StartCommand<Operation extends ResumableOperation> = Omit<StartOptions<Operation>, 'operation' | 'store'> & {
-  /** Defaults to null; replacing a job requires its current version explicitly. */
+  /** Defaults to null. Replacing a job requires its current version explicitly. */
   readonly expectedVersion?: StoreVersion | null;
   readonly signal?: AbortSignal;
 };
@@ -63,9 +63,9 @@ export interface DurableDriver<Operation extends ResumableOperation> {
   readonly inspect: (key: string) => Promise<Snapshot<JobOf<Operation>>>;
   readonly start: (key: string, command: StartCommand<Operation>) => Promise<TransitionOutcome<JobOf<Operation>>>;
   readonly advance: (key: string, command: AdvanceCommand) => Promise<TransitionOutcome<JobOf<Operation>>>;
-  /** Whole-result assembly is outside the bounded advance; authority is checked again before returning bytes. */
+  /** Whole-result assembly is outside the bounded advance. Authority is checked again before returning bytes. */
   readonly finish: (key: string, command: FencedCommand) => Promise<FinishOutcome<Operation>>;
-  /** A saved completion wins; an earlier cancellation fences the worker's checkpoint save. */
+  /** A saved completion wins. An earlier cancellation fences the worker's checkpoint save. */
   readonly cancel: (key: string, command: FencedCommand) => Promise<TransitionOutcome<JobOf<Operation>>>;
 }
 export function createDurableDriver<Operation extends ResumableOperation>(

@@ -13,6 +13,7 @@ import {createJournalStepper} from '../resumable-journal.mjs';
 import {digest} from '../resumable-data.mjs';
 import {joinedBytes, sliceBytes} from '../step-journal.mjs';
 import {recompress, restore} from '../v7/jpeg.mjs';
+import {transcode} from '../jpeg.mjs';
 import {displayProfile} from '../public/test/icc.mjs';
 import {drive, named} from './durable-host.mjs';
 
@@ -46,7 +47,7 @@ async function resumed(input, entropy = false) {
     assert.ok(++calls < 200, 'ICC continuation makes progress');
   }
   const out = [];
-  for await (const bytes of codec(entropy).outputParts(checkpoint, host())) out.push(bytes);
+  out.push(await codec(entropy).output(checkpoint, host(), length => new Uint8Array(length)));
   return {bytes: join(out), calls};
 }
 function trace(steps) {
@@ -139,7 +140,7 @@ test('a real photo restores a multi-segment preserved ICC through entropy and pr
     const bytes = profile.subarray(from, from + 65519), app = new Uint8Array(bytes.length + 18), length = bytes.length + 16;
     app.set([255, 226, length >> 8, length & 255]); app.set(tag, 4); app.set([sequence, count], 16); app.set(bytes, 18); apps.push(app);
   }
-  const original = join([photo.subarray(0, 2), ...apps, photo.subarray(2)]), encoded = await recompress(original, {effort: 1, icc: 'preserve'});
+  const original = join([photo.subarray(0, 2), ...apps, photo.subarray(2)]), encoded = transcode(original, {effort: 1, icc: 'preserve'});
   assert.deepEqual((await restore(encoded.bytes)).bytes, original);
   const traced = trace(restoreJPEGSteps(encoded.bytes)); assert.deepEqual(traced.bytes, original);
   assert.ok(traced.counts['icc-entropy-part'] >= 2); assert.ok(traced.counts['icc-profile-part'] >= 2);

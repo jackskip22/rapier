@@ -14,7 +14,8 @@ configureDecoder(decode, restore);
 for (const [name, verb, options] of [['encode q90 e3', encode, {effort: 3, fidelity: {quality: 90}}], ['fit e3', fit, {effort: 3, maxBytes: 20000}]])
   test(`${name}: a decode source writes encode() of the decoded pixels`, {timeout: 300000}, async () => {
     const stored = (await recompress(jpeg.slice(), {effort: 1})).bytes, picture = await decode(stored);
-    const pixels = {data: new Uint8Array(picture.data.buffer, picture.data.byteOffset, picture.data.length), width: picture.width, height: picture.height, colorSpace: picture.colorSpace};
+    const pixels = {data: new Uint8Array(picture.data.buffer, picture.data.byteOffset, picture.data.length), width: picture.width, height: picture.height,
+      ...(picture.rgbaICC ? {icc: picture.rgbaICC} : {colorEncoding: picture.colorEncoding})};
     const ordinary = await verb({...pixels, data: pixels.data.slice()}, options);
     const {record, calls} = await drive(verb, stored, {kind: 'decode'}, options, {ms: 20});
     assert.ok(calls > 1, `${calls} calls`);
@@ -48,4 +49,19 @@ test('a lossy encode of a decode source verifies in its advances against the JPE
   assert.equal(record.kept, 'lossy');
   assert.equal(record.verification?.verified, true);
   assert.deepEqual(record.verification.source, named);
+});
+
+for (const [name, verb, options] of [['encode q90 e3', encode, {effort: 3, fidelity: {quality: 90}}], ['fit e3', fit, {effort: 3, maxBytes: 20000}]])
+  test(`${name}: a decode source with a profile that names no space is coded by its profile`, {timeout: 300000}, async () => {
+  const icc = readFileSync(new URL('../../../tools/jxl-gate/assets/icc/linear-srgb.icc', import.meta.url));
+  const tag = Buffer.from('ICC_PROFILE\0\x01\x01', 'latin1'), length = 2 + tag.length + icc.length;
+  const app2 = 20, end = app2 + 2 + (jpeg[app2 + 2] << 8 | jpeg[app2 + 3]);
+  const profiled = new Uint8Array(Buffer.concat([jpeg.subarray(0, app2), Buffer.from([0xff, 0xe2, length >> 8, length & 255]), tag, icc, jpeg.subarray(end)]));
+  const stored = (await recompress(profiled.slice(), {effort: 1})).bytes, picture = await decode(stored);
+  assert.ok(picture.rgbaICC);
+  const ordinary = await verb({data: new Uint8Array(picture.data), width: picture.width, height: picture.height, icc: picture.rgbaICC}, options);
+  const {record} = await drive(verb, stored, {kind: 'decode'}, options, {ms: 200});
+  assert.equal(sha256(record.bytes), sha256(ordinary.bytes));
+  assert.deepEqual((await decode(record.bytes)).colorEncoding, (await decode(ordinary.bytes)).colorEncoding);
+  assert.equal((await verify(new Blob([profiled], {type: 'image/jpeg'}), record)).verified, true);
 });

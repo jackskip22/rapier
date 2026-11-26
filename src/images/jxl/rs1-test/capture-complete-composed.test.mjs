@@ -3,11 +3,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {gunzipSync} from 'node:zlib';
-import {capture} from '../v7/capture-complete.mjs';
+import {capture, configureDecoder} from '../v7/capture-complete.mjs';
+import {decode} from '../v7/decode.mjs';
 import {drive, sha256} from './durable-host.mjs';
 import {tiled} from './photo-fixture.mjs';
 
 const width = 320, photoHeight = 200, cardHeight = 236, height = photoHeight + cardHeight;
+configureDecoder(decode);
 const card = new Uint8Array(gunzipSync(Buffer.from(await readFile(new URL('../v7/test/fixtures/snapdom-small-card.rgba.gz.base64', import.meta.url), 'utf8'), 'base64')));
 const photo = await tiled(width, photoHeight), data = new Uint8Array(width * height * 4);
 data.set(photo.data); data.set(card, photo.data.length);

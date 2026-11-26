@@ -23,24 +23,25 @@ export async function measuredFileSearch(target, probe, measure, {start = 90, pr
           const ordinal = count++;
           last = await probe(request.encode, fraction => onProgress?.(photoOutputProgress(fraction, {ordinal, probes})));
           check(signal);
-          if (!(last.bytes instanceof Uint8Array)) throw fail('JXL_INTERNAL', 'A producer must return complete bytes.');
+          if (!(last.bytes instanceof Uint8Array)) throw fail('JXL_INTERNAL', 'measured-search:empty');
         }
         reply = last;
       } else if (request?.measure) {
         const candidate = request.measure;
         candidate.scores ??= candidate.shown ? measure(candidate.shown, request.want) : null;
         if (!candidate.scores) break;
+        if (!Number.isFinite(candidate.scores.ssimulacra2)) throw fail('JXL_INPUT', 'score: finite number');
         preview?.(candidate.bytes, {width, height, measurements: photoOutputMeasurements(target, candidate.scores, domain)});
         reply = candidate.scores;
         if (preferredPhotoOutput(best, candidate, target)) best = candidate;
         else if (!best && (!near || candidate.scores.ssimulacra2 > near.scores.ssimulacra2)) near = candidate;
-      } else throw fail('JXL_INTERNAL', 'Unknown measured quality request.');
+      } else throw fail('JXL_INTERNAL', 'measured-search:measure');
     }
   } finally { search?.return(); }
   check(signal);
   const kept = best ?? (closest ? near : null);
   if (kept) return {bytes: kept.bytes, quality: kept.quality, exact: false, measurements: photoOutputMeasurements(target, kept.scores, domain)};
-  if (!exact) throw fail('JXL_TARGET', 'No tested output could be measured against the requested quality target.');
+  if (!exact) throw fail('JXL_TARGET', 'unmeasurable fidelity: use {quality} or configureDecoder(decode) with decode from jpegxl/decode');
   const bytes = await exact(fraction => onProgress?.(photoOutputProgress(fraction, {exact: true})));
   check(signal);
   preview?.(bytes, {width, height, measurements: []});

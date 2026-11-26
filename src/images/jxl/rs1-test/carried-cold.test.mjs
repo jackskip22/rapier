@@ -43,7 +43,7 @@ async function run(cold, plain = false) {
     assert.ok(calls < 100, 'the job finishes');
   }
   const output = [];
-  for await (const part of codec.outputParts(checkpoint, host())) output.push(...part);
+  for (const byte of await codec.output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   return {output, unused};
 }
 

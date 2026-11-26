@@ -1,17 +1,17 @@
 Just run this in your site's folder:
 
 ```sh
-npx rapier-jxl add emdash
+npx jpegxl add emdash
 ```
 
 Or tell your coding agent:
 
-"Add rapier-jxl to my EmDash site with npx rapier-jxl add emdash."
+"Add jpegxl to my EmDash site with npx jpegxl add emdash."
 
-Or install `rapier-jxl`, then in `astro.config.mjs` wrap your EmDash setup:
+Or install `jpegxl`, then in `astro.config.mjs` wrap your EmDash setup:
 
 ```js
-import {jxl} from 'rapier-jxl/emdash';
+import {jxl} from 'jpegxl/emdash';
 
 jxl(emdash, {database, storage});
 ```

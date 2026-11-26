@@ -6,7 +6,7 @@ export interface DecodeColorTarget {
   whitePoint?: 'd65' | 'dci' | 'e' | 'd50' | [number, number];
   primaries?: 'srgb' | 'display-p3' | 'rec2020' | [[number, number], [number, number], [number, number]];
   transferFunction?: 'srgb' | 'linear' | 'bt709' | 'dci' | 'pq' | 'hlg' | 'gamma';
-  /** Positive encoding exponent; infers transferFunction: 'gamma' when that field is omitted. Conflicting transfers are rejected. */
+  /** Positive encoding exponent. Infers transferFunction: 'gamma' when that field is omitted. Conflicting transfers are rejected. */
   gamma?: number;
   renderingIntent?: 0 | 1 | 2 | 3;
 }
@@ -30,7 +30,8 @@ export interface DecodeLimits {
 }
 export const DECODE_LIMITS: Readonly<DecodeLimits>;
 export interface DecodeOptions extends Partial<DecodeLimits> {
-  /** Auto selects 8/16-bit integers from the source depth, or float for floating/over-16-bit input. */
+  /** Auto selects 8/16-bit integers from the source depth, or float for floating/over-16-bit input. For a canvas, pass
+   * `{format: 'uint8', colorSpace: 'srgb'}`: `new ImageData(data, width, height)` takes only 8-bit data. */
   format?: DecodeFormat;
   /** Original preserves the source color meaning. Select sRGB for a display image. */
   colorSpace?: 'original' | 'srgb' | 'linear-srgb' | 'display-p3' | 'rec2020' | 'xyb' | DecodeColorTarget;
@@ -43,13 +44,19 @@ export interface DecodeOptions extends Partial<DecodeLimits> {
   /** Also return the float32 color planes beside RGBA. Default false: planes is []. */
   planes?: boolean;
   /** Decode only this rectangle of the picture as returned (after orientation when applyOrientation): whole pixels inside
-   * it. The result, every frame and its planes are the rectangle, equal to the same pixels of a whole decode; frames
+   * it. The result, every frame and its planes are the rectangle, equal to the same pixels of a whole decode. Frames
    * and groups the rectangle does not reach are not decoded. */
   region?: DecodeRegion;
   /** A file cut short (a download in progress) decodes to the picture at 1:8 from the LF its bytes hold, instead of being
    * refused: the result is ceil(width / 8) x ceil(height / 8) and says partial. A whole file decodes as without it.
-   * Plain VarDCT frames without alpha only; anything else cut short is refused. Not with region. Default false. */
+   * Plain VarDCT frames without alpha only. Anything else cut short is refused. Not with region. Default false. */
   partial?: boolean;
+  /** Called with each shown frame and its index, in order, as it is composited. The frame is then dropped from the result,
+   * which keeps only the first, so an animation of any length decodes in the memory of a few frames. The next frame is not
+   * rendered until the returned promise settles, so a slow consumer holds the decode back. A throw or rejection fails the
+   * decode with that error. The frame is the decoder's own: copy it to change it. Where decode runs in place (Node, a worker,
+   * an edge host). A call from a page refuses JXL_OPTIONS. Not with region or partial. */
+  onFrame?: (frame: DecodedFrame, index: number) => void | PromiseLike<void>;
 }
 export interface DecodeRegion {x: number; y: number; width: number; height: number}
 export interface DecodedBitDepth {bits: number; exponentBits: number; float: boolean}
@@ -83,20 +90,22 @@ export interface DecodedExtraChannel {
 export interface DecodedFrame {
   width: number;
   height: number;
-  /** Interleaved RGBA. Integer outputs scale normalized channels to 255 or 65535 and clip; float output is not clipped. */
+  /** Interleaved RGBA. Integer outputs scale normalized channels to 255 or 65535 and clip. Float output is not clipped. */
   data: DecodedPixels;
   format: Exclude<DecodeFormat, 'auto'>;
-  /** With planes: true, normalized color planes in the selected output space, before RGBA conversion, unassociation or spot rendering; else []. */
+  /** With planes: true, normalized color planes in the selected output space, before RGBA conversion, unassociation or spot rendering. Else []. */
   planes: Float32Array[];
   extraChannels: DecodedExtraChannel[];
   colorEncoding: DecodedColorEncoding;
   icc: Uint8Array | null;
-  /** RGBA color meaning; native XYB and non-RGB/gray ICC spaces are converted to sRGB for the RGBA array. */
+  /** RGBA color meaning. Native XYB and non-RGB/gray ICC spaces are converted to sRGB for the RGBA array. */
   rgbaColorEncoding: DecodedColorEncoding;
   rgbaICC: Uint8Array | null;
-  /** Duration in the image's animation tick units. */
+  /** Frame duration in header.animation ticks (NOT milliseconds, multiply durationSeconds by 1000 for ms). */
   duration: number;
+  /** Frame duration in seconds (duration * denominator / numerator). */
   durationSeconds: number;
+  /** Unsigned 32-bit SMPTE timecode when header.animation.timecodes is true. Otherwise 0. */
   timecode: number;
   name: string;
   alphaPremultiplied: boolean;
@@ -131,9 +140,3 @@ export interface DecodedImage extends DecodedFrame {
 }
 /** Decode a complete bare JPEG XL codestream or ISOBMFF container. Throws on malformed input or a configured resource limit. */
 export function decode(bytes: Uint8Array, options?: DecodeOptions): DecodedImage;
-export interface DecodeAsyncOptions extends DecodeOptions {
-  /** Worker threads for one image; default the hardware threads, at most 8. Results equal decode()'s. */
-  threads?: number;
-}
-/** decode() on worker threads: a single VarDCT frame is split into bands of rows. Other images decode on the calling thread. */
-export function decodeAsync(bytes: Uint8Array, options?: DecodeAsyncOptions): Promise<DecodedImage>;

@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
+import {fault} from './fault.mjs';
 import {stage} from './step-journal.mjs';
 import {varDCTSteps, SCAN} from './vardct.mjs';
 import {complete, part, scaled} from './bits.mjs';
 import {offloading} from './offload.mjs';
-import {kernelHooks} from './kernel-hooks.mjs';
+import {progressiveRequested} from './progressive-mode.mjs';
+import {shown} from './photo-shown.mjs';
+import {kernelHooks, ensured, missing, declined} from './kernel-hooks.mjs';
 
 const CAPTURE_PHOTO = typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true;
 
@@ -11,7 +14,7 @@ export function coefficientOrders(components) { return complete(coefficientOrder
 
 const orderFromHistogram = (counts, bucket = 8) => [0, ...Array.from({length: 63}, (_, k) => k + 1).sort((a, b) => Math.floor(counts[b] / bucket) - Math.floor(counts[a] / bucket) || a - b)];
 
-export function worthFastOrder(lumaCounts, lumaOrder, blocks) {
+function worthFastOrder(lumaCounts, lumaOrder, blocks) {
   if (blocks < 1024) return true;
   let sum = 0, inv = 0;
   for (let k = 1; k < 64; k++) sum += lumaCounts[k];
@@ -30,7 +33,7 @@ export function* coefficientOrderSteps(components, bucket = 8, adaptiveFast = fa
     natural.fill(0);
     for (let from = 0; from < coeffs.length; from += 65536) {
       const end = Math.min(from + 65536, coeffs.length);
-      if (!kernelHooks.nonzero?.(coeffs, from, end, natural)) for (let at = from; at < end; at += 64) for (let i = 0; i < 64; i++) if (coeffs[at + i]) natural[i]++;
+      if (!(kernelHooks.nonzero ?? ensured().nonzero ?? missing())(coeffs, from, end, natural)) throw declined('nonzero');
       done += end - from;
       if (yield done / total) return null;
     }
@@ -53,29 +56,30 @@ export function ordersFromCounts(histograms, bucket = 8, adaptiveFast = false, b
 }
 
 export function* candidateSteps(image, plan, shared) {
-  return yield* stage('candidate', function* () {
-    if (!plan.pooled && (!CAPTURE_PHOTO && offloading())) {
+  const bytes = yield* stage('candidate', function* () {
+    if (!plan.pooled && (!CAPTURE_PHOTO && (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && offloading()))) {
       const bytes = yield {offload: 'run', task: {kind: 'vardct', image, plan}, at: done => done};
       if (bytes) return bytes;
     }
     return yield* varDCTSteps(image, plan, shared);
   });
+  return progressiveRequested() ? shown(bytes, image, plan) : bytes;
 }
 export const prefetch = (image, plans) => ({offload: 'prefetch', tasks: plans.map(plan => ({kind: 'vardct', image, plan})), at: done => done});
 const CLUSTERED = Object.freeze({maxClusters: 32, newClusterCost: 160});
-const FAST = Object.freeze({fast: true, clusters: Object.freeze({fixed: true})});
+const FAST = /* @__PURE__ */ Object.freeze({fast: true, clusters: /* @__PURE__ */ Object.freeze({fixed: true})});
 export const prefixPlans = (effort, fallback, retain) => effort <= 3 && !fallback && !retain ? [FAST]
-  : [...(effort >= 4 && !fallback ? [FAST] : []), {}, ...(effort >= 3 ? [{clusters: CLUSTERED}] : []), ...(effort >= 4 ? [{orders: 'learned'}] : [])];
+  : [...(!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && effort >= 4 && !fallback ? [FAST] : []), {}, ...(effort >= 3 ? [{clusters: CLUSTERED}] : []), ...(!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && effort >= 4 ? [{orders: 'learned'}] : [])];
 
 export function* coefficientEffortSteps(jpeg, effort, fallback, retain, shared = {}, pooled = false) {
   if (effort <= 3 && !fallback && !retain) {
     const fast = jpeg.xyb ? {fast: true} : {};
     const bytes = yield* part(varDCTSteps(jpeg, pooled ? {...fast, pooled: true, abortable: false} : fast, shared), 0, 1);
-    if (pooled && bytes === null) throw new Error('Incomplete AC group stream.');
+    if (pooled && bytes === null) throw fault('JXL_INTERNAL', 'coefficient-effort:ac-1');
     return bytes;
   }
   let best = fallback, active, settled = false, suspended = false, hurry = false, interrupted = false;
-  if (!pooled && (!CAPTURE_PHOTO && offloading())) yield prefetch(jpeg, prefixPlans(effort, fallback, retain));
+  if (!pooled && (!CAPTURE_PHOTO && (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && offloading()))) yield prefetch(jpeg, prefixPlans(effort, fallback, retain));
   function* write(plan, fraction, cache = shared) {
     active = candidateSteps(jpeg, pooled ? {...plan, pooled: true, abortable: !!best} : plan, cache);
     let step, reply;
@@ -94,7 +98,7 @@ export function* coefficientEffortSteps(jpeg, effort, fallback, retain, shared =
   }
   const keep = (bytes, plan) => {
     if (interrupted || pooled && bytes === null) {
-      if (!best) throw new Error('Incomplete AC group stream.');
+      if (!best) throw fault('JXL_INTERNAL', 'coefficient-effort:ac-2');
       return false;
     }
     if (!best || bytes.length < best.length) best = bytes;
@@ -102,14 +106,14 @@ export function* coefficientEffortSteps(jpeg, effort, fallback, retain, shared =
     return true;
   };
   try {
-    const ladder = effort >= 4 && !fallback && jpeg.xyb;
+    const ladder = !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && effort >= 4 && !fallback && jpeg.xyb;
     if (ladder) {
       const fastPlan = {fast: true}, fastBytes = yield* write(fastPlan, done => done / 10, {});
       if (!keep(fastBytes, fastPlan) || hurry) { settled = true; return best; }
     }
     const first = yield* write({}, ladder ? done => 0.1 + 0.4 * done : done => done / 2);
     if (!keep(first, {}) || hurry || effort < 3) { settled = true; return best; }
-    const parts = effort < 4 ? 1 : 3;
+    const parts = (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) || effort < 4 ? 1 : 3;
     const clustered = yield* write({clusters: CLUSTERED}, done => 0.5 + done / (2 * parts));
     if (!keep(clustered, {clusters: CLUSTERED}) || hurry || effort < 4 || (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true)) { settled = true; return best; }
     active = coefficientOrderSteps(jpeg.components);
@@ -125,12 +129,12 @@ export function* coefficientEffortSteps(jpeg, effort, fallback, retain, shared =
     settled = true;
     return best;
   } catch (error) {
-    if (suspended || !best || !(error instanceof RangeError && !error?.code) && error?.code !== 'JXL_SIZE') throw error;
+    if (suspended || !best || error?.code !== 'JXL_SIZE') throw error;
     return best;
   } finally {
     try { active?.return(); }
     catch (error) {
-      if (settled && (!best || !(error instanceof RangeError && !error?.code) && error?.code !== 'JXL_SIZE')) throw error;
+      if (settled && (!best || error?.code !== 'JXL_SIZE')) throw error;
     }
   }
 }

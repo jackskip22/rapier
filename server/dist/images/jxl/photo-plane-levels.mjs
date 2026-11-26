@@ -2,11 +2,10 @@
 import {fixedStrategyImage, strategyInputs, auditLevels} from './varblock-core.mjs';
 import {perceptualMaskField} from './photo-mask.mjs';
 import {scaledDCTBases, lowFrequencies} from './vardct-strategies.mjs';
+import {leftDevice} from './device-trial.mjs';
 
 const check = signal => { if (signal?.aborted) throw signal.reason; };
 const unitWeight = base => new Float64Array(base.components[0].stride * base.components[0].rows).fill(1);
-export const plainLayoutBlock = (base, b) =>
-  ({id: 0, bx: b % base.components[0].stride, by: Math.floor(b / base.components[0].stride)});
 export const plainLayout = base => {
   const {stride, rows} = base.components[0], held = base.devicePlanes;
   if (held && held.plainStride === stride && held.plainRows === rows) return held.plainLayout;
@@ -22,16 +21,21 @@ export function planeRequest(base, width, height, search) {
   const weight = search.maskWeight ?? (search.perceptual ? maskOf(base) : unitWeight(base));
   const out = {input: strategyInputs(base, width, height, search), search, ids: search.ids, weight, weightDoubt: 0,
     width, height, planeRows: base.planeRows, devicePlanes: base.devicePlanes, scaledDCTBases, lowFrequencies};
-  return Object.defineProperty(out, 'planeBound', {get: () => base.planeBound, enumerable: true, configurable: true});
+  return Object.defineProperty(out, 'planeBound', {get: () => base.planeBound, enumerable: false, configurable: true});
+}
+export const planeMessage = (request, fields) =>
+  Object.defineProperty({...request, ...fields}, 'planeBound', {get: () => request.planeBound, enumerable: false, configurable: true});
+function levelsMessage(base, width, height, layout, options) {
+  const search = {...options, maskWeight: options.maskWeight ?? unitWeight(base), ids: [...new Set([4, ...layout.map(b => b.id)])]}, request = planeRequest(base, width, height, search);
+  return {gpu: planeMessage(request, {kind: 'photo-block-levels', layout, audit: answer => auditLevels(base, width, height, options, layout, answer)})};
 }
 export function* planeLevelsSteps(base, width, height, layout, options, signal) {
-  const search = {...options, maskWeight: options.maskWeight ?? unitWeight(base), ids: [...new Set([4, ...layout.map(b => b.id)])]}, request = planeRequest(base, width, height, search);
-  const levels = yield {gpu: {kind: 'photo-block-levels', ...request, layout,
-    audit: answer => auditLevels(base, width, height, options, layout, answer)}};
+  if (leftDevice('core', width * height)) return null;
+  const levels = yield levelsMessage(base, width, height, layout, options);
   check(signal);
   return levels?.exact ?? null;
 }
 export function* planeLayoutSteps(base, width, height, layout, options, signal) {
-  const exact = yield* planeLevelsSteps(base, width, height, layout, options, signal);
+  const exact = options.deadzoneMap && !options.gpuDeadzone ? null : yield* planeLevelsSteps(base, width, height, layout, options, signal);
   return fixedStrategyImage(base, width, height, {...options, layout, ...(exact ? {exact} : {})}).image;
 }

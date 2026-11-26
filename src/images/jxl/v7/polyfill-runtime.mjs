@@ -1,5 +1,10 @@
+import {PIXELS} from '../limits.mjs';
+import {abortError} from '../fault.mjs';
 const jxlURL = value => { try { return /\.jxl$/i.test(new URL(value, 'https://local.invalid/').pathname) || /^data:image\/jxl[;,]/i.test(value); } catch { return false; } };
 const fail = (code, message) => Object.assign(new Error(message), {code});
+const STILL = Symbol('still'), FIRST = Symbol('first');
+const ANIMATION_BYTES = 64 * 1024 * 1024;
+const cancelRead = source => { try { source?.cancel().catch(() => {}); } catch {} };
 export function srcset(value) {
   const entries = []; let at = 0;
   while (at < value.length) {
@@ -63,16 +68,32 @@ export function cssURLs(value) {
   }
   return result.sort((a, b) => a.start - b.start);
 }
+function pngClock(decoded) {
+  const {animation, frames} = decoded;
+  if (!animation || !frames?.length) return decoded;
+  const seconds = frames.map(frame => frame.duration * animation.denominator / animation.numerator);
+  const rate = seconds.every(value => value * 60000 <= 65535.5) ? 60000 : 1000;
+  let total = 0, at = 0;
+  return {...decoded, animation: {...animation, numerator: rate, denominator: 1}, frames: frames.map((frame, i) => {
+    total += seconds[i] * rate; const next = Math.round(total), duration = Math.min(65535, Math.max(0, next - at)); at = next;
+    return {...frame, duration};
+  })};
+}
 export function installFallback(document, options) {
   const window = document.defaultView, root = options.root ?? document;
-  const maxBytes = options.maxDecodedBytes ?? 134217728, maxInputBytes = options.maxInputBytes ?? 33554432;
+  if (!window || ['MutationObserver', 'matchMedia', 'addEventListener', 'removeEventListener', 'getComputedStyle', 'reportError'].some(name => typeof window[name] !== 'function'))
+    throw fail('JXL_PLATFORM', "document: browser DOM observers required");
+  const maxBytes = options.maxDecodedBytes ?? Number.MAX_SAFE_INTEGER, maxInputBytes = options.maxInputBytes ?? Number.MAX_SAFE_INTEGER;
   const concurrency = options.workers ?? 2;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 4 || !Number.isSafeInteger(maxInputBytes) || maxInputBytes < 1 || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4)
-    throw fail('JXL_OPTIONS', 'Polyfill limits are positive integers; workers 1 to 4.');
+    throw fail('JXL_OPTIONS', 'limits: positive integers, workers 1-4');
   const states = new Set(), elements = new Map(), cache = new Map(), jobs = [], clients = [], mediaListeners = new Map(), styleWrites = new WeakMap();
   let stopped = false, scheduled = false, active = 0, retainedBytes = 0, imageMode = 'blob';
   const controller = {status: 'active', refresh, disconnect, get stats() { return {elements: states.size, resources: cache.size, active, queued: jobs.length}; }};
-  function report(error, element) { try { options.onError?.(error, element); } catch {} }
+  function report(error, element) {
+    try { Promise.resolve(options.onError?.(error, element)).catch(reason => window.reportError(reason)); }
+    catch (reason) { window.reportError(reason); }
+  }
   function changeStyle(element, action) {
     const before = element.getAttribute('style'); action(); const after = element.getAttribute('style');
     if (before !== after) { let writes = styleWrites.get(element); if (!writes) styleWrites.set(element, writes = []); writes.push({before, after}); }
@@ -85,11 +106,12 @@ export function installFallback(document, options) {
     for (let i = jobs.length - 1; i >= 0; i--) {
       if (jobs[i].entry === entry) {
         const [job] = jobs.splice(i, 1);
-        job.reject(entry.abort.signal.reason ?? fail('JXL_ABORTED', 'JPEG XL operation was canceled.'));
+        job.reject(entry.abort.signal.reason ?? abortError());
       }
     }
   }
   function restore(state, keepResources = false) {
+    state.player?.abort(); state.player = null;
     for (const write of state.writes.reverse()) {
       if (write.css) { if (write.element.style.getPropertyValue('background-image') === write.value) {
         const priority = write.element.style.getPropertyPriority('background-image');
@@ -116,14 +138,14 @@ export function installFallback(document, options) {
         if (candidate.media) { watchMedia(candidate.media); if (!window.matchMedia(candidate.media).matches) continue; }
         const type = read(candidate, 'type').toLowerCase();
         if (type && type !== 'image/jxl' && !/^(image\/(png|jpeg|webp|avif|gif|svg\+xml))$/.test(type)) continue;
-        if (!read(candidate, 'srcset')) continue;
+        if (!srcset(read(candidate, 'srcset')).length) continue;
         source = candidate; typed = type === 'image/jxl'; break;
       }
     }
     const set = read(source, 'srcset');
     const candidates = srcset(set);
     if (candidates.some(row => row.width)) width = sourceSize(read(source, 'sizes') || read(element, 'sizes'), element, window, document, watchMedia);
-    else if (source === element && read(element, 'src') && candidates.length && !candidates.some(row => row.density === 1)) candidates.push({url: read(element, 'src'), density: 1});
+    else if (source === element && read(element, 'src') && !candidates.some(row => row.density === 1)) candidates.push({url: read(element, 'src'), density: 1});
     const candidate = set ? selectCandidate(candidates, width, window.devicePixelRatio || 1) : null;
     const selected = set ? candidate?.url : read(element, 'src');
     const descriptor = candidate ? candidate.width ? ` ${candidate.width}w` : ` ${candidate.density ?? 1}x` : '';
@@ -182,8 +204,8 @@ export function installFallback(document, options) {
   async function decoder() {
     if (options.decode) return options.decode;
     const {createDecodeCodec} = await import('./decode-codec.mjs');
-    if (stopped) throw fail('JXL_CLOSED', 'Polyfill disconnected.');
-    const client = createDecodeCodec({maxPendingBytes: maxInputBytes, maxPixels: Math.min(40000000, Math.floor(maxBytes / 32)), maxPendingJobs: 1, ...(options.workerFactory ? {workerFactory: options.workerFactory} : {})});
+    if (stopped) throw fail('JXL_CLOSED', "disconnected: install() again");
+    const client = createDecodeCodec({maxPendingBytes: maxInputBytes, maxPixels: Math.min(PIXELS, Math.floor(maxBytes / 32)), maxPendingJobs: 1, ...(options.workerFactory ? {workerFactory: options.workerFactory} : {})});
     clients.push(client); return (bytes, settings) => client.decode(bytes, settings);
   }
   const decoders = [];
@@ -191,7 +213,7 @@ export function installFallback(document, options) {
     while (!stopped && active < concurrency && jobs.length) {
       const job = jobs.shift();
       if (job.entry.abort.signal.aborted) {
-        job.reject(job.entry.abort.signal.reason ?? fail('JXL_ABORTED', 'JPEG XL operation was canceled.'));
+        job.reject(job.entry.abort.signal.reason ?? abortError());
         continue;
       }
       const lane = decoders.findIndex(row => !row.busy);
@@ -210,37 +232,120 @@ export function installFallback(document, options) {
   async function run({entry, credentials, referrerPolicy}, row) {
     const signal = entry.abort.signal; signal.throwIfAborted();
     const response = await fetch(entry.url, {signal, mode: 'cors', credentials, referrerPolicy});
-    if (!response.ok) throw fail('JXL_FETCH', `Image request failed (${response.status}).`);
-    const declared = Number(response.headers.get('content-length')); if (declared > maxInputBytes) throw fail('JXL_LIMIT', 'Image exceeds maxInputBytes.');
+    try {
+      if (!response.ok) throw fail('JXL_IO', `image request ${response.status}: URL/access`);
+      const declared = Number(response.headers.get('content-length')); if (declared > maxInputBytes) throw fail('JXL_LIMIT', 'maxInputBytes: raise or smaller image');
+    } catch (error) { cancelRead(response.body); throw error; }
     const reader = response.body?.getReader(); let bytes;
     if (reader) {
       const chunks = []; let length = 0;
-      try { for (;;) { const {done, value} = await reader.read(); if (done) break; length += value.length; if (length > maxInputBytes) throw fail('JXL_LIMIT', 'Image exceeds maxInputBytes.'); chunks.push(value); } }
-      catch (error) { await reader.cancel().catch(() => {}); throw error; }
+      try { for (;;) { const {done, value} = await reader.read(); if (done) break; length += value.length; if (length > maxInputBytes) throw fail('JXL_LIMIT', 'maxInputBytes: raise or smaller image'); chunks.push(value); } }
+      catch (error) { cancelRead(reader); throw error; }
+      finally { reader.releaseLock(); }
       bytes = new Uint8Array(length); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    } else { bytes = new Uint8Array(await response.arrayBuffer()); if (bytes.length > maxInputBytes) throw fail('JXL_LIMIT', 'Image exceeds maxInputBytes.'); }
+    } else { bytes = new Uint8Array(await response.arrayBuffer()); if (bytes.length > maxInputBytes) throw fail('JXL_LIMIT', 'maxInputBytes: raise or smaller image'); }
     signal.throwIfAborted();
-    const decoded = await (await row.decode)(bytes, {signal, format: 'auto', colorSpace: 'original', applyOrientation: true, unpremultiplyAlpha: true,
-      maxPixels: Math.floor(maxBytes / 32), maxTotalSamples: Math.floor(maxBytes / 8), maxInputBytes});
-    const {decodedPNG} = await import('./polyfill-png.mjs'); const blob = await decodedPNG(decoded, {signal, maxBytes});
+    const {header} = await import('./inspect.mjs'); let info; try { info = header(bytes); } catch { info = {}; }
+    if (options.animatedOnly && !info.animation) throw STILL;
+    const decode = await row.decode, limits = {maxPixels: Math.min(PIXELS, Math.floor(maxBytes / 32)), maxTotalSamples: Math.floor(maxBytes / 8), maxInputBytes};
+    const reduced = info.animation && (watchMedia('(prefers-reduced-motion: reduce)'), window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    if (reduced) { entry.animated = true; return await firstFrame(entry, bytes, limits, signal); }
+    if (info.animation) limits.maxTotalSamples = Math.min(limits.maxTotalSamples, ANIMATION_BYTES / 8);
+    let decoded;
+    try { decoded = await bounded(decode(bytes, {signal, format: 'auto', colorSpace: 'original', applyOrientation: true, unpremultiplyAlpha: true, ...limits})); }
+    catch (error) {
+      if (!(info.animation && error?.code === 'JXL_DIMENSIONS' && /total sample limit|maxTotalSamples/.test(String(error.cause?.message ?? error.message)))) throw error;
+      entry.player = {bytes, animation: info.animation};
+      return await firstFrame(entry, bytes, limits, signal);
+    }
+    const {decodedPNG, unshown} = await import('./polyfill-png.mjs'); let blob;
+    if (decoded.frames?.length > 1) entry.animated = true;
+    try { blob = await decodedPNG(decoded, {signal, maxBytes}); }
+    catch (error) {
+      if (!unshown.has(error)) throw error;
+      signal.throwIfAborted();
+      const shown = await bounded(decode(bytes, {signal, format: 'uint16', colorSpace: 'srgb', applyOrientation: true, unpremultiplyAlpha: true, ...limits}));
+      blob = await decodedPNG(pngClock(shown), {signal, maxBytes});
+    }
     signal.throwIfAborted();
-    if (retainedBytes + blob.size > maxBytes) throw fail('JXL_MEMORY', 'Visible decoded images exceed maxDecodedBytes.');
+    if (retainedBytes + blob.size > maxBytes) throw fail('JXL_MEMORY', 'maxDecodedBytes: raise or fewer images');
     let mode = imageMode, output = await displayURL(blob);
     if (mode !== imageMode) { URL.revokeObjectURL(output); output = await displayURL(blob); }
-    if (signal.aborted || stopped) { URL.revokeObjectURL(output); signal.throwIfAborted(); throw fail('JXL_CLOSED', 'Polyfill disconnected.'); }
-    if (retainedBytes + blob.size > maxBytes) { URL.revokeObjectURL(output); throw fail('JXL_MEMORY', 'Visible decoded images exceed maxDecodedBytes.'); }
+    if (signal.aborted || stopped) { URL.revokeObjectURL(output); signal.throwIfAborted(); throw fail('JXL_CLOSED', "disconnected: install() again"); }
+    if (retainedBytes + blob.size > maxBytes) { URL.revokeObjectURL(output); throw fail('JXL_MEMORY', 'maxDecodedBytes: raise or fewer images'); }
     entry.bytes = blob.size; retainedBytes += blob.size; entry.blob = blob; entry.objectURL = output; return output;
+  }
+  let inPlace;
+  async function frameDecoder() {
+    if (options.decode) return {decode: options.decode, close() {}};
+    let client;
+    try {
+      const {createDecodeCodec} = await import('./decode-codec.mjs');
+      client = createDecodeCodec({maxPendingBytes: maxInputBytes, maxPixels: Math.min(PIXELS, Math.floor(maxBytes / 32)), maxPendingJobs: 1, ...(options.workerFactory ? {workerFactory: options.workerFactory} : {})});
+      clients.push(client);
+    } catch { client = null; }
+    const close = () => { if (!client) return; const at = clients.indexOf(client); if (at >= 0) clients.splice(at, 1); client.close(); client = null; };
+    return {close, decode: async (bytes, settings) => {
+      let started = false;
+      if (client) {
+        try { return await client.decode(bytes, {...settings, onFrame: (frame, index) => { started = true; return settings.onFrame(frame, index); }}); }
+        catch (error) { if (started || settings.signal?.aborted || error?.code !== 'JXL_WORKER') throw error; }
+      }
+      inPlace ??= import(/* @vite-ignore */ new URL('./decode.mjs', import.meta.url).href).then(module => module.decode);
+      return (await inPlace)(bytes, settings);
+    }};
+  }
+  const frameBlob = async (frame, signal) => { const {decodedPNG} = await import('./polyfill-png.mjs'); return decodedPNG({...frame, frames: undefined, animation: undefined}, {signal, maxBytes}); };
+  const decodeOptions = (limits, signal) => ({signal, format: 'auto', colorSpace: 'original', applyOrientation: true, unpremultiplyAlpha: true, maxPixels: limits.maxPixels, maxInputBytes: limits.maxInputBytes});
+  async function firstFrame(entry, bytes, limits, signal) {
+    const {decode, close} = await frameDecoder(); let blob;
+    try { await decode(bytes, {...decodeOptions(limits, signal), onFrame: async frame => { blob = await frameBlob(frame, signal); throw FIRST; }}); }
+    catch (error) { if (!blob) throw error; }
+    finally { close(); }
+    signal.throwIfAborted();
+    if (retainedBytes + blob.size > maxBytes) throw fail('JXL_MEMORY', 'maxDecodedBytes: raise or fewer images');
+    const output = await displayURL(blob);
+    if (signal.aborted || stopped) { URL.revokeObjectURL(output); signal.throwIfAborted(); throw fail('JXL_CLOSED', "disconnected: install() again"); }
+    entry.bytes = blob.size; retainedBytes += blob.size; entry.blob = blob; entry.objectURL = output; entry.limits = limits; return output;
+  }
+  function startPlayer(state, entry, item) {
+    const control = new AbortController(), urls = new Set(), {limits} = entry;
+    const stops = [];
+    state.player = control; control.signal.addEventListener('abort', () => { for (const stop of stops) stop(); }, {once: true});
+    const set = url => { for (const write of state.writes) if (!write.css && (write.name === 'src' || write.name === 'srcset') && write.element.getAttribute(write.name) === write.value) {
+      const value = write.name === 'srcset' && item.descriptor ? url + item.descriptor : url;
+      write.element.setAttribute(write.name, value); write.value = value; } };
+    (async () => {
+      const [{play}, frames] = await Promise.all([import('./polyfill-player.mjs'), frameDecoder()]); stops.push(frames.close); if (control.signal.aborted) frames.close();
+      const {decode} = frames;
+      await play({decode, bytes: entry.player.bytes, animation: entry.player.animation, signal: control.signal, options: decodeOptions(limits, control.signal), window: 3,
+        toURL: async frame => { const url = await displayURL(await frameBlob(frame, control.signal)); urls.add(url); return url; },
+        release: url => { urls.delete(url); if (url.startsWith('blob:')) URL.revokeObjectURL(url); },
+        show: async url => {
+          const image = new window.Image(); image.src = url; await image.decode?.().catch(() => {});
+          if (!control.signal.aborted && state.player === control) set(url);
+        }});
+    })().catch(error => { if (!control.signal.aborted && !stopped) { report(error, state.element); } });
+  }
+  function bounded(pending) {
+    return Promise.resolve(pending).catch(error => {
+      if (error?.code !== 'JXL_DIMENSIONS') throw error;
+      const named = String(error?.message ?? '');
+      const own = /\bmaxPixels\b/.test(named) ? Math.floor(maxBytes / 32) < PIXELS : /\btotal sample limit\b|\bmaxTotalSamples\b/.test(named);
+      if (!own) throw error;
+      throw Object.assign(fail('JXL_DIMENSIONS', `picture: maxDecodedBytes ${maxBytes} B, ${Math.floor(maxBytes / 32)} pixels; raise in install()`), {cause: error});
+    });
   }
   async function displayURL(blob) {
     if (imageMode === 'blob') return URL.createObjectURL(blob);
-    if (imageMode !== 'data') throw fail('JXL_IMAGE_CSP', 'Image policy refuses decoded images.');
+    if (imageMode !== 'data') throw fail('JXL_PLATFORM', 'img-src: allow blob:|data:');
     return new Promise((resolve, reject) => { const reader = new window.FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
   }
   async function load(state) {
     if (stopped || state.busy || state.failed || state.writes.length || !state.desired) return;
     if (imageMode === 'blocked') {
       state.failed = true;
-      report(fail('JXL_IMAGE_CSP', 'Image policy refuses decoded image URLs.'), state.element);
+      report(fail('JXL_PLATFORM', 'img-src: allow blob:|data:'), state.element);
       return;
     }
     state.busy = true; const version = state.version, item = state.desired;
@@ -259,6 +364,7 @@ export function installFallback(document, options) {
         if (item.source !== element) { attr(item.source, 'type', 'image/png', state.writes); attr(item.source, 'srcset', answers[0] + item.descriptor, state.writes); }
         else { attr(element, 'srcset', item.descriptor ? answers[0] + item.descriptor : null, state.writes); attr(element, 'src', answers[0], state.writes); }
         element.decode?.().catch(() => {});
+        const own = state.resources.find(entry => entry.player); if (own) startPlayer(state, own, item);
       } else if (item.kind === 'svg') attr(element, 'href', answers[0], state.writes);
       else {
         let text = item.background;
@@ -268,7 +374,7 @@ export function installFallback(document, options) {
         changeStyle(element, () => element.style.setProperty('background-image', text, 'important'));
         state.writes.push({element, css: true, name: 'style', before, priority, appliedPriority: 'important', value: element.style.getPropertyValue('background-image')});
       }
-    } catch (error) { if (version === state.version && !stopped) { state.failed = true; report(error, state.element); } }
+    } catch (error) { if (version === state.version && !stopped) { state.failed = true; if (error !== STILL) report(error, state.element); } }
     finally { if (version === state.version) state.busy = false; }
   }
   const observer = typeof window.IntersectionObserver === 'function' ? new window.IntersectionObserver(entries => {
@@ -326,13 +432,18 @@ export function installFallback(document, options) {
       for (const state of states) if (state.writes.length || state.busy) { restore(state, true); if (state.visible) load(state); }
     } else if (imageMode === 'data' && /^(data|data:)/.test(event.blockedURI)) {
       imageMode = 'blocked';
-      for (const state of states) { restore(state); state.failed = true; report(fail('JXL_IMAGE_CSP', 'Image policy refuses decoded image URLs.'), state.element); }
+      for (const state of states) { restore(state); state.failed = true; report(fail('JXL_PLATFORM', 'img-src: allow blob:|data:'), state.element); }
     }
   };
   document.addEventListener('securitypolicyviolation', policy);
-  function disconnect() { if (stopped) return; stopped = true; mutations.disconnect(); observer?.disconnect(); window.removeEventListener('resize', refresh); document.removeEventListener('load', refresh, true); document.removeEventListener('securitypolicyviolation', policy);
+  const visibility = () => { for (const state of states) {
+    if (document.hidden) { if (state.resources.some(entry => entry.animated || entry.player)) restore(state); }
+    else if (state.visible && !state.writes.length) load(state);
+  } };
+  document.addEventListener('visibilitychange', visibility);
+  function disconnect() { if (stopped) return; stopped = true; mutations.disconnect(); observer?.disconnect(); window.removeEventListener('resize', refresh); document.removeEventListener('load', refresh, true); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('securitypolicyviolation', policy);
     for (const media of mediaListeners.values()) media.removeEventListener?.('change', refresh); mediaListeners.clear();
-    for (const state of states.values()) restore(state); states.clear(); elements.clear(); for (const client of clients) client.close(); for (const job of jobs.splice(0)) job.reject(fail('JXL_CLOSED', 'Polyfill disconnected.')); measures.get(document)?.remove(); measures.delete(document); controller.status = 'closed';
+    for (const state of states.values()) restore(state); states.clear(); elements.clear(); for (const client of clients) client.close(); for (const job of jobs.splice(0)) job.reject(fail('JXL_CLOSED', "disconnected: install() again")); measures.get(document)?.remove(); measures.delete(document); controller.status = 'closed';
   }
   scan(); return controller;
 }

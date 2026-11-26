@@ -1,6 +1,6 @@
 {
 	"name": "jxl",
-	"version": "0.1.3",
+	"version": "0.2.4",
 	"private": true,
 	"type": "module",
 	"packageManager": "npm@11.9.0",
@@ -34,12 +34,12 @@
 		"prevalidate": "node scripts/sync-words.mjs"
 	},
 	"peerDependencies": {
-		"emdash": ">=1.4.0 <2.0.0"
+		"emdash": ">=1.5.0 <2.0.0"
 	},
 	"devDependencies": {
 		"@emdash-cms/plugin-cli": "0.13.5",
-		"@emdash-cms/plugin-test": "0.2.11",
-		"emdash": "1.4.0",
+		"@emdash-cms/plugin-test": "0.2.12",
+		"emdash": "1.5.0",
 		"typescript": "5.9.3",
 		"vitest": "4.1.12"
 	}

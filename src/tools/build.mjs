@@ -10,7 +10,7 @@ import {BROTLI_SETTINGS, FAST_PACK} from './zopfli.mjs';
 import vm from 'node:vm';
 import {scriptMinifier, reflectedNames} from './minify.mjs';
 import acorn from '../agent/vendor/acorn.mjs';
-import {TOOLS, UI_RESOURCE, mcpDescriptors, publishedSchema} from '../agent/catalog.mjs';
+import {TOOLS, DOOR_ONLY_TOOLS, UI_RESOURCE, mcpDescriptors, publishedSchema} from '../agent/catalog.mjs';
 import {pairedShell, PAIRED_SHELL_FILE, PAIRED_SHELL_HEADERS, PAIRED_SHELL_REDIRECTS} from '../mcp/paired.mjs';
 import {entitiesVendor, SHARED_MARKDOWN_MODULES, sharedMarkdownVendor} from './entities-vendor.mjs';
 import {VERSION} from '../version.mjs';
@@ -310,7 +310,7 @@ async function bundle(path) {
     if (entries.length === 1) walk(entries[0].body, node => { if (node.type === 'SwitchStatement' && node.discriminant.name === 'name') switches.push(node); });
     const dispatch = switches.length === 1 ? switches[0] : null;
     const cases = dispatch?.cases.filter(row => row.test).map(row => row.test.value);
-    const names = TOOLS.map(row => row.name);
+    const names = TOOLS.filter(row => !DOOR_ONLY_TOOLS.includes(row.name)).map(row => row.name);
     if (!cases || cases.length !== new Set(cases).size || names.length !== new Set(names).size ||
       names.some(name => !cases.includes(name))) throw new Error('Tool catalog and kernel dispatch differ');
   }
@@ -971,7 +971,7 @@ const vendorPacks = Promise.all(vendorIds.map((id, at) => packedSpans(id, 'text/
 const {checkVendor} = await import('./jxl-vendor.mjs');
 { const problems = checkVendor(); if (problems.length) throw new Error('images/vendor/rapier-jxl: ' + problems.join('; ')); }
 const JXL_PAGE_FILES = ['jpeg.mjs', 'index.mjs', 'jpeg.browser.mjs', 'index.browser.mjs'];
-const JXL_PART_FILES = {jxlcomplete: ['decode.mjs', 'animation.mjs', 'decode.browser.mjs', 'animation.browser.mjs'], jxlmax: ['max.mjs', 'max.browser.mjs']};
+const JXL_PART_FILES = {jxlcomplete: ['decode.mjs', 'animation.mjs', 'decode.browser.mjs', 'animation.browser.mjs', 'hdr.mjs'], jxlmax: ['max.mjs', 'max.browser.mjs']};
 const JXL_MARKS = {jxlcomplete: 'RAPIER_JXL_COMPLETE_FILES', jxlmax: 'RAPIER_JXL_MAX_FILES'};
 const jxlPin = JSON.parse(await read('images/vendor/rapier-jxl/PIN.json'));
 const jxlVendored = Object.fromEntries(await Promise.all([...JXL_PAGE_FILES, ...Object.values(JXL_PART_FILES).flat()].map(async name => [name, await read('images/vendor/rapier-jxl/' + name)])));
@@ -983,6 +983,27 @@ for (const [part, names] of Object.entries(JXL_PART_FILES)) {
   const slice = editorSlices.parts.get(part), mark = new RegExp(`JSON\\.parse\\((['"])${JXL_MARKS[part]}\\1\\)`, 'g');
   if ((slice.match(mark) || []).length !== 1) throw new Error('The part ' + part + ' has no one ' + JXL_MARKS[part] + ' mark');
   editorSlices.parts.set(part, slice.replace(mark, () => JSON.stringify(Object.fromEntries(names.map(name => [name, jxlVendored[name]])))));
+}
+// is written into the part's one RAPIER_JXL_GLITCH_ENGINE mark.
+{
+  const pin = JSON.parse(await read('images/vendor/rapier-jxl-glitch/PIN.json')), engine = await read('images/vendor/rapier-jxl-glitch/engine.js');
+  if (createHash('sha256').update(engine).digest('hex') !== pin.sha256 || Buffer.byteLength(engine) !== pin.bytes) throw new Error('images/vendor/rapier-jxl-glitch/engine.js does not match its pin');
+  if (!editorSlices.parts.has('jxlglitch')) throw new Error('No part jxlglitch to carry the glitch engine');
+  const slice = editorSlices.parts.get('jxlglitch'), mark = /JSON\.parse\((['"])RAPIER_JXL_GLITCH_ENGINE\1\)/g;
+  if ((slice.match(mark) || []).length !== 1) throw new Error('The part jxlglitch has no one RAPIER_JXL_GLITCH_ENGINE mark');
+  editorSlices.parts.set('jxlglitch', slice.replace(mark, () => JSON.stringify(engine)));
+}
+// part's one RAPIER_JXL_VERSION mark, never typed.
+{
+  if (!/^\d+\.\d+\.\d+$/.test(jxlPin.version)) throw new Error('images/vendor/rapier-jxl/PIN.json has no release version');
+  if (!editorSlices.parts.has('jxl')) throw new Error('No part jxl to carry the rapier-jxl version');
+  const slice = editorSlices.parts.get('jxl'), mark = /JSON\.parse\((['"])RAPIER_JXL_VERSION\1\)/g;
+  if ((slice.match(mark) || []).length !== 1) throw new Error('The part jxl has no one RAPIER_JXL_VERSION mark');
+  editorSlices.parts.set('jxl', slice.replace(mark, () => JSON.stringify(jxlPin.version)));
+  if (!Number.isSafeInteger(jxlPin.sizes?.upload) || jxlPin.sizes.upload < 1) throw new Error('images/vendor/rapier-jxl/PIN.json has no upload size: node tools/jxl-vendor.mjs --write ' + jxlPin.version);
+  const sized = editorSlices.parts.get('jxl'), uploadMark = /JSON\.parse\((['"])RAPIER_JXL_UPLOAD_KB\1\)/g;
+  if ((sized.match(uploadMark) || []).length !== 1) throw new Error('The part jxl has no one RAPIER_JXL_UPLOAD_KB mark');
+  editorSlices.parts.set('jxl', sized.replace(uploadMark, () => JSON.stringify(Math.round(jxlPin.sizes.upload / 1000))));
 }
 if (editorSlices.parts.has('fonts')) {
   const slice = editorSlices.parts.get('fonts'), mark = /(['"])RAPIER_FONT_CATALOG_PIN\1/g, pin = JSON.parse(await read('fonts/catalog-pin.json'));

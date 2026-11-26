@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jpegxl/verify reference | jpegxl</title>
+<meta name="description" content="jpegxl/verify: In a browser, direct verify() reads 8-bit sRGB and Display P3 stills with the browser's own JPEG XL decode, and direct verify() in Node…">
+<link rel="canonical" href="https://rapier.website/jxl/docs/verify.html">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/jxl/docs/docs.css">
+<script src="/jxl/docs/docs.js" defer></script>
+</head>
+<body>
+<header class="bar"><a class="bar__title" href="/jxl/docs/">jpegxl docs</a><a class="bar__link" href="/jxl">Converter</a></header>
+<main>
+<h1>jpegxl/verify</h1>
+<p class="lede">In a browser, direct verify() reads 8-bit sRGB and Display P3 stills with the browser's own JPEG XL decode, and direct verify() in Node, Deno and Bun needs nothing.</p>
+<nav class="contents" aria-label="On this page"><a class="choice" href="#import"><span>Import</span></a><a class="choice" href="#api"><span>API</span></a><a class="choice" href="#types"><span>Types</span></a><a class="choice" href="#errors"><span>Errors</span></a></nav>
+<section id="import">
+<h2>import</h2>
+<div class="code"><pre><code class="language-js">import {configureDecoder, verify} from 'jpegxl/verify';</code></pre></div><p class="meta">about 80 KB Brotli, about 96 KB gzip. One file, no dependencies.</p>
+</section>
+<section id="api">
+<h2>api</h2>
+<article id="fn-configureDecoder"><h3>configureDecoder</h3><p>In a browser, direct verify() reads 8-bit sRGB and Display P3 stills with the browser's own JPEG XL decode, and direct verify() in Node, Deno and Bun needs nothing. Resumable verification (jpegxl/resumable with verify), and elsewhere for recompressed JPEGs, row sources, animations, more than 8 bits, float samples or other color, the one setup step is <code>configureDecoder(decode, restore)</code> with jpegxl/decode's decode and jpegxl/jpeg's restore. Without it those refuse JXL_PLATFORM, naming it. One call serves every jpegxl module.</p><div class="code"><pre><code>function configureDecoder(decode: PackageDecode | null, restore?: JpegRestore | null, recompress?: JpegRecompress | null): void</code></pre></div></article>
+<article id="fn-verify"><h3>verify</h3><p>Restore and compare a JPEG, compare exact decoded samples, or measure the decoded lossy output against its declared target, plus every explicitly protected sample. Rejects with an existing JXL_* code. A failed comparison includes error.verification. The original and result are snapshotted at the call. This module never writes, replaces, or deletes a file. Invalid protection refuses JXL_OPTIONS. Incompatible JPEG verification refuses JXL_UNSUPPORTED. Missing JPEG reconstruction refuses JXL_RECONSTRUCTION.</p><div class="code"><pre><code>function verify(original: ImageInput | AnimationInput | Uint8Array, output: ImageResult, options?: VerifyOptions): Promise&lt;VerificationReceipt&gt;</code></pre></div><h4>VerifyOptions</h4><ul class="rows"><li><p><span class="name">protection?</span> <span class="type">VerifyProtection</span></p><p>Pixels that must decode exactly, whatever the output's fidelity.</p></li></ul><p class="meta">Also takes <a href="options.html#signal">signal</a>, <a href="options.html#onProgress">onProgress</a>, <a href="options.html#maxPixels">maxPixels</a>: <a href="options.html">shared options</a>.</p></article>
+</section>
+<section id="types">
+<h2>types</h2>
+<ul class="rows"><li id="type-VerifyProtection"><p><span class="name">VerifyProtection</span></p><p>Explicit exact-pixel obligations in output-canvas coordinates, snapshotted at verify(). Applies to an unrotated still raster, including a transformed still reference. Supply the actual selected mask for conditional text or edge protection. Hints are not masks.</p></li><li id="type-VerifyOptions"><p><span class="name">VerifyOptions</span></p><p>One binary byte per output pixel, 1 = exact. The selection unions with exactRects.</p></li><li id="type-ProtectionEvidence"><p><span class="name">ProtectionEvidence</span></p><p>Pixels that must decode exactly, whatever the output's fidelity.</p></li><li id="type-VerificationReceipt"><p><span class="name">VerificationReceipt</span></p><p>Independent evidence bound to the original and the actual output file.</p></li><li id="type-FailedVerificationReceipt"><p><span class="name">FailedVerificationReceipt</span></p><p>Available on a failed comparison when the original and output were admitted.</p></li><li id="type-VerificationError"><p><span class="name">VerificationError</span></p><p>What verify rejects with: a JXL_ code, and the failed receipt when the comparison ran.</p></li><li id="type-CodecError"><p><span class="name">CodecError</span></p></li><li id="type-ErrorCode"><p><span class="name">ErrorCode</span></p><p>The code every refusal carries, by what the caller does next. The call: JXL_OPTIONS (an option is unknown or its value is not allowed). The input: JXL_INPUT (the picture or bytes are missing, empty, not what the call takes, or a file that changed while it was read), JXL_DIMENSIONS (the picture is over maxPixels or the side limit), JXL_JPEG (the bytes are not a JPEG), JXL_DECODE (the file is not a valid JPEG XL), JXL_RECONSTRUCTION (no JPEG reconstruction data), JXL_TARGET (a measured fidelity this version cannot reach), JXL_PLATFORM (an input this realm cannot decode, or a host API this call needs, a missing decoder's message names configureDecoder or the effort that runs here). A bound: JXL_MEMORY (not enough memory for this picture here, or the queue's maxPendingBytes, maxPendingJobs), JXL_LIMIT (a parser's maxInputBytes or maxBytes, a written file over its byte bound, or capture's rectangle budget). The host: JXL_WASM (no WebAssembly with SIMD here), JXL_WEBGPU (webgpu: 'required' and a job this version would run on WebAssembly: efforts 1-6, an exact file, no usable device, a device that failed the job, or a route this version runs on WebAssembly only), JXL_WORKER (the worker could not start, stopped or failed, its message names the fix: a blocked worker-src, a start that timed out), JXL_IO (a Blob or an image request could not be read). The lifecycle: JXL_CLOSED (the module's queue is closed). A job canceled through its signal rejects with that signal's reason, an AbortError DOMException unless you passed one. Not done by this version: JXL_UNSUPPORTED, a valid request or file asking for something this version does not do. The setup commands: JXL_SETUP (<code>add</code> or <code>remove</code> cannot change a project's files safely. Its message names the step to do by hand). Ours: JXL_INTERNAL (a fault in jpegxl itself). A code keeps its meaning through 8.x. A later 8.x may add one.</p></li></ul>
+</section>
+<section id="errors">
+<h2>errors</h2>
+<p>A refusal carries a <code>code</code>. <a href="errors.html">Every code, and what to do</a>.</p>
+</section>
+</main>
+<footer class="foot"><a href="https://github.com/jackskip22/rapier-jxl">GitHub</a><a href="https://www.npmjs.com/package/jpegxl">npm</a><a href="/jxl/docs/">All docs</a></footer>
+</body>
+</html>

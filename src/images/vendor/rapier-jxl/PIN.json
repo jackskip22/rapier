@@ -6,6 +6,9 @@
     "shasum": "d7288b71f14a7c2e8c971e79241f7a9f479dd847",
     "digest": "19da1044e7e9955f0df0cb0db191a0aa48c0a1f7d9dad95970e4cb28f27d0263"
   },
+  "sizes": {
+    "upload": 353043
+  },
   "files": {
     "index.mjs": {
       "bytes": 1751375,
@@ -46,6 +49,10 @@
     "max.browser.mjs": {
       "bytes": 61417,
       "sha256": "7c7aef3a1354b718dcfd87f0f13e7d2be78d6d09dd5f6b02ec69dbfdc73bd608"
+    },
+    "hdr.mjs": {
+      "bytes": 39247,
+      "sha256": "aee51c2d168d09d56d2f0b7f35d35c9a2c81844bae431c7632fb9754ae2c3122"
     }
   }
 }

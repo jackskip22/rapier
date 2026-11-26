@@ -657,3 +657,41 @@
       (call $peelFill (i32.add (local.get $words) (i32.shl (i32.add (i32.mul (local.get $y) (local.get $width)) (local.get $x)) (i32.const 2)))
         (i32.add (i32.sub (i32.load offset=8 (local.get $r)) (local.get $x)) (i32.const 1)) (local.get $bg))))
     (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $run))))
+
+  ;; The page route's repeat fact (v7/page-route.mjs photographsRepeat): a hash of each 8 x 8 block of a `width` x
+  ;; `height` page on its 8-pixel grid, FNV-1a over the block's 64 words in row order, written at `out` (4 bytes a block,
+  ;; row by row); a block of one colour writes 0 and any other block a hash that is never 0.
+  (func (export "blockHashes") (param $words i32) (param $width i32) (param $height i32) (param $out i32)
+    (local $gw i32) (local $gh i32) (local $bx i32) (local $by i32) (local $k i32) (local $j i32) (local $p i32)
+    (local $w i32) (local $first i32) (local $h i32) (local $flat i32) (local $w4 i32)
+    (local.set $gw (i32.shr_u (local.get $width) (i32.const 3)))
+    (local.set $gh (i32.shr_u (local.get $height) (i32.const 3)))
+    (local.set $w4 (i32.shl (local.get $width) (i32.const 2)))
+    (local.set $by (i32.const 0))
+    (block $done (loop $rows
+      (br_if $done (i32.ge_u (local.get $by) (local.get $gh)))
+      (local.set $bx (i32.const 0))
+      (block $rowDone (loop $blocks
+        (br_if $rowDone (i32.ge_u (local.get $bx) (local.get $gw)))
+        ;; The block's first word: row by * 8, column bx * 8.
+        (local.set $p (i32.add (local.get $words) (i32.add (i32.mul (i32.shl (local.get $by) (i32.const 3)) (local.get $w4))
+          (i32.shl (local.get $bx) (i32.const 5)))))
+        (local.set $first (i32.load (local.get $p)))
+        (local.set $h (i32.const -2128831035))
+        (local.set $flat (i32.const 1))
+        (local.set $k (i32.const 0))
+        (loop $krows
+          (local.set $j (i32.const 0))
+          (loop $kcols
+            (local.set $w (i32.load (i32.add (local.get $p) (i32.shl (local.get $j) (i32.const 2)))))
+            (local.set $h (i32.mul (i32.xor (local.get $h) (local.get $w)) (i32.const 16777619)))
+            (local.set $flat (i32.and (local.get $flat) (i32.eq (local.get $w) (local.get $first))))
+            (br_if $kcols (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (i32.const 8))))
+          (local.set $p (i32.add (local.get $p) (local.get $w4)))
+          (br_if $krows (i32.lt_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (i32.const 8))))
+        (i32.store (i32.add (local.get $out) (i32.shl (i32.add (i32.mul (local.get $by) (local.get $gw)) (local.get $bx)) (i32.const 2)))
+          (select (i32.const 0) (select (local.get $h) (i32.const 1) (local.get $h)) (local.get $flat)))
+        (local.set $bx (i32.add (local.get $bx) (i32.const 1)))
+        (br $blocks)))
+      (local.set $by (i32.add (local.get $by) (i32.const 1)))
+      (br $rows))))

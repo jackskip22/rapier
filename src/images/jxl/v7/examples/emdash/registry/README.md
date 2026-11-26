@@ -1,17 +1,21 @@
 # JPEG XL Image Optimizer
 
-Makes images smaller with JPEG XL. Photos shrink about 75% with the same look, text stays sharp. Originals kept for incompatible browsers.
+JPEG XL copies for EmDash media. Text stays exact, and photos use a chosen quality. Other browsers receive the original.
 
 ## Description
 
 Every upload gets a JPEG XL copy, served to compatible browsers. Browsers which cannot display it get served the original file.
 
-The rapier-jxl encoder makes smaller files than libjxl at the same quality and automatically keeps text sharp inside compressed screenshots.
+New in 8.5.0: Sizes makes JPEG XL copies at EmDash's own widths and keeps the full-size file, about seven times faster and with a third of the storage. A slot close to a stored width gets that copy. Pictures are never enlarged. Node hosts need Node 22.3 or later.
+
+rapier-jxl encodes JPEG XL with WebAssembly. Efforts 6–9 measure photo quality. Efforts 1–5 measure only where it earns its time.
+
+rapier-jxl is the encoder inside [rapier.website](https://rapier.website), the free Markdown editor and painting app. Rapier is also a free [Android app](https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Demdash) that opens and converts JPEG XL pictures.
 
 JPEGs are kept as JPEG XL, then converted back losslessly when needed. Other formats always keep the original file.
 
 ```sh
-npx rapier-jxl add emdash
+npx jpegxl add emdash
 ```
 
 Works with Cloudflare R2 and Node local storage.
@@ -21,17 +25,17 @@ Works with Cloudflare R2 and Node local storage.
 Just run this in your site's folder:
 
 ```sh
-npx rapier-jxl add emdash
+npx jpegxl add emdash
 ```
 
 Or tell your coding agent:
 
-"Add rapier-jxl to my EmDash site with npx rapier-jxl add emdash."
+"Add jpegxl to my EmDash site with npx jpegxl add emdash."
 
-Or install `rapier-jxl`, then in `astro.config.mjs` wrap your EmDash setup:
+Or install `jpegxl`, then in `astro.config.mjs` wrap your EmDash setup:
 
 ```js
-import {jxl} from 'rapier-jxl/emdash';
+import {jxl} from 'jpegxl/emdash';
 
 jxl(emdash, {database, storage});
 ```
@@ -40,13 +44,12 @@ jxl(emdash, {database, storage});
 
 - **What does this plug-in do?** It makes a JPEG XL copy of every image in your media library. Browsers that show JPEG XL get the copy. Incompatible browsers are served your original file.
 - **Which browsers show JPEG XL?** Chrome, Firefox and Safari all now support JXL by default.
-- **How much smaller will my images be?** "Same look" at the quality 90 default made photos about 75% smaller than the uploaded JPEG. "Exact" made files about 18% smaller with the exact same pixels.
-- **Will my images look worse?** No. In "Same look", each copy is checked against the original with SSIMULACRA 2. "Exact" keeps every pixel unchanged.
+- **How much smaller will my images be?** File size depends on the picture and effort. "Exact" preserves every pixel. "Same look" aims at the selected quality.
+- **Will my images look worse?** "Same look" uses SSIMULACRA 2: efforts 6–9 measure the result. Efforts 1–5 measure only where it earns its time. "Exact" preserves every pixel.
 - **What happens to my original files?** Nothing is ever lost. JPEGs are kept as JPEG XL, then converted back losslessly into the identical JPEG when needed. Other formats always keep the original file.
+- **What about link previews and downloads?** Everything that needs your original file receives it automatically, including downloads and social previews. Only the JPEG XL format can store a JPEG smaller, then rebuild the identical original file on demand.
 - **Do I need an account, key or a subscription?** No. Images are converted on your own server, or in your own browser where the server cannot handle it. Nothing is uploaded and there are no usage limits.
-- **What about older images or WordPress imports?** The plug-in's page converts older images in the background. "Import from WordPress" brings in a WordPress export's images and updates the links in your posts.
+- **What about older images or an imported site?** The plug-in's page converts older images in the background. "Import a site export" brings in the images from your old site's export file and updates the links in your posts.
 - **Which images does it convert?** JPEG, PNG, WebP and AVIF. GIF and SVG are left as they are.
-- **What is Effort?** How hard the encoder works for a smaller file, from 1 to 9. The default, 7, takes about a minute and a half for a 12-megapixel photo on a small 4-core server. Effort 3 takes about a second.
-- **Does it work with responsive images and CDNs?** Yes. Sizes makes JPEG XL copies up to 3840 pixels wide, and image responses carry `Vary: Accept`.
-- **How do I remove it?** Run `npx rapier-jxl remove emdash`. It restores every original JPEG, then removes the plug-in.
-- **What storage works?** Cloudflare R2 and Node local storage.
+- **Does it work with responsive images and CDNs?** Yes. Sizes makes JPEG XL copies at EmDash's own widths, up to 1920 pixels, and keeps the full-size file, and image responses carry `Vary: Accept`.
+- **How do I remove it?** Run `npx jpegxl remove emdash`. It restores every original JPEG, then removes the plug-in.

@@ -24,7 +24,7 @@ test('a unit that reads its source in order takes a few read rounds, not one a r
   persist(await codec.start({source, options: {}}));
   for (let calls = 0; checkpoint.status !== 'done'; calls++) { persist(await codec.advance(checkpoint, host(), {units: 64})); assert.ok(calls < 20); }
   const output = [];
-  for await (const bytes of codec.outputParts(checkpoint, host())) output.push(...bytes);
+  for (const byte of await codec.output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, [COUNT * (COUNT + 1) / 2 & 255]);
   assert.ok(runs <= 12, `${runs} attempts`);
   assert.ok(reads.every(length => length <= 1 << 20), 'every read is at most 1 MiB');

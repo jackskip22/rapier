@@ -6,8 +6,6 @@ export type {Orientation} from './jpeg.mjs';
 
 /** Unchecked composition layers. Call the admission helpers before allocating or writing caller input. */
 export const LIMITS: Limits;
-export const PHOTO_LIMITS: Limits;
-export const JPEG_LIMITS: Limits;
 export type Numbers = ArrayLike<number> & Iterable<number>;
 export type Plane = Int16Array | Int32Array;
 export type Steps<Output = Bytes> = Generator<number, Output, boolean | undefined>;
@@ -103,7 +101,7 @@ export function writeTree<L extends Leaf>(w: BitWriter, root: Tree<L>): L[];
 export function writeTransform(w: BitWriter, transform: Transform): void;
 export function writeModularHeader(w: BitWriter, options?: {useGlobalTree?: boolean; transforms?: readonly Transform[]}): void;
 export function writeChannelHistograms<L extends Leaf>(w: BitWriter, orderedLeaves: readonly L[], freqs: readonly Uint32Array[], histogramOf?: (leaf: L) => number, configOf?: (index: number) => UintConfig): PrefixHistogram[];
-/** With a null writer, count residual tokens; otherwise write them through the supplied prefix code. */
+/** With a null writer, count residual tokens. Otherwise write them through the supplied prefix code. */
 export function codeChannel(w: null, target: Uint32Array, plane: Plane, width: number, height: number, leaf: Leaf, raw?: boolean): void;
 export function codeChannel(w: BitWriter, target: PrefixCode, plane: Plane, width: number, height: number, leaf: Leaf, raw?: false): void;
 

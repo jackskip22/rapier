@@ -6,12 +6,12 @@ import {digest, decodeData} from '../resumable-data.mjs';
 import {carried, unit, readAll} from '../step-journal.mjs';
 
 const MiB = 1 << 20, copyJSON = value => JSON.parse(JSON.stringify(value));
-const job = async (open, input, budgetMs = 60000) => {
+const job = async (open, input, budgetMs = 60000, memoryBytes = 2 * input.length + 64 * MiB) => {
   const codec = createJournalStepper({id: 'rs3/hold-bound', build: 'e'.repeat(64), normalize: () => ({budgetMs}), open});
   const parts = new Map(), source = {generation: 'rs3/hold', byteLength: input.length, sha256: await digest(input)};
   let checkpoint;
   const keep = value => { for (const {ref, bytes} of value.parts) parts.set(ref.hash, bytes.slice()); checkpoint = copyJSON(value.checkpoint); };
-  const host = () => ({source, expectedRevision: checkpoint.revision, read: ref => parts.get(ref.hash),
+  const host = () => ({source, expectedRevision: checkpoint.revision, ...(memoryBytes !== null && {memoryBytes}), read: ref => parts.get(ref.hash),
     readMany: refs => refs.map(ref => parts.get(ref.hash)), readSource: (at, count) => input.subarray(at, at + count)});
   keep(await codec.start({source, options: {}}));
   while (decodeData(parts.get(checkpoint.state.hash)).phase === 'verify') keep(await codec.advance(checkpoint, host(), {units: 1}));
@@ -34,12 +34,15 @@ test('a call holds its carried values within its bound and reports its peak', as
   } finally { delete globalThis[observe]; }
 });
 
-test('a call over its bound is refused', async () => {
-  const run = await job(function* () {
+test('a call over its host\'s bound is refused; with none stated, the host\'s allocation holds it', async () => {
+  const open = function* () {
     const big = yield* unit('big', () => new Uint8Array(72 * MiB).fill(1));
     return big.subarray(0, 1);
-  }, new Uint8Array(1024).fill(5));
-  await assert.rejects(run.advance(), error => error.code === 'JXL_MEMORY');
+  };
+  await assert.rejects((await job(open, new Uint8Array(1024).fill(5))).advance(), error => error.code === 'JXL_MEMORY' && /memoryBytes/.test(error.message));
+  const free = await job(open, new Uint8Array(1024).fill(5), 60000, null);
+  let result;
+  do result = await free.advance(); while (!result.done);
 });
 
 test('a restored value counts as its decoded copy (and the page it was read through): a new value beside it passes the bound or not', async () => {

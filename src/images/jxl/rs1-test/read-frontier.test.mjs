@@ -138,7 +138,7 @@ if (!isMainThread) {
     }
     assert.deepEqual(completed, Array.from({length: COUNT}, (_, i) => i), 'completed bands never run twice');
     const sum = Array.from({length: COUNT}, (_, i) => 2 * (i + 1) + 2 * (i + 31)).reduce((a, b) => a + b, 0);
-    const bytes = []; for await (const part of codec.outputParts(job.checkpoint, job.host())) bytes.push(...part);
+    const bytes = []; for (const byte of await codec.output(job.checkpoint, job.host(), length => new Uint8Array(length))) bytes.push(byte);
     assert.deepEqual(bytes, [sum & 255, sum >>> 8]);
     assert.deepEqual((await codec.completion(job.checkpoint, job.host())).result.facts, {sum});
   });
@@ -164,7 +164,7 @@ if (!isMainThread) {
       most = Math.max(most, reads);
     }
     assert.ok(most <= 2, 'one checkpoint read and at most one actual journal read');
-    const out = []; for await (const bytes of codec.outputParts(job.checkpoint, job.host())) out.push(...bytes);
+    const out = []; for (const byte of await codec.output(job.checkpoint, job.host(), length => new Uint8Array(length))) out.push(byte);
     assert.deepEqual(out, [55]);
   });
 
@@ -192,7 +192,7 @@ if (!isMainThread) {
     }
     assert.ok(reads.length > 0, 'later bands actually read their pinned source ranges');
     assert.ok(reads.every(({length}) => length <= MiB / 4), 'a prior whole-source unit does not authorize whole-source lookahead');
-    const out = []; for await (const bytes of make().outputParts(job.checkpoint, job.host())) out.push(...bytes);
+    const out = []; for (const byte of await make().output(job.checkpoint, job.host(), length => new Uint8Array(length))) out.push(byte);
     assert.deepEqual(out, [28]);
   });
 
@@ -218,7 +218,7 @@ if (!isMainThread) {
         assert.ok(calls < 12, 'large structures resume without reading stale parent bytes');
         job.keep(await make().advance(job.checkpoint, job.host()));
       }
-      const parts = []; for await (const bytes of make().outputParts(job.checkpoint, job.host())) parts.push(bytes);
+      const parts = []; parts.push(await make().output(job.checkpoint, job.host(), length => new Uint8Array(length)));
       const actual = new Uint8Array(parts.reduce((n, bytes) => n + bytes.length, 0));
       let at = 0; for (const bytes of parts) { actual.set(bytes, at); at += bytes.length; }
       assert.equal(await digest(actual), expected);
@@ -251,7 +251,7 @@ if (!isMainThread) {
     job.keep(await make().advance(job.checkpoint, job.host({budgetMs: 60000}), {units: 64}));
     assert.equal(job.checkpoint.status, 'done');
     assert.deepEqual(visited, [0, 1, 2, 3, 4, 5, 6, 7, 8, 'tail', 'after']);
-    const out = []; for await (const bytes of make().outputParts(job.checkpoint, job.host())) out.push(...bytes);
+    const out = []; for (const byte of await make().output(job.checkpoint, job.host(), length => new Uint8Array(length))) out.push(byte);
     assert.deepEqual(out, [55]);
   });
 }

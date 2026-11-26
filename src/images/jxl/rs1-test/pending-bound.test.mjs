@@ -30,7 +30,7 @@ test('children that leave the journal do not end a call by the pending-write bou
   persist(await codec.start({source, options: {}}));
   for (; checkpoint.status !== 'done'; calls++) { persist(await codec.advance(checkpoint, host(), {units: 2})); assert.ok(calls < 20); }
   const output = [];
-  for await (const part of codec.outputParts(checkpoint, host())) output.push(...part);
+  for (const byte of await codec.output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, [(2 * (12 * 3 + 66) + 12) & 255]);
   assert.equal(calls, 1, `${calls} calls`);
 });

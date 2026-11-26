@@ -49,7 +49,7 @@ Add rapier-jxl to my EmDash site with npx rapier-jxl add emdash.
 npm install rapier-jxl @cloudflare/kumo@2.6.0
 ```
 
-Kumo 2.6.0 matches EmDash 1.4's admin. For a newer host, use the Kumo version resolved by its installed EmDash admin.
+EmDash 1.5.0 and @emdash-cms/cloudflare must have the same installed version. Use the exact Kumo version resolved by the installed EmDash admin.
 
 In `astro.config.mjs`, add the import and replace `emdash(options)` with `jxl(emdash, options)`. Keep the entire existing options object:
 
@@ -81,7 +81,7 @@ jxl(emdash, options, {cpuLimitMs: 10})
 
 Use the host's configured allowance. An omitted CPU value does not classify a plan as Free. Error 1102 alone also does not distinguish CPU from memory exhaustion. Cloudflare memory defaults to its 128 MiB isolate limit. Worker admission reserves runtime headroom: the measured operation peak plus 10% must fit both 96 MB and any smaller configured memory allowance. A job with no certified memory bound is handed to the browser, as is a job whose bound exceeds that allowance. Node does not inherit the Worker limit.
 
-An explicitly configured Free Worker (`cpuLimitMs: 10`) accepts delivery copies from an authenticated media administrator after the browser verifies them. The server checks the JPEG XL container/header and compares its displayed geometry with one bounded 64 KiB JPEG/PNG source-header read. Responsive geometry comes from the captured Sizes settings and the oriented source aspect ratio. It also enforces the byte limit and source-generation, delivery-revision, native media-identity, and settings fences. The browser receipt is recorded as informational assurance. It never authorizes original retirement. This path returns an immediate sidecar or responsive copy, without server pixel verification or a pending verification job. The original stays in place. Paid, Node, and Workers with an unknown allowance still require independent server verification before publication.
+An explicitly configured Free Worker (`cpuLimitMs: 10`) accepts delivery copies from an authenticated media administrator after the browser verifies them. The server checks the JPEG XL container/header and compares its displayed geometry with one bounded 64 KiB JPEG/PNG source-header read. Responsive geometry comes from the captured Sizes settings and the oriented source aspect ratio. It also enforces the byte limit and source-generation, delivery-revision, native media-identity, and settings fences. The browser receipt is recorded as informational assurance. It never authorizes original retirement. This path returns an immediate sidecar or responsive copy, without server pixel verification or a pending verification job. Here a Size limit takes the quality the uploader's browser chose, where the server verifies pixels, it also refuses a copy when a higher quality fits. The original stays in place. Paid, Node, and Workers with an unknown allowance still require independent server verification before publication.
 
 The structural source check reads pre-scan JPEG Exif or pre-IDAT PNG eXIf. It does not prove anything about metadata after image data, decoded pixel equality, fidelity, or exact reconstruction. Unsupported or incomplete headers within the fixed cap are refused. Normalized orientation is accepted when the displayed geometry agrees. Structural checks still need measurement on the actual Free host. Passing source tests is not a 10 ms CPU measurement.
 
@@ -91,19 +91,19 @@ Native admin work uses approximately 5 seconds per request and scheduled Worker 
 
 The server run supports **Pause**, **Resume**, and **Cancel**. Pause lets the current image finish and holds the next one. Cancel stops pending work and requests cancellation of the current job. A job already publishing must settle first. Completed copies remain available. Reopening the page reads the saved selection and progress.
 
-**Import from WordPress** uses EmDash to import images and rewrite post URLs. Its JPEG and PNG uploads receive the same server treatment as other uploads, including before the post rewrite finishes. Browser conversion starts after that rewrite succeeds. A failed or canceled rewrite stops the browser queue. It does not undo server copies already created. Media URLs and original image bytes remain available throughout.
+**Import a site export** uses EmDash to import images and rewrite post URLs. Its JPEG and PNG uploads receive the same server treatment as other uploads, including before the post rewrite finishes. Browser conversion starts after that rewrite succeeds. A failed or canceled rewrite stops the browser queue. It does not undo server copies already created. Media URLs and original image bytes remain available throughout.
 
 ## Mode and Sizes
 
 | Mode | Meaning | Control |
 | --- | --- | --- |
-| **Same look** | Looks like the original, much smaller. | Quality, 1 to 100. A value of 90 suits most photos. |
+| **Same look** | Looks like the original, much smaller. | Quality, 1 to 100. 90 suits most photos. |
 | **Exact** | Lossless. | No quality control. |
 | **Size limit** | Fits under the size limit you set. | A positive size in KB. |
 
 When **Keep original JPEG files** is off on an eligible host, JPEG originals are archived separately using lossless JPEG recompression. Otherwise the uploaded JPEG stays in place. **Same look** and **Size limit** also produce a delivery candidate using the selected goal. **Exact** can use a reversible JPEG XL result directly. Delivery chooses the smallest eligible candidate that satisfies the current selection. An archive or retained JPEG preserves the exact original when the delivery representation misses a size limit. An oversized archive is not selected for delivery. An unmet size target reports a miss and leaves original delivery available.
 
-**Effort** is 1 to 9. Higher makes smaller files and takes longer. The default is 7. **Sizes** controls responsive widths. The defaults are 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200 and 3840 pixels. Copies do not upscale the source. A Size limit applies to each responsive copy.
+**Effort** is 1 to 9. Higher makes smaller files and takes longer. The default is 7. **Sizes** controls responsive widths. The defaults are 640, 750, 828, 960, 1080, 1280, 1600 and 1920 pixels, EmDash's own, and the full-size file. Copies do not upscale the source. A Size limit applies to each responsive copy.
 
 Settings load before work starts. Saves are serialized. A failed change returns to the confirmed value. An invalid Size limit stays a draft and prevents new work until a valid limit is saved or another mode is chosen. Accepted server jobs keep their captured settings. The server independently checks browser results before publication.
 
@@ -136,7 +136,20 @@ In **Recent**, **Download original** returns the exact original file and MIME ty
 
 **Make smaller** starts a fresh conversion using the current settings. It captures the current source generation and delivery revision. Conditional writes prevent an older page, job, or retained copy from undoing a later original-delivery choice.
 
-Negotiation applies to EmDash's `/_emdash/api/media/file/…` URLs and matching same-origin width requests. The browser must explicitly accept JPEG XL without preferring the alternative. Original fallback, thumbnails, and downloads continue through the storage wrapper. Both delivery representations vary on `Accept`. JPEG XL responses require cache revalidation. Direct bucket or CDN URLs bypass this wrapper, so use the EmDash media URLs.
+Negotiation applies to EmDash's `/_emdash/api/media/file/…` URLs and matching same-origin width requests. The browser must explicitly accept JPEG XL without preferring the alternative. Original fallback, thumbnails, and downloads continue through the storage wrapper. Both delivery representations vary on `Accept`, so a cache keeps one copy for each. On EmDash versions that cache media in the route cache, a JPEG XL response joins the image's cache tag, so replacing or deleting the image clears it too. Older versions cache nothing and need no change. JPEG XL responses require cache revalidation. Direct bucket or CDN URLs bypass this wrapper, so use the EmDash media URLs.
+
+EmDash 1.5's `<Image formats={["avif", "webp"]}>` emits a `<picture>`. Its optimized AVIF and WebP width URLs can return an existing JPEG XL variant when the request explicitly prefers or equally accepts `image/jxl`. Otherwise the site's image service remains the fallback. The component does not itself emit a JPEG XL `<source>` with this formats array, so a browser that omits `image/jxl` from its `Accept` header receives the ordinary picture.
+
+## AI agents (MCP)
+
+When plugin MCP tools are enabled in EmDash (`mcp:tools` or `mcp:tools:rapier-media`), AI agents can run the optimizer over `/_emdash/api/mcp` with four tools:
+
+| Tool | Permission | What it does |
+| --- | --- | --- |
+| `rapier-media__convertLibrary` | `media:upload` | Start, pause, resume, advance, or cancel converting ready JPEG and PNG files in the media library under the saved settings. |
+| `rapier-media__libraryProgress` | `media:read` | Read the current or most recent library conversion run, active image job, and originals policy state. |
+| `rapier-media__bytesSaved` | `media:read` | Measure original bytes, delivered JPEG XL bytes, visitor bytes saved, and physical storage bytes across the library. |
+| `rapier-media__keepOriginalJpegs` | `media:upload` | Read or change **Keep original JPEG files** (`destructive: true`). Turning it off needs `confirm: true` and the policy ID just read, and the host's allowance. |
 
 ## Remove it
 

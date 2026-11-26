@@ -8,24 +8,24 @@ import {nodeEstimate} from './node-admission.mjs';
 const WORKER_MEMORY_BYTES = 128 * 1024 * 1024;
 const fail = message => Object.assign(new Error(message), {code: 'JXL_OPTIONS'});
 const positive = (value, name) => {
-  if (!Number.isFinite(value) || value <= 0) throw fail(`${name} is a positive number.`);
+  if (!Number.isFinite(value) || value <= 0) throw fail(`${name}: positive number`);
   return value;
 };
 
 export function hostOptions(value = {}) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw fail('Host limits are an object.');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw fail("limits: object");
   if (Object.keys(value).some(key => !['cpuLimitMs', 'memoryLimitBytes'].includes(key)))
-    throw fail('Host limits name cpuLimitMs and memoryLimitBytes.');
+    throw fail("limits: cpuLimitMs, memoryLimitBytes");
   return Object.fromEntries(Object.entries(value).map(([key, number]) => [key, positive(number, key)]));
 }
 
 export function hostLimits(platform, options = {}, realMemory = nodeMemoryBytes) {
-  if (!['node', 'cloudflare'].includes(platform)) throw fail('Expected the native host platform.');
+  if (!['node', 'cloudflare'].includes(platform)) throw fail("platform: node or cloudflare");
   const cpuLimitMs = options.cpuLimitMs === undefined ? null : positive(options.cpuLimitMs, 'cpuLimitMs');
   const requested = options.memoryLimitBytes === undefined ? null : positive(options.memoryLimitBytes, 'memoryLimitBytes');
-  if (requested !== null && !Number.isSafeInteger(requested)) throw fail('memoryLimitBytes is a whole byte count.');
+  if (requested !== null && !Number.isSafeInteger(requested)) throw fail("memoryLimitBytes: safe integer");
   if (platform === 'cloudflare' && requested > WORKER_MEMORY_BYTES)
-    throw fail('A Cloudflare Worker cannot reserve more than its 128 MiB isolate limit.');
+    throw fail('memoryLimitBytes: <=128MiB');
   const memoryLimitBytes = requested ?? (platform === 'cloudflare' ? WORKER_MEMORY_BYTES : null);
   return Object.freeze({platform, cpuLimitMs, memoryLimitBytes,
     memoryBytes: memoryLimitBytes ?? (platform === 'node' ? realMemory() : null)});
@@ -48,8 +48,8 @@ export function requestBudget(host, scheduled = false) {
   return host.cpuLimitMs === null ? ordinary : Math.max(1, Math.min(ordinary, host.cpuLimitMs * 0.8));
 }
 
-export const canRetireJpeg = host => host?.platform === 'node' && host.cpuLimitMs === null ||
-  ['node', 'cloudflare'].includes(host?.platform) && host.cpuLimitMs >= 30000;
+import {canRetireJpeg} from './space-saver.mjs';
+export {canRetireJpeg};
 
 export const deliveryOnly = host => host?.platform === 'cloudflare' && host.cpuLimitMs === 10;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 (() => {
 	const C = globalThis.RapierJxlConvert, M = globalThis.RapierJxlMaker;
-	const QUALITY_WORDS = Object.freeze({lossless: 'Lossless', high: 'High', smaller: 'Medium'});
+	const QUALITY_WORDS = Object.freeze({high: 'High', veryhigh: 'Very high', lossless: 'Lossless'});
 	const SIZE_WORDS = Object.freeze({first: 'First', largest: 'Largest', smallest: 'Smallest'});
 	const FIT_WORDS = Object.freeze({contain: 'Fit', cover: 'Fill', none: 'Original'});
 	const RATES = Object.freeze([10, 15, 24, 30]), SIDES = Object.freeze([320, 480, 720, 1280, 1920]);
@@ -504,10 +504,11 @@
 		if (on) { progressTo(self, 0); say(self, text); }
 	}
 
-	function tabs(body, still) {
+	const TABS = Object.freeze([['still', 'still'], ['animated', 'animated'], ['xr', 'xr'], ['glitch', 'glitch']]);
+	function tabs(body, still, xr = []) {
 		const list = make('div', 'rapier-jxl-tabs'), panels = [];
 		list.setAttribute('role', 'tablist'); list.setAttribute('aria-label', 'JPEG XL');
-		for (const [name, words] of [['still', 'still'], ['animated', 'animated']]) {
+		for (const [name, words] of TABS) {
 			const tab = make('button', 'rapier-jxl-tabs__tab', words), panel = make('div', 'rapier-jxl-view__panel');
 			const on = name === 'still';
 			tab.type = 'button'; tab.id = 'rapier-jxl-tab-' + name; tab.dataset.tab = name; tab.setAttribute('role', 'tab');
@@ -516,7 +517,7 @@
 			panel.hidden = !on;
 			list.append(tab); panels.push(panel);
 		}
-		panels[0].append(...still);
+		panels[0].append(...still); panels[2].append(...xr);
 		body.append(list, ...panels);
 	}
 	function bind(root, host = {}) {
@@ -524,15 +525,27 @@
 		if (!list) return {unbind() {}};
 		const buttons = [...list.querySelectorAll('[role="tab"]')], panels = Object.fromEntries([...root.querySelectorAll('.rapier-jxl-view__panel')].map(panel => [panel.dataset.tab, panel]));
 		const scroller = list.closest('.rapier-jxl-view__body');
-		const bound = {host, maker: null, tab: 'still'};
+		const bound = {host, maker: null, glitch: null, tab: 'still', live: true};
+		const glitch = () => {
+			if (bound.glitch || bound.glitchComing) return;
+			bound.glitchComing = _rapierPartReady('jxlglitch').then(ready => {
+				bound.glitchComing = null;
+				if (!bound.live) return;
+				if (ready && _rapierJxlGlitchPart) bound.glitch = _rapierJxlGlitchPart.mount(panels.glitch, host);
+				else if (bound.tab === 'glitch') show('still');
+			});
+		};
 		const show = (name, {focus = false, address = true} = {}) => {
 			if (!panels[name]) return;
 			bound.tab = name;
 			for (const button of buttons) { const on = button.dataset.tab === name; button.setAttribute('aria-selected', String(on)); button.tabIndex = on ? 0 : -1; if (on && focus) button.focus(); }
 			for (const [key, panel] of Object.entries(panels)) panel.hidden = key !== name;
 			if (name === 'animated' && !bound.maker) bound.maker = mount(panels.animated, host);
+			if (name === 'glitch') glitch();
+			const chosen = buttons.find(button => button.dataset.tab === name);
+			if (chosen && list.scrollWidth > list.clientWidth) list.scrollLeft = Math.max(0, Math.min(chosen.offsetLeft - list.offsetLeft - (list.clientWidth - chosen.offsetWidth) / 2, list.scrollWidth - list.clientWidth));
 			if (scroller) scroller.scrollTop = 0;
-			if (address) try { const hash = name === 'animated' ? '#animated' : ''; if (location.hash !== hash) history.replaceState(history.state, '', location.pathname + location.search + hash); } catch (_) {}
+			if (address) try { const hash = name === 'still' ? '' : '#' + name; if (location.hash !== hash) history.replaceState(history.state, '', location.pathname + location.search + hash); } catch (_) {}
 		};
 		const click = event => { const tab = event.target.closest('[role="tab"]'); if (tab) show(tab.dataset.tab, {focus: true}); };
 		const key = event => {
@@ -541,18 +554,20 @@
 			else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); show(buttons[event.key === 'Home' ? 0 : buttons.length - 1].dataset.tab, {focus: true}); }
 		};
 		const files = event => {
-			if (bound.tab !== 'animated' || !bound.maker) return;
+			if (bound.tab === 'still') return;
+			const taker = bound.tab === 'animated' ? bound.maker : bound.tab === 'glitch' ? bound.glitch : null, pick = taker?.pick;
 			const list = event.type === 'paste' ? [...event.clipboardData?.files || []].filter(file => /^(image|video)\//.test(file.type)) : [...event.dataTransfer?.files || []];
-			if (event.type === 'dragover') { if (event.dataTransfer?.types.includes('Files')) { event.preventDefault(); event.stopPropagation(); bound.maker.pick.toggleAttribute('data-over', true); } return; }
-			if (event.type === 'dragleave') { if (!root.contains(event.relatedTarget)) bound.maker.pick.removeAttribute('data-over'); event.stopPropagation(); return; }
+			if (event.type === 'dragover') { if (event.dataTransfer?.types.includes('Files')) { event.preventDefault(); event.stopPropagation(); pick?.toggleAttribute('data-over', true); } return; }
+			if (event.type === 'dragleave') { if (!root.contains(event.relatedTarget)) pick?.removeAttribute('data-over'); event.stopPropagation(); return; }
 			if (!list.length) return;
-			event.preventDefault(); event.stopPropagation(); bound.maker.pick.removeAttribute('data-over');
-			add(bound.maker, list);
+			event.preventDefault(); event.stopPropagation(); pick?.removeAttribute('data-over');
+			if (!taker) return;
+			if (bound.tab === 'animated') add(taker, list); else _rapierJxlGlitchPart.take(taker, list);
 		};
 		list.addEventListener('click', click); list.addEventListener('keydown', key);
 		for (const type of ['dragover', 'dragleave', 'drop', 'paste']) root.addEventListener(type, files, true);
-		const asked = _rapierJxlDoor?.tab || (location.hash === '#animated' ? 'animated' : 'still');
-		if (asked === 'animated') show('animated', {address: false});
+		const asked = _rapierJxlDoor?.tab || ({'#animated': 'animated', '#xr': 'xr', '#glitch': 'glitch'})[location.hash] || 'still';
+		if (asked !== 'still') show(asked, {address: false});
 		return {
 			get tab() { return bound.tab; },
 			show,
@@ -560,8 +575,9 @@
 				list.removeEventListener('click', click); list.removeEventListener('keydown', key);
 				for (const type of ['dragover', 'dragleave', 'drop', 'paste']) root.removeEventListener(type, files, true);
 				if (bound.maker) unmount(bound.maker);
-				bound.maker = null;
-				try { if (location.hash === '#animated') history.replaceState(history.state, '', location.pathname + location.search); } catch (_) {}
+				if (bound.glitch) _rapierJxlGlitchPart.unmount(bound.glitch);
+				bound.maker = bound.glitch = null; bound.live = false;
+				try { if (['#animated', '#xr', '#glitch'].includes(location.hash)) history.replaceState(history.state, '', location.pathname + location.search); } catch (_) {}
 			}};
 	}
 	function mount(panel, host) {

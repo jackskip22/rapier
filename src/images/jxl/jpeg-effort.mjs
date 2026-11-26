@@ -55,7 +55,7 @@ export function* jpegEffortSteps(jpeg, effort, retain, baseline = coefficientEff
     }
     return best;
   } catch (error) {
-    if (!(error instanceof RangeError && !error.code) && error.code !== 'JXL_SIZE') throw error;
+    if (error.code !== 'JXL_SIZE') throw error;
     return best;
   }
 }

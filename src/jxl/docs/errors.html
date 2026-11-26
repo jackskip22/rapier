@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jpegxl error codes | jpegxl</title>
+<meta name="description" content="Every JXL_ error code jpegxl throws, what it means and what a caller does next.">
+<link rel="canonical" href="https://rapier.website/jxl/docs/errors.html">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/jxl/docs/docs.css">
+<script src="/jxl/docs/docs.js" defer></script>
+</head>
+<body>
+<header class="bar"><a class="bar__title" href="/jxl/docs/">jpegxl docs</a><a class="bar__link" href="/jxl">Converter</a></header>
+<main>
+<h1>errors</h1>
+<p class="lede">The code every refusal carries, by what the caller does next. A code keeps its meaning through 8.x</p>
+<div class="code"><pre><code class="language-js">try {
+  await encode(picture);
+} catch (error) {
+  if (error.code === 'JXL_INPUT') showMessage(error.message);
+  else throw error;
+}</code></pre></div>
+<section id="the-call">
+<h2>the call</h2>
+<p>Fix the options.</p><ul class="rows"><li id="jxl_options"><p><span class="name">JXL_OPTIONS</span></p><p>An option is unknown or its value is not allowed.</p></li></ul>
+</section>
+<section id="the-input">
+<h2>the input</h2>
+<p>Change the input.</p><ul class="rows"><li id="jxl_input"><p><span class="name">JXL_INPUT</span></p><p>The picture or bytes are missing, empty, not what the call takes, or a file that changed while it was read.</p></li><li id="jxl_dimensions"><p><span class="name">JXL_DIMENSIONS</span></p><p>The picture is over maxPixels or the side limit.</p></li><li id="jxl_jpeg"><p><span class="name">JXL_JPEG</span></p><p>The bytes are not a JPEG.</p></li><li id="jxl_decode"><p><span class="name">JXL_DECODE</span></p><p>The file is not a valid JPEG XL.</p></li><li id="jxl_reconstruction"><p><span class="name">JXL_RECONSTRUCTION</span></p><p>No JPEG reconstruction data.</p></li><li id="jxl_target"><p><span class="name">JXL_TARGET</span></p><p>A measured fidelity this version cannot reach.</p></li><li id="jxl_platform"><p><span class="name">JXL_PLATFORM</span></p><p>An input this realm cannot decode, or a host API this call needs, a missing decoder's message names configureDecoder or the effort that runs here.</p></li></ul>
+</section>
+<section id="a-bound">
+<h2>a bound</h2>
+<p>Raise the bound or send less.</p><ul class="rows"><li id="jxl_memory"><p><span class="name">JXL_MEMORY</span></p><p>Not enough memory for this picture here, or the queue's maxPendingBytes, maxPendingJobs.</p></li><li id="jxl_limit"><p><span class="name">JXL_LIMIT</span></p><p>A parser's maxInputBytes or maxBytes, a written file over its byte bound, or capture's rectangle budget.</p></li></ul>
+</section>
+<section id="the-host">
+<h2>the host</h2>
+<p>Set up the host.</p><ul class="rows"><li id="jxl_wasm"><p><span class="name">JXL_WASM</span></p><p>No WebAssembly with SIMD here.</p></li><li id="jxl_webgpu"><p><span class="name">JXL_WEBGPU</span></p><p>Webgpu: 'required' and a job this version would run on WebAssembly: efforts 1-6, an exact file, no usable device, a device that failed the job, or a route this version runs on WebAssembly only.</p></li><li id="jxl_worker"><p><span class="name">JXL_WORKER</span></p><p>The worker could not start, stopped or failed, its message names the fix: a blocked worker-src, a start that timed out.</p></li><li id="jxl_io"><p><span class="name">JXL_IO</span></p><p>A Blob or an image request could not be read.</p></li></ul>
+</section>
+<section id="the-lifecycle">
+<h2>the lifecycle</h2>
+<p>Check how the call or module was closed.</p><ul class="rows"><li id="jxl_closed"><p><span class="name">JXL_CLOSED</span></p><p>The module's queue is closed.</p></li></ul>
+</section>
+<section id="not-done-by-this-version">
+<h2>not done by this version</h2>
+<p>Ask for something this version does.</p><ul class="rows"><li id="jxl_unsupported"><p><span class="name">JXL_UNSUPPORTED</span></p><p>A valid request or file asking for something this version does not do.</p></li></ul>
+</section>
+<section id="ours">
+<h2>ours</h2>
+<p>Report it.</p><ul class="rows"><li id="jxl_internal"><p><span class="name">JXL_INTERNAL</span></p><p>A fault in jpegxl itself.</p></li></ul>
+</section>
+<section id="the-setup-commands">
+<h2>the setup commands</h2>
+<ul class="rows"><li id="jxl_setup"><p><span class="name">JXL_SETUP</span></p><p><code>add</code> or <code>remove</code> cannot change a project's files safely. Its message names the step to do by hand.</p></li></ul>
+</section>
+</main>
+<footer class="foot"><a href="https://github.com/jackskip22/rapier-jxl">GitHub</a><a href="https://www.npmjs.com/package/jpegxl">npm</a><a href="/jxl/docs/">All docs</a></footer>
+</body>
+</html>

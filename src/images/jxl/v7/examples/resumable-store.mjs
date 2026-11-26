@@ -6,17 +6,17 @@ const versioned = value => typeof value === 'string' && value.length > 0 ||
   Number.isSafeInteger(value) && value >= 0;
 const copy = value => {
   try { return structuredClone(value); }
-  catch (cause) { throw fail('JXL_INPUT', 'Job inputs and saved records must be cloneable data.', cause); }
+  catch (cause) { throw fail('JXL_INPUT', "job data: structuredClone compatible", cause); }
 };
 const observed = (current, outcome = 'stale') => ({outcome, ...current});
 
 export function createDurableDriver({operation, store, readSource} = {}) {
-  if (typeof operation !== 'function') throw fail('JXL_OPTIONS', 'Pass the imported encoding operation.');
+  if (typeof operation !== 'function') throw fail('JXL_OPTIONS', "operation: imported encoder");
   for (const name of ['getVersioned', 'compareAndSet', 'read'])
-    if (typeof store?.[name] !== 'function') throw fail('JXL_OPTIONS', 'store.' + name + ' is required.');
+    if (typeof store?.[name] !== 'function') throw fail('JXL_OPTIONS', 'store.' + name + ': function');
   if (typeof store.write !== 'function' && typeof store.writeMany !== 'function')
-    throw fail('JXL_OPTIONS', 'The immutable store needs write or writeMany.');
-  if (typeof readSource !== 'function') throw fail('JXL_OPTIONS', 'An immutable source reader is required.');
+    throw fail('JXL_OPTIONS', "writer: write or writeMany");
+  if (typeof readSource !== 'function') throw fail('JXL_OPTIONS', "readSource: function");
 
   const ioFor = input => ({
     readSource: (offset, length) => readSource(copy(input), offset, length),
@@ -31,21 +31,21 @@ export function createDurableDriver({operation, store, readSource} = {}) {
         !saved.input.generation || typeof saved.done !== 'boolean' || typeof saved.canceled !== 'boolean' ||
         saved.done && saved.canceled || !Number.isSafeInteger(saved.checkpoint?.revision) ||
         saved.checkpoint.revision < 0 || typeof saved.commit !== 'string' || !saved.commit)
-      throw fail('JXL_INPUT', 'Invalid saved host job.');
+      throw fail('JXL_INPUT', "saved job: restore data");
     return saved;
   }
   async function inspect(key) {
-    if (typeof key !== 'string' || !key) throw fail('JXL_OPTIONS', 'A job storage key is required.');
+    if (typeof key !== 'string' || !key) throw fail('JXL_OPTIONS', "key: nonempty");
     const current = await store.getVersioned(key);
     if (!current || current.version !== null && !versioned(current.version) ||
         current.value !== null && current.version === null)
-      throw fail('JXL_INPUT', 'Store returned an invalid versioned job.');
+      throw fail('JXL_INPUT', "version: fix getVersioned()");
     return {version: current.version, value: current.value === null ? null : record(current.value)};
   }
   function fence(command) {
     if (!command || typeof command.generation !== 'string' || !command.generation ||
         command.expectedVersion !== null && !versioned(command.expectedVersion))
-      throw fail('JXL_OPTIONS', 'Name the saved source generation and observed store version.');
+      throw fail('JXL_OPTIONS', "identity: generation and expectedVersion");
     return {...command};
   }
   const matches = (current, command) => current.value?.input.generation === command.generation &&
@@ -62,22 +62,22 @@ export function createDurableDriver({operation, store, readSource} = {}) {
     try { actual = await inspect(key); }
     catch (cause) {
       if (error || saved?.ok !== false)
-        throw Object.assign(fail('JXL_IO', 'Checkpoint commit outcome is unknown.', error ?? cause), {commitOutcome: 'unknown'});
+        throw Object.assign(fail('JXL_IO', "checkpoint: unconfirmed; check state", error ?? cause), {commitOutcome: 'unknown'});
       throw cause;
     }
     if (actual.value?.commit === value.commit) {
-      if (actual.version === current.version) throw fail('JXL_INPUT', 'Store reused a CAS version.');
+      if (actual.version === current.version) throw fail('JXL_INPUT', "store version: unique");
       return observed(actual, 'observed');
     }
     if ((error || saved?.ok !== false) && actual.version === current.version)
-      throw Object.assign(fail('JXL_IO', 'Checkpoint commit outcome is unknown.', error), {commitOutcome: 'unknown'});
+      throw Object.assign(fail('JXL_IO', "checkpoint: unconfirmed; check state", error), {commitOutcome: 'unknown'});
     return observed(actual);
   }
 
   return {
     inspect,
     async start(key, {input, options, expectedVersion = null, signal} = {}) {
-      if (expectedVersion !== null && !versioned(expectedVersion)) throw fail('JXL_OPTIONS', 'Invalid expected store version.');
+      if (expectedVersion !== null && !versioned(expectedVersion)) throw fail('JXL_OPTIONS', "version: observed store version");
       const ownedInput = copy(input), ownedOptions = copy(options);
       signal?.throwIfAborted();
       const current = await inspect(key);
@@ -102,7 +102,7 @@ export function createDurableDriver({operation, store, readSource} = {}) {
       const current = await inspect(key);
       command.signal?.throwIfAborted();
       if (!matches(current, command)) return observed(current);
-      if (!current.value.done || current.value.canceled) throw fail('JXL_INPUT', 'Only a completed job can finish.');
+      if (!current.value.done || current.value.canceled) throw fail('JXL_INPUT', "job: advance to completion");
       const result = await resumable.finish(current.value.checkpoint, {
         operation, input: current.value.input, store: ioFor(current.value.input), signal: command.signal,
       });

@@ -3,17 +3,8 @@ import {join, resolve} from 'node:path';
 import {readFile} from 'node:fs/promises';
 import acorn from '../agent/vendor/acorn.mjs';
 import {pathToFileURL} from 'node:url';
-
-let optimizer;
-async function binaryen() {
-  if (!optimizer) optimizer = import(process.env.BINARYEN_MODULE
-    ? pathToFileURL(resolve(process.env.BINARYEN_MODULE)).href : 'binaryen')
-    .then(module => module.default).catch(cause => {
-      optimizer = undefined;
-      throw new Error('Kernel stripping needs build-time binaryen@123.0.0; set BINARYEN_MODULE to its index.js.', {cause});
-    });
-  return optimizer;
-}
+import {stripKernelExports} from './jxl-rebuild-kernels.mjs';
+export {stripKernelExports};
 
 export function kernelProfile(name) {
   if (/^capture-complete(?:\.|$)/.test(name)) return 'capture-complete';
@@ -25,34 +16,21 @@ export function kernelProfile(name) {
   return null;
 }
 
-export async function stripKernelExports(bytes, keep, implementation) {
-  const original = new WebAssembly.Module(bytes), exports = WebAssembly.Module.exports(original);
-  const names = new Set(keep);
-  if (names.size !== keep.length) throw new Error('Duplicate kernel export in the entry profile.');
-  for (const name of names) if (!exports.some(item => item.name === name)) throw new Error('Missing canonical kernel export: ' + name);
-  const api = implementation || await binaryen(), module = api.readBinary(bytes);
-  try {
-    module.setFeatures(api.Features.SIMD128 | api.Features.BulkMemory | api.Features.BulkMemoryOpt | api.Features.NontrappingFPToInt);
-    for (const item of exports) if (!names.has(item.name)) module.removeExport(item.name);
-    module.runPasses(['remove-unused-module-elements']);
-    if (!module.validate()) throw new Error('The stripped kernel module is invalid.');
-    const result = module.emitBinary();
-    const emitted = WebAssembly.Module.exports(new WebAssembly.Module(result)).map(item => item.name).sort();
-    if (JSON.stringify(emitted) !== JSON.stringify([...names].sort())) throw new Error('The stripped kernel interface differs from its entry profile.');
-    return result;
-  } finally { module.dispose(); }
-}
-
 export async function createKernelStripper(codec) {
-  const [{wasmBytes, storedWasmByte, KEY}, store, jpegStore] = await Promise.all([
+  const [{wasmBytes, storedWasmText}, store, jpegStore, rebuildStore, decodeStore] = await Promise.all([
     import(pathToFileURL(join(codec, 'wasm-text.mjs')).href),
-    import(pathToFileURL(join(codec, 'kernels-bytes.mjs')).href), import(pathToFileURL(join(codec, 'jpeg-kernels-bytes.mjs')).href)
+    import(pathToFileURL(join(codec, 'kernels-bytes.mjs')).href), import(pathToFileURL(join(codec, 'jpeg-kernels-bytes.mjs')).href),
+    import(pathToFileURL(join(codec, 'rebuild-kernels-bytes.mjs')).href), import(pathToFileURL(join(codec, 'decode-kernels-bytes.mjs')).href)
   ]);
   const stores = {
     kernels: {file: join(codec, 'kernels-bytes.mjs'), filter: /[\\/]kernels-bytes\.mjs$/, full: wasmBytes(store.KERNELS),
       text: kernels => 'export const KERNELS = ' + JSON.stringify(kernels) + ';\nexport const SIMD_PROBE = ' + JSON.stringify(store.SIMD_PROBE) + ';\n'},
     jpeg: {file: join(codec, 'jpeg-kernels-bytes.mjs'), filter: /[\\/]jpeg-kernels-bytes\.mjs$/, full: wasmBytes(jpegStore.JPEG_KERNELS),
       text: kernels => 'export const JPEG_KERNELS = ' + JSON.stringify(kernels) + ';\n'},
+    rebuild: {file: join(codec, 'rebuild-kernels-bytes.mjs'), filter: /[\\/]rebuild-kernels-bytes\.mjs$/, full: wasmBytes(rebuildStore.REBUILD_KERNELS),
+      text: kernels => 'export const REBUILD_KERNELS = ' + JSON.stringify(kernels) + ';\n'},
+    decode: {file: join(codec, 'decode-kernels-bytes.mjs'), filter: /[\\/]decode-kernels-bytes\.mjs$/, full: wasmBytes(decodeStore.DECODE_KERNELS),
+      text: kernels => 'export const DECODE_KERNELS = ' + JSON.stringify(kernels) + ';\n'},
   }, cache = new Map();
   for (const store of Object.values(stores)) store.exports = WebAssembly.Module.exports(new WebAssembly.Module(store.full)).map(item => item.name);
   const plugin = keep => ({name: 'one-kernel-set', setup(build) {
@@ -64,8 +42,7 @@ export async function createKernelStripper(codec) {
         if (resolve(path) !== resolve(file)) return;
         if (!cache.has(key)) cache.set(key, (async () => {
           const bytes = await stripKernelExports(full, [...list].sort());
-          const stored = Uint8Array.from(bytes, byte => storedWasmByte(byte) ^ KEY);
-          const kept = Buffer.from(stored).toString('latin1');
+          const kept = storedWasmText(bytes);
           if (!Buffer.from(wasmBytes(kept)).equals(Buffer.from(bytes))) throw new Error('The stripped kernel bytes do not round-trip.');
           return text(kept);
         })());
@@ -75,6 +52,8 @@ export async function createKernelStripper(codec) {
   }});
   plugin.exports = stores.kernels.exports;
   plugin.jpegExports = stores.jpeg.exports;
+  plugin.rebuildExports = stores.rebuild.exports;
+  plugin.decodeExports = stores.decode.exports;
   return plugin;
 }
 
@@ -100,17 +79,23 @@ export function cutBridges(source, unreached) {
   let factory = null;
   (function find(node) {
     if (factory || !node || typeof node.type !== 'string') return;
-    if (node.type === 'ArrowFunctionExpression' && node.body.type === 'BlockStatement' &&
-        node.body.body.filter(s => s.type === 'VariableDeclaration' || s.type === 'FunctionDeclaration').length > 50) { factory = node; return; }
+    if ((node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') && node.body.type === 'BlockStatement' &&
+        node.body.body.filter(s => s.type === 'VariableDeclaration' || s.type === 'FunctionDeclaration').length >= 10) { factory = node; return; }
     for (const value of Object.values(node)) for (const child of Array.isArray(value) ? value : [value]) if (child && typeof child === 'object') find(child);
   })(ast);
   if (!factory) throw new Error('kernels.mjs has no bridge factory.');
   const declared = new Map();
-  for (const statement of factory.body.body) if (statement.type === 'VariableDeclaration')
-    for (const d of statement.declarations) if (d.id.type === 'Identifier' && d.init && /Function|Conditional/.test(d.init.type)) declared.set(d.id.name, d.init);
-  const named = unreached.map(name => declared.has(name) ? name : name.replace(/\d+$/, '')).filter(name => declared.has(name));
-  if (named.includes('weighted')) named.push('initializeTables');
+  for (const statement of factory.body.body) {
+    if (statement.type === 'VariableDeclaration') {
+      for (const d of statement.declarations) if (d.id.type === 'Identifier' && d.init && /Function|Conditional/.test(d.init.type))
+        declared.set(d.id.name, {start: d.init.start, end: d.init.end, replacement: 'null'});
+    } else if (statement.type === 'FunctionDeclaration' && statement.id?.type === 'Identifier') {
+      declared.set(statement.id.name, {start: statement.start, end: statement.end, replacement: `const ${statement.id.name} = null;`});
+    }
+  }
+  const named = [...new Set(unreached.map(name => declared.has(name) ? name : name.replace(/\d+$/, '')).filter(name => declared.has(name)))];
+  if (named.includes('weighted') && declared.has('initializeTables') && !named.includes('initializeTables')) named.push('initializeTables');
   const cuts = named.map(name => declared.get(name)).sort((a, b) => b.start - a.start);
-  for (const init of cuts) source = source.slice(0, init.start) + 'null' + source.slice(init.end);
+  for (const cut of cuts) source = source.slice(0, cut.start) + cut.replacement + source.slice(cut.end);
   return source;
 }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-import {PHOTO_LIMITS} from './limits.mjs';
+import {LIMITS} from './limits.mjs';
 import {complete, scaled} from './bits.mjs';
 import {job} from './admit.mjs';
 import {encodePhotoSteps as plainPhotoSteps} from './photo-advanced.mjs';
 import {prepareNoiseSteps} from './noise-estimation.mjs';
 import {photonNoise} from './noise.mjs';
 
-export {PHOTO_LIMITS as LIMITS, photonNoise};
+export {LIMITS, photonNoise};
 export function encodePhoto(data, width, height, options) { return complete(encodePhotoSteps(data, width, height, options)); }
 export function encodePhotoSteps(data, width, height, options = {}) {
   if (options === null || typeof options !== 'object') return plainPhotoSteps(data, width, height, options);

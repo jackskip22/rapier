@@ -1,27 +1,64 @@
 
-export function measure(element, { edges = false, keep } = {}) {
+export function measure(element, options = {}) {
+  admitElement(element, options);
+  if (typeof document === 'undefined' || typeof document.createRange !== 'function' || typeof getComputedStyle !== 'function')
+    throw refuse('JXL_PLATFORM', 'document: browser page');
+  const { edges = false, keep } = options;
   const clip = clipper(element, keep);
   return { box: elementBox(element), text: textParts(element, clip), photos: photoParts(element, clip), textComplete: true, ...(edges && { edges: edgeParts(element, clip) }) };
 }
 
-export function pageRects(page, canvas, { area = {}, edges = false } = {}) {
-  const shot = page.box ? page : measure(page, { edges }), box = shot.box;
+export function pageRects(page, canvas, options = {}) {
+  if (!object(page)) throw refuse('JXL_INPUT', "page: Element or measure() result");
+  const measuredBox = page.box;
+  if (measuredBox === undefined && typeof page.getBoundingClientRect !== 'function') throw refuse('JXL_INPUT', "page: Element or measure() result");
+  if (!object(canvas)) throw refuse('JXL_INPUT', "canvas: pixel width and height");
+  const {width: cw, height: ch} = canvas;
+  if (![cw, ch].every(n => Number.isSafeInteger(n) && n > 0)) throw refuse('JXL_DIMENSIONS', "canvas: positive integer pixels");
+  admitOptions(options, 'pageRects', ['area', 'edges']);
+  const { area = {}, edges = false } = options;
+  if (!object(area) || Object.keys(area).some(key => !['x', 'y', 'width', 'height'].includes(key) || !Number.isFinite(area[key]) || key.length > 1 && area[key] < 0))
+    throw refuse('JXL_OPTIONS', "area: finite bounds, nonnegative size");
+  const shot = measuredBox === undefined ? measure(page, { edges }) : page, box = measuredBox ?? shot.box;
+  if (!object(box) || ![box.left, box.top, box.width, box.height].every(Number.isFinite) || box.width < 0 || box.height < 0 ||
+      !Array.isArray(shot.photos) || !Array.isArray(shot.text) || shot.edges !== undefined && !Array.isArray(shot.edges))
+    throw refuse('JXL_INPUT', "measurement: measure() result");
   const left = box.left + (area.x ?? 0), top = box.top + (area.y ?? 0);
-  const sx = canvas.width / (area.width ?? box.width), sy = canvas.height / (area.height ?? box.height);
+  const width = area.width ?? box.width, height = area.height ?? box.height;
+  if (!(width > 0 && height > 0)) return { exactRects: [], photoRects: [], ...(shot.textComplete === true && { textComplete: true }) };
+  const sx = cw / width, sy = ch / height;
   const place = (r, grow) => {
+    if (!object(r) || ![r.left, r.top, r.right, r.bottom, grow].every(Number.isFinite) || grow < 0)
+      throw refuse('JXL_INPUT', "rectangle: finite bounds, nonnegative margin");
     const gx = Math.ceil(grow * sx), gy = Math.ceil(grow * sy);
     const x = Math.max(0, Math.floor((r.left - left) * sx) - gx), y = Math.max(0, Math.floor((r.top - top) * sy) - gy);
-    const right = Math.min(canvas.width, Math.ceil((r.right - left) * sx) + gx), bottom = Math.min(canvas.height, Math.ceil((r.bottom - top) * sy) + gy);
+    const right = Math.min(cw, Math.ceil((r.right - left) * sx) + gx), bottom = Math.min(ch, Math.ceil((r.bottom - top) * sy) + gy);
     return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
   };
-  const whole = { x: 0, y: 0, width: canvas.width, height: canvas.height };
+  const whole = { x: 0, y: 0, width: cw, height: ch };
   const photoRects = shot.photos.map(r => place(r, 0)).filter(Boolean);
   const exactRects = [];
-  for (const { r, grow, solidText } of shot.text) { const b = place(r, grow); if (b) exactRects.push(solidText ? { ...b, solidText } : b); }
-  if (edges) exactRects.push(...(shot.edges ? shot.edges.map(r => place(r, r.soft ? 1 : 0)).filter(Boolean).map(b => ({ ...b, edge: true })) : [{ ...whole, edge: true }]));
+  for (const part of shot.text) {
+    if (!object(part)) throw refuse('JXL_INPUT', "text rectangle: measure() result");
+    const {r, grow, solidText} = part, b = place(r, grow);
+    if (b) exactRects.push(solidText ? { ...b, solidText } : b);
+  }
+  if (edges) exactRects.push(...(shot.edges ? shot.edges.map(r => place(r, r?.soft ? 1 : 0)).filter(Boolean).map(b => ({ ...b, edge: true })) : [{ ...whole, edge: true }]));
   return { exactRects, photoRects, ...(shot.textComplete === true && { textComplete: true }) };
 }
 
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const refuse = (code, message) => Object.assign(new TypeError(message), { code });
+function admitElement(element, options) {
+  if (!object(element) || typeof element.getBoundingClientRect !== 'function') throw refuse('JXL_INPUT', "element: DOM Element");
+  admitOptions(options, 'measure', ['edges', 'keep']);
+  if (options.keep !== undefined && typeof options.keep?.has !== 'function') throw refuse('JXL_OPTIONS', "keep: Set");
+}
+function admitOptions(options, name, keys) {
+  if (!object(options)) throw refuse('JXL_OPTIONS', `${name}: {${keys.join(', ')}}`);
+  for (const key of Object.keys(options)) if (!keys.includes(key)) throw refuse('JXL_OPTIONS', `unknown ${name} option: ${key}`);
+  if (options.edges !== undefined && typeof options.edges !== 'boolean') throw refuse('JXL_OPTIONS', "edges: boolean");
+}
 function elementBox(element) {
   const r = element.getBoundingClientRect();
   return { left: r.left, top: r.top, width: r.width, height: r.height };
@@ -139,11 +176,22 @@ function textParts(root, clip = clipper(root)) {
     }
     return v;
   };
+  const plainPaint = new Map(), unaffected = el => {
+    if (!el) return true;
+    let v = plainPaint.get(el);
+    if (v === undefined) {
+      const s = getComputedStyle(el), up = el.parentElement ?? el.getRootNode?.().host ?? null;
+      plainPaint.set(el, v = s.filter === 'none' && (s.mixBlendMode ?? 'normal') === 'normal' && (s.maskImage ?? 'none') === 'none' &&
+        (s.webkitMaskImage ?? 'none') === 'none' && (s.backdropFilter ?? 'none') === 'none' && (el === root || unaffected(up)));
+    }
+    return v;
+  };
   const add = (r, el, text, c = el && clip.of(el)) => {
     const g = el ? grow(el) : 1, solidText = !!(text && el && solid(el) && !/\p{Extended_Pictographic}/u.test(text));
-    if (!c) { parts.push({ r: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, grow: g, solidText }); return; }
+    const mark = solidText && unaffected(el) ? { solidText, certified: true } : { solidText };
+    if (!c) { parts.push({ r: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, grow: g, ...mark }); return; }
     const shown = clip.cut({ left: r.left - g, top: r.top - g, right: r.right + g, bottom: r.bottom + g }, c);
-    if (shown) parts.push({ r: shown, grow: 0, solidText });
+    if (shown) parts.push({ r: shown, grow: 0, ...mark });
   };
   const seen = new Map(), shown = new Map(), drawn = el => {
     let v = seen.get(el);
@@ -274,10 +322,26 @@ function edgeParts(root, clip = clipper(root)) {
     };
     strips(r.left, r.top, r.right, r.bottom, t, rt, b, l);
     if (ow) strips(r.left - oo, r.top - oo, r.right + oo, r.bottom + oo, ow, ow, ow, ow);
-    const radius = Math.max(...['TopLeft', 'TopRight', 'BottomLeft', 'BottomRight'].map(c => parseFloat(s[`border${c}Radius`]) || 0));
-    if (radius && (t || rt || b || l)) {
-      const k = radius + Math.max(t, rt, b, l);
-      for (const [x, y] of [[r.left, r.top], [r.right - k, r.top], [r.left, r.bottom - k], [r.right - k, r.bottom - k]]) parts.push({ left: x, top: y, right: x + k, bottom: y + k });
+    if (t || rt || b || l) {
+      const len = (tok, span) => !tok ? 0 : Math.max(0, tok.endsWith('%') ? (parseFloat(tok) || 0) * span / 100 : parseFloat(tok) || 0);
+      const corners = ['TopLeft', 'TopRight', 'BottomLeft', 'BottomRight'].map(c => {
+        const [hx, hy = hx] = (s[`border${c}Radius`] || '').trim().split(/\s+/);
+        return [len(hx, r.width), len(hy, r.height)];
+      });
+      if (corners.some(([rx, ry]) => rx > 0 && ry > 0)) {
+        const f = Math.min(1, r.width / ((corners[0][0] + corners[1][0]) || 1), r.width / ((corners[2][0] + corners[3][0]) || 1),
+          r.height / ((corners[0][1] + corners[2][1]) || 1), r.height / ((corners[1][1] + corners[3][1]) || 1));
+        const places = [[0, l, t, rx => [r.left, r.left + rx], ry => [r.top, r.top + ry]],
+          [1, rt, t, rx => [r.right - rx, r.right], ry => [r.top, r.top + ry]],
+          [2, l, b, rx => [r.left, r.left + rx], ry => [r.bottom - ry, r.bottom]],
+          [3, rt, b, rx => [r.right - rx, r.right], ry => [r.bottom - ry, r.bottom]]];
+        for (const [i, bx, by, spanX, spanY] of places) {
+          const rx = corners[i][0] * f, ry = corners[i][1] * f;
+          if (!(rx > 0 && ry > 0 && (bx || by))) continue;
+          const [x0, x1] = spanX(Math.min(r.width, rx + bx)), [y0, y1] = spanY(Math.min(r.height, ry + by));
+          parts.push({ left: x0, top: y0, right: x1, bottom: y1 });
+        }
+      }
     }
   }
   return found;

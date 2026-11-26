@@ -5,8 +5,8 @@ const HEADING = /^## (\d+)\.(\d+)\.(\d+) \((\d{4}-\d{2}-\d{2})\)$/;
 const FULL_CHANGELOG = /^\*\*Full Changelog\*\*: https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/compare\/v\d+\.\d+\.\d+\.\.\.v\d+\.\d+\.\d+$/;
 
 export const JXL_HISTORY_BASELINE = Object.freeze({
-	repository: 'jackskip22/rapier-jxl', ref: 'v8.3.4', source: 'GitHub Releases', fixture: 'jxl-published-notes.json',
-	fixtureSha256: 'f094c133f30d12cdaa447bc2e79234c6a83d5b0d16af13902da0ddb4acb857c9', firstVersion: '8.0.0',
+	repository: 'jackskip22/rapier-jxl', ref: 'v8.5.0', source: 'GitHub Releases', fixture: 'jxl-published-notes.json',
+	fixtureSha256: '3179870f07e786e41dca1da5f81e1c3b059501c5d4baacdaa4489287f57fc36b', firstVersion: '8.0.0',
 	notes: Object.freeze({
 		'8.0.0': 'a05be206c4c444894e94a4042823e6d3278810cbeebb2a12981eaa78c122e34a',
 		'8.0.1': '22c7b47ec1c65b551b4e0a79115a5212fd9fdd2e1f1ef00ef378d3c43c48f0d8',
@@ -17,6 +17,10 @@ export const JXL_HISTORY_BASELINE = Object.freeze({
 		'8.3.2': '9fa1b6d6924fd28ae17076e8b41825e825b214e4a18fd7f5989fcc127f461d0c',
 		'8.3.3': 'e1d7927738c7af2f24f3da7d11cc0a713fe5f3bd911b238d7905304f15dafc06',
 		'8.3.4': '11966165b57e4863786b623f54657773630a69ba99b7559e9dc9cbe6df37fa50',
+		'8.3.5': 'eaafdf0fdb3ebd3e58cfd0fc34af3eecdab3525904bdf79281dd2f25a69a5713',
+		'8.4.0': 'd2a44374ecd44aac4da410f086754c935d84f1913bbd04449f10d0f7d3ecd962',
+		'8.4.1': '5b4df72c55188a1490d4872841d13de67f724d5001ac32bb4ae86dc24225796b',
+		'8.5.0': 'c596316031377aebac87f54426f4e422940f843f97f300d72919fd653825129a',
 	}),
 });
 
@@ -78,7 +82,6 @@ export function jxlReleaseNotes(source, version, publishedFixture) {
 	return heading + '\n\n' + changelogSection(source, version) + '\n';
 }
 
-const JXL_GUARD = '[ "${version%%.*}" -ge 8 ] || {';
 export function jxlReleaseWorkflow(template) {
 	const findings = jxlWorkflowFindings(template);
 	if (findings.length) throw new Error('rapier-jxl workflow: ' + findings.join('; '));
@@ -87,14 +90,12 @@ export function jxlReleaseWorkflow(template) {
 
 export function jxlWorkflowFindings(text) {
 	if (/CHANGELOG/.test(text)) return ['workflow must not read a CHANGELOG.md: the notes come from the release commit'];
-	const guard = text.indexOf(JXL_GUARD);
-	if (guard < 0) return ['workflow must refuse versions below 8.0.0'];
 	const notes = text.indexOf('git log -1 --format=%B "$release"');
 	if (notes < 0) return ['workflow must read the notes from the release commit\'s message'];
 	for (const command of [/\bgh release create\b/g, /\bgit tag\b/g]) {
 		const actions = [...text.matchAll(command)];
-		if (actions.length !== 1 || actions[0].index < notes || guard > notes)
-			return ['workflow must tag and release once, after the 8.0.0 floor and the notes'];
+		if (actions.length !== 1 || actions[0].index < notes)
+			return ['workflow must tag and release once, after the notes'];
 	}
 	return [];
 }
@@ -135,6 +136,8 @@ export function changelogShapeHits(text) {
 	lines.forEach((line, index) => {
 		const at = index + 1;
 		if (!index || line === '') return;
+		const person = /\b(we|we're|we've|our|ours|us)\b/i.exec(line.replace(/`[^`]*`/g, ''));
+		if (person) hit(at, 'no first person ("' + person[1] + '"): say what the package does');
 		const match = HEADING.exec(line);
 		if (line.startsWith('## ')) {
 			close(); heading = at; bullets = 0; how = 0; howBullets = 0;

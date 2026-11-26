@@ -32,7 +32,7 @@ test('a call that keeps missing values ends after a few read rounds, and the job
     assert.ok(++calls < 100, 'the job finishes');
   }
   const output = [];
-  for await (const bytes of codec.outputParts(checkpoint, host())) output.push(...bytes);
+  for (const byte of await codec.output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, [COUNT * (COUNT + 1) / 2]);
   assert.ok(most <= 6, `${most} reads in one call`);
 });
@@ -62,7 +62,7 @@ test('a full pending buffer persists before another journal transition in the sa
     assert.ok(n < 6, 'saved large values resume without repeating work'); keep(await make().advance(checkpoint, host(), {units: 64}));
   }
   assert.deepEqual(visited, [0, 1]);
-  const output = []; for await (const bytes of make().outputParts(checkpoint, host())) output.push(...bytes);
+  const output = []; for (const byte of await make().output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, [16, 16]);
 });
 
@@ -88,7 +88,7 @@ test('many small source ranges never promote a bounded reader to a whole-file re
   for (let i = 0; checkpoint.status !== 'done'; i++) {
     assert.ok(i < 100, 'the sparse reader finishes'); keep(await make().advance(checkpoint, host(), {units: 1}));
   }
-  const output = []; for await (const bytes of make().outputParts(checkpoint, host())) output.push(...bytes);
+  const output = []; for (const byte of await make().output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, offsets.map((_, i) => i + 1));
   assert.ok(reads.every(({length}) => length <= 1 << 20), 'source authentication and range reads remain at most 1 MiB');
 });

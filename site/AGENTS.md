@@ -16,7 +16,7 @@ Windows and Linux. A person and an agent edit the same document; the person's ty
 3. `edit {document, revision, changes: [{old, new}]}` applies one undoable act. Keep its `act`.
 4. `undo {document, act}` takes back only that act.
 5. `export {document, format: "html"}` gives one offline file with the editor and the document inside.
-6. `convert` turns pictures into JPEG XL on the person's device. In a sandbox, `npx rapier-jxl <file|folder>` converts and prints each size.
+6. `convert` turns pictures into JPEG XL on the person's device. In a sandbox, `npx jpegxl <file|folder>` converts and prints each size.
 
 ## npm packages
 

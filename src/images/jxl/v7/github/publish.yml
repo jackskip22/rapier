@@ -45,8 +45,6 @@ jobs:
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
           tag="v$version"
-          # The owner retired every version before 8.0.0: none is ever tagged or released again.
-          [ "${version%%.*}" -ge 8 ] || { echo "$version is below 8.0.0: no release" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; }
           if gh release view "$tag" >/dev/null 2>&1; then echo "$tag is already released" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
           # The version just published can take minutes to appear on the registry (npm's scan held 8.3.0 about 25): wait up to 40.
           for try in $(seq 1 80); do [ -n "$(npm view "$name@$version" version 2>/dev/null)" ] && break; [ "$try" = 80 ] || sleep 30; done
@@ -64,7 +62,19 @@ jobs:
           fi
           gh release create "$tag" --verify-tag --title "$version" --notes-file "$notes_file" --latest
           echo "tagged $tag at $release and released $version" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: attach the WordPress plug-in zip to this version's release, unless it is there (cut from the tagged tree)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="v$(node -p "require('./package.json').version")"
+          if ! git cat-file -e "$tag:examples/wordpress" 2>/dev/null; then echo "$tag has no WordPress plug-in" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          if gh release view "$tag" --json assets --jq '.assets[].name' | grep -qxF jpegxl-wordpress.zip; then echo "$tag already has jpegxl-wordpress.zip" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          git archive --format=zip --prefix=jpegxl/ -o "$RUNNER_TEMP/jpegxl-wordpress.zip" "$tag:examples/wordpress"
+          gh release upload "$tag" "$RUNNER_TEMP/jpegxl-wordpress.zip"
+          echo "attached jpegxl-wordpress.zip to $tag" | tee -a "$GITHUB_STEP_SUMMARY"
   vscode:
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -74,7 +84,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - name: package the extension once; both registries get this file
+      - name: package the extension
         id: vsix
         run: |
           set -eu
@@ -94,23 +104,11 @@ jobs:
           if [ "${{ steps.vsix.outputs.marketplace }}" != "true" ]; then
             echo "${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }} is already on the Marketplace: nothing to publish" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
           fi
-          npx --yes @vscode/vsce@4.1.0 publish --oidc --no-dependencies --packagePath "${{ steps.vsix.outputs.vsix }}"
+          # The Marketplace lists a version some minutes after it takes it. A second run inside that time finds it taken: not a failure.
+          if ! npx --yes @vscode/vsce@4.1.0 publish --oidc --no-dependencies --packagePath "${{ steps.vsix.outputs.vsix }}" > "$RUNNER_TEMP/vsce.out" 2>&1; then
+            sed 's/^::error::/vsce: /' "$RUNNER_TEMP/vsce.out"
+            if grep -qi 'already exists' "$RUNNER_TEMP/vsce.out"; then echo "${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }} is already with the Marketplace: nothing to publish" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/vsce.out"
           echo "published ${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }} to the Marketplace" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: publish the same file to Open VSX (a token for the first publish, trusted publishing after it)
-        if: steps.vsix.outputs.skip == 'false'
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: |
-          set -u
-          namespace=${{ steps.vsix.outputs.id }}; name=${namespace#*.}; namespace=${namespace%%.*}
-          if [ "$(curl -s -o /dev/null -w '%{http_code}' "https://open-vsx.org/api/$namespace/$name/${{ steps.vsix.outputs.version }}")" = 200 ]; then
-            echo "${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }} is already on Open VSX: nothing to publish" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
-          fi
-          if [ -n "${OVSX_PAT:-}" ]; then
-            set -e
-            if [ "$(curl -s -o /dev/null -w '%{http_code}' "https://open-vsx.org/api/$namespace")" != 200 ]; then npx --yes ovsx@1.4.0 create-namespace "$namespace" -p "$OVSX_PAT"; fi
-            npx --yes ovsx@1.4.0 publish "${{ steps.vsix.outputs.vsix }}" -p "$OVSX_PAT"
-          elif ! npx --yes ovsx@1.4.0 publish "${{ steps.vsix.outputs.vsix }}" --trusted-publishing; then
-            echo "Open VSX did not take ${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }}: no OVSX_PAT, and no trusted publisher is registered for it yet. Skipped." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
-          fi
-          echo "published ${{ steps.vsix.outputs.id }}@${{ steps.vsix.outputs.version }} to Open VSX" | tee -a "$GITHUB_STEP_SUMMARY"

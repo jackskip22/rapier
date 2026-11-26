@@ -3,7 +3,7 @@
 	"slug": "jxl",
 	"publisher": "did:web:pds.rapier.website",
 	"name": "JPEG XL Image Optimizer",
-	"description": "Makes images smaller with JPEG XL. Photos shrink about 75% with the same look, text stays sharp. Originals kept for incompatible browsers.",
+	"description": "JPEG XL copies for EmDash media. Text stays exact, and photos use a chosen quality. Other browsers receive the original.",
 	"keywords": ["images", "jpeg xl", "media", "storage"],
 	"license": "MIT",
 	"author": { "name": "Rapier", "url": "https://rapier.website" },
@@ -20,7 +20,7 @@
 	"storage": {},
 	"admin": { "pages": [{ "path": "/jpeg-xl", "label": "JPEG XL Image Optimizer", "icon": "image" }] },
 	"release": {
-		"requires": { "env:emdash": ">=1.4.0 <2.0.0" },
+		"requires": { "env:emdash": ">=1.5.0 <2.0.0" },
 		"artifacts": {
 			"icon": { "file": "./images/icon.png" },
 			"screenshots": [

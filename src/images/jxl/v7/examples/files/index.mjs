@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: MIT
+import {createHash, randomBytes} from 'node:crypto';
+import {mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+import {join} from 'node:path';
+import {encode, variants, configureDecoder} from 'rapier-jxl';
+import {recompress} from 'rapier-jxl/jpeg';
+
+export const IMAGE = /\.(jpe?g|png)$/i;
+export const JPEG = /\.jpe?g$/i;
+export const jxlName = name => name.replace(/\.[^./\\]+$/, '.jxl');
+const require = createRequire(import.meta.url), version = require('rapier-jxl/package.json').version;
+let jpegReader;
+const readJpegs = () => jpegReader ??= Promise.all([import('rapier-jxl/decode'), import('rapier-jxl/jpeg')])
+  .then(([{decode}, jpeg]) => configureDecoder(decode, jpeg.restore, jpeg.recompress));
+
+export function jxlFiles({fidelity, effort = 3, read, cacheDir} = {}) {
+  const pending = new Map();
+  const look = fidelity === undefined ? {} : {fidelity};
+  async function encodeBytes(source, file, width) {
+    if (JPEG.test(file) && !read) {
+      if (!width) return recompress(source, {effort});
+      await readJpegs();
+    }
+    const input = read ? await read(source, file, {width}) : new Blob([source]);
+    if (!width || read && input.width <= width) return encode(input, {effort, ...look});
+    const [result] = await variants(input, {outputs: [{width, effort, ...look}]});
+    return result;
+  }
+  async function toJxl(file, {width, bytes} = {}) {
+    const source = bytes ? new Uint8Array(bytes.buffer ?? bytes, bytes.byteOffset ?? 0, bytes.byteLength) : new Uint8Array(await readFile(file));
+    const key = createHash('sha256').update(JSON.stringify([version, fidelity, effort, read ? String(read) : 0, JPEG.test(file), width ?? 0])).update(source).digest('hex');
+    const cached = cacheDir && join(cacheDir, key + '.jxl');
+    if (cached) { try { return {key, bytes: new Uint8Array(await readFile(cached))}; } catch {} }
+    if (!pending.has(key)) pending.set(key, (async () => {
+      const result = await encodeBytes(source, file, width);
+      if (cached) {
+        await mkdir(cacheDir, {recursive: true});
+        const tmp = `${cached}.${randomBytes(6).toString('hex')}.tmp`;
+        try { await writeFile(tmp, result.bytes, {flag: 'wx'}); await rename(tmp, cached); }
+        catch (error) { await rm(tmp, {force: true}).catch(() => {}); throw error; }
+      }
+      return {key, bytes: result.bytes, result};
+    })().finally(() => pending.delete(key)));
+    return pending.get(key);
+  }
+  return {toJxl};
+}

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 import test from 'node:test';
+import '../kernels.mjs';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {gunzipSync} from 'node:zlib';
 import {settleFacts} from '../v7/settle-facts.mjs';
 import {settleScans} from '../v7/settle-scans.mjs';
-import {lowWebpFacts} from '../v7/low-webp-quality.mjs';
+import {lowIntentFacts} from '../v7/low-intent-quality.mjs';
 import {tiled} from './photo-fixture.mjs';
 
 const card = {width: 320, height: 236, data: new Uint8Array(gunzipSync(Buffer.from(await readFile(new URL('../v7/test/fixtures/snapdom-small-card.rgba.gz.base64', import.meta.url), 'utf8'), 'base64')))};
@@ -17,7 +18,7 @@ const pictures = [['photo 640x480', await tiled(640, 480)], ['photo 333x777', aw
   ['seven colours 700x2100', few(700, 2100)], ['tiny 20x20', await tiled(20, 20)], ['32x32', await tiled(32, 32)]];
 
 for (const [name, picture] of pictures) test(`settled facts by bands equal the whole picture's: ${name}`, async () => {
-  const whole = lowWebpFacts({data: picture.data, width: picture.width, height: picture.height});
+  const whole = lowIntentFacts({data: picture.data, width: picture.width, height: picture.height});
   assert.deepEqual(await settleFacts(null, settleScans, picture.data, picture.width, picture.height), whole);
   assert.deepEqual(await settleFacts(null, settleScans, picture.data, picture.width, picture.height, 65536), whole);
 });

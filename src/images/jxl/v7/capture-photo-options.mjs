@@ -4,15 +4,25 @@ import {fail} from './primitives.mjs';
 
 function admitRects(name, rects) {
   if (rects === undefined) return;
-  if (!Array.isArray(rects) || rects.length > 65536) throw fail('JXL_OPTIONS', `${name} is an array of at most 65,536 rectangles.`);
+  if (!Array.isArray(rects)) throw fail('JXL_OPTIONS', `${name}: rectangle array`);
   for (const r of rects) if (!r || typeof r !== 'object' || ![r.x, r.y, r.width, r.height].every(Number.isSafeInteger) || r.width < 1 || r.height < 1)
-    throw fail('JXL_OPTIONS', `${name} entries are {x, y, width, height} in whole pixels, at least 1 wide and high.`);
+    throw fail('JXL_OPTIONS', `${name}: integer rects {x, y, width, height}`);
   for (const r of rects) for (const flag of ['solidText', 'edge']) if (r[flag] !== undefined && (name !== 'exactRects' || typeof r[flag] !== 'boolean'))
-    throw fail('JXL_OPTIONS', `${flag} is true or false, on exactRects only.`);
+    throw fail('JXL_OPTIONS', `${flag}: boolean, exactRects only`);
+}
+
+function admitWithoutText(value) {
+  if (value === undefined) return;
+  const ok = value && typeof value === 'object' && (value.data instanceof Uint8Array || value.data instanceof Uint8ClampedArray) &&
+    [value.width, value.height].every(n => Number.isSafeInteger(n) && n >= 1) && value.data.length === value.width * value.height * 4;
+  if (!ok) throw fail('JXL_OPTIONS', "withoutText: {data, width, height, rects} RGBA8");
+  admitRects('withoutText.rects', value.rects);
 }
 
 export function captureRectangles(options, width, height) {
   const clipped = {}, budget = width * height * 8;
+  if (options.withoutText !== undefined && (options.withoutText.width !== width || options.withoutText.height !== height))
+    throw fail('JXL_OPTIONS', `withoutText: ${String(options.withoutText.width)}x${String(options.withoutText.height)}, expected ${width}x${height}`);
   let work = 0;
   for (const name of ['exactRects', 'photoRects']) {
     if (options[name] === undefined) continue;
@@ -25,7 +35,7 @@ export function captureRectangles(options, width, height) {
       if (seen.has(key)) continue;
       seen.add(key);
       work += w * h;
-      if (work > budget) throw fail('JXL_LIMIT', 'Capture rectangles exceed the clipped work budget.');
+      if (work > budget) throw fail('JXL_LIMIT', 'rectangles: reduce count or area');
       out.push({...r, x, y, width: w, height: h});
     }
     clipped[name] = out;
@@ -35,14 +45,15 @@ export function captureRectangles(options, width, height) {
 
 export function admitCapturePhoto(options = {}, carried = null) {
   if (!options || typeof options !== 'object' || Array.isArray(options))
-    throw fail('JXL_OPTIONS', 'JPEG XL options must be an object.');
-  const {exactRects, photoRects, textComplete, ...rest} = options;
+    throw fail('JXL_OPTIONS', "options: object");
+  const {exactRects, photoRects, textComplete, withoutText, ...rest} = options;
   admitCapture({...rest, fidelity: 'exact'}, carried);
   admitRects('exactRects', exactRects);
   admitRects('photoRects', photoRects);
+  admitWithoutText(options.withoutText);
   if (textComplete !== undefined && (textComplete !== true || !Array.isArray(exactRects)))
-    throw fail('JXL_OPTIONS', 'textComplete is page-rects measurement metadata and requires its exactRects array.');
+    throw fail('JXL_OPTIONS', "textComplete: exactRects array required");
   if (options.features?.firstRegion !== undefined)
-    throw fail('JXL_UNSUPPORTED', 'firstRegion is for encode, not capture.');
+    throw fail('JXL_UNSUPPORTED', "firstRegion: use encode");
   return capturePhotoFidelity(options.fidelity);
 }

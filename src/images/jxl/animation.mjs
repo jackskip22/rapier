@@ -8,7 +8,7 @@ export {ANIMATION_LIMITS as LIMITS};
 
 export function encodeAnimation(animation, options) {
   const steps = encodeAnimationSteps(animation, options), progress = options?.progress;
-  if (progress !== undefined && typeof progress !== 'function') throw fault('JXL_INPUT', 'progress is a function.');
+  if (progress !== undefined && typeof progress !== 'function') throw fault('JXL_INPUT', 'progress: function');
   for (const fraction of steps) if (progress && fraction < 1) progress(fraction);
   progress?.(1);
   return steps.bytes;

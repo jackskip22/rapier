@@ -1,12 +1,11 @@
 - **What does this plug-in do?** It makes a JPEG XL copy of every image in your media library. Browsers that show JPEG XL get the copy. Incompatible browsers are served your original file.
 - **Which browsers show JPEG XL?** Chrome, Firefox and Safari all now support JXL by default.
-- **How much smaller will my images be?** "Same look" at the quality 90 default made photos about 75% smaller than the uploaded JPEG. "Exact" made files about 18% smaller with the exact same pixels.
-- **Will my images look worse?** No. In "Same look", each copy is checked against the original with SSIMULACRA 2. "Exact" keeps every pixel unchanged.
+- **How much smaller will my images be?** File size depends on the picture and effort. "Exact" preserves every pixel. "Same look" aims at the selected quality.
+- **Will my images look worse?** "Same look" uses SSIMULACRA 2: efforts 6–9 measure the result. Efforts 1–5 measure only where it earns its time. "Exact" preserves every pixel.
 - **What happens to my original files?** Nothing is ever lost. JPEGs are kept as JPEG XL, then converted back losslessly into the identical JPEG when needed. Other formats always keep the original file.
+- **What about link previews and downloads?** Everything that needs your original file receives it automatically, including downloads and social previews. Only the JPEG XL format can store a JPEG smaller, then rebuild the identical original file on demand.
 - **Do I need an account, key or a subscription?** No. Images are converted on your own server, or in your own browser where the server cannot handle it. Nothing is uploaded and there are no usage limits.
-- **What about older images or WordPress imports?** The plug-in's page converts older images in the background. "Import from WordPress" brings in a WordPress export's images and updates the links in your posts.
+- **What about older images or an imported site?** The plug-in's page converts older images in the background. "Import a site export" brings in the images from your old site's export file and updates the links in your posts.
 - **Which images does it convert?** JPEG, PNG, WebP and AVIF. GIF and SVG are left as they are.
-- **What is Effort?** How hard the encoder works for a smaller file, from 1 to 9. The default, 7, takes about a minute and a half for a 12-megapixel photo on a small 4-core server. Effort 3 takes about a second.
-- **Does it work with responsive images and CDNs?** Yes. Sizes makes JPEG XL copies up to 3840 pixels wide, and image responses carry `Vary: Accept`.
-- **How do I remove it?** Run `npx rapier-jxl remove emdash`. It restores every original JPEG, then removes the plug-in.
-- **What storage works?** Cloudflare R2 and Node local storage.
+- **Does it work with responsive images and CDNs?** Yes. Sizes makes JPEG XL copies at EmDash's own widths, up to 1920 pixels, and keeps the full-size file, and image responses carry `Vary: Accept`.
+- **How do I remove it?** Run `npx jpegxl remove emdash`. It restores every original JPEG, then removes the plug-in.

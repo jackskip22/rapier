@@ -6,7 +6,7 @@ export const USE_ENUMS = Object.freeze({
   deployment_version: values('unknown'),
   rpc_family: values('initialize', 'discover', 'tools_list', 'tool_call', 'resources_read', 'skills_read',
     'task_poll', 'task_update', 'task_cancel', 'other', 'invalid', 'unknown'),
-  tool: values('open', 'read', 'edit', 'undo', 'show', 'export', 'convert', 'none', 'other'),
+  tool: values('open', 'read', 'edit', 'undo', 'show', 'export', 'convert', 'feedback', 'none', 'other'),
   client_family: values('codex', 'openai', 'claude', 'cursor', 'other', 'unknown'),
   feature: values('open_create', 'open_resume', 'open_import', 'read_text', 'read_outline', 'read_image',
     'read_state', 'read_history', 'read_guide', 'read_search', 'read_note', 'read_comparison', 'read_return',
@@ -25,7 +25,7 @@ export const USE_ENUMS = Object.freeze({
   attribution: values('unattributed'),
 });
 export const MAX_USE_OBSERVATION_BYTES = 2048;
-const TOOL_NAMES = USE_ENUMS.tool.slice(0, 7);
+const TOOL_NAMES = USE_ENUMS.tool.slice(0, 8);
 const noop = () => {};
 
 const member = (list, value, fallback) => {
@@ -91,6 +91,7 @@ export const DOOR_ERROR_CODES = values(
   'CORRUPT_WORKSPACE', 'CREATE_BUDGET_EXCEEDED', 'DAILY_LIMIT', 'DOCUMENT_IDENTITY_CHANGED',
   'DOCUMENT_METADATA_CHANGED', 'DOCUMENT_UNAVAILABLE', 'DRAFT_BASE_UNAVAILABLE', 'DRAW_RESOURCES_UNAVAILABLE',
   'EDITOR_KEY_UNCONFIGURED', 'EMPTY_BODY', 'EXPORT_PAGE_TOO_LARGE', 'EXPORT_TOO_LARGE', 'EXPORT_UNAVAILABLE',
+  'FEEDBACK_LIMIT', 'FEEDBACK_UNAVAILABLE',
   'HOST_FILE_CHANGED', 'HOST_FILE_HYDRATION_CHANGED', 'HOST_FILE_UNAVAILABLE', 'HUMAN_AUTHORITY_REQUIRED',
   'HUMAN_CONTEXT_STALE', 'INVALID_ACCESS_OPERATION', 'INVALID_CANONICAL_ACTS', 'INVALID_COMMIT_ID',
   'INVALID_CREATE_TOKEN', 'INVALID_DOCUMENT', 'INVALID_DOCUMENT_EDITS', 'INVALID_DOCUMENT_INPUT',
@@ -188,6 +189,7 @@ const PRIOR_SIGNALS = Object.freeze({
     ['revision', 'after_open_or_read']],
   export: [['compare_id', 'after_show'], ['revision', 'after_open_or_read']],
   convert: [],
+  feedback: [],
 });
 export const PRIOR_LABELS = values('fresh', 'resume_handle', 'resume_link', 'host_file', 'create_with_text', 'after_show_ask',
   'after_edit_wait', 'after_read_page', 'after_read', 'after_read_history', 'after_edit', 'after_open_or_read', 'after_show',
@@ -341,8 +343,8 @@ export function createUseObservation(originRoute, options = {}) {
       facts.pictures = countBucket(count);
       facts.picture_format = pictureFormat(files);
       facts.unpassed = Number.isSafeInteger(unpassed) && unpassed > 0 ? 'unpassed' : 'all_ids';
-      facts.quality = member(['lossless', 'high', 'medium'], quality, quality === undefined ? 'none' : 'other');
-      facts.effort = Number.isSafeInteger(effort) && effort >= 1 && effort <= 9 ? String(effort) : effort === undefined ? 'none' : 'other';
+      facts.quality = Number.isSafeInteger(quality) && quality >= 1 && quality <= 100 ? 'number' : member(['lossless', 'high', 'medium'], quality, quality === undefined ? 'none' : 'other');
+      facts.effort = Number.isSafeInteger(effort) && effort >= 1 && effort <= 10 ? String(effort) : effort === undefined ? 'none' : 'other';
     },
     attempted(name) {
       if (emitted) return;

@@ -8,6 +8,7 @@ import {rungs, ansPlan, BUDGETS} from './coefficient-ans.mjs';
 import {buildAnsCoding, ansCodingFrom} from './ans.mjs';
 import {kernelHooks} from './kernel-hooks.mjs';
 import {splitBands, serveSplit, splitImage, addCounts, dcStep, splitIds, splitRelease, splitAsker} from './photo-split.mjs';
+import {fault} from './fault.mjs';
 
 function ladderContexts(image, fast) {
   const stride = Math.ceil(image.width / 8), rows = Math.ceil(image.height / 8), blocksTotal = stride * rows;
@@ -18,7 +19,7 @@ function ladderContexts(image, fast) {
 }
 const ladderSerial = c => ({thresholds: c.thresholds, map: c.map, numDc: c.numDc, numCtxs: c.numCtxs});
 
-export const designAsker = (typeof __RAPIER_JXL_HELPER__ !== 'undefined' && __RAPIER_JXL_HELPER__ === true) ? null : function designAsker(send, count) {
+export const designAsker = function designAsker(send, count) {
   let next = 0;
   return async value => {
     if (value.coding !== buildAnsCoding) return null;
@@ -32,12 +33,13 @@ export const designAsker = (typeof __RAPIER_JXL_HELPER__ !== 'undefined' && __RA
     for (const answer of answers) if (answer?.totals) answer.at.forEach((i, j) => { priced[i] = answer.totals[j]; parts[i] = answer.parts?.[j] ?? null; });
     const missing = priced.map((t, i) => t === undefined ? i : -1).filter(i => i >= 0);
     if (missing.length) designPriced(list, missing, {counts, ...info}, buildAnsCoding, kernelHooks.entropy?.()).forEach((p, j) => { priced[missing[j]] = p?.total ?? null; whole[missing[j]] = p; });
-    globalThis.__jxlTrace?.push(['designs priced on ' + (list.length - missing.length) + ' of ' + list.length + ' by helpers', performance.now()]);
+    if (typeof __RAPIER_JXL_PROBES__ === 'undefined') globalThis.__jxlTrace?.push(['designs priced on ' + (list.length - missing.length) + ' of ' + list.length + ' by helpers', performance.now()]);
     return {totals: priced, priced: whole, coding: i => parts[i] ? ansCodingFrom(parts[i], kernelHooks.entropy?.()) : null};
   };
 }
 
-export const encodeSplitLadder = (typeof __RAPIER_JXL_HELPER__ !== 'undefined' && __RAPIER_JXL_HELPER__ === true) ? null : async function encodeSplitLadder(data, width, height, quality, helpers, {signal, effort = 4, arena = false, uploadFlat: knownFlat, grain: knownGrain} = {}) {
+export const encodeSplitLadder = async function encodeSplitLadder(data, width, height, quality, helpers, {signal, effort = 4, arena = false, uploadFlat: knownFlat, grain: knownGrain} = {}) {
+  if (data.constructor !== Uint8Array) data = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
   const commonUpload = effort === 4 || effort === 5, flat = commonUpload && (knownFlat ?? uploadFlat(data, width, height));
   const grain = commonUpload && !flat && (knownGrain ?? uploadGrain(data, width, height));
   const {id, ticket} = splitIds(), bands = splitBands(height, helpers.length + 1), keys = bands.map((_, k) => id + ':' + k);
@@ -64,7 +66,7 @@ export const encodeSplitLadder = (typeof __RAPIER_JXL_HELPER__ !== 'undefined' &
         const writers = helpers.length, groupsOf = slot => Array.from({length: dcCount}, (_, g) => g).filter(g => g % (writers + 1) === slot);
         const asked = Array.from({length: writers}, (_, h) => groupsOf(h)).flatMap((groups, h) => groups.length ? [ask(h + 1, {split: 'dc', image: dcImage, groups, lf, ans, arena})] : []);
         const here = groupsOf(writers);
-        if (here.length) globalThis.__jxlTrace?.push(['ladder: ' + here.length + ' DC groups here', performance.now()]);
+        if (typeof __RAPIER_JXL_PROBES__ === 'undefined' && here.length) globalThis.__jxlTrace?.push(['ladder: ' + here.length + ' DC groups here', performance.now()]);
         if (here.length) asked.push(new Promise(resolve => (own ?? (run => run()))(() => resolve(dcStep({image: {...image, components: image.components.map(c => ({...c}))}, groups: here, lf, ans})))));
         dcByKey.set(key, Promise.all(asked).then(replies => {
           const sections = [];
@@ -107,10 +109,10 @@ export const encodeSplitLadder = (typeof __RAPIER_JXL_HELPER__ !== 'undefined' &
         if (value?.kind !== 'ac-group') continue;
         const written = await (ac.written ??= Promise.all(bands.map((_, k) => ask(bands.length - 1 - k, {split: 'write', frame: value.model, keep: true})).reverse()));
         const results = written.flatMap(answer => answer.sections);
-        if (results.length !== value.groups) throw new Error('Split sections do not cover the frame.');
+        if (results.length !== value.groups) throw fault('JXL_INTERNAL', 'photo-split-ladder:sections');
         reply = {results, errors: {}}; answered = true;
       }
-      if (!answered) throw new Error('The frame asked for no AC sections.');
+      if (!answered) throw fault('JXL_INTERNAL', 'photo-split-ladder:ac');
       return step.value;
     }
     const written = new Set(), keyOf = (rung, use) => (use === orders && use ? 'o' : use ? '?' : 'n') + ':' + (rung.lf ?? 0) + ':' + (rung.clusters ? BUDGETS.indexOf(rung.clusters) : -1);

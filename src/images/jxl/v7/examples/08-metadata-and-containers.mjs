@@ -15,7 +15,7 @@ export async function run({dist, observe}) {
   const collected = new Uint8Array(streamed.reduce((n, part) => n + part.length, 0));
   let offset = 0; for (const chunk of streamed) {collected.set(chunk, offset); offset += chunk.length;}
   same((await inspect(collected, {details: ['layout']})).layout.codestream, before.codestream);
-  for (const [name, bytes] of [['original', original.bytes], ['metadata', written], ['repacked', boxed], ['streamed', collected]])
-    await observe?.(input, {...original, bytes}, name);
+  for (const [name, source, bytes] of [['original', input, original.bytes], ['repacked', written, boxed], ['streamed', input, collected]])
+    await observe?.(source, {...original, bytes}, name);
   return {metadataBytes: written.length, repackedBytes: boxed.length, streamChunks: streamed.length, codestreamUnchanged: true};
 }

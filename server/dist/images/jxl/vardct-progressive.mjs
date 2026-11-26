@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 import {BitWriter} from './bits.mjs';
 import {fault} from './admit.mjs';
+import {prepareCoefficientOrders} from './coefficient-orders.mjs';
+import {naturalOrder} from './coefficient-layout.mjs';
 
 export function progressiveValue(passes, coefficient, position, width, height, passIndex) {
   if (!coefficient) return 0;
@@ -23,18 +25,25 @@ export function progressivePasses(option) {
   else if (option === 'successive') passes = [{downsample: 1, shift: 2}, {downsample: 1, shift: 1}, {downsample: 1, shift: 0}];
   else if (option === 'responsive') passes = [{downsample: 4, shift: 1}, {downsample: 2, shift: 1}, {downsample: 1, shift: 1}, {downsample: 1, shift: 0}];
   else if (option && typeof option === 'object' && Array.isArray(option.passes)) passes = option.passes;
-  else throw fault('JXL_INPUT', 'progressive is false, spectral, successive, responsive, or 2 to 11 passes.');
-  if (passes.length < 2 || passes.length > 11) throw fault('JXL_INPUT', 'A progressive frame has two through eleven passes.');
+  else throw fault('JXL_INPUT', 'progressive: false, spectral, successive, responsive or 2-11 passes');
+  if (passes.length < 2 || passes.length > 11) throw fault('JXL_INPUT', 'passes: 2-11 items');
   passes = passes.map(pass => {
-    if (!pass || typeof pass !== 'object') throw fault('JXL_INPUT', 'Each progressive pass gives downsample and shift.');
+    if (!pass || typeof pass !== 'object') throw fault('JXL_INPUT', 'pass: {downsample, shift}');
     const downsample = pass.downsample ?? 1, shift = pass.shift ?? 0;
     if (![1, 2, 4, 8].includes(downsample) || !Number.isInteger(shift) || shift < 0 || shift > 3)
-      throw fault('JXL_INPUT', 'Downsample is 1, 2, 4 or 8; shift is 0 to 3.');
+      throw fault('JXL_INPUT', 'downsample: 1, 2, 4 or 8; shift: 0-3');
     return {downsample, shift, scale: 1 << shift};
   });
   for (let i = 1; i < passes.length; i++) if (passes[i].downsample > passes[i - 1].downsample || passes[i].shift > passes[i - 1].shift)
-    throw fault('JXL_INPUT', 'Passes must refine resolution and precision in order.');
-  if (passes.at(-1).downsample !== 1 || passes.at(-1).shift !== 0) throw fault('JXL_INPUT', 'The last pass must be full resolution at shift 0.');
+    throw fault('JXL_INPUT', 'passes: out of order');
+  if (passes.at(-1).downsample !== 1 || passes.at(-1).shift !== 0) throw fault('JXL_INPUT', 'last pass: downsample 1, shift 0');
+  return passesHeader(passes);
+}
+
+export const spectralPasses = () => passesHeader([{downsample: 4, shift: 3, scale: 8}, {downsample: 1, shift: 0, scale: 1}]);
+export const lfSplitPasses = () => passesHeader([{downsample: 8, shift: 0, scale: 1}, {downsample: 1, shift: 0, scale: 1}]);
+
+function passesHeader(passes) {
   const header = new BitWriter(32), hints = [];
   header.writeU32([[0, 1], [0, 2], [0, 3], [3, 4]], passes.length);
   for (let i = 0; i < passes.length - 1 && i < 8; i++) {
@@ -53,4 +62,20 @@ export function progressivePasses(option) {
     const bracket = {minimum, maximum}; maximum = minimum - 1; return bracket;
   });
   return {passes, count: passes.length, header: {bytes: header.bytes, at: header.at, pending: header.pending, acc: header.acc}, brackets, alphaPass: hints.find(hint => hint.downsample === 1)?.last ?? passes.length - 1};
+}
+
+export function progressiveOrders(progression) {
+  if (!progression) return null;
+  const nat = naturalOrder(1, 1), {passes} = progression, inBand = (k, d) => k % 8 < 8 / d && k >> 3 < 8 / d;
+  let any = false;
+  const maps = passes.map((pass, p) => {
+    const prev = passes.slice(0, p).filter(e => !e.shift);
+    if (!prev.length) return {dct8: [null, null, null]};
+    const live = r => inBand(nat[r], pass.downsample) && !prev.some(e => inBand(nat[r], e.downsample));
+    const ord = [0];
+    for (let r = 1; r < 64; r++) if (live(r)) ord.push(r);
+    for (let r = 1; r < 64; r++) if (!live(r)) ord.push(r);
+    return ord.every((r, i) => r === i) ? {dct8: [null, null, null]} : (any = true, {dct8: [ord, ord, ord]});
+  });
+  return any ? prepareCoefficientOrders({passes: maps}, passes.length) : null;
 }

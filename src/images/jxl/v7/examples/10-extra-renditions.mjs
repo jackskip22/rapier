@@ -6,7 +6,7 @@ export async function run({dist, observe}) {
   const files = new Map([['original', before.slice()]]), media = {original: 'original', renditions: []};
   const results = await variants(original, {fidelity: 'exact', effort: 1, outputs: [{width: 16}, {width: 24}]});
   for (const [index, result] of results.entries()) {
-    assert.ok(result.fits);
+    assert.ok(result.meetsTarget);
     const key = `rendition-${index}.jxl`;
     assert.ok(!files.has(key));
     files.set(key, result.bytes.slice());

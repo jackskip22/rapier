@@ -3,8 +3,14 @@ import {readFileSync, writeFileSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {readPng} from '../../public/bench/image-io.mjs';
-import {encode} from '../../effort.mjs';
 import {prepareV6, candidateImage, writeImage} from '../../photo-v6-search.mjs';
+import {effortJob as effortJobOf} from '../../effort-job.mjs';
+import {searchV6 as searchV6Of} from '../../photo-v6-search.mjs';
+import {photoAnsSteps as photoAnsStepsOf} from '../../photo-v6-blocks.mjs';
+import {job as admittedJob} from '../../admit.mjs';
+import {SCREEN_LADDER as screenLadderOf} from '../../screen-ladder.mjs';
+import {complete as completeSteps} from '../../bits.mjs';
+const encode = (data, width, height, options) => completeSteps(admittedJob(effortJobOf(data, width, height, options, false, undefined, searchV6Of, photoAnsStepsOf, screenLadderOf)));
 
 const [kind, png, q, effort] = process.argv.slice(2), tools = process.env.JXL_TOOLS, work = mkdtempSync(join(tmpdir(), 'pp-')), file = join(work, 'p.jxl');
 const t = Date.now();

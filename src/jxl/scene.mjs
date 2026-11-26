@@ -72,29 +72,37 @@ export function scene(canvas, kind = 'view') {
 }
 
 export async function enterPanorama(image) {
-  const session = await navigator.xr.requestSession('immersive-vr'), layerCanvas = document.createElement('canvas');
-  const gl = layerCanvas.getContext('webgl2', {xrCompatible: true});
-  await session.updateRenderState({baseLayer: new XRWebGLLayer(session, gl)});
-  const space = await session.requestReferenceSpace('local');
-  const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image); gl.generateMipmap(gl.TEXTURE_2D);
-  image.close();
-  const sh = (type, text) => { const s = gl.createShader(type); gl.shaderSource(s, text); gl.compileShader(s); return s; }, program = gl.createProgram();
-  gl.attachShader(program, sh(gl.VERTEX_SHADER, '#version 300 es\nout vec2 p;void main(){vec2 v=vec2((gl_VertexID<<1)&2,gl_VertexID&2)*2.0-1.0;p=v;gl_Position=vec4(v,0,1);}'));
-  gl.attachShader(program, sh(gl.FRAGMENT_SHADER, '#version 300 es\nprecision highp float;in vec2 p;uniform mat4 inv;uniform sampler2D pano;out vec4 o;void main(){vec4 d=inv*vec4(p,1,1);vec3 r=normalize(d.xyz/d.w);float lon=atan(r.x,-r.z),lat=asin(clamp(r.y,-1.0,1.0));o=texture(pano,vec2(lon/6.2831853+0.5,0.5-lat/3.1415926));}'));
-  gl.linkProgram(program);
-  const where = gl.getUniformLocation(program, 'inv');
-  session.requestAnimationFrame(function draw(_, frame) {
-    const pose = frame.getViewerPose(space), layer = session.renderState.baseLayer;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer); gl.useProgram(program);
-    if (pose) for (const view of pose.views) {
-      const v = layer.getViewport(view); gl.viewport(v.x, v.y, v.width, v.height);
-      const rotation = new DOMMatrix(Array.from(view.transform.inverse.matrix)); rotation.m41 = rotation.m42 = rotation.m43 = 0;
-      const clip = new DOMMatrix(Array.from(view.projectionMatrix)).multiply(rotation);
-      gl.uniformMatrix4fv(where, false, clip.inverse().toFloat32Array());
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-    }
-    session.requestAnimationFrame(draw);
-  });
-  return session;
+  let session;
+  try {
+    session = await navigator.xr.requestSession('immersive-vr');
+    const layerCanvas = document.createElement('canvas');
+    const gl = layerCanvas.getContext('webgl2', {xrCompatible: true});
+    await session.updateRenderState({baseLayer: new XRWebGLLayer(session, gl)});
+    const space = await session.requestReferenceSpace('local');
+    const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image); gl.generateMipmap(gl.TEXTURE_2D);
+    const sh = (type, text) => { const s = gl.createShader(type); gl.shaderSource(s, text); gl.compileShader(s); return s; }, program = gl.createProgram();
+    gl.attachShader(program, sh(gl.VERTEX_SHADER, '#version 300 es\nout vec2 p;void main(){vec2 v=vec2((gl_VertexID<<1)&2,gl_VertexID&2)*2.0-1.0;p=v;gl_Position=vec4(v,0,1);}'));
+    gl.attachShader(program, sh(gl.FRAGMENT_SHADER, '#version 300 es\nprecision highp float;in vec2 p;uniform mat4 inv;uniform sampler2D pano;out vec4 o;void main(){vec4 d=inv*vec4(p,1,1);vec3 r=normalize(d.xyz/d.w);float lon=atan(r.x,-r.z),lat=asin(clamp(r.y,-1.0,1.0));o=texture(pano,vec2(lon/6.2831853+0.5,0.5-lat/3.1415926));}'));
+    gl.linkProgram(program);
+    const where = gl.getUniformLocation(program, 'inv');
+    session.requestAnimationFrame(function draw(_, frame) {
+      const pose = frame.getViewerPose(space), layer = session.renderState.baseLayer;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer); gl.useProgram(program);
+      if (pose) for (const view of pose.views) {
+        const v = layer.getViewport(view); gl.viewport(v.x, v.y, v.width, v.height);
+        const rotation = new DOMMatrix(Array.from(view.transform.inverse.matrix)); rotation.m41 = rotation.m42 = rotation.m43 = 0;
+        const clip = new DOMMatrix(Array.from(view.projectionMatrix)).multiply(rotation);
+        gl.uniformMatrix4fv(where, false, clip.inverse().toFloat32Array());
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      session.requestAnimationFrame(draw);
+    });
+    return session;
+  } catch (error) {
+    if (session) try { await session.end(); } catch {}
+    throw error;
+  } finally {
+    try { image.close(); } catch {}
+  }
 }

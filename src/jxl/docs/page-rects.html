@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jpegxl/page-rects reference | jpegxl</title>
+<meta name="description" content="jpegxl/page-rects: edges: borders, outlines and strokes too, for efforts 4-9.">
+<link rel="canonical" href="https://rapier.website/jxl/docs/page-rects.html">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/jxl/docs/docs.css">
+<script src="/jxl/docs/docs.js" defer></script>
+</head>
+<body>
+<header class="bar"><a class="bar__title" href="/jxl/docs/">jpegxl docs</a><a class="bar__link" href="/jxl">Converter</a></header>
+<main>
+<h1>jpegxl/page-rects</h1>
+<p class="lede">edges: borders, outlines and strokes too, for efforts 4-9.</p>
+<nav class="contents" aria-label="On this page"><a class="choice" href="#import"><span>Import</span></a><a class="choice" href="#api"><span>API</span></a><a class="choice" href="#types"><span>Types</span></a><a class="choice" href="#errors"><span>Errors</span></a></nav>
+<section id="import">
+<h2>import</h2>
+<div class="code"><pre><code class="language-js">import {measure, pageRects} from 'jpegxl/page-rects';</code></pre></div>
+</section>
+<section id="api">
+<h2>api</h2>
+<article id="fn-measure"><h3>measure</h3><p>edges: borders, outlines and strokes too, for efforts 4-9. keep: the nodes a library drew. Every other element and its subtree adds nothing.</p><div class="code"><pre><code>function measure(element: Element, options?: {edges?: boolean; keep?: {has(node: Node): boolean}}): Measurement</code></pre></div></article>
+<article id="fn-pageRects"><h3>pageRects</h3><p>area: the part of the element the canvas shows, in CSS pixels from its corner. The whole element by default.</p><div class="code"><pre><code>function pageRects(page: Element | Measurement, canvas: {width: number; height: number}, options?: {area?: {x?: number; y?: number; width?: number; height?: number}; edges?: boolean}): { exactRects: ExactRect[]; photoRects: CaptureRect[]; readonly textComplete?: true; }</code></pre></div></article>
+</section>
+<section id="types">
+<h2>types</h2>
+<ul class="rows"><li id="type-Measurement"><p><span class="name">Measurement</span></p><p>The element's box, text, photos and (with edges) edges, in CSS pixels.</p></li></ul>
+</section>
+<section id="errors">
+<h2>errors</h2>
+<p>A refusal carries a <code>code</code>. <a href="errors.html">Every code, and what to do</a>.</p>
+</section>
+</main>
+<footer class="foot"><a href="https://github.com/jackskip22/rapier-jxl">GitHub</a><a href="https://www.npmjs.com/package/jpegxl">npm</a><a href="/jxl/docs/">All docs</a></footer>
+</body>
+</html>

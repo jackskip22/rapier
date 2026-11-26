@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JPEG XL formats: what jpegxl reads and writes | jpegxl</title>
+<meta name="description" content="The pictures jpegxl takes in, the sample depths, color and HDR it keeps, the files it writes, and what each entry weighs.">
+<link rel="canonical" href="https://rapier.website/jxl/docs/formats.html">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/jxl/docs/docs.css">
+<script src="/jxl/docs/docs.js" defer></script>
+</head>
+<body>
+<header class="bar"><a class="bar__title" href="/jxl/docs/">jpegxl docs</a><a class="bar__link" href="/jxl">Converter</a></header>
+<main>
+<h1>formats</h1>
+<p class="lede">What goes in, what comes out, and what each entry weighs.</p>
+<nav class="contents" aria-label="On this page"><a class="choice" href="#in"><span>Goes in</span></a><a class="choice" href="#depth"><span>Depth and color</span></a><a class="choice" href="#out"><span>Comes out</span></a><a class="choice" href="#size"><span>Size</span></a></nav>
+<section id="in">
+<h2>goes in</h2>
+<ul class="rows"><li><p><span class="name">Pixels</span></p><p>A picture is width x height pixels of straight RGBA samples.</p></li><li><p><span class="name">DecodedImage</span></p><p><code>header</code> is the whole file's image header, as decode parsed it: header()'s fields for the same file, plus <code>icc</code>, the file's own profile (header() reads no profile and may read only the file's first bytes).</p></li><li><p><span class="name">CanvasSurface</span></p><p>A 2D, WebGL or WebGPU canvas, or an OffscreenCanvas, read at its size.</p></li><li><p><span class="name">BitmapSurface</span></p><p>An ImageBitmap, read at its size.</p></li><li><p><span class="name">FrameSurface</span></p><p>A WebCodecs VideoFrame (a camera, a screen capture, a decoded video): read at its display size, converted by the browser from its own color space to sRGB, or to readAs.</p></li><li><p><span class="name">VideoSurface</span></p><p>A &lt;video&gt; (playing, or paused on a frame): read as the frame it shows, as a VideoFrame of it is.</p></li><li><p><span class="name">Blob</span></p><p>An image file the browser can decode, read in sRGB or its own space.</p></li><li><p><span class="name">RowSource</span></p><p>A picture given a band of rows at a time, so it is never whole in memory: rows(y, count) returns rows y to y + count - 1 as {data} (width x count RGBA samples, described by the source) or a canvas, bitmap or video frame of width x count (8-bit, in the source's colorSpace: sRGB or Display P3).</p></li><li><p><span class="name">TextureInput</span></p><p>A GPU texture read from its own device, at the encoder's size.</p></li></ul>
+</section>
+<section id="depth">
+<h2>depth, color and HDR</h2>
+<ul class="rows"><li><p><span class="name">samples</span> <span class="type">Uint8Array | Uint8ClampedArray | Uint16Array | Float16Samples | Float32Array</span></p><p>The typed arrays a picture's samples may be in: 8 or 16 bit integers, half or full floats.</p></li><li><p><span class="name">bitDepth</span> <span class="type">8 | 10 | 12 | 16 | 32 | undefined</span></p><p>Integer code-value depth: 8 for bytes. 10, 12, or 16 for Uint16Array (default 16). Floating-point depth is fixed by the sample format: 16 or 32.</p></li><li><p><span class="name">sampleFormat</span> <span class="type">SampleFormat | undefined</span></p><p>Inferred as uint for integer arrays or float32 for Float32Array. float16 uses raw IEEE binary16 words in Uint16Array.</p></li><li><p><span class="name">transferFunction</span> <span class="type">TransferFunction | undefined</span></p><p>Declares the samples' existing transfer function. Defaults to srgb for integers, linear for floats. No color conversion.</p></li><li><p><span class="name">colorSpace</span> <span class="type">ColorSpace | undefined</span></p><p>Source color space, declared without conversion. Default 'srgb'.</p></li><li><p><span class="name">intensityTarget</span> <span class="type">number | undefined</span></p><p>Positive peak luminance in nits, stored as binary16. Defaults to 10000 for PQ, 1000 for HLG, otherwise 255.</p></li><li><p><span class="name">alphaPremultiplied</span> <span class="type">boolean | undefined</span></p><p>Source RGB is premultiplied by alpha. Default false. Values are never unpremultiplied.</p></li><li><p><span class="name">icc</span> <span class="type">Uint8Array | undefined</span></p><p>Original defined three-component ICC.1 profile or GRAY, kept unchanged, without color conversion. Mutually exclusive with colorSpace and transferFunction. Eight-bit samples below quality 100 are coded as photographs (a matrix/TRC profile through its own primaries and curves in XYB. A gray one, or one that needs a color engine, as the samples are) and are decoded back into the profile. Deeper samples use Modular coding. Gray needs identical RGB words. Profiles above 4 MiB select level 10. The complete profile and encoded output must fit available memory.</p></li></ul>
+</section>
+<section id="out">
+<h2>comes out</h2>
+<ul class="rows"><li><p>One record per requested output, shared by ordinary calls and queues. Only fit and variants can resolve without a file. A preserved JPEG has kept: 'jpeg-bytes', fidelity: 'exact' and measurements: []: the original JPEG restores exactly, with no claim of a measured score. Empty measurements add no independent verification claim. An encode can return meetsTarget: false with bytes when its measured look target was missed. An unmet size target (fit, variants) returns meetsTarget: false without a file.</p></li><li><p><span class="name">format</span> <span class="type">'jxl' | 'jpeg' | 'png'</span></p><p>The file's format: 'jxl', or 'jpeg' for a restored JPEG, or 'png'.</p></li></ul>
+</section>
+<section id="size">
+<h2>what each entry weighs</h2>
+<p>Measured from the build, version 8.4.1. One file each, minified.</p><ul class="rows"><li><p><span class="name">jpegxl</span></p><p>about 500 KB Brotli, about 620 KB gzip</p></li><li><p><span class="name">jpegxl/upload</span></p><p>about 330 KB Brotli, about 400 KB gzip</p></li><li><p><span class="name">jpegxl/capture</span></p><p>about 59 KB Brotli, about 69 KB gzip</p></li><li><p><span class="name">jpegxl/capture-complete</span></p><p>about 280 KB Brotli, about 340 KB gzip</p></li><li><p><span class="name">jpegxl/animation</span></p><p>about 510 KB Brotli, about 630 KB gzip</p></li><li><p><span class="name">jpegxl/jpeg</span></p><p>about 170 KB Brotli, about 220 KB gzip</p></li><li><p><span class="name">jpegxl/format</span></p><p>about 530 KB Brotli, about 660 KB gzip</p></li><li><p><span class="name">jpegxl/decode</span></p><p>about 120 KB Brotli, about 160 KB gzip</p></li><li><p><span class="name">jpegxl/hdr</span></p><p>about 13 KB Brotli, about 14 KB gzip</p></li><li><p><span class="name">jpegxl/metadata</span></p><p>about 39 KB Brotli, about 45 KB gzip</p></li><li><p><span class="name">jpegxl/verify</span></p><p>about 80 KB Brotli, about 96 KB gzip</p></li><li><p><span class="name">jpegxl/polyfill</span></p><p>about 21 KB Brotli, about 24 KB gzip</p></li><li><p><span class="name">jpegxl/serve</span></p><p>about 76 KB Brotli, about 110 KB gzip</p></li><li><p><span class="name">jpegxl/resumable</span></p><p>about 64 KB Brotli, about 75 KB gzip</p></li></ul>
+</section>
+</main>
+<footer class="foot"><a href="https://github.com/jackskip22/rapier-jxl">GitHub</a><a href="https://www.npmjs.com/package/jpegxl">npm</a><a href="/jxl/docs/">All docs</a></footer>
+</body>
+</html>

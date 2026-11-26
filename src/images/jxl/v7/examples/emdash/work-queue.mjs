@@ -11,54 +11,54 @@ function json(value) {
         throw new TypeError();
       return record(item) ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item;
     });
-  } catch { throw fail('JXL_INPUT', 'Expected an immutable JSON work command.'); }
+  } catch { throw fail('JXL_INPUT', "work command: immutable JSON"); }
 }
 
 export function createWorkQueue(ctx, {scope, call = action => action()} = {}) {
   const table = ctx?.storage?.jxlWork;
   if (typeof scope !== 'string' || typeof call !== 'function' || typeof ctx?.cron?.schedule !== 'function' || typeof ctx?.cron?.list !== 'function' ||
       ['get', 'compareAndSet', 'delete', 'query'].some(name => typeof table?.[name] !== 'function'))
-    throw fail('JXL_OPTIONS', 'Expected native work storage and EmDash scheduling.');
+    throw fail('JXL_OPTIONS', "work: storage and scheduler");
   function keyOf(kind, id) {
     if (!['image', 'library', 'originals'].includes(kind) || typeof id !== 'string' || !ID.test(id))
-      throw fail('JXL_INPUT', 'Expected an image, library or originals work ID.');
+      throw fail('JXL_INPUT', "work ID: image, library, originals");
     return `${scope}:${kind}:${id}`;
   }
   function rowOf(kind, id, command) {
     keyOf(kind, id);
     if (kind === 'image' && (!record(command) || command.id !== id || command.scope !== scope) ||
         kind !== 'image' && command !== undefined)
-      throw fail('JXL_INPUT', 'The work command belongs to another ID, kind or storage scope.');
+      throw fail('JXL_INPUT', "work command: reload record");
     return {scope, kind, id, ...(command === undefined ? {} : {command})};
   }
   return {
     async schedule(kind, id, command) {
       const key = keyOf(kind, id), encoded = json(rowOf(kind, id, command)), value = JSON.parse(encoded);
       const tasks = await call(() => ctx.cron.list());
-      if (!Array.isArray(tasks)) throw fail('JXL_IO', 'EmDash returned an invalid scheduled-task list.');
+      if (!Array.isArray(tasks)) throw fail('JXL_IO', "scheduled tasks: storage");
       if (!tasks.some(task => task?.name === 'jxl-work'))
         await call(() => ctx.cron.schedule('jxl-work', {schedule: '* * * * * *', data: {kind: 'images'}}));
       const saved = await call(() => table.compareAndSet(key, null, value));
       if (saved?.applied === true) return;
-      if (saved?.applied !== false) throw fail('JXL_IO', 'The work registry write was not acknowledged.');
+      if (saved?.applied !== false) throw fail('JXL_IO', "work registry: unconfirmed");
       const current = await call(() => table.get(key));
-      if (current === null) throw fail('JXL_IO', 'The work registry changed during admission.');
-      if (json(current) !== encoded) throw fail('JXL_INPUT', 'This work ID belongs to another command or storage scope.');
+      if (current === null) throw fail('JXL_IO', "work registry: changed; reload");
+      if (json(current) !== encoded) throw fail('JXL_INPUT', "work command: reload record");
     },
     remove(kind, id) {
       const key = keyOf(kind, id);
       return call(() => table.delete(key));
     },
     async list(cursor) {
-      if (cursor !== undefined && typeof cursor !== 'string') throw fail('JXL_INPUT', 'Expected the saved work cursor.');
+      if (cursor !== undefined && typeof cursor !== 'string') throw fail('JXL_INPUT', "cursor: preceding page");
       const page = await call(() => table.query({where: {scope}, limit: 16, ...(cursor === undefined ? {} : {cursor})}));
       if (!record(page) || !Array.isArray(page.items) || page.items.length > 16 || typeof page.hasMore !== 'boolean' ||
           page.cursor !== undefined && typeof page.cursor !== 'string' || page.hasMore && !page.cursor)
-        throw fail('JXL_IO', 'The work registry returned an invalid page.');
+        throw fail('JXL_IO', "work page: storage");
       for (const row of page.items) {
         if (!record(row?.data) || row.data.scope !== scope || row.id !== keyOf(row.data.kind, row.data.id) ||
             json(row.data) !== json(rowOf(row.data.kind, row.data.id, row.data.command)))
-          throw fail('JXL_INPUT', 'The work registry row belongs to another command or storage scope.');
+          throw fail('JXL_INPUT', "work command: reload record");
       }
       return page;
     },

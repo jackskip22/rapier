@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
-import {kernelModule, compileKernels} from './kernel-runtime.mjs';
-import {exactExp} from './exact-math.mjs';
+import {BA_KERNELS} from './butteraugli-kernels-bytes.mjs';
+import {wasmBytes} from './wasm-text.mjs';
 import {fault} from './fault.mjs';
 import {BA_MEMORY, butteraugliLayout, butteraugliRowsLayout} from './butteraugli-memory.mjs';
-export const prepareButteraugli = compileKernels;
+let compiled = null;
+const kernelModule = () => compiled ??= new WebAssembly.Module(wasmBytes(BA_KERNELS));
+export const prepareButteraugli = async () => { kernelModule(); };
 const f32 = Math.fround;
 const GAUSSIAN = Float32Array.from([1.2, 7.15593339443, 3.22489901262, 1.56416327805, 2.7].flatMap(value => {
   const sigma = f32(value), radius = Math.trunc(f32(2.25 * sigma)), scale = -1 / (2 * sigma * sigma);
-  const kernel = Array.from({length:radius * 2 + 1}, (_, i) => f32(exactExp(scale * (i - radius) * (i - radius))));
+  const kernel = Array.from({length:radius * 2 + 1}, (_, i) => f32(Math.exp(scale * (i - radius) * (i - radius))));
   const inverse = f32(1 / kernel.reduce((sum, value) => f32(sum + value), 0));
   return [...kernel, ...kernel.slice(0, radius + 1).map(value => f32(value * inverse))];
 }));
@@ -16,7 +18,7 @@ function arena(plan) {
   let memory;
   const pages = Math.ceil(plan.residentBytes / 65536);
   try { memory = new WebAssembly.Memory({initial:pages, maximum:pages}); }
-  catch (cause) { throw Object.assign(fault('JXL_MEMORY', 'Cannot allocate Butteraugli work memory.'), {cause}); }
+  catch (cause) { throw Object.assign(fault('JXL_MEMORY', 'Butteraugli: out of memory'), {cause}); }
   const k = new WebAssembly.Instance(kernelModule(), {env:{memory}}).exports;
   k.s2MetricInit(BA_MEMORY.linear);
   new Float32Array(memory.buffer, gaussian, GAUSSIAN.length).set(GAUSSIAN);
@@ -34,7 +36,7 @@ function writeInput(owner, input, at, pixels) {
   } else for (let c = 0; c < 3; c++) {
     const target = view(at + c * pixels * 4, pixels); target.set(input[c]);
     for (const value of target) if (!Number.isFinite(value))
-      throw fault('JXL_INPUT', 'Butteraugli samples must be finite binary32 values.');
+      throw fault('JXL_INPUT', 'samples: finite float32');
   }
 }
 export function nativeButteraugliTable() {
@@ -88,11 +90,11 @@ function writeRows(owner, read, at, width, y0, height) {
   for (let y = 0; y < height; y++) for (let c = 0; c < 3; c++) {
     const row = read(c, y0 + y);
     if (!(row instanceof Float32Array || row instanceof Float64Array) || row.length < width
-        || !(row.buffer instanceof ArrayBuffer)) throw fault('JXL_INPUT', 'Butteraugli needs a complete, nonshared linear row.');
+        || !(row.buffer instanceof ArrayBuffer)) throw fault('JXL_INPUT', 'row: nonshared Float32Array');
     const target = owner.view(at + (c * n + y * width) * 4, width);
     for (let x = 0; x < width; x++) {
       const value = f32(row[x]);
-      if (!Number.isFinite(value)) throw fault('JXL_INPUT', 'Butteraugli row samples must be finite binary32 values.');
+      if (!Number.isFinite(value)) throw fault('JXL_INPUT', 'row: finite float32');
       target[x] = value;
     }
   }

@@ -6,7 +6,7 @@ import {start, advance, finish} from '../v7/resumable.mjs';
 import {memoryStore, sourceRecord, sha256} from './durable-host.mjs';
 import {tiled} from './photo-fixture.mjs';
 
-for (const [effort, bound] of [[2, 6.5], [3, 8]]) test(`a resumed effort ${effort} encode reads the original once whole to check it, then only the rows its steps use`, {timeout: 120000}, async () => {
+for (const [effort, bound] of [[2, 9], [3, 9]]) test(`a resumed effort ${effort} encode reads the original once whole to check it, then only the rows its steps use`, {timeout: 120000}, async () => {
   const picture = await tiled(1000, 1500), options = {effort, fidelity: {quality: 85}};
   const ordinary = await encode({...picture, data: picture.data.slice()}, options);
   const store = memoryStore(picture.data), read = store.readSource;

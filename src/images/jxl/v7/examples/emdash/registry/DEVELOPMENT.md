@@ -4,7 +4,7 @@
 
 The manifest contains publisher, author and security-contact information. The version lives in `package.json`. Profile text lives in `docs/`. The integration supports Cloudflare R2 and Node local storage.
 
-The plugin CLI is pinned to `0.13.5`. Development dependencies are plugin-test `0.2.11`, EmDash `1.4.0`, TypeScript `5.9.3`, and Vitest `4.1.12`.
+The plugin CLI is pinned to `0.13.5`. Development dependencies are plugin-test `0.2.12`, EmDash `1.5.0`, TypeScript `5.9.3`, and Vitest `4.1.12`.
 
 ```sh
 npm run test:unit

@@ -2,8 +2,11 @@
 (() => {
 	const C = globalThis.RapierJxlConvert;
 	const LANES = 2;
-	const QUALITY_WORDS = Object.freeze({lossless: 'Lossless', high: 'High', smaller: 'Medium'});
+	const QUALITY_WORDS = Object.freeze({high: 'High', veryhigh: 'Very high', lossless: 'Lossless'});
 	const START_MODE = 'high';
+	const JXL_VERSION = (() => { try { return JSON.parse('RAPIER_JXL_VERSION'); } catch (_) { return null; } })();
+	const UPLOAD_KB = (() => { try { return JSON.parse('RAPIER_JXL_UPLOAD_KB'); } catch (_) { return null; } })();
+	const ANDROID_APP = 'https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Djxl-page';
 	let view = null;
 	const make = (tag, cls, text) => { const node = document.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = text; return node; };
 	const size = bytes => bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + ' KB' : bytes < 1073741824 ? (bytes / 1048576).toFixed(bytes < 10485760 ? 2 : 1) + ' MB' : (bytes / 1073741824).toFixed(2) + ' GB';
@@ -14,6 +17,104 @@
 		const list = _rapierInfoSheetShow('rapier-jxl', C.ABOUT);
 		for (const [label, href] of C.LINKS) { const item = make('li'); item.append(anchor(label, href)); list.append(item); }
 	}
+	const ADVANCED = Object.freeze({
+		limits: Object.freeze(C.ADVANCED.limits.map(bytes => [bytes, C.bytesWords(bytes)])),
+		sides: Object.freeze(C.ADVANCED.sides.map(side => [side, side ? String(side) : 'Original']))});
+	function arrowKeys(group, buttons) {
+		group.addEventListener('keydown', event => {
+			const step = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: 1, ArrowUp: -1}[event.key];
+			if (!step) return;
+			const list = buttons(), at = list.findIndex(button => button.hasAttribute('data-active')), next = list[(at + step + list.length) % list.length];
+			event.preventDefault(); next.click(); next.focus();
+		});
+	}
+	function advancedPart() {
+		const node = make('div', 'settings-disclosure-shell rapier-jxl-view__advanced rapier-jxl-view__full'), id = 'rapier-jxl-advanced';
+		const title = make('button', 'settings-disclosure-title rapier-jxl-view__advanced-title'), glyph = make('span', 'settings-disclosure-title__glyph');
+		title.type = 'button'; title.setAttribute('aria-expanded', 'false'); title.setAttribute('aria-controls', id); glyph.setAttribute('aria-hidden', 'true');
+		title.append(make('span', 'rapier-jxl-view__label', 'Advanced'), glyph);
+		const shell = make('div', 'settings-disclosure'), inner = make('div', 'settings-disclosure__inner'), body = make('div', 'rapier-jxl-view__advanced-body');
+		shell.id = id; shell.dataset.open = 'false'; shell.setAttribute('aria-hidden', 'true'); shell.inert = true;
+		const part = {node, title, shell, onQuality: null, onChange: null};
+		const joined = (label, choices, chosen) => {
+			const group = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff');
+			group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', label);
+			for (const [value, words] of choices) {
+				const button = make('button', 'theme-switcher__btn onoff-btn', words);
+				button.type = 'button'; button.dataset.value = String(value); button.setAttribute('role', 'radio');
+				group.append(button);
+			}
+			const control = {group, value: null, set(value) {
+				control.value = value;
+				for (const each of group.children) { const on = each.dataset.value === String(value); each.toggleAttribute('data-active', on); each.setAttribute('aria-checked', String(on)); }
+				_rapierSwitchSlide(group);
+			}};
+			group.addEventListener('click', event => {
+				const button = event.target.closest('button[data-value]');
+				if (!button || Number(button.dataset.value) === control.value) return;
+				control.set(Number(button.dataset.value)); chosen();
+			});
+			arrowKeys(group, () => [...group.children]);
+			return control;
+		};
+		const onoff = (label, chosen, under) => {
+			const stack = make('div', 'settings-switch-stack'), group = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff');
+			const button = make('button', 'theme-switcher__btn onoff-btn');
+			group.dataset.switchLabel = label; group.setAttribute('role', 'group'); group.setAttribute('aria-label', label);
+			button.type = 'button'; button.setAttribute('role', 'switch');
+			let below = null;
+			const control = {on: false, set(on) {
+				control.on = on;
+				button.textContent = label + ': ' + (on ? 'On' : 'Off'); button.toggleAttribute('data-active', on); button.setAttribute('aria-checked', String(on));
+				if (below) { below.dataset.open = String(on); below.inert = !on; if (on) _rapierSwitchSlide(under); }
+			}};
+			group.append(button); stack.append(group);
+			if (under) { below = make('div', 'settings-disclosure settings-switch-stack__under'); const holder = make('div', 'settings-disclosure__inner'); holder.append(under); below.append(holder); stack.append(below); }
+			button.addEventListener('click', () => { control.set(!control.on); chosen(); });
+			control.set(false);
+			control.node = stack;
+			return control;
+		};
+		const labelled = (words, ...nodes) => { const box = make('div', 'rapier-jxl-view__part'); box.append(make('p', 'rapier-jxl-view__label', words), ...nodes); return box; };
+		const row = make('div', 'rapier-jxl-view__effort rapier-jxl-view__effort--range'), seek = make('span', 'rapier-draw-seek'), track = make('span', 'rapier-draw-seek-track');
+		const head = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), level = make('output', 'rapier-jxl-view__effort-level'), slider = make('input');
+		slider.type = 'range'; slider.min = '1'; slider.max = '100'; slider.step = '1'; slider.setAttribute('aria-label', 'Quality number');
+		track.setAttribute('aria-hidden', 'true'); head.setAttribute('class', 'rapier-draw-seek-head'); head.setAttribute('viewBox', '0 0 24 24'); head.setAttribute('aria-hidden', 'true');
+		for (const [name, value] of [['cx', '12'], ['cy', '12'], ['r', '10']]) ring.setAttribute(name, value);
+		head.append(ring); seek.append(track, head, level, slider);
+		row.append(make('span', 'rapier-jxl-view__end', 'Small'), seek, make('span', 'rapier-jxl-view__end', 'Best'));
+		const number = labelled('Quality number:', row);
+		C.liftToLabel(seek, level, number.firstElementChild);
+		part.show = value => { slider.value = String(value); seek.style.setProperty('--seek-frac', String((value - 1) / 99)); level.textContent = String(value); slider.setAttribute('aria-valuetext', 'Quality ' + value); };
+		slider.addEventListener('input', () => { part.show(Number(slider.value)); part.onQuality?.(Number(slider.value), false); });
+		slider.addEventListener('change', () => part.onQuality?.(Number(slider.value), true));
+		slider.addEventListener('pointerdown', () => seek.classList.add('rapier-draw-seek--active'));
+		for (const event of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) slider.addEventListener(event, () => seek.classList.remove('rapier-draw-seek--active'));
+		const changed = () => part.onChange?.(part.read());
+		part.limit = joined('Size limit', ADVANCED.limits, changed);
+		part.limitOn = onoff('Size limit', changed, part.limit.group);
+		part.side = joined('Longer side', ADVANCED.sides, changed);
+		part.location = onoff('Remove location', changed);
+		part.read = () => ({limit: part.limitOn.on ? part.limit.value : 0, limitChoice: part.limit.value, side: part.side.value, location: !part.location.on});
+		part.set = ({limit, limitChoice, side, location} = {}) => {
+			if (limitChoice !== undefined) part.limit.set(limitChoice);
+			if (limit !== undefined) { if (limit) part.limit.set(limit); part.limitOn.set(!!limit); }
+			if (side !== undefined) part.side.set(side);
+			if (location !== undefined) part.location.set(!location);
+		};
+		part.limit.set(C.ADVANCED.limit); part.side.set(0);
+		body.append(number, part.limitOn.node, labelled('Longer side:', part.side.group), part.location.node);
+		inner.append(body); shell.append(inner); node.append(title, shell);
+		title.addEventListener('click', () => {
+			const open = shell.dataset.open !== 'true';
+			shell.dataset.open = String(open); shell.inert = !open; shell.setAttribute('aria-hidden', String(!open)); title.setAttribute('aria-expanded', String(open));
+			if (open) for (const group of body.querySelectorAll('.theme-switcher')) _rapierSwitchSlide(group);
+		});
+		return part;
+	}
+	const STORED = Object.freeze({quality: 'jxlQuality', limit: 'jxlSizeLimit', limitChoice: 'jxlSizeLimitChoice', side: 'jxlLongerSide', removeLocation: 'jxlRemoveLocation'});
+	const stored = field => { try { return typeof RapierPreferences === 'object' ? RapierPreferences.read(STORED[field]) : undefined; } catch (_) { return undefined; } };
+	const store = (field, value) => { try { if (typeof RapierPreferences === 'object') RapierPreferences.write(STORED[field], value); } catch (_) {} };
 	function build() {
 		const root = make('div', 'rapier-jxl-view'), title = make('div', 'rapier-jxl-view__title', 'JPEG XL converter');
 		root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'JPEG XL converter');
@@ -26,14 +127,9 @@
 		heading.append(title, info);
 		bar.append(heading, shut);
 		const body = make('div', 'rapier-jxl-view__body');
-		const localNote = () => {
-			const node = make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center');
-			node.append(document.createTextNode(C.LOCAL_NOTE[0]), document.createElement('br'), document.createTextNode(C.LOCAL_NOTE[1]));
-			return node;
-		};
 		const pick = make('label', 'settings-action-btn rapier-jxl-view__pick'), input = make('input'), pickText = C.pickLabel(make('span'));
 		pick.append(pickText, input);
-		input.type = 'file'; input.accept = 'image/*,video/*,.jxl'; input.multiple = true;
+		input.type = 'file'; input.accept = 'image/*,video/*,.jxl,.exr,.hdr'; input.multiple = true;
 		const group = make('div', 'theme-switcher theme-switcher--joined theme-switcher--onoff');
 		group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Quality');
 		const modes = Object.keys(C.QUALITY).map(mode => {
@@ -68,6 +164,7 @@
 		const effortLabel = make('p', 'rapier-jxl-view__label', 'Effort:');
 		effort.append(effortLabel, effortRow);
 		C.liftToLabel(seek, level, effortLabel);
+		const advanced = advancedPart();
 		const status = make('div', 'rapier-jxl-view__status'), line = make('div', 'rapier-progress__bar rapier-jxl-view__line'), cancel = make('button', 'settings-action-btn', 'Cancel');
 		cancel.type = 'button'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
 		const summary = make('div', 'rapier-jxl-view__summary'), count = make('div', 'rapier-jxl-view__count');
@@ -78,23 +175,30 @@
 		const files = make('div', 'rapier-jxl-view__files');
 		files.append(line, summary, help, list, all);
 		const fold = make('div', 'rapier-jxl-view__fold');
-		fold.append(pick, files, quick, quality, effort, _rapierToolFooter('/jxl', 'rapier-jxl', 'rapier-jxl', false, C.LINKS.slice(2)));
+		fold.append(pick, files, quick, quality, effort, advanced.node);
+		const links = make('div', 'rapier-tool-footer rapier-jxl-view__links'), linkLine = make('p', 'rapier-tool-footer__line');
+		const release = JXL_VERSION ? [['rapier-jxl ' + JXL_VERSION, 'https://github.com/jackskip22/rapier-jxl/releases/tag/v' + JXL_VERSION]] : [];
+		const android = typeof _rapierAndroidBrowser === 'function' && _rapierAndroidBrowser() ? [['Android app', ANDROID_APP]] : [];
+		linkLine.append(...[...release, ...C.LINKS, ...android].map(([label, href]) => anchor(label, href)));
+		links.append(linkLine);
 		const more = make('section', 'rapier-jxl-view__more'), moreTitle = make('h2', 'rapier-jxl-view__title', C.COMPARE.title), facts = make('ul', 'rapier-jxl-view__facts');
 		moreTitle.id = 'rapier-jxl-compare'; more.setAttribute('aria-labelledby', moreTitle.id);
-		for (const fact of C.COMPARE.lines) facts.append(make('li', 'rapier-jxl-view__note', fact));
+		for (const fact of C.COMPARE.lines) facts.append(make('li', 'rapier-jxl-view__note', UPLOAD_KB ? fact.replace('{upload}', UPLOAD_KB) : fact.replace(' about {upload} KB,', '')));
 		more.append(moreTitle, facts, make('p', 'rapier-jxl-view__note', C.COMPARE.basis));
 		const scene = make('section', 'rapier-jxl-view__more'), sceneTitle = make('h2', 'rapier-jxl-view__title', C.SCENE.title), stage = make('div', 'rapier-jxl-scene__stage');
 		sceneTitle.id = 'rapier-jxl-scene'; scene.setAttribute('aria-labelledby', sceneTitle.id);
 		scene.append(sceneTitle, make('p', 'rapier-jxl-view__note', C.SCENE.note), stage);
 		const clipBlock = spec => {
-			const section = make('section', 'rapier-jxl-view__more'), title = make('h2', 'rapier-jxl-view__title', spec.title), slot = make('div', 'rapier-jxl-view__example rapier-jxl-view__example--full'), note = make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center');
+			const local = spec.local !== false;
+			const section = make('section', 'rapier-jxl-view__more'), title = make('h2', 'rapier-jxl-view__title', spec.title), slot = make('div', 'rapier-jxl-view__example rapier-jxl-view__example--full'), note = make('p', 'rapier-jxl-view__note' + (local ? '' : ' rapier-jxl-view__note--center'));
 			title.id = spec.id; section.setAttribute('aria-labelledby', title.id);
-			section.append(title, slot, note);
-			if (spec.local !== false) section.append(localNote());
-			if (spec.credit) section.append(make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center', spec.credit));
+			section.append(title, slot);
+			if (spec.credit) section.append(make('p', 'rapier-jxl-view__note', spec.credit));
+			section.append(note);
 			return {spec, section, slot, note, shown: null, near: null};
 		};
 		const example = clipBlock({...C.EXAMPLE, id: 'rapier-jxl-example'}), clip = clipBlock({...C.CLIP, id: 'rapier-jxl-clip'});
+		const localNote = make('p', 'rapier-jxl-view__note', C.LOCAL_NOTE.join(' '));
 		const big = {section: make('section', 'rapier-jxl-view__more'), title: make('h2', 'rapier-jxl-view__title', C.BIG.title), row: make('div', 'rapier-jxl-view__bigbar'),
 			load: make('button', 'settings-action-btn', C.BIG.button), info: make('button', 'settings-info-btn'), box: make('div', 'rapier-jxl-view__big'), note: make('p', 'rapier-jxl-view__note rapier-jxl-view__note--center'), timer: 0, url: null, playing: false};
 		big.title.id = C.BIG.id; big.section.setAttribute('aria-labelledby', big.title.id);
@@ -103,9 +207,9 @@
 		big.box.hidden = big.note.hidden = true; big.note.setAttribute('aria-live', 'polite');
 		big.box.style.aspectRatio = C.BIG.width + ' / ' + C.BIG.height;
 		big.row.append(big.load, big.box, big.info); big.section.append(big.title, big.row, big.note);
-		_rapierJxlMakerPart.tabs(body, [fold, example.section, more, scene, big.section, clip.section, _rapierToolAlso('/jxl')]);
+		_rapierJxlMakerPart.tabs(body, [fold, localNote, example.section, links, more, big.section, clip.section, _rapierToolAlso('/jxl')], [scene, _rapierToolAlso('/jxl')]);
 		root.append(bar, body);
-		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, slider, seek, level, line, count, cancel, list, all, help, pick, pickText, scene, stage, clips: [example, clip], big, showing: null, following: null, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
+		return {info, root, shut, input, group, modes, quick: {root: quick, qualityOpen, effortOpen, qualityDrop, effortDrop}, effort: C.EFFORT.start, quality: C.QUALITY[START_MODE], limit: 0, side: 0, location: true, advanced, slider, seek, level, line, count, cancel, list, all, help, pick, pickText, scene, stage, clips: [example, clip], big, showing: null, following: null, rows: [], mode: START_MODE, running: false, controller: null, inert: [], wasFocus: null};
 	}
 
 	function clearPicture(self) {
@@ -160,7 +264,7 @@
 		else if (row.state === 'failed' || row.state === 'stopped') text = row.say;
 		else if (r.back) text = size(r.before) + ' → ' + size(r.size);
 		else if (r.frames) text = size(r.before) + ' → ' + size(r.size) + (r.video ? '' : ' · ' + percent(r)) + C.mediaNote(r);
-		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, so the JPEG can\'t be restored' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
+		else text = size(r.before) + ' → ' + size(r.size) + ' · ' + percent(r) + (r.side ? ' · ' + r.side + ' px' : '') + (r.located ? ' · location removed' : '') + (r.exact ? ' · restores your JPEG exactly' + (r.exactKept ? ' · lossy is no smaller' : '') : r.fallback ? ' · made lossless: this browser could not open the smaller file' : r.jpeg ? (r.before > C.CARRY_BYTES ? ' · over ' + C.CARRY_BYTES / 1048576 + ' MB, so made from its pixels' : ' · ' + (r.mode === 'lossless' ? 'made from its pixels, so the JPEG can\'t be restored' : 'lossy')) : r.note === 'bits8' ? ' · kept at 8 bits' : r.note === 'colors' ? ' · converted to sRGB' : r.mode === 'lossless' ? ' · lossless' : '') + (r.refused ? ' · this browser cannot open this file' : '');
 		note.textContent = text;
 		download.hidden = row.state !== 'done';
 		row.nameButton.disabled = row.state !== 'done';
@@ -239,8 +343,8 @@
 				paint(row); overall(self);
 				if (!self.following) followPicture(self, row);
 				try {
-					const key = keyOf(self), mode = self.mode, effort = self.effort;
-					const made = await C.convert(row.file, {mode, effort, complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]),
+					const key = keyOf(self), {quality, effort, limit, side, location} = self;
+					const made = await C.convert(row.file, {quality, effort, maxBytes: limit, side, location, complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]),
 						onPreview: (frame, preview) => { if (!current()) return; followPicture(self, row); return row.picture?.preview(frame, preview); },
 						say: text => { row.say = text; paint(row); follow1(self, row); },
 						progress: value => {
@@ -249,7 +353,7 @@
 						}});
 					const {also, ...kept} = made;
 					row.results.set(key, kept);
-					if (also) row.results.set('lossless|' + effort, also);
+					if (also && (!limit || also.size <= limit)) row.results.set(keyOf({effort, limit, side, location}, 100), also);
 					if (kept.ext && !row.outputName.toLowerCase().endsWith(kept.ext)) row.outputName = C.outputName(row.file.name, new Set(self.rows.filter(other => other !== row).map(other => other.outputName.toLowerCase())), kept.ext);
 					const now = row.results.get(keyOf(self));
 					if (now) { row.result = now; row.state = 'done'; finishPicture(row, now.blob); }
@@ -277,7 +381,7 @@
 		}
 	}
 
-	const keyOf = of => of.mode + '|' + of.effort;
+	const keyOf = (of, quality = of.quality) => [quality, of.effort, of.limit, of.side, of.location].join('|');
 	function remake() {
 		for (const row of view.rows) {
 			if (row.state === 'working') continue;
@@ -404,12 +508,22 @@
 		view.all.addEventListener('click', saveAll);
 		for (const button of view.modes) button.addEventListener('click', () => {
 			if (button.dataset.mode === view.mode) return;
-			view.mode = button.dataset.mode;
-			for (const each of view.modes) { const on = each === button; each.toggleAttribute('data-active', on); each.setAttribute('aria-checked', String(on)); }
-			_rapierSwitchSlide(view.group);
-			paintQuick(view);
+			setQuality(view, C.QUALITY[button.dataset.mode]);
 			remake();
 		});
+		view.advanced.onQuality = (value, final) => {
+			if (!final) { lightQuality(view, value); return; }
+			if (value === view.quality) return;
+			setQuality(view, value); remake();
+		};
+		view.advanced.onChange = read => { remember(read); remake(); };
+		{
+			const limitChoice = stored('limitChoice'), limit = stored('limit');
+			view.advanced.set({limitChoice: C.ADVANCED.limits.includes(limitChoice) ? limitChoice : C.ADVANCED.limit, limit: C.ADVANCED.limits.includes(limit) ? limit : 0,
+				side: C.ADVANCED.sides.includes(stored('side')) ? stored('side') : 0, location: stored('removeLocation') !== true});
+			Object.assign(view, view.advanced.read());
+			setQuality(view, stored('quality') ?? C.QUALITY[START_MODE], false);
+		}
 		const {qualityOpen, effortOpen, qualityDrop, effortDrop} = view.quick;
 		const toggle = (drop, opener) => { const show = drop.hidden; dropQuick(view); drop.hidden = !show; opener.toggleAttribute('data-active', show); opener.setAttribute('aria-expanded', String(show)); };
 		qualityOpen.addEventListener('click', () => toggle(qualityDrop, qualityOpen));
@@ -512,16 +626,45 @@
 		try { blob = await images.previewBlob(bytes, {maxPixels: C.BIG.width * C.BIG.height}); } catch (error) { console.warn('JPEG XL pass', error?.code, error?.message); return; }
 		if (view !== self || big.seq !== seq || !blob) return;
 		const url = URL.createObjectURL(blob), image = make('img');
-		image.alt = C.BIG.alt; image.decoding = 'async';
-		image.addEventListener('load', () => { if (big.url && big.url !== url) URL.revokeObjectURL(big.url); big.url = url; }, {once: true});
-		image.addEventListener('error', () => { URL.revokeObjectURL(url); if (!big.url) big.note.textContent = C.SHOW_REFUSED; }, {once: true});
-		image.src = url;
-		const previous = big.box.querySelector('img');
-		if (previous) image.addEventListener('load', () => previous.remove(), {once: true});
-		big.box.append(image);
+		image.alt = C.BIG.alt; image.src = url;
+		try { await image.decode(); } catch (_) { URL.revokeObjectURL(url); if (!big.url) big.note.textContent = C.SHOW_REFUSED; return; }
+		if (view !== self || big.seq !== seq) { URL.revokeObjectURL(url); return; }
+		const first = !big.zoomed, region = bigRegion(big);
+		placeBig(image, region, !first);
+		big.box.replaceChildren(image);
+		if (big.url) URL.revokeObjectURL(big.url);
+		big.url = url;
+		if (!first) return;
+		big.zoomed = true;
+		placeBig(image, region, true);
+		if (!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+			const [hold, length] = C.BIG.zoom;
+			image.animate([{transform: 'translate(0px, 0px) scale(' + region.whole + ')'}, {transform: 'translate(' + region.left + 'px, ' + region.top + 'px) scale(1)'}],
+				{delay: hold, duration: length, easing: 'ease-in-out', fill: 'backwards'});
+		}
+		let across = big.box.getBoundingClientRect().width;
+		big.resize = new ResizeObserver(() => {
+			const shown = big.box.querySelector('img'), now = big.box.getBoundingClientRect().width;
+			if (!shown || now === across) return;
+			across = now;
+			for (const motion of shown.getAnimations()) motion.finish();
+			placeBig(shown, bigRegion(big), true);
+		});
+		big.resize.observe(big.box);
+	}
+	function bigRegion(big) {
+		const spec = C.BIG, ratio = globalThis.devicePixelRatio || 1, box = big.box.getBoundingClientRect();
+		const width = spec.width / ratio, height = spec.height / ratio, snap = value => Math.round(value * ratio) / ratio;
+		const at = (side, size, focus) => snap(Math.min(0, Math.max(side - size, side / 2 - focus / ratio)));
+		return {width, height, left: at(box.width, width, spec.focus[0]), top: at(box.height, height, spec.focus[1]), whole: box.width / width};
+	}
+	function placeBig(image, region, zoomed) {
+		Object.assign(image.style, {width: region.width + 'px', height: region.height + 'px', maxWidth: 'none', transformOrigin: '0 0',
+			transform: zoomed ? 'translate(' + region.left + 'px, ' + region.top + 'px)' : 'scale(' + region.whole + ')'});
 	}
 	function stopBig(big) {
 		clearTimeout(big.timer); big.timer = 0; big.seq = (big.seq || 0) + 1;
+		big.resize?.disconnect(); big.resize = null; big.zoomed = false;
 		if (big.url) URL.revokeObjectURL(big.url);
 		big.url = null;
 	}
@@ -552,16 +695,43 @@
 		}
 		of.effort = chosen; paintQuick(of); remake();
 	}
-	function configure({mode, effort} = {}) {
+	function remember({limit, limitChoice, side, location}) {
+		Object.assign(view, {limit, side, location});
+		store('limit', limit); store('limitChoice', limitChoice); store('side', side); store('removeLocation', !location);
+	}
+	function lightQuality(of, value) {
+		const mode = Object.keys(C.QUALITY).find(each => C.QUALITY[each] === value) ?? null;
+		for (const each of of.modes) { const on = each.dataset.mode === mode; each.toggleAttribute('data-active', on); each.setAttribute('aria-checked', String(on)); }
+		_rapierSwitchSlide(of.group);
+		return mode;
+	}
+	function setQuality(of, value, remember = true) {
+		of.quality = C.qualityOf(value);
+		of.mode = lightQuality(of, of.quality);
+		of.advanced.show(of.quality);
+		paintQuick(of);
+		if (remember) store('quality', of.quality);
+	}
+	function configure({mode, quality, effort, maxBytes, side, location} = {}) {
 		if (!view) return;
-		view.modes.find(button => button.dataset.mode === mode && mode !== view.mode)?.click();
-		if (effort === undefined || C.effortOf(effort) === view.effort) return;
-		view.slider.value = String(C.effortOf(effort)); seekTo(view);
-		view.effort = C.effortOf(effort); paintQuick(view); remake();
+		let again = false;
+		const asked = typeof quality === 'number' ? C.qualityOf(quality) : quality === 'medium' ? C.qualityOf(75) : C.QUALITY[quality] ?? C.QUALITY[mode];
+		if (asked !== undefined && asked !== view.quality) { setQuality(view, asked); again = true; }
+		const advanced = {...maxBytes !== undefined && {limit: C.ADVANCED.limits.includes(maxBytes) ? maxBytes : 0}, ...side !== undefined && {side: C.ADVANCED.sides.includes(side) ? side : 0}, ...location !== undefined && {location: !!location}};
+		if (Object.keys(advanced).length) {
+			view.advanced.set(advanced);
+			const read = view.advanced.read();
+			if (read.limit !== view.limit || read.side !== view.side || read.location !== view.location) { remember(read); again = true; }
+		}
+		if (effort !== undefined && C.effortOf(effort, C.STILL_EFFORT) !== view.effort) {
+			view.slider.value = String(C.effortOf(effort, C.STILL_EFFORT)); seekTo(view);
+			view.effort = C.effortOf(effort, C.STILL_EFFORT); paintQuick(view); again = true;
+		}
+		if (again) remake();
 	}
 	function paintQuick(of) {
 		const {qualityOpen, effortOpen, qualityDrop, effortDrop} = of.quick;
-		qualityOpen.textContent = 'Quality: ' + QUALITY_WORDS[of.mode];
+		qualityOpen.textContent = 'Quality: ' + (QUALITY_WORDS[of.mode] ?? of.quality);
 		effortOpen.textContent = 'Effort: ' + of.effort;
 		for (const button of qualityDrop.children) { const on = button.dataset.mode === of.mode; button.toggleAttribute('data-active', on); button.setAttribute('aria-checked', String(on)); }
 		for (const button of effortDrop.children) { const on = Number(button.dataset.effort) === of.effort; button.toggleAttribute('data-active', on); button.setAttribute('aria-checked', String(on)); }

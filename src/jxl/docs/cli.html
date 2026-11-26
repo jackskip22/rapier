@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jpegxl command line | jpegxl</title>
+<meta name="description" content="Convert PNG, JPEG and GIF files or folders to JPEG XL with npx jpegxl. JPEGs recompress losslessly and restore exactly.">
+<link rel="canonical" href="https://rapier.website/jxl/docs/cli.html">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/jxl/docs/docs.css">
+<script src="/jxl/docs/docs.js" defer></script>
+</head>
+<body>
+<header class="bar"><a class="bar__title" href="/jxl/docs/">jpegxl docs</a><a class="bar__link" href="/jxl">Converter</a></header>
+<main>
+<h1>jpegxl command line</h1>
+<p class="lede">Encode images to JPEG XL (.jxl), or restore recompressed JPEGs. JPEGs are recompressed losslessly by default and restore exactly.</p>
+<nav class="contents" aria-label="On this page"><a class="choice" href="#run"><span>Run</span></a><a class="choice" href="#options"><span>Options</span></a><a class="choice" href="#json"><span>JSON</span></a><a class="choice" href="#help"><span>Help text</span></a></nav>
+<section id="run">
+<h2>run</h2>
+<div class="code"><pre><code class="language-sh">npx jpegxl &lt;file|folder...&gt; [options]</code></pre></div><div class="code"><pre><code class="language-sh">npx jpegxl photo.png                   # photo.jxl alongside
+npx jpegxl scan.jpg                    # lossless: JPEG restores exactly
+npx jpegxl photos/ --out dist/         # every PNG, JPEG, WebP, AVIF, GIF, HDR and EXR in the folder
+npx jpegxl hero.png --max-bytes 100KB  # best quality that fits
+npx jpegxl scan.jxl --out back/        # back/scan.jpg, original JPEG</code></pre></div>
+<p>Options:</p>
+</section>
+<section id="options">
+<h2>options</h2>
+<ul class="rows"><li><p><span class="name">--quality &lt;1-100&gt;</span> <span class="type">-q</span></p><p>Target quality (default 90, and a JPEG stays exact)</p></li><li><p><span class="name">--effort &lt;1-10&gt;</span> <span class="type">-e</span></p><p>Encoding effort, 1 fastest to 9 smallest, 10 with --exact (default: 7)</p></li><li><p><span class="name">--max-bytes &lt;size&gt;</span></p><p>Fit output under byte budget (e.g. 80KB, 1.5MB, 120000)</p></li><li><p><span class="name">--exact</span></p><p>Every pixel kept (default for JPEG)</p></li><li><p><span class="name">--jpeg-pixels</span></p><p>Re-encode JPEG pixels, retaining no JPEG reconstruction</p></li><li><p><span class="name">--out &lt;path&gt;</span> <span class="type">-o</span></p><p>Output file or directory</p></li><li><p><span class="name">--jobs &lt;0-16&gt;</span> <span class="type">-j</span></p><p>Helper worker threads (default: 0)</p></li><li><p><span class="name">--verify</span></p><p>Verify each output before writing it</p></li><li><p><span class="name">--json</span></p><p>One JSON line per file, then a summary</p></li><li><p><span class="name">--help</span> <span class="type">-h</span></p><p>Show this help</p></li><li><p><span class="name">--version</span> <span class="type">-v</span></p><p>Show version</p></li></ul>
+</section>
+<section id="json">
+<h2>json</h2>
+
+</section>
+<section id="help">
+<h2>help text</h2>
+<div class="code"><pre><code class="language-text">Usage: jpegxl &lt;file|folder...&gt; [options]
+       jpegxl add emdash | astro | vite | webpack | next | netlify | workers | r2 | agents | android | ios | flutter | expo | electron | tauri
+       jpegxl add                 lists every place, one line each
+       jpegxl remove &lt;integration&gt;
+       jpegxl selftest
+       jpegxl verify &lt;original|folder&gt; &lt;file.jxl|folder&gt;
+
+Encode images to JPEG XL (.jxl), or restore recompressed JPEGs.
+JPEGs are recompressed losslessly by default and restore exactly.
+
+Options:
+  -q, --quality &lt;1-100&gt;    Target quality (default 90, and a JPEG stays exact)
+  -e, --effort &lt;1-10&gt;      Encoding effort, 1 fastest to 9 smallest, 10 with --exact (default: 7)
+      --max-bytes &lt;size&gt;   Fit output under byte budget (e.g. 80KB, 1.5MB, 120000)
+      --exact              Every pixel kept (default for JPEG)
+      --jpeg-pixels        Re-encode JPEG pixels, retaining no JPEG reconstruction
+  -o, --out &lt;path&gt;         Output file or directory
+  -j, --jobs &lt;0-16&gt;        Helper worker threads (default: 0)
+      --verify             Verify each output before writing it
+      --json               One JSON line per file, then a summary
+  -h, --help               Show this help
+  -v, --version            Show version
+
+Examples:
+  npx jpegxl add emdash
+  npx jpegxl selftest
+  npx jpegxl photo.png
+  npx jpegxl photo.jpg
+  npx jpegxl scene.exr
+  npx jpegxl photos/ --effort 6 --jobs 4
+  npx jpegxl hero.png --quality 82 --out dist/hero.jxl
+  npx jpegxl banner.png --max-bytes 100KB
+  npx jpegxl photo.jxl --out restored.jpg
+  npx jpegxl verify photos/ out/</code></pre></div><p class="meta">about 43 KB Brotli, about 50 KB gzip.</p>
+</section>
+</main>
+<footer class="foot"><a href="https://github.com/jackskip22/rapier-jxl">GitHub</a><a href="https://www.npmjs.com/package/jpegxl">npm</a><a href="/jxl/docs/">All docs</a></footer>
+</body>
+</html>

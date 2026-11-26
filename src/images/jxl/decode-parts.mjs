@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-import {requireDecode} from './decode-bits.mjs';
 
 const parts = {};
 const LOADERS = {
@@ -14,7 +13,7 @@ const LOADERS = {
 export function addPart(name, module) { parts[name] = module; }
 
 export function part(name) {
-  if (!parts[name]) throw Object.assign(new Error('This JPEG XL file needs the decoder part ' + name + '.'), {code: 'JXL_PART', part: name});
+  if (!parts[name]) throw Object.assign(new Error('missing part: ' + name), {code: 'JXL_PART', part: name});
   return parts[name];
 }
 
@@ -24,10 +23,7 @@ export async function loadPart(error) {
   return true;
 }
 
-export function frameFeatures(r, h, f, options = {}, sharedWork) {
-  if (f.flags & 19n) return part('features').readFeatures(r, h, f, options, sharedWork);
-  const {maxFeatureBytes = 268435456, maxFeatureWork = 268435456} = options;
-  requireDecode(Number.isSafeInteger(maxFeatureBytes) && maxFeatureBytes >= 0 && Number.isSafeInteger(maxFeatureWork) && maxFeatureWork >= 0,
-    'Invalid JPEG XL feature resource budget.');
+export function frameFeatures(r, h, f) {
+  if (f.flags & 19n) return part('features').readFeatures(r, h, f);
   return {patches: null, splines: null, noise: null};
 }

@@ -36,7 +36,7 @@ test('a call\'s attempts copy an unchanged saved value once', async () => {
     }
   } finally { Plain.prototype.slice = slice; }
   const output = [];
-  for await (const bytes of codec.outputParts(checkpoint, host())) output.push(...bytes);
+  for (const byte of await codec.output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, [COUNT * (COUNT + 1) / 2]);
   assert.ok(most <= 2 * COUNT, `${most} copies in one call`);
 });

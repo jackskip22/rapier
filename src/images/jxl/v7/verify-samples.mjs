@@ -7,10 +7,10 @@ export function admitSampleKind(data, description = {}) {
   const wide = kind === 'Uint16Array', half = kind === 'Float16Array', float = kind === 'Float32Array';
   const format = description.sampleFormat ?? (float ? 'float32' : half ? 'float16' : 'uint');
   const compatible = format === 'uint' ? bytes || wide : format === 'float16' ? wide || half : format === 'float32' && float;
-  if (!compatible) throw fail('JXL_INPUT', 'Use uint with integer arrays, float16 with half-float storage or Uint16Array bits, or float32 with Float32Array.');
+  if (!compatible) throw fail('JXL_INPUT', 'samples: uint integer arrays; float16 half-float/Uint16 bits; float32 Float32Array');
   const depth = description.bitDepth ?? (float ? 32 : wide || half ? 16 : 8);
   const validDepth = format === 'float32' ? depth === 32 : format === 'float16' ? depth === 16 : wide ? [10, 12, 16].includes(depth) : depth === 8;
-  if (!validDepth) throw fail('JXL_INPUT', 'Bit depth: 8 for bytes; 10, 12 or 16 for Uint16Array; 16 or 32 for floats.');
+  if (!validDepth) throw fail('JXL_INPUT', 'bitDepth: bytes 8; Uint16 10/12/16; floats 16/32');
   return kind;
 }
 
@@ -24,7 +24,8 @@ export function sampleView(bytes,Type) {
     if (part.byteOffset % size) part = part.slice();
     return new Type(part.buffer,part.byteOffset,part.byteLength / size);
   };
-  const known = {length,byteLength:bytes.length,byteOffset:0,BYTES_PER_ELEMENT:size,constructor:Type,subarray,then:undefined};
+  const known = {length,byteLength:bytes.length,byteOffset:0,BYTES_PER_ELEMENT:size,constructor:Type,subarray,then:undefined,
+    ahead:typeof bytes.ahead === 'function' ? (from,to) => bytes.ahead(from * size,to * size) : undefined};
   return new Proxy(new Type(0),{get:(_,key) => Object.hasOwn(known,key) ? known[key]
     : key === Symbol.toStringTag ? Type.name : typeof key === 'symbol' && Symbol.keyFor(key)?.startsWith('rapier-jxl.journal') ? undefined
     : (all => { const value = Reflect.get(all,key); return typeof value === 'function' ? value.bind(all) : value; })(subarray()),

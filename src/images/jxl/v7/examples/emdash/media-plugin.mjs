@@ -15,18 +15,28 @@ import {createThreadDriver} from './thread-driver.mjs';
 import {stageCandidate} from './browser-candidate.mjs';
 export {DEFAULTS, settings} from './media-settings.mjs';
 
+const hostZod = await import('zod').catch(() => null);
 const ID = 'rapier-media', VERSION = '0.1.0';
 const PAGES = [{path: '/jpeg-xl', label: WORDS.name, icon: 'image'}];
 const ADMIN = {entry: './media-admin.mjs', pages: PAGES};
 const MAX_BYTES = 8 * 1024 * 1024;
+const HEX32 = /^[a-f0-9]{32}$/;
 const UPLOAD_KEY = /^[0-9A-HJKMNP-TV-Z]{26}(?:\.[0-9A-HJKMNP-TV-Z]{26})*\.[a-z0-9]{1,8}$/i;
+const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (status, code, message) => new PluginRouteError(code, message, status);
+const mapRouteError = error => {
+  if (error instanceof PluginRouteError) throw error;
+  const status = {JXL_INPUT: 400, JXL_OPTIONS: 400, JXL_POLICY_CHANGED: 409, JXL_BUSY: 409,
+    JXL_LIMIT: 413, JXL_UNSUPPORTED: 422, JXL_IO: 503}[error?.code];
+  if (status) throw new PluginRouteError(error.code, error.message, status);
+  throw error;
+};
 const serverImage = key => isJpegKey(key) || /\.png$/i.test(key);
 const nativeOptions = (site, key, archiveOriginals = true) =>
   nativeImageJob(site, isJpegKey(key) ? 'image/jpeg' : 'image/png', archiveOriginals);
 const mediaJobKey = async (scope, key, source) => 'jxl:media:' + await digest(new TextEncoder().encode(
   JSON.stringify([scope, key, source.generation, source.deliveryRevision])));
-const pointerIds = value => [...new Set((value?.ids ?? [value?.id]).filter(id => /^[a-f0-9]{32}$/.test(id ?? '')))];
+const pointerIds = value => [...new Set((value?.ids ?? [value?.id]).filter(id => HEX32.test(id ?? '')))];
 async function pointerState(service, value) {
   let active = null, last = null;
   const widths = new Set();
@@ -42,9 +52,133 @@ async function pointerState(service, value) {
 }
 const pointerJob = async (service, value) => (await pointerState(service, value)).job;
 
+function makeSchemaNode(check, jsonSchema, meta = {}) {
+  const api = {
+    _def: {...meta, jsonSchema},
+    description: meta.description,
+    safeParse(value) {
+      const issues = [];
+      const parsed = check(value, [], issues);
+      return issues.length ? {success: false, error: {issues}} : {success: true, data: parsed};
+    },
+    parse(value) {
+      const out = api.safeParse(value);
+      if (!out.success) {
+        const issue = out.error.issues[0];
+        throw new TypeError(`${issue.path.join('.') || 'input'}: ${issue.message}`);
+      }
+      return out.data;
+    },
+    toJSONSchema() {
+      return structuredClone({$schema: 'https://json-schema.org/draft/2020-12/schema', ...jsonSchema,
+        ...(meta.description ? {description: meta.description} : {})});
+    },
+    describe(description) {
+      return makeSchemaNode(check, {...jsonSchema, description}, {...meta, description});
+    },
+    optional() {
+      return makeSchemaNode((value, path, issues) => value === undefined ? undefined : check(value, path, issues),
+        jsonSchema, {...meta, optional: true});
+    },
+  };
+  api['~standard'] = {
+    version: 1,
+    vendor: 'rapier-jxl',
+    validate(value) {
+      const out = api.safeParse(value);
+      return out.success ? {value: out.data} : {issues: out.error.issues};
+    },
+  };
+  return api;
+}
+
+function createSchemaBuilder() {
+  return {
+    boolean: () => makeSchemaNode((v, path, issues) => {
+      if (typeof v !== 'boolean') issues.push({path, message: 'boolean'});
+      return v;
+    }, {type: 'boolean'}, {typeName: 'ZodBoolean'}),
+    string() {
+      const build = (c = {}) => {
+        const schema = {type: 'string', ...(c.minLength !== undefined && {minLength: c.minLength}),
+          ...(c.maxLength !== undefined && {maxLength: c.maxLength}), ...(c.pattern && {pattern: c.pattern.source})};
+        const node = makeSchemaNode((v, path, issues) => {
+          if (typeof v !== 'string') { issues.push({path, message: 'string'}); return v; }
+          if (c.minLength !== undefined && v.length < c.minLength) issues.push({path, message: `>= ${c.minLength} chars`});
+          if (c.maxLength !== undefined && v.length > c.maxLength) issues.push({path, message: `<= ${c.maxLength} chars`});
+          if (c.pattern && !c.pattern.test(v)) issues.push({path, message: 'string: pattern'});
+          return v;
+        }, schema, {typeName: 'ZodString'});
+        return Object.assign(node, {
+          min: minLength => build({...c, minLength}),
+          max: maxLength => build({...c, maxLength}),
+          regex: pattern => build({...c, pattern}),
+        });
+      };
+      return build();
+    },
+    number() {
+      const build = (c = {}) => {
+        const schema = {type: c.int ? 'integer' : 'number',
+          ...(c.min !== undefined && {minimum: c.min}), ...(c.max !== undefined && {maximum: c.max})};
+        const node = makeSchemaNode((v, path, issues) => {
+          if (typeof v !== 'number' || !Number.isFinite(v)) { issues.push({path, message: 'number'}); return v; }
+          if (c.int && !Number.isSafeInteger(v)) issues.push({path, message: 'integer'});
+          if (c.min !== undefined && v < c.min) issues.push({path, message: `>= ${c.min}`});
+          if (c.max !== undefined && v > c.max) issues.push({path, message: `<= ${c.max}`});
+          return v;
+        }, schema, {typeName: 'ZodNumber'});
+        return Object.assign(node, {int: () => build({...c, int: true}), min: min => build({...c, min}), max: max => build({...c, max})});
+      };
+      return build();
+    },
+    enum(values) {
+      const allowed = [...values];
+      return makeSchemaNode((v, path, issues) => {
+        if (!allowed.includes(v)) issues.push({path, message: `one of: ${allowed.join(', ')}`});
+        return v;
+      }, {type: 'string', enum: allowed}, {typeName: 'ZodEnum', values: allowed});
+    },
+    nullable(inner) {
+      return makeSchemaNode((v, path, issues) => {
+        if (v === null) return null;
+        const parsed = inner.safeParse(v);
+        if (!parsed.success) issues.push(...parsed.error.issues.map(i => ({path: [...path, ...i.path], message: i.message})));
+        return parsed.success ? parsed.data : v;
+      }, {anyOf: [inner._def?.jsonSchema ?? {}, {type: 'null'}]}, {typeName: 'ZodNullable'});
+    },
+    object(shape) {
+      const properties = {}, required = [];
+      for (const [key, field] of Object.entries(shape)) {
+        properties[key] = field._def?.jsonSchema ?? {};
+        if (!field._def?.optional) required.push(key);
+      }
+      const schema = {type: 'object', properties, ...(required.length ? {required} : {}), additionalProperties: false};
+      const build = (strict = true) => {
+        const node = makeSchemaNode((v, path, issues) => {
+          const input = v === undefined ? {} : v;
+          if (!isRecord(input)) { issues.push({path, message: 'JSON object'}); return input; }
+          if (strict) {
+            for (const key of Object.keys(input)) if (!Object.hasOwn(shape, key)) issues.push({path: [...path, key], message: `unknown field: ${key}`});
+          }
+          const out = {};
+          for (const [key, field] of Object.entries(shape)) {
+            const parsed = field.safeParse(input[key]);
+            if (!parsed.success) for (const issue of parsed.error.issues) issues.push({path: [...path, key, ...issue.path], message: issue.message});
+            else if (parsed.data !== undefined) out[key] = parsed.data;
+          }
+          return out;
+        }, schema, {typeName: 'ZodObject', shape});
+        return Object.assign(node, {strict: () => build(true), passthrough: () => build(false)});
+      };
+      return build(true);
+    },
+  };
+}
+
 function storage() {
   const value = activeStorage();
-  if (!value) throw fail(500, 'storage_not_wrapped', 'Add rapier-jxl through jxl(emdash, {...}) in astro.config');
+  if (!value) throw fail(500, 'storage_not_wrapped', 'astro.config: jxl(emdash, {...})');
   return value;
 }
 let wakeChecked = -Infinity;
@@ -55,7 +189,7 @@ async function checkWake(ctx, media, call) {
 }
 async function runner(ctx, options = {}) {
   const media = storage(), backend = activeStorageScope();
-  if (!backend) throw fail(500, 'storage_scope', 'Native storage has no configured backend scope');
+  if (!backend) throw fail(500, 'storage_scope', 'storage: backend scope');
   const scope = await digest(new TextEncoder().encode(JSON.stringify([ID, backend])));
   const host = media.host ?? hostLimits(media.originals?.platform ?? 'node');
   const operations = {encode, fit, recompress};
@@ -76,15 +210,15 @@ async function runner(ctx, options = {}) {
         const saved = await service.calls.call(() => ctx.kv.compareAndSet(pointer, previous.revision,
           {...previous.value, id: ids[0], ids}));
         if (saved?.applied === true) return job;
-        if (saved?.applied !== false) throw fail(503, 'JXL_IO', 'The candidate job pointer was not acknowledged');
+        if (saved?.applied !== false) throw fail(503, 'JXL_IO', "candidate pointer: unconfirmed; check state");
         previous = await service.calls.call(() => ctx.kv.getVersioned(pointer)) ?? {value: null, revision: null};
       }
-      throw fail(409, 'JXL_BUSY', 'The candidate job pointer changed too often. Retry this request.');
+      throw fail(409, 'JXL_BUSY', "candidate pointer: changed; retry");
     }
     if (!job.done && !job.canceled && previous.value?.id !== job.id) {
       const saved = await service.calls.call(() => ctx.kv.compareAndSet(pointer, previous.revision,
         {id: job.id, ...(job.execution && {execution: job.execution})}));
-      if (saved?.applied !== true && saved?.applied !== false) throw fail(503, 'JXL_IO', 'The image job pointer was not acknowledged');
+      if (saved?.applied !== true && saved?.applied !== false) throw fail(503, 'JXL_IO', "job pointer: unconfirmed; check state");
     }
     return job;
   };
@@ -93,7 +227,7 @@ async function runner(ctx, options = {}) {
 
 async function execution(service, ctx, id, selected) {
   const item = await service.calls.call(() => ctx.media.get(id));
-  if (!item) throw fail(404, 'NOT_FOUND', 'The picture is missing');
+  if (!item) throw fail(404, 'NOT_FOUND', 'picture: missing');
   const archiveOriginals = (await archivePolicy(service, ctx)).admitting;
   return {...executionFor(service.host, selected, item, {archiveOriginals}), archiveOriginals};
 }
@@ -110,7 +244,7 @@ async function browserAdmission(service, ctx, {id, key, selected, expectedGenera
   const media = storage(), signal = ctx.request?.signal, call = action => service.calls.call(action);
   const state = await media.deliveryState(key, {signal, call});
   if (!state || expectedGeneration !== undefined && (state.generation !== expectedGeneration || state.revision !== expectedDeliveryRevision))
-    throw fail(409, 'key_changed', 'The picture or delivery setting changed');
+    throw fail(409, 'key_changed', 'picture/delivery: changed');
   if (state.mode !== 'copies' || automatic && state.revision !== INITIAL_DELIVERY) return {skipped: true};
   const pointer = await mediaJobKey(service.scope, key, {generation: state.generation, deliveryRevision: state.revision});
   const previous = await call(() => ctx.kv.getVersioned(pointer)) ?? {value: null, revision: null};
@@ -121,7 +255,7 @@ async function browserAdmission(service, ctx, {id, key, selected, expectedGenera
   }
   const saved = await call(() => ctx.kv.compareAndSet(pointer, previous.revision,
     {...previous.value, ...(prior && {id: prior.id}), execution: choice}));
-  if (saved?.applied !== true && saved?.applied !== false) throw fail(503, 'JXL_IO', 'The browser work selection was not acknowledged');
+  if (saved?.applied !== true && saved?.applied !== false) throw fail(503, 'JXL_IO', "browser work: unconfirmed; check state");
   if (saved.applied === false) {
     const current = await call(() => ctx.kv.get(pointer));
     if (pointerIds(current).length) return pointerJob(service, current);
@@ -134,34 +268,30 @@ function jobRoute(request, permission, action, factory = runner) {
       try {
         return await action(await factory(ctx), ctx);
       } catch (error) {
-        if (error instanceof PluginRouteError) throw error;
-        const status = {JXL_INPUT: 400, JXL_OPTIONS: 400, JXL_POLICY_CHANGED: 409, JXL_BUSY: 409,
-          JXL_LIMIT: 413, JXL_UNSUPPORTED: 422, JXL_IO: 503}[error?.code];
-        if (status) throw new PluginRouteError(error.code, error.message, status);
-        throw error;
+        mapRouteError(error);
       }
     }};
 }
 function target(ctx) {
   const query = new URL(ctx.request.url).searchParams, id = query.get('id'), key = query.get('key');
   if (!/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(id ?? '') || !UPLOAD_KEY.test(key ?? ''))
-    throw fail(400, 'media_id', 'Expected a media id and key');
+    throw fail(400, 'media_id', 'media: id and key');
   const replace = query.get('replace');
-  if (replace !== null && replace !== 'true' && replace !== 'false') throw fail(400, 'JXL_OPTIONS', 'Expected replace=true or false');
+  if (replace !== null && replace !== 'true' && replace !== 'false') throw fail(400, 'JXL_OPTIONS', "replace: boolean");
   const expectedDeliveryRevision = query.get('deliveryRevision') ?? undefined;
-  if (expectedDeliveryRevision !== undefined && !/^[a-f0-9]{32}$/.test(expectedDeliveryRevision))
-    throw fail(400, 'JXL_OPTIONS', 'Expected the saved delivery revision');
+  if (expectedDeliveryRevision !== undefined && !HEX32.test(expectedDeliveryRevision))
+    throw fail(400, 'JXL_OPTIONS', "deliveryRevision: saved revision");
   return {id, key, source: query.get('source'), expectedGeneration: query.get('generation') ?? undefined,
     expectedDeliveryRevision, replace: replace === 'true'};
 }
 
 export function inputResult(ctx) {
   const text = ctx.request.headers.get('x-rapier-result');
-  if (!text || text.length > 8192) throw fail(400, 'JXL_INPUT', 'Expected a bounded result record');
+  if (!text || text.length > 8192) throw fail(400, 'JXL_INPUT', "x-rapier-result: <=8192 chars");
   let metadata;
-  try { metadata = JSON.parse(text); } catch { throw fail(400, 'JXL_INPUT', 'Invalid result record'); }
+  try { metadata = JSON.parse(text); } catch { throw fail(400, 'JXL_INPUT', "x-rapier-result: invalid JSON"); }
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) || 'bytes' in metadata)
-    throw fail(400, 'JXL_INPUT', 'Send result metadata beside its byte body');
+    throw fail(400, 'JXL_INPUT', "metadata: object; bytes: body");
   return {...metadata, bytes: ctx.input};
 }
 
@@ -173,7 +303,7 @@ function floorOf(site) {
 function selectedResult(ctx, site) {
   const result = inputResult(ctx);
   if (site.maxKilobytes && result.bytes?.byteLength > site.maxKilobytes * 1024)
-    throw fail(422, 'JXL_TARGET', 'The copy exceeds the selected size limit');
+    throw fail(422, 'JXL_TARGET', "copy: exceeds size target");
   return result;
 }
 
@@ -191,19 +321,24 @@ async function nativeMediaPage(cursor) {
   return new MediaRepository(await getDb()).findMany({mimeType: 'image/jpeg', status: 'ready', limit: 1,
     ...(cursor ? {cursor} : {})});
 }
+async function nativeMediaList(cursor, limit = 100) {
+  const [{MediaRepository}, {getDb}] = await Promise.all([import('emdash'), import('emdash/runtime')]);
+  return new MediaRepository(await getDb()).findMany({status: 'ready', limit: Math.min(100, Math.max(1, limit)),
+    ...(cursor ? {cursor} : {})});
+}
 function binding(item, id, key) {
   if (!item || item.id !== id || item.status !== 'ready' || item.storageKey !== key ||
       !['image/jpeg', 'image/png'].includes(item.mimeType) ||
       (isJpegKey(key) ? item.mimeType !== 'image/jpeg' : !/\.png$/i.test(key) || item.mimeType !== 'image/png'))
-    throw fail(409, 'key_changed', 'The picture is not the stored media item');
+    throw fail(409, 'key_changed', 'picture: stored media item mismatch');
   if (item.contentHash != null && !/^sha1:[a-f0-9]{40}$/.test(item.contentHash))
-    throw fail(409, 'key_changed', 'The stored media identity is not supported');
+    throw fail(409, 'key_changed', 'media identity: unsupported');
   return JSON.stringify([item.id, item.storageKey, item.status, item.mimeType, item.size, item.contentHash ?? null]);
 }
 async function structuralCandidate(ctx, service, target, site, pointerKey, mediaItem, width) {
   const {id, key, source, expectedGeneration, expectedDeliveryRevision, replace} = target;
-  if (!/^[a-f0-9]{64}$/.test(expectedGeneration ?? '') || !/^[a-f0-9]{32}$/.test(expectedDeliveryRevision ?? ''))
-    throw fail(400, 'JXL_INPUT', 'Expected the captured source and delivery revision');
+  if (!/^[a-f0-9]{64}$/.test(expectedGeneration ?? '') || !HEX32.test(expectedDeliveryRevision ?? ''))
+    throw fail(400, 'JXL_INPUT', "source identity: generation and deliveryRevision");
   const media = storage(), signal = ctx.request.signal, call = action => service.calls.call(action);
   const item = await call(() => mediaItem(id)), identity = binding(item, id, key);
   const result = selectedResult(ctx, site), selectedSettings = JSON.stringify(site);
@@ -228,7 +363,7 @@ async function structuralCandidate(ctx, service, target, site, pointerKey, media
 
 async function pendingCandidate(ctx, width, mediaItem = nativeMediaItem) {
   if (width !== undefined && (!Number.isSafeInteger(width) || width < 16 || width > 8192))
-    throw fail(422, 'JXL_DIMENSIONS', 'The responsive width must be from 16 to 8192.');
+    throw fail(422, 'JXL_DIMENSIONS', 'responsive width: 16-8192');
   const {id, key, source, expectedGeneration, expectedDeliveryRevision, replace} = target(ctx);
   const service = await runner(ctx), media = storage(), signal = ctx.request.signal;
   const call = action => service.calls.call(action);
@@ -242,26 +377,33 @@ async function pendingCandidate(ctx, width, mediaItem = nativeMediaItem) {
   const archive = original && (await archivePolicy(service, ctx)).admitting;
   const result = original ? submitted : selectedResult(ctx, site), exact = result.fidelity === 'exact' || result.fidelity?.maxError === 0;
   if (width !== undefined && (!Number.isSafeInteger(width) || width < 16 || result.width !== width))
-    throw fail(422, 'JXL_DIMENSIONS', 'The responsive copy has the wrong width');
-  if (result.fits !== true || !['jpeg-bytes', 'pixels', 'lossy'].includes(result.kept) ||
+    throw fail(422, 'JXL_DIMENSIONS', "copy: requested width");
+  if (result.meetsTarget !== true || !['jpeg-bytes', 'pixels', 'lossy'].includes(result.kept) ||
       !Number.isSafeInteger(result.width) || !Number.isSafeInteger(result.height) || result.width < 1 || result.height < 1 ||
-      result.width * result.height > media.maxPixels || archive && !exact)
-    throw fail(422, 'JXL_INPUT', 'Expected the selected image result');
+      !Number.isSafeInteger(result.width * result.height) ||
+      media.maxPixels !== undefined && result.width * result.height > media.maxPixels || archive && !exact)
+    throw fail(422, 'JXL_INPUT', "selected result: current settings");
   const floor = archive ? 'exact' : floorOf(site);
   if (!exact && (floor === 'exact' || !Number.isFinite(result.fidelity?.quality) || result.fidelity.quality > 100 ||
       result.fidelity.quality < floor.quality))
-    throw fail(422, 'JXL_TARGET', 'The copy does not meet the selected fidelity');
-  if (await bound(ctx, id, call) !== source) throw fail(409, 'key_changed', 'The picture changed');
-  const before = await media.sourceHead(key, {signal, call}), selected = await media.deliveryState(key, {signal, call});
-  if (!before || before.generation !== expectedGeneration || !selected || selected.generation !== expectedGeneration ||
+    throw fail(422, 'JXL_TARGET', "copy: fidelity target missed");
+  if (await bound(ctx, id, call) !== source) throw fail(409, 'key_changed', 'picture: changed');
+  const snapshot = media.maxPixels === undefined ? await media.sourceSnapshot(key, {signal, call}) : null;
+  const before = media.maxPixels === undefined ? snapshot && {...snapshot.source, size: snapshot.source.byteLength}
+    : await media.sourceHead(key, {signal, call});
+  const selected = snapshot ? {generation: snapshot.source.generation, ...snapshot.delivery}
+    : before ? await media.deliveryState(key, {signal, call, generation: before.generation}) : null;
+  if (!before || before.generation !== expectedGeneration || before.sha256 !== undefined && before.sha256 !== source ||
+      !selected || selected.generation !== expectedGeneration ||
       selected.revision !== expectedDeliveryRevision || selected.mode !== 'copies')
-    throw fail(409, 'key_changed', 'The picture or delivery setting changed');
+    throw fail(409, 'key_changed', 'picture/delivery: changed');
   if (original && !archive && site.maxKilobytes > 0 && result.bytes.byteLength > site.maxKilobytes * 1024)
     return {key, stored: null, reason: 'JXL_TARGET'};
   if (!archive && width === undefined && result.bytes.byteLength >= before.size)
     return {key, stored: null, reason: 'not_smaller'};
   const input = {generation: expectedGeneration, sha256: source, byteLength: before.size,
-    deliveryRevision: expectedDeliveryRevision, kind: 'file'};
+    deliveryRevision: expectedDeliveryRevision, kind: 'file',
+    ...(before.width !== undefined && before.height !== undefined && {width: before.width, height: before.height})};
   const {bytes: candidateBytes, verification: ignoredReceipt, ...candidateMeta} = result;
   const byteLength = candidateBytes.byteLength, over = site.maxKilobytes > 0 && byteLength > site.maxKilobytes * 1024;
   const deliveryEligible = !over && byteLength < before.size;
@@ -285,24 +427,25 @@ async function pendingCandidate(ctx, width, mediaItem = nativeMediaItem) {
 
 export async function libraryRow(store, {id, key}) {
   if (!UPLOAD_KEY.test(key ?? '')) return {id, key, state: 'external'};
-  const family = await store.family(key), main = family.find(file => file.key === key);
+  const snap = typeof store.librarySnapshot === 'function' ? await store.librarySnapshot(key) : null;
+  const family = snap ? snap.family : await store.family(key), main = snap ? snap.main : family.find(file => file.key === key);
   if (!main) return {id, key, state: 'missing'};
   const stored = family.reduce((bytes, file) => bytes + file.size, 0);
-  const policy = await store.deliveryState(key);
+  const policy = snap ? snap.policy : await store.deliveryState(key);
   if (!policy) return hasSidecar(key) ? {id, key, state: 'missing'} :
     {id, key, widths: 0, original: main.size, delivery: main.size, saved: 0, stored, result: null, state: 'other'};
-  const copies = await store.currentCopies(key);
+  const copies = snap ? snap.copies : await store.currentCopies(key);
   const variantWidths = [...new Set(copies.filter(file => file.kind === 'variant').map(file => file.width))].sort((a, b) => a - b);
   const widths = variantWidths.length;
   const archived = isJpegKey(key) ? await store.originals.info(key) : null;
   const archiveDelivery = archived?.archived && archived.deliveryEligible && policy.mode === 'copies' &&
     policy.revision === archived.deliveryRevision;
-  const side = hasSidecar(key) ? await store.sidecar(key) : null;
+  const side = hasSidecar(key) ? (snap ? snap.side : await store.sidecar(key)) : null;
   const original = archived?.archived ? archived.originalBytes : main.size;
   const delivery = side?.bytes.length ?? (archiveDelivery ? archived.jxlBytes : original);
   const {bytes: ignored, ...result} = side ?? {};
   return {id, key, widths, variantWidths, original, delivery, saved: Math.max(0, original - delivery), stored,
-    result: side ? result : null, generation: policy.generation, deliveryRevision: policy.revision, mode: policy.mode,
+    result: side ? result : null, ...(snap?.color && {color: snap.color}), generation: policy.generation, deliveryRevision: policy.revision, mode: policy.mode,
     state: policy.mode === 'original' ? 'original' : side ? 'sidecar' : isJpegKey(key) ? 'jpeg' : hasSidecar(key) ? 'plain' : 'other'};
 }
 
@@ -315,14 +458,14 @@ async function admit(service, ctx, {id, key, jobId, operation, options, maxBytes
   }
   const snapshot = await storage().sourceSnapshot(key, {signal, call});
   if (automatic && snapshot && (snapshot.delivery.mode !== 'copies' || snapshot.delivery.revision !== INITIAL_DELIVERY)) return null;
-  if (!snapshot || snapshot.source.sha256 !== await bound(ctx, id, call)) throw fail(409, 'key_changed', 'The picture changed');
+  if (!snapshot || snapshot.source.sha256 !== await bound(ctx, id, call)) throw fail(409, 'key_changed', 'picture: changed');
   if (expectedGeneration !== undefined && (snapshot.source.generation !== expectedGeneration ||
       snapshot.source.deliveryRevision !== expectedDeliveryRevision || snapshot.delivery.mode !== 'copies'))
-    throw fail(409, 'key_changed', 'The picture or delivery setting changed');
+    throw fail(409, 'key_changed', 'picture/delivery: changed');
   if (automatic) {
     const pointer = await mediaJobKey(service.scope, key, snapshot.source);
     const previous = await call(() => ctx.kv.get(pointer));
-    if (/^[a-f0-9]{32}$/.test(previous?.id ?? '')) {
+    if (HEX32.test(previous?.id ?? '')) {
       const existing = await service.status(previous.id);
       if (existing) return existing;
     }
@@ -350,7 +493,7 @@ async function library(ctx, options = {}) {
         throw error;
       }
       if (!snapshot || snapshot.source.sha256 !== seen)
-        throw fail(409, 'key_changed', 'The picture changed');
+        throw fail(409, 'key_changed', 'picture: changed');
       if (snapshot.delivery?.mode === 'original') return {skip: 'original', originalBytes: snapshot.source.byteLength};
       return {key: item.key, ...nativeOptions(selected, item.key, (await archivePolicy(service, ctx)).admitting),
         input: {...snapshot.source, kind: 'file'}};
@@ -364,7 +507,7 @@ async function library(ctx, options = {}) {
 
 async function originalsService(ctx, options = {}, {mediaItem = nativeMediaItem, mediaPage = nativeMediaPage} = {}) {
   const service = await runner(ctx, options), media = storage(), originals = media.originals;
-  if (!originals) throw fail(422, 'JXL_UNSUPPORTED', 'Original storage requires the native conditional adapter.');
+  if (!originals) throw fail(422, 'JXL_UNSUPPORTED', "original storage: native conditional adapter");
   const signal = ctx.request?.signal, call = action => service.calls.call(action);
   const read = () => originals.policy({signal, call});
   const status = async () => {
@@ -377,7 +520,7 @@ async function originalsService(ctx, options = {}, {mediaItem = nativeMediaItem,
     list: async cursor => {
       const page = await call(() => mediaPage(cursor));
       if (!page || !Array.isArray(page.items) || page.items.length > 1)
-        throw fail(503, 'JXL_IO', 'The native media repository returned an invalid JPEG page.');
+        throw fail(503, 'JXL_IO', "JPEG page: <=1 item");
       return {items: page.items.map(item => ({id: item.id, key: item.storageKey,
         identity: binding(item, item.id, item.storageKey)})), ...(page.nextCursor && {nextCursor: page.nextCursor})};
     },
@@ -400,12 +543,12 @@ async function originalsService(ctx, options = {}, {mediaItem = nativeMediaItem,
     run: (command, advance) => service.resume(command, advance)});
   return {calls: service.calls, status, resume,
     async save(input) {
-      if (!input || typeof input.enabled !== 'boolean' || !/^[a-f0-9]{32}$/.test(input.id ?? '') ||
+      if (!input || typeof input.enabled !== 'boolean' || !HEX32.test(input.id ?? '') ||
           Object.keys(input).some(key => !['enabled', 'id'].includes(key)))
-        throw fail(400, 'JXL_OPTIONS', 'Choose the originals policy using its current saved identity.');
+        throw fail(400, 'JXL_OPTIONS', 'originals policy: current identity');
       const current = await read();
-      if (current.id !== input.id) throw fail(409, 'JXL_POLICY_CHANGED', 'The originals setting changed. Read its current progress.');
-      if (input.enabled && !current.available) throw fail(422, 'JXL_UNSUPPORTED', 'This host must keep the original JPEG files.');
+      if (current.id !== input.id) throw fail(409, 'JXL_POLICY_CHANGED', "originals policy: refresh progress");
+      if (input.enabled && !current.available) throw fail(422, 'JXL_UNSUPPORTED', 'host: retain original JPEGs');
       if (current.desired === input.enabled && current.phase === 'idle') return current;
       const id = current.desired === input.enabled ? current.id : crypto.randomUUID().replaceAll('-', '');
       await service.work.schedule('originals', id);
@@ -413,32 +556,238 @@ async function originalsService(ctx, options = {}, {mediaItem = nativeMediaItem,
     }};
 }
 
+function originalsView(policy) {
+  if (!policy) return {available: false, keepOriginals: true, desiredKeepOriginals: true, phase: 'idle',
+    policyId: null, archivedCount: 0, remainingCount: 0, error: null};
+  return {available: Boolean(policy.available), keepOriginals: !policy.enabled, desiredKeepOriginals: !policy.desired,
+    phase: policy.phase ?? 'idle', policyId: policy.id ?? null, archivedCount: policy.archived ?? 0,
+    remainingCount: policy.remaining ?? 0, error: policy.error ?? null};
+}
+
+function createMcpSurface({originalPolicy, mediaList, z: overrideZ}) {
+  const z = overrideZ ?? hostZod?.z ?? createSchemaBuilder();
+  const strictObject = shape => { const obj = z.object(shape); return typeof obj.strict === 'function' ? obj.strict() : obj; };
+  const nullableOf = inner => typeof inner.nullable === 'function' ? inner.nullable() : z.nullable(inner);
+  const parseInput = (schema, raw) => {
+    const value = raw ?? {};
+    if (!isRecord(value)) throw fail(400, 'JXL_INPUT', 'tool input: JSON object');
+    const parsed = schema.safeParse(value);
+    if (!parsed.success) {
+      const first = parsed.error?.issues?.[0], field = first?.path?.length ? ` (${first.path.join('.')})` : '';
+      throw fail(400, 'JXL_INPUT', `tool input${field}: invalid schema`);
+    }
+    return parsed.data;
+  };
+  const mcpRoute = (permission, schema, handler) => ({
+    methods: ['POST'], request: {body: 'json', maxBytes: 4096}, permission,
+    handler: async ctx => {
+      try { return await handler(parseInput(schema, ctx.input), ctx); } catch (error) { mapRouteError(error); }
+    },
+  });
+
+  const convertInput = strictObject({
+    action: z.enum(['start', 'resume', 'pause', 'cancel', 'advance']).optional()
+      .describe('Action to run: start a new library conversion, or pause, resume, advance, or cancel an existing run.'),
+    unconvertedOnly: z.boolean().optional()
+      .describe('When starting, convert only ready JPEG and PNG files that do not yet have an active JPEG XL copy (default true).'),
+    runId: z.string().regex(HEX32).optional()
+      .describe('Optional 32-character hex library run ID when controlling a specific run.'),
+  });
+  const progressInput = strictObject({
+    includeSettings: z.boolean().optional()
+      .describe('Include the current JPEG XL quality, effort, mode, and responsive width settings.'),
+  });
+  const bytesSavedInput = strictObject({
+    limit: z.number().int().min(1).max(500).optional()
+      .describe('Maximum media items to inspect in this call, from 1 to 500 (default 100).'),
+    cursor: z.string().min(1).max(512).optional()
+      .describe('Pagination cursor returned as nextCursor by a previous bytesSaved call.'),
+    includeItems: z.boolean().optional()
+      .describe('Include up to 25 per-image accounting summaries alongside library totals.'),
+  });
+  const keepOriginalsInput = strictObject({
+    keepOriginals: z.boolean().optional()
+      .describe('Set true to keep physical original JPEG files in storage, or false to store lossless JPEG XL archives instead. Omit to read current state.'),
+    policyId: z.string().regex(HEX32).optional()
+      .describe('Current 32-character hex policyId from keepOriginalJpegs when changing keepOriginals.'),
+    confirm: z.boolean().optional()
+      .describe('Must be true, with the policyId read just before, to set keepOriginals false: physical originals are then replaced by lossless JPEG XL archives.'),
+  });
+  const keepOriginalsOutput = strictObject({
+    available: z.boolean(), keepOriginals: z.boolean(), desiredKeepOriginals: z.boolean(),
+    phase: z.string(), policyId: nullableOf(z.string()), archivedCount: z.number().int(), remainingCount: z.number().int(),
+    error: nullableOf(strictObject({code: z.string(), message: z.string(), key: z.string()})),
+  });
+
+  async function collectConvertibleMedia(store, call, unconvertedOnly) {
+    const seen = new Set(), candidates = [];
+    for (let cursor = undefined; ;) {
+      const page = await call(() => mediaList(cursor, 100));
+      for (const item of Array.isArray(page?.items) ? page.items : []) {
+        const key = item?.storageKey;
+        if (!item?.id || seen.has(item.id) || item.status !== 'ready' || !UPLOAD_KEY.test(key ?? '') || !serverImage(key)) continue;
+        seen.add(item.id);
+        if (unconvertedOnly) {
+          const row = await libraryRow(store, {id: item.id, key});
+          if (row.state === 'sidecar' || row.state === 'original' || row.state === 'missing') continue;
+        }
+        candidates.push({id: item.id, key, name: item.filename ?? key});
+      }
+      if (!page?.nextCursor || seen.has('cursor:' + page.nextCursor)) break;
+      seen.add('cursor:' + page.nextCursor); cursor = page.nextCursor;
+    }
+    return candidates.sort((a, b) => a.id.toUpperCase().localeCompare(b.id.toUpperCase()));
+  }
+
+  const routes = {
+    'mcp-convert-library': mcpRoute('media:upload', convertInput, async (input, ctx) => {
+      const action = input.action ?? 'start', lib = await library(ctx), current = await lib.status();
+      const active = current && !['done', 'canceled'].includes(current.state);
+      if (action === 'start') {
+        if (active) return {started: false, active: true, queued: current.total, run: current};
+        const selected = await collectConvertibleMedia(storage(), fn => lib.calls.call(fn), input.unconvertedOnly !== false);
+        if (!selected.length) return {started: false, active: false, queued: 0, reason: 'already_converted', run: current};
+        const id = input.runId ?? crypto.randomUUID().replaceAll('-', '');
+        const siteSettings = settings(await lib.calls.call(() => ctx.kv.get('settings')));
+        await lib.start({id, total: selected.length, settings: siteSettings});
+        for (let page = 0; page * 100 < selected.length; page++)
+          await lib.append({id, page, items: selected.slice(page * 100, (page + 1) * 100)});
+        const startedRun = await lib.control({id, action: 'resume'});
+        return {started: true, active: true, queued: selected.length, run: startedRun};
+      }
+      const targetId = input.runId ?? current?.id;
+      if (!targetId) throw fail(409, 'JXL_INPUT', 'library run: action start or runId');
+      if (action === 'advance') {
+        let next = await lib.advance(targetId), activeJob = null;
+        if (next?.current?.jobId && next.current.stage === 'waiting') {
+          const svc = await runner(ctx);
+          activeJob = await svc.advance(next.current.jobId, {signal: ctx.request?.signal});
+          if (activeJob?.done || activeJob?.canceled) next = await lib.advance(targetId);
+        }
+        return {started: false, active: !['done', 'canceled'].includes(next?.state ?? ''), queued: next?.total ?? 0,
+          run: next, ...(activeJob && {activeImageJob: {id: activeJob.id, phase: activeJob.phase, done: activeJob.done}})};
+      }
+      const updated = await lib.control({id: targetId, action});
+      return {started: false, active: !['done', 'canceled'].includes(updated?.state ?? ''), queued: updated?.total ?? 0, run: updated};
+    }),
+    'mcp-library-progress': mcpRoute('media:read', progressInput, async (input, ctx) => {
+      const [lib, svc] = await Promise.all([library(ctx), runner(ctx)]);
+      const run = await lib.status();
+      let activeImageJob = null;
+      if (run?.current?.jobId) {
+        const job = await svc.status(run.current.jobId);
+        if (job) activeImageJob = {id: job.id, phase: job.phase, done: job.done,
+          ...(typeof job.progress === 'number' && {progress: job.progress}), ...(job.error && {error: job.error})};
+      }
+      const originalsState = storage().originals ? originalsView(await (await originalPolicy(ctx)).status()) : null;
+      const response = {state: run?.state ?? 'idle', run, activeImageJob, originals: originalsState};
+      if (input.includeSettings) response.settings = settings(await svc.calls.call(() => ctx.kv.get('settings')));
+      return response;
+    }),
+    'mcp-bytes-saved': mcpRoute('media:read', bytesSavedInput, async (input, ctx) => {
+      const maxItems = input.limit ?? 100, store = storage(), svc = await runner(ctx), call = fn => svc.calls.call(fn);
+      let scanned = 0, cursor = input.cursor, nextCursor = null;
+      let originalBytes = 0, deliveredBytes = 0, savedBytes = 0, storedBytes = 0;
+      const counts = {converted: 0, unconverted: 0, keptOriginal: 0, other: 0}, items = [], seenCursors = new Set();
+      while (scanned < maxItems) {
+        const page = await call(() => mediaList(cursor, Math.min(100, maxItems - scanned)));
+        const list = Array.isArray(page?.items) ? page.items : [];
+        if (!list.length) { nextCursor = null; break; }
+        for (const item of list) {
+          if (scanned >= maxItems) break;
+          const key = item?.storageKey;
+          if (!item?.id || typeof key !== 'string') continue;
+          const row = await libraryRow(store, {id: item.id, key});
+          scanned++;
+          if (typeof row.original === 'number') {
+            originalBytes += row.original; deliveredBytes += row.delivery; savedBytes += row.saved; storedBytes += row.stored;
+          }
+          if (row.state === 'sidecar') counts.converted++;
+          else if (row.state === 'original') counts.keptOriginal++;
+          else if (row.state === 'jpeg' || row.state === 'plain') counts.unconverted++;
+          else counts.other++;
+          if (input.includeItems && items.length < 25)
+            items.push({id: row.id, key: row.key, state: row.state, widths: row.widths ?? 0,
+              original: row.original ?? 0, delivered: row.delivery ?? 0, saved: row.saved ?? 0, stored: row.stored ?? 0});
+        }
+        nextCursor = page?.nextCursor ?? null;
+        if (!nextCursor || seenCursors.has(nextCursor)) break;
+        seenCursors.add(nextCursor); cursor = nextCursor;
+      }
+      return {scanned, hasMore: nextCursor !== null, nextCursor, counts,
+        bytes: {original: originalBytes, delivered: deliveredBytes, saved: savedBytes,
+          percentSaved: originalBytes > 0 ? Math.round((savedBytes / originalBytes) * 1000) / 10 : 0, stored: storedBytes},
+        ...(input.includeItems && {items})};
+    }),
+    'mcp-keep-original-jpegs': mcpRoute('media:upload', keepOriginalsInput, async (input, ctx) => {
+      const orig = await originalPolicy(ctx), current = await orig.status();
+      if (input.keepOriginals === undefined) return originalsView(current);
+      if (input.keepOriginals === false && (input.confirm !== true || !input.policyId))
+        throw fail(400, 'JXL_OPTIONS', "confirm: true; policyId: current");
+      return originalsView(await orig.save({enabled: !input.keepOriginals, id: input.policyId ?? current.id}));
+    }),
+  };
+
+  const mcp = {
+    tools: {
+      convertLibrary: {
+        description: 'Start, pause, resume, advance, or cancel converting the EmDash media library to JPEG XL under the saved optimizer settings.',
+        route: 'mcp-convert-library',
+        input: convertInput,
+        destructive: false,
+      },
+      libraryProgress: {
+        description: 'Read progress of the current or latest JPEG XL media library conversion run, active image job, and originals policy transition.',
+        route: 'mcp-library-progress',
+        input: progressInput,
+        destructive: false,
+      },
+      bytesSaved: {
+        description: 'Measure original bytes, delivered JPEG XL bytes, visitor bytes saved, and physical storage bytes across the media library.',
+        route: 'mcp-bytes-saved',
+        input: bytesSavedInput,
+        destructive: false,
+      },
+      keepOriginalJpegs: {
+        description: 'Read or set "Keep original JPEG files": true keeps physical .jpg files in storage; false stores lossless JPEG XL archives that reconstruct exact JPEG bytes when needed.',
+        route: 'mcp-keep-original-jpegs',
+        input: keepOriginalsInput,
+        output: keepOriginalsOutput,
+        destructive: true,
+      },
+    },
+  };
+  return {routes, mcp};
+}
+
 function preferenceRoute(mediaItem = nativeMediaItem) {
   return {methods: ['POST'], request: {body: 'json', maxBytes: 4096}, permission: 'media:upload', handler: async ctx => {
     const {id, key, generation, deliveryRevision, mode, inheritSettings = false} = ctx.input ?? {};
+    const invalid = () => fail(400, 'JXL_INPUT', "delivery request: picture and deliveryRevision");
     if (typeof id !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(id) || typeof key !== 'string' || !UPLOAD_KEY.test(key) ||
-        typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation) ||
-        typeof deliveryRevision !== 'string' || !/^[a-f0-9]{32}$/.test(deliveryRevision) || !['original', 'copies'].includes(mode) ||
-        typeof inheritSettings !== 'boolean')
-      throw fail(400, 'JXL_INPUT', 'Expected the picture and its saved delivery revision');
+        !['original', 'copies'].includes(mode) || typeof inheritSettings !== 'boolean') throw invalid();
+    if (!serverImage(key) && !/\.(?:webp|avif)$/i.test(key))
+      throw fail(422, 'JXL_UNSUPPORTED', "unsupported picture type: use JPEG, PNG, WebP or AVIF");
+    if (typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation) ||
+        typeof deliveryRevision !== 'string' || !HEX32.test(deliveryRevision)) throw invalid();
     const media = storage();
     let capturedIdentity;
     if (deliveryOnly(media.host)) {
       capturedIdentity = binding(await mediaItem(id), id, key);
       const before = await media.physicalSourceHead(key, {signal: ctx.request.signal});
-      const state = await media.deliveryState(key, {signal: ctx.request.signal});
+      const state = before ? await media.deliveryState(key, {signal: ctx.request.signal, generation: before.generation}) : null;
       if (!before || before.generation !== generation || !state || state.generation !== generation || state.revision !== deliveryRevision)
-        throw fail(409, 'key_changed', 'The picture or delivery setting changed');
+        throw fail(409, 'key_changed', 'picture/delivery: changed');
     } else {
       const snapshot = await media.sourceSnapshot(key, {signal: ctx.request.signal});
       if (!snapshot || snapshot.source.generation !== generation || snapshot.source.deliveryRevision !== deliveryRevision ||
-          snapshot.source.sha256 !== await bound(ctx, id)) throw fail(409, 'key_changed', 'The picture changed');
+          snapshot.source.sha256 !== await bound(ctx, id)) throw fail(409, 'key_changed', 'picture: changed');
     }
     try {
       const state = await media[mode === 'original' ? 'restoreOriginal' : 'resumeCopies'](key,
         {expectedGeneration: generation, expectedRevision: deliveryRevision, signal: ctx.request.signal});
       if (capturedIdentity !== undefined && binding(await mediaItem(id), id, key) !== capturedIdentity)
-        throw fail(409, 'key_changed', 'The picture changed');
+        throw fail(409, 'key_changed', 'picture: changed');
       let captured;
       if (mode === 'copies') {
         const service = await runner(ctx), call = action => service.calls.call(action);
@@ -450,7 +799,7 @@ function preferenceRoute(mediaItem = nativeMediaItem) {
         const saved = await call(() => ctx.kv.compareAndSet(pointer, null, {execution: captured}));
         if (saved?.applied === false) captured = {...((await call(() => ctx.kv.get(pointer)))?.execution ?? captured),
           archiveOriginals: (await archivePolicy(service, ctx)).admitting};
-        else if (saved?.applied !== true) throw fail(503, 'JXL_IO', 'The selected conversion settings were not acknowledged');
+        else if (saved?.applied !== true) throw fail(503, 'JXL_IO', "conversion settings: unconfirmed; check state");
       }
       return {generation: state.generation, mode: state.mode, deliveryRevision: state.revision,
         ...(captured && {execution: captured})};
@@ -464,11 +813,29 @@ function preferenceRoute(mediaItem = nativeMediaItem) {
 }
 
 const FILE_URL = /\/_emdash\/api\/media\/file\/([0-9A-HJKMNP-TV-Z]{26}(?:\.[0-9A-HJKMNP-TV-Z]{26})*\.[a-z0-9]{1,8})$/i;
-export async function afterUpload(event, ctx) {
-  const {id, url} = event?.media ?? {}, key = FILE_URL.exec(typeof url === 'string' ? url : '')?.[1];
-  if (!key || !serverImage(key) || !/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(id ?? '')) return null;
+export async function afterUpload(event, ctx, mediaItem = nativeMediaItem) {
+  const {id, url} = event?.media ?? {};
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(id ?? '')) return null;
+  let key = FILE_URL.exec(typeof url === 'string' ? url : '')?.[1];
+  if (!key) {
+    const item = await mediaItem(id).catch(() => null);
+    if (item?.id === id && item.status === 'ready' && typeof item.storageKey === 'string') key = item.storageKey;
+  }
+  if (!key || !serverImage(key)) return null;
   const service = await runner(ctx), site = settings(await service.calls.call(() => ctx.kv.get('settings')));
   return admit(service, ctx, {id, key, ...nativeOptions(site, key, (await archivePolicy(service, ctx)).admitting), automatic: true});
+}
+
+const SWEEP_PAUSE_MS = 60 * 60 * 1000;
+async function sweepCopies(ctx, media, signal, now = Date.now()) {
+  if (typeof media?.sweepCopies !== 'function') return null;
+  try {
+    const {value = null, revision = null} = await ctx.kv.getVersioned('copy-sweep') ?? {}, state = value ?? {};
+    if (state.cursor === undefined && Number.isFinite(state.endedAt) && now - state.endedAt < SWEEP_PAUSE_MS) return null;
+    const step = await media.sweepCopies({cursor: state.cursor, signal});
+    await ctx.kv.compareAndSet('copy-sweep', revision, step.cursor ? {cursor: step.cursor} : {endedAt: now});
+    return step;
+  } catch (error) { signal?.throwIfAborted(); return {error: error?.code ?? 'JXL_IO'}; }
 }
 
 const nodePumps = new WeakMap();
@@ -480,21 +847,24 @@ async function scheduled(event, ctx, repositories) {
     return runBackground({event, platform, scope: service.scope, work: service.work,
       wakeMs: requestBudget(service.host, true), stepMs: requestBudget(service.host), cpuLimitMs: service.host.cpuLimitMs,
       runner: options => runner(ctx, options), library: options => library(ctx, options),
-      originals: options => originalsService(ctx, options, repositories)});
+      originals: options => originalsService(ctx, options, repositories),
+      sweep: ({signal}) => sweepCopies(ctx, media, signal)});
   };
   if (platform !== 'node') return run();
   const pending = run(); nodePumps.set(media, pending);
   try { return await pending; } finally { if (nodePumps.get(media) === pending) nodePumps.delete(media); }
 }
 
-export function createPlugin({mediaItem = nativeMediaItem, mediaPage = nativeMediaPage} = {}) {
-  if ([mediaItem, mediaPage].some(value => typeof value !== 'function'))
-    throw new TypeError('Native media identity uses server repository readers.');
+export function createPlugin({mediaItem = nativeMediaItem, mediaPage = nativeMediaPage, mediaList = nativeMediaList, z} = {}) {
+  if ([mediaItem, mediaPage, mediaList].some(value => typeof value !== 'function'))
+    throw new TypeError('media identity: server repository readers');
   const originalPolicy = (ctx, options) => originalsService(ctx, options, {mediaItem, mediaPage});
+  const mcpSurface = createMcpSurface({originalPolicy, mediaList, z});
   return definePlugin({id: ID, version: VERSION, capabilities: ['media:read', 'media:bytes:read'], admin: ADMIN,
     storage: {...EMDASH_JOB_STORAGE, ...LIBRARY_STORAGE, ...WORK_STORAGE},
+    mcp: mcpSurface.mcp,
     hooks: {cron: {handler: (event, ctx) => scheduled(event, ctx, {mediaItem, mediaPage}), timeout: 0x7fffffff},
-      'media:afterUpload': afterUpload},
+      'media:afterUpload': (event, ctx) => afterUpload(event, ctx, mediaItem)},
     routes: {
       available: {methods: ['GET'], request: {body: 'none'}, public: true, handler: async () => ({available: true})},
       'originals-policy': jobRoute({body: 'none'}, 'media:read', run => run.status(), originalPolicy),
@@ -502,7 +872,7 @@ export function createPlugin({mediaItem = nativeMediaItem, mediaPage = nativeMed
         (run, ctx) => run.save(ctx.input), originalPolicy),
       'originals-advance': jobRoute({body: 'json', maxBytes: 256}, 'media:upload', async (run, ctx) => {
         const value = await run.resume(ctx.input?.id);
-        if (!value) throw fail(409, 'JXL_POLICY_CHANGED', 'The originals setting changed. Read its current progress.');
+        if (!value) throw fail(409, 'JXL_POLICY_CHANGED', "originals policy: refresh progress");
         return value;
       }, originalPolicy),
       'removal-start': jobRoute({body: 'json', maxBytes: 1024}, 'plugins:manage',
@@ -518,12 +888,17 @@ export function createPlugin({mediaItem = nativeMediaItem, mediaPage = nativeMed
       'library-advance': jobRoute({body: 'json', maxBytes: 256}, 'media:upload', (run, ctx) => run.advance(ctx.input?.id), library),
       'library-status': jobRoute({body: 'none'}, 'media:read', run => run.status(), library),
       delivery: preferenceRoute(mediaItem),
+      'color-check': jobRoute({body: 'json', maxBytes: 1024}, 'media:upload', (service, ctx) => {
+        const {key} = ctx.input ?? {};
+        if (typeof key !== 'string' || !UPLOAD_KEY.test(key) || !hasSidecar(key)) throw fail(400, 'JXL_INPUT', "picture key: stored key");
+        return storage().checkColor(key, {signal: ctx.request.signal, call: action => service.calls.call(action)});
+      }),
       'media-convert': jobRoute({body: 'json', maxBytes: 1024}, 'media:upload', async (service, ctx) => {
         const {id, key, generation, deliveryRevision} = ctx.input ?? {};
         if (typeof id !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(id) || typeof key !== 'string' ||
             !UPLOAD_KEY.test(key) || !serverImage(key) || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation) ||
-            typeof deliveryRevision !== 'string' || !/^[a-f0-9]{32}$/.test(deliveryRevision))
-          throw fail(400, 'JXL_INPUT', 'Choose a stored JPEG or PNG and its saved delivery revision');
+            typeof deliveryRevision !== 'string' || !HEX32.test(deliveryRevision))
+          throw fail(400, 'JXL_INPUT', "source: stored JPEG/PNG and deliveryRevision");
         const pointer = await mediaJobKey(service.scope, key, {generation, deliveryRevision});
         const captured = await service.calls.call(() => ctx.kv.get(pointer));
         const site = settings(captured?.execution?.settings ?? await service.calls.call(() => ctx.kv.get('settings')));
@@ -533,16 +908,16 @@ export function createPlugin({mediaItem = nativeMediaItem, mediaPage = nativeMed
       'job-start': jobRoute({body: 'json', maxBytes: 4096}, 'media:upload', async (service, ctx) => {
         const {id, key, jobId, operation, options} = ctx.input ?? {};
         if (typeof id !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(id) || typeof key !== 'string' || !UPLOAD_KEY.test(key) ||
-            typeof jobId !== 'string' || !/^[a-f0-9]{32}$/.test(jobId) || !['encode', 'fit', 'recompress'].includes(operation) ||
+            typeof jobId !== 'string' || !HEX32.test(jobId) || !['encode', 'fit', 'recompress'].includes(operation) ||
             options !== undefined && (!options || typeof options !== 'object' || Array.isArray(options)))
-          throw fail(400, 'JXL_INPUT', 'Expected a media id, storage key and image job id');
+          throw fail(400, 'JXL_INPUT', "job request: media ID, key, job ID");
         const site = settings(await service.calls.call(() => ctx.kv.get('settings')));
         const item = await service.calls.call(() => ctx.media.get(id));
-        if (!item) throw fail(404, 'NOT_FOUND', 'The picture is missing');
+        if (!item) throw fail(404, 'NOT_FOUND', 'picture: missing');
         const policy = executionFor(service.host, {...site, effort: options?.effort ?? site.effort}, item,
           {work: {operation, options: {...options, effort: options?.effort ?? site.effort}}});
         if (policy.location === 'browser')
-          throw fail(422, 'JXL_UNSUPPORTED', 'This host requires the selected browser conversion route for this picture.');
+          throw fail(422, 'JXL_UNSUPPORTED', 'picture: browser conversion route');
         return admit(service, ctx, {id, key, jobId, operation, options});
       }),
       'job-status': jobRoute({body: 'none'}, 'media:read', (service, ctx) =>
@@ -561,7 +936,7 @@ export function createPlugin({mediaItem = nativeMediaItem, mediaPage = nativeMed
             !item || typeof item !== 'object' || Array.isArray(item) ||
             typeof item.id !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(item.id) ||
             item.key != null && typeof item.key !== 'string'))
-          throw fail(400, 'library_page', 'Send at most 8 media item records');
+          throw fail(400, 'library_page', 'media items: <=8');
         const rows = [], service = await runner(ctx), selected = settings(await service.calls.call(() => ctx.kv.get('settings')));
         for (const item of items) {
           const row = await libraryRow(storage(), item);
@@ -578,6 +953,7 @@ export function createPlugin({mediaItem = nativeMediaItem, mediaPage = nativeMed
       variant: {methods: ['POST'], request: {body: 'bytes', maxBytes: MAX_BYTES}, permission: 'media:upload', handler: ctx =>
         pendingCandidate(ctx, Number(new URL(ctx.request.url).searchParams.get('width')), mediaItem)},
       attach: {methods: ['POST'], request: {body: 'bytes', maxBytes: MAX_BYTES}, permission: 'media:upload',
-        handler: ctx => pendingCandidate(ctx, undefined, mediaItem)}
+        handler: ctx => pendingCandidate(ctx, undefined, mediaItem)},
+      ...mcpSurface.routes,
     }});
 }

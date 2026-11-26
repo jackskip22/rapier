@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
-import {float16Bits, ceilLog2} from './bits.mjs';
+import {BitWriter, float16Bits, ceilLog2} from './bits.mjs';
 import {writeHeaderFields, writeFrameHeaderEnd, GROUP_DIM} from './frame.mjs';
 import {writeHistograms, buildCode, uintConfig, countToken, writeHybrid} from './prefix.mjs';
 import {jpegError} from './jpeg-tables.mjs';
+import {fault} from './fault.mjs';
 import {SCAN} from './dct8-contexts.mjs';
 
-export function varDCTGeometry(jpeg, plan = {}) {
+function varDCTGeometry(jpeg, plan = {}) {
   const {width, height, components, xyb, strategyData, progression, authoredOrderPasses} = jpeg;
   const grey = components.length === 1;
   const directRGB = jpeg.cflBase !== undefined;
@@ -15,22 +16,22 @@ export function varDCTGeometry(jpeg, plan = {}) {
   let field = jpeg.quantFieldBase || 1, shift = 1;
   while (field / (8 * 255 * quantScale) < 1 / 16384) { field *= 2; shift *= 2; }
   const ycbcr = !xyb && (jpeg.ycbcr || grey);
-  const map = grey ? [0, 0, 0] : ycbcr ? [1, 0, 2] : [0, 1, 2];
+  const map = grey ? [0, 0, 0] : ycbcr && !jpeg.frameOrder ? [1, 0, 2] : [0, 1, 2];
   const comps = map.map(i => components[i]);
   const hasOrders = Boolean(plan.orders && !authoredOrderPasses && map.some(i => plan.orders[i].some((k, r) => k !== r)));
   const orders = hasOrders ? map.map(i => plan.orders[i].map(k => SCAN[k])) : [SCAN, SCAN, SCAN];
   const log2 = v => v === 1 ? 0 : v === 2 ? 1 : -1;
   const minH = ycbcr ? 1 : Math.min(...comps.map(c => c.h)), minV = ycbcr ? 1 : Math.min(...comps.map(c => c.v));
   const rawH = comps.map(c => c.h % minH ? -1 : log2(c.h / minH)), rawV = comps.map(c => c.v % minV ? -1 : log2(c.v / minV));
-  if (rawH.includes(-1) || rawV.includes(-1)) throw jpegError('sampling factors other than one or two');
+  if (rawH.includes(-1) || rawV.includes(-1)) throw jpegError('sampling factors: 1 or 2');
   const maxhs = Math.max(...rawH), maxvs = Math.max(...rawV);
   const hshifts = rawH.map(value => maxhs - value), vshifts = rawV.map(value => maxvs - value);
-  if (!ycbcr && (maxhs || maxvs)) throw jpegError('an RGB JPEG with subsampling');
+  if (!ycbcr && (maxhs || maxvs)) throw jpegError('subsampled RGB');
   const xsizeBlocks = Math.ceil(width / (8 << maxhs)) << maxhs, ysizeBlocks = Math.ceil(height / (8 << maxvs)) << maxvs;
   const groupsX = Math.ceil(width / GROUP_DIM), groupsY = Math.ceil(height / GROUP_DIM), numGroups = groupsX * groupsY;
   const dcGroupsX = Math.ceil(xsizeBlocks / 256), dcGroupsY = Math.ceil(ysizeBlocks / 256), numDcGroups = dcGroupsX * dcGroupsY;
   const single = numGroups === 1 && numPasses === 1;
-  if (strategyData && (maxhs || maxvs || plan.orders && !authoredOrderPasses)) throw jpegError('variable transforms with subsampling or DCT8-only learned orders');
+  if (strategyData && (maxhs || maxvs || plan.orders && !authoredOrderPasses)) throw jpegError('subsampled variable transforms');
 
   return {grey, directRGB, numPasses, epf, quantScale, field, shift, ycbcr, map, comps, hasOrders, orders,
     rawH, rawV, maxhs, maxvs, hshifts, vshifts, xsizeBlocks, ysizeBlocks, groupsX, groupsY, numGroups,
@@ -56,7 +57,10 @@ export function writeVarDCTHeader(header, jpeg, layout, modular16bit, imageHeade
   else {
   if (isFirstFrame) imageHeader(header, imageWidth ?? jpeg.canvasWidth ?? width, imageHeight ?? jpeg.canvasHeight ?? height, grey ? 1 : 3, alphaChannel, {xyb, orientation: jpeg.orientation, colorSpace: jpeg.colorSpace, modular16bit, ...jpeg.profile});
   header.write(1, 0); header.write(2, 0); header.write(1, 0);
-  header.write(2, 2); header.write(8, 128 + (noiseLut ? 1 : 0) + (patches ? 2 : 0) + (splineBits ? 16 : 0) + (useDCFrame ? 32 : 0) - 17);
+  const flags = (jpeg.adaptiveLFSmoothing && !useDCFrame ? 0 : 128) + (noiseLut ? 1 : 0) + (patches ? 2 : 0) + (splineBits ? 16 : 0) + (useDCFrame ? 32 : 0);
+  if (!flags) header.write(2, 0);
+  else if (flags <= 16) { header.write(2, 1); header.write(4, flags - 1); }
+  else { header.write(2, 2); header.write(8, flags - 17); }
   if (!xyb) header.write(1, ycbcr ? 1 : 0);
   if (!useDCFrame) {
   if (ycbcr) for (let c = 0; c < 3; c++) header.write(2, rawH[c] === 0 && rawV[c] === 0 ? 0 : rawH[c] === 1 && rawV[c] === 1 ? 1 : rawH[c] === 1 ? 2 : 3);
@@ -76,10 +80,11 @@ export function writeVarDCTDCFields(writer, jpeg, layout, contextHeader) {
   for (let c = 0; c < 3; c++) writer.write(16, float16Bits(comps[c].quant[0] / dcScale[c] / (255 * 8 * quantScale) * 128));
   writer.write(2, 3); writer.write(16, 65536 - 8193);
   writer.write(2, 1); writer.write(5, 0);
-  writer.write(1, 0); writer.write(4, 0);
   writer.append(contextHeader);
   if (xyb) writer.write(1, 1);
-  else { const base = float16Bits(jpeg.cflBase ?? 0); writer.write(1, 0); writer.write(2, 0); writer.write(16, base); writer.write(16, base); writer.write(8, 128); writer.write(8, 128); }
+  else {
+    if (!(Math.abs(jpeg.cflBase ?? 0) <= 4)) throw fault('JXL_INTERNAL', `vardct-header:cfl ${jpeg.cflBase}`);
+    const base = float16Bits(jpeg.cflBase ?? 0); writer.write(1, 0); writer.write(2, 0); writer.write(16, base); writer.write(16, base); writer.write(8, 128); writer.write(8, 128); }
   writer.write(1, 0);
 }
 
@@ -97,11 +102,13 @@ export function writeVarDCTOrders(writer, jpeg, layout, plan, pass) {
       while (end > 1 && !lehmer[end - 1]) end--;
       values.push(end - 1, ...lehmer.slice(1, end));
     }
-    const config = uintConfig(0), freqs = new Uint32Array(64);
+    const plain = new BitWriter(128), config = uintConfig(0), freqs = new Uint32Array(64);
     for (const value of values) countToken(config, value, freqs);
     const code = buildCode(freqs);
-    writeHistograms(writer, {contextMap: new Uint8Array(8), histograms: [{config, code}]});
-    for (const value of values) writeHybrid(writer, code, config, value);
+    writeHistograms(plain, {contextMap: new Uint8Array(8), histograms: [{config, code}]});
+    for (const value of values) writeHybrid(plain, code, config, value);
+    const better = (typeof __RAPIER_JXL_RECOMPRESS__ === 'undefined' || __RAPIER_JXL_RECOMPRESS__ === true) && plan?.orderWriter ? plan.orderWriter(plan.orders, map, plain.bitLength) : null;
+    writer.append(better && better.bitLength < plain.bitLength ? better : plain);
   } else writer.write(2, 2);
 }
 

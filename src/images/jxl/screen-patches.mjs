@@ -161,7 +161,7 @@ export function writePatchFrameHeader(w, alpha, {reference = false, width = 0, h
   w.write(10, 0);
 }
 
-export function writePatchDictionary(w, dictionary, alpha) {
+function writePatchDictionary(w, dictionary, alpha) {
   const values = [],
     emit = (ctx, value) => values.push([ctx, value]);
   emit(0, dictionary.groups.length);

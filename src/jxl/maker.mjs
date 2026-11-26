@@ -186,5 +186,5 @@ export const ANSWERS = Object.freeze({
 		Object.freeze(['How do I make an animated JPEG XL?', 'Tap animated, then choose or drop a GIF, APNG, animated WebP, a video or several pictures. Order the frames, set their delays, then Make JPEG XL and download the .jxl file.']),
 		Object.freeze(['Why does my viewer show a still picture?', 'Some viewers and image libraries decode only the first frame of a JPEG XL. Open the file in a browser that plays it, or in a viewer built on libjxl with animation turned on.']),
 		Object.freeze(['Which browsers open JPEG XL?', 'Chrome 155, Firefox 158 and Safari 17 and later. Safari does not play animated JPEG XL. Any browser can make the files here.']),
-		Object.freeze(['Is animated JPEG XL smaller than a GIF?', 'Yes. Lossless keeps every frame of a GIF exactly and the file is smaller. High and Medium are smaller still.']),
+		Object.freeze(['Is animated JPEG XL smaller than a GIF?', 'Yes. Lossless keeps every frame of a GIF exactly and the file is smaller. High and Very high are smaller still.']),
 	])});

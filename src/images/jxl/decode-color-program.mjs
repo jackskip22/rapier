@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 import {decodeKernels} from './decode-kernels.mjs';
+import {fault} from './fault.mjs';
 
-export const CURVE = Object.freeze({identity: 0, iccGamma: 1, sampled: 2, sampledInverse: 3, para: 4, paraInverse: 5, segmented: 6, srgb: 7, srgbInverse: 8,
+export const CURVE = /* @__PURE__ */ Object.freeze({identity: 0, iccGamma: 1, sampled: 2, sampledInverse: 3, para: 4, paraInverse: 5, segmented: 6, srgb: 7, srgbInverse: 8,
   bt709: 9, bt709Inverse: 10, gamma: 11, pq: 12, pqInverse: 13, hlg: 14, hlgInverse: 15, linear: 16});
-export const OP = Object.freeze({curve: 1, matrix: 2, vector3: 3, clut: 4, decodePCS: 5, encodePCS: 6, scale: 7, divide: 8, grayD50: 9, copy: 10,
+export const OP = /* @__PURE__ */ Object.freeze({curve: 1, matrix: 2, vector3: 3, clut: 4, decodePCS: 5, encodePCS: 6, scale: 7, divide: 8, grayD50: 9, copy: 10,
   hlgOotf: 11, grayAll: 12, grayFromY: 13, xybInverse: 14, xybForward: 15, xybUnscale: 16, ink: 17, none: 18, xybNative: 19, ycbcr: 20});
 const CURVE_BYTES = 80, OP_BYTES = 32, SEGMENT_BYTES = 64, V = 3531264, SMALL = 3531776, SMALL_END = 3539968;
 const align8 = n => Math.ceil(n / 8) * 8;
@@ -12,7 +13,7 @@ const f64Bytes = values => values ? align8(values.length * 8) : 0;
 function curveBytes(c) {
   return CURVE_BYTES + f64Bytes(c.table) + f64Bytes(c.breaks) + (c.segments ?? []).reduce((n, s) => n + SEGMENT_BYTES + f64Bytes(s.table), 0);
 }
-export function programBytes(ops) {
+function programBytes(ops) {
   return (ops.length + 1) * OP_BYTES + ops.reduce((n, o) => n + f64Bytes(o.data) + (o.grid ? align8(o.grid.length * 4) : 0) + (o.curve ? curveBytes(o.curve) : 0), 0);
 }
 function writer(kernels, at) {
@@ -77,14 +78,14 @@ export function curveTable(curve) {
 export function convertPixels(n, job) {
   const kernels = decodeKernels(), {inputs, black = null, alpha = null, outputs, blackOut = null, flags = 0, to, from = [], quantized = null} = job;
   const planes = [...inputs, black, alpha, ...outputs, blackOut].filter(Boolean), inPlace = planes.every(p => p.buffer === kernels.buffer);
-  if (!inPlace && planes.some(p => p.buffer === kernels.buffer)) throw new Error('Color planes are partly in the kernels\' memory.');
+  if (!inPlace && planes.some(p => p.buffer === kernels.buffer)) throw fault('JXL_INTERNAL', 'decode-color-program:planes');
   const tables = quantized ? [...new Set(quantized.tables)] : [];
   const bytes = programBytes(to) + programBytes(from) + (quantized ? 168 + quantized.curves.reduce((n, c) => n + curveBytes(c), 0) : 0);
   let w, chunk = n;
   const buffers = [], tableAt = new Map();
   if (inPlace && !quantized && bytes <= SMALL_END - SMALL) w = writer(kernels, SMALL);
   else {
-    if (inPlace) throw new Error('A color program in place exceeds its region.');
+    if (inPlace) throw fault('JXL_INTERNAL', 'decode-color-program:region');
     chunk = Math.min(n, CHUNK);
     const count = inputs.length + (black ? 1 : 0) + (alpha ? 1 : 0) + outputs.length + (blackOut ? 1 : 0);
     const at = kernels.reserve([bytes, ...tables.map(() => TABLE_BYTES), ...Array(count).fill(chunk * 4)]);

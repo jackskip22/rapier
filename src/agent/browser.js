@@ -1548,6 +1548,8 @@
   const retainedExports = new Map();
   const RETAINED_EXPORTS = 4, EXPORT_LIFETIME_MS = 86400000;
 
+  const EXPORT_CAUSES = ['TypeError', 'RangeError', 'ReferenceError', 'SecurityError', 'NetworkError', 'NotAllowedError', 'NotSupportedError',
+    'QuotaExceededError', 'DataCloneError', 'InvalidStateError', 'EncodingError', 'OperationError', 'UnknownError'];
   async function exportDocument(request, expected) {
     await ready;
     const identity = {documentId: request?.documentId, revision: request?.revision, format: request?.format,
@@ -1584,6 +1586,7 @@
     } catch (error) {
       const refused = refuse(request.signal?.aborted ? 'cancelled' : /^WILL LOST/.test(String(error?.message)) ? 'will_lost' :
         error?.code === 'stale_context' ? 'document_changed' : typeof error?.code === 'string' && error.code ? error.code.slice(0, 128) : 'export_unavailable');
+      if (refused.reason === 'export_unavailable') refused.cause = EXPORT_CAUSES.includes(error?.name) ? error.name : 'other';
       return typeof error?.picture === 'string' && error.picture ? {...refused, picture: error.picture.slice(0, 256), alt: String(error.alt || '').slice(0, 256)} : refused;
     } finally { if (exportFlight === flight) exportFlight = null; }
   }
@@ -1683,8 +1686,12 @@
       if (partStatus === 'carried') { await RapierParts.need('jxlcomplete'); return; }
       if (!['ready', 'stored'].includes(partStatus)) throw Object.assign(new Error('Not converted: needs JPEG XL complete. Open the JPEG XL converter once to get it.'), {shown: true});
     };
-    const kept = r => r.back === 'jpeg' ? 'original JPEG, byte for byte' : r.back === 'png' ? 'PNG' : r.exact ? 'JPEG carried exactly; restores byte for byte'
-      : r.frames ? (r.mode === 'lossless' ? 'animation, lossless' : 'animation, ' + r.mode) : r.mode === 'lossless' || r.fallback ? 'lossless' : r.mode + ' quality';
+    const quality = typeof input.quality === 'number' ? input.quality : {lossless: 100, high: 90, medium: 75}[input.quality] ?? 90;
+    const advanced = {maxBytes: input.max_bytes, side: input.longer_side, location: input.remove_location !== true};
+    const lossy = 'quality ' + quality + (input.max_bytes ? ' or the highest that fits' : '');
+    const kept = r => (r.back === 'jpeg' ? 'original JPEG, byte for byte' : r.back === 'png' ? 'PNG' : r.exact ? 'JPEG carried exactly; restores byte for byte'
+      : r.frames ? (r.mode === 'lossless' ? 'animation, lossless' : 'animation, quality ' + quality) : r.mode === 'lossless' || r.fallback ? 'lossless' : lossy)
+      + (r.side ? '; ' + r.side + ' px' : '') + (r.located ? '; location removed' : '');
     for (const file of input.files) {
       if (who.signal?.aborted) break;
       let picked = null;
@@ -1695,7 +1702,7 @@
         pixels += counted;
         const left = CONVERT_PIXELS - pixels + counted;
         if (left < 1) { rows.push({name: short(file.name), refused: 'Over this call\'s ' + CONVERT_PIXELS / 1e6 + ' megapixels in all. Send it in another call.'}); continue; }
-        const r = await C.convert(picked, {mode: input.quality, effort: input.effort, complete, signal: who.signal, budget: left});
+        const r = await C.convert(picked, {quality, effort: input.effort, ...advanced, complete, signal: who.signal, budget: left});
         if (r.frames && r.width) pixels += r.width * r.height * r.frames - counted;
         else if (!counted && r.width) pixels += r.width * r.height;
         const name = C.outputName(file.name, taken, r.ext || '.jxl');
@@ -1716,6 +1723,7 @@
       }
     }
     return {outcome: made.length ? 'ok' : 'refused', ...(made.length ? {} : {reason: 'convert_refused'}), converted: made.length, effort: input.effort, quality: input.quality,
+      ...(input.max_bytes ? {max_bytes: input.max_bytes} : {}), ...(input.longer_side ? {longer_side: input.longer_side} : {}), ...(input.remove_location ? {remove_location: true} : {}),
       files: rows, delivered, ...(who.signal?.aborted ? {stopped: true} : {})};
   }
   const host = {

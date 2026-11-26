@@ -92,7 +92,8 @@ export function admitExportArtifact(request, fact) {
     return {reason: 'document_changed'};
   if (fact.outcome !== 'ok') {
     const reason = typeof fact.reason === 'string' ? fact.reason.slice(0, 128) : 'export_unavailable';
-    return {reason, ...(reason === 'export_too_large' ? {limitBytes: MAX_EXPORT_BYTES} : {}),
+    const cause = reason === 'export_unavailable' && typeof fact.cause === 'string' && /^[A-Za-z]{1,32}$/.test(fact.cause) ? fact.cause : null;
+    return {reason, ...(cause ? {cause} : {}), ...(reason === 'export_too_large' ? {limitBytes: MAX_EXPORT_BYTES} : {}),
       ...(typeof fact.picture === 'string' && fact.picture ? {picture: fact.picture.slice(0, 256), alt: typeof fact.alt === 'string' ? fact.alt.slice(0, 256) : ''} : {})};
   }
   const artifact = fact.artifact, mimeType = request.format === 'docx'
@@ -205,6 +206,7 @@ export const HINTS = {
   visual_render_unavailable: 'The page could not draw this as a picture. It may be showing the source. Read the text, or ask the person for the formatted view with show {target:"view", view:"formatted"}.',
   editor_not_present: 'No editor is paired with this document. Share editor_url. If the person reads you a code, send show {target:"pair", code}. Or deliver a file with export.',
   editor_unavailable: 'Open the paired Rapier editor and keep it visible for painting, sampling, visual inspection, Word or PDF. Without an editor, export markdown, html or txt.',
+  export_unavailable: 'The open editor could not write this file. Export markdown, html or txt, which need no editor.',
   export_render_limit: 'This document is too large for the worker to write as txt or page. Export markdown or html, or open it in Rapier for Word or PDF.',
   export_render_unavailable: 'This host could not write the txt or page file. Export markdown or html instead.',
   presentation_already_pending: 'A reveal is already pending. Check its view status with read before another.',
@@ -3736,7 +3738,8 @@ export function createKernel({ state: supplied, host = {}, clock, mintId, invoca
             '. Ask the person to update their browser and keep editor_url open, or export markdown or html, which keep it.'} : {})});
       }
       if (!checked.bytes) return failure(checked.reason || 'export_unavailable', 'refused', {
-        ...(checked.reason === 'editor_unavailable' ? {availableFormats: ['markdown', 'html', 'txt']} : {}),
+        ...(['editor_unavailable', 'export_unavailable'].includes(checked.reason || 'export_unavailable') ? {availableFormats: ['markdown', 'html', 'txt']} : {}),
+        ...(typeof checked.cause === 'string' ? {cause: checked.cause} : {}),
         ...(safeInt(checked.limitBytes) ? {limitBytes: checked.limitBytes} : {}), ...(safeInt(checked.byteLength) ? {bytes: checked.byteLength} : {})});
     }
     if (documentGuardFailure(context)) return documentGuardFailure(context);

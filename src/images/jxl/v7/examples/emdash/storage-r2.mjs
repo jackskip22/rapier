@@ -11,7 +11,7 @@ configureDecoder(decode, restore);
 
 export function createStorage(config) {
   const inner = createR2(config), bucket = env[config.binding];
-  const limits = {maxPixels: 24e6, maxInputBytes: 32 * 1024 * 1024, ...config.rapier};
+  const limits = {maxInputBytes: 32 * 1024 * 1024, ...config.rapier};
   const scope = JSON.stringify(['r2', config.binding]);
   const {store, create, compareAndSet, head, replace} = r2Store(inner, bucket);
   return registerStorage(withMediaCopies(store, {...limits, create, compareAndSet,

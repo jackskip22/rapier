@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MIT
-import {butteraugliRows, butteraugliLinearTable, pnorm, prepareButteraugli} from './butteraugli.mjs';
 import {ssimulacra2, ssimulacra2Reference} from './ssimulacra2.mjs';
 import {s2Dimensions, s2RGBA} from './ssimulacra2-input.mjs';
 import {GpuLinearPixels} from './gpu-metric-pixels.mjs';
-import {cellSums} from './varblocks.mjs';
-import {blockDistances} from './aq.mjs';
 import {UniformRing} from './gpu-uniforms.mjs';
-import {coefficientPlanes, epfInverseSigma, inverseBasis, half, rcLlfFromDC, toRGBA} from './reconstruct.mjs';
+import {inverseBasis, half} from './reconstruct.mjs';
+import {coefficientPlanes, epfInverseSigma, rcLlfFromDC} from './gpu-dequant.mjs';
+import {captureLinearRGBA as toRGBA} from './capture-kernels.mjs';
 import {TRANSFORMS} from './vardct-strategies.mjs';
 import {gpuSetup} from './gpu-setup.mjs';
 import {gpuPipelineSet} from './gpu-pipelines.mjs';
+import {gpuWait} from './gpu-kit.mjs';
 import {fault} from './fault.mjs';
 
 const GR_WG = 128, GR_CORE = 1024, GR_MARGIN = 128;
 const grF = v => { const s = Math.fround(v).toString(); return /[.eE]/.test(s) ? s : s + '.0'; };
 const GR_GAB = [0.115169525, 0.061248592];
 const GR_ONE = [1 - 0.05465007330715401, 1 - 0.07005449891748593, 1 - 0.049935103337343655];
-const GR_BIAS = 0.0037930732552754493, GR_ROOT_BIAS = Math.cbrt(GR_BIAS);
+const GR_BIAS = 0.0037930732552754493, GR_ROOT_BIAS = /* @__PURE__ */ Math.cbrt(GR_BIAS);
 const GR_M = [0.3, 0.622, 0.078, 0.23, 0.692, 0.078, 0.24342268924547819, 0.20476744424496821, 0.5518098665095536];
-const GR_INV = (() => {
+const GR_INV = /* @__PURE__ */ (() => {
   const [a, b, c, d, e, g, h, i, j] = GR_M, det = a * (e * j - g * i) - b * (d * j - g * h) + c * (d * i - e * h);
   return [(e * j - g * i) / det, (c * i - b * j) / det, (b * g - c * e) / det, (g * h - d * j) / det, (a * j - c * h) / det,
     (c * d - a * g) / det, (d * i - e * h) / det, (b * h - a * i) / det, (a * e - b * d) / det];
@@ -45,7 +45,7 @@ const grBlockOf = `
   let ow = select(select(select(1344u, 320u, bw == 32u), 64u, bw == 16u), 0u, bw == 8u);
   let oh = select(select(select(1344u, 320u, bh == 32u), 64u, bh == 16u), 0u, bh == 8u);`;
 
-const GR_SHADERS = {
+const GR_SHADERS = /* @__PURE__ */ (() => ({
   rows: grShader([['cells', 'read', 'array<u32>'], ...GR_R('basis', 'coef'), ...GR_W('tmp')], `${grBlockOf}
     var s = 0.0; let lx = x - x0;
     for (var u = 0u; u < bw; u++) { s += coef[y * P.w + x0 + u] * basis[ow + u * bw + lx]; }
@@ -129,32 +129,32 @@ fn recon(q: i32, c: u32) -> f32 {
   if (q == 0) { return 0.0; } if (q == 1) { return consts[195u + c]; } if (q == -1) { return -consts[195u + c]; }
   let v = f32(q); return v - 0.145 / v;
 }`),
-};
+}))();
 
-const grPipelines = gpuPipelineSet(GR_SHADERS);
+const grPipelines = /* @__PURE__ */ gpuPipelineSet(GR_SHADERS);
 
 export class GpuMeasure {
   static async create(device, rgba, width, height, {tile = GR_CORE, signal} = {}) {
     s2RGBA(rgba, s2Dimensions(width, height));
     if (width < 8 || height < 8) return null;
-    if (!Number.isSafeInteger(tile) || tile < 64 || tile % 64) throw new RangeError('GPU metric tile must be a positive multiple of 64.');
+    if (!Number.isSafeInteger(tile) || tile < 64 || tile % 64) throw fault('JXL_INTERNAL', 'gpu-reconstruct:tile');
     const self = new GpuMeasure();
     return gpuSetup(async () => {
-      const [pipelines] = await Promise.all([grPipelines(device), prepareButteraugli()]);
-      if (self.destroyed) throw Object.assign(new Error('GPU metric owner was destroyed during setup.'), {code: 'JXL_GPU'});
+      const pipelines = await grPipelines(device);
+      if (self.destroyed) throw Object.assign(new Error('owner destroyed'), {code: 'JXL_GPU'});
       device.pushErrorScope('validation'); device.pushErrorScope('out-of-memory');
       let remaining = 2;
       try {
         self.init(device, rgba, width, height, tile, pipelines);
         const pixels = await GpuLinearPixels.create(device, width, height);
-        if (self.destroyed) { pixels.destroy(); throw Object.assign(new Error('GPU metric owner was destroyed during setup.'), {code: 'JXL_GPU'}); }
+        if (self.destroyed) { pixels.destroy(); throw Object.assign(new Error('owner destroyed'), {code: 'JXL_GPU'}); }
         self.pixels = pixels;
-        remaining--; const memory = await device.popErrorScope();
-        remaining--; const validation = await device.popErrorScope();
-        if (self.lost || memory || validation) throw Object.assign(new Error('GPU metric creation failed.'), {code: 'JXL_GPU', cause: memory ?? validation ?? self.lost});
+        remaining--; const memory = await gpuWait(device, device.popErrorScope());
+        remaining--; const validation = await gpuWait(device, device.popErrorScope());
+        if (self.lost || memory || validation) throw Object.assign(new Error('creation failed'), {code: 'JXL_GPU', cause: memory ?? validation ?? self.lost});
         return self;
       } catch (error) { self.destroy(); throw error; }
-      finally { while (remaining-- > 0) await device.popErrorScope().catch(() => null); }
+      finally { while (remaining-- > 0) await gpuWait(device, device.popErrorScope()).catch(() => null); }
     }, {signal, dispose: () => self.destroy()});
   }
 
@@ -182,7 +182,7 @@ export class GpuMeasure {
 
   init(device, rgba, width, height, tile, pipelines) {
     const count = s2Dimensions(width, height);
-    if (width < 8 || height < 8) throw fault('JXL_DIMENSIONS', 'A GPU metric image needs at least 8 x 8 pixels.');
+    if (width < 8 || height < 8) throw fault('JXL_DIMENSIONS', 'dimensions: min 8 x 8');
     this.rgba = new Uint8Array(s2RGBA(rgba, count)); this.destroyed = false; this.measuring = false;
     this.stats = {gpuProbes: 0, failures: 0};
     const lossState = this.lossState = {info: null};
@@ -297,30 +297,30 @@ export class GpuMeasure {
   }
 
   async measure(image, want = {}) {
-    if (this.destroyed || this.lost) throw Object.assign(new Error('GPU metric device is unavailable.'), {code: 'JXL_GPU'});
-    if (this.measuring) throw new Error('GPU metric measures must be sequential.');
+    if (this.destroyed || this.lost) throw Object.assign(new Error('device unavailable'), {code: 'JXL_GPU'});
+    if (this.measuring) throw fault('JXL_INTERNAL', 'gpu-reconstruct:busy');
     this.measuring = true;
     const device = this.device;
     device.pushErrorScope('validation'); device.pushErrorScope('out-of-memory');
     let remaining = 2;
     try {
       const out = await this.measureImage(image, want);
-      remaining--; const memory = await device.popErrorScope();
-      remaining--; const validation = await device.popErrorScope();
-      if (this.lost || memory || validation) throw Object.assign(new Error('GPU metric calculation failed.'), {code: 'JXL_GPU', cause: memory ?? validation ?? this.lost});
-      for (const key of ['butteraugli', 'butteraugli3', 'ssimulacra2', 'ssimulacra2Native'])
-        if (out[key] !== undefined && !Number.isFinite(out[key])) throw Object.assign(new Error('GPU metric result is not finite.'), {code: 'JXL_GPU'});
+      remaining--; const memory = await gpuWait(device, device.popErrorScope());
+      remaining--; const validation = await gpuWait(device, device.popErrorScope());
+      if (this.lost || memory || validation) throw Object.assign(new Error('calculation failed'), {code: 'JXL_GPU', cause: memory ?? validation ?? this.lost});
+      for (const key of ['ssimulacra2', 'ssimulacra2Native'])
+        if (out[key] !== undefined && !Number.isFinite(out[key])) throw Object.assign(new Error('nonfinite result'), {code: 'JXL_GPU'});
       this.stats.gpuProbes++;
       return out;
     } catch (error) { this.stats.failures++; throw error; }
     finally {
-      while (remaining-- > 0) await device.popErrorScope().catch(() => null);
+      while (remaining-- > 0) await gpuWait(device, device.popErrorScope()).catch(() => null);
       this.measuring = false;
     }
   }
 
-  async measureImage(image, {p = 3, margin = 2, ssimulacra2: wantS2 = false, butteraugli: wantBA = true} = {}) {
-    if (!wantBA && !wantS2) return {};
+  async measureImage(image, {ssimulacra2: wantS2 = false} = {}) {
+    if (!wantS2) return {};
     const onGpu = this.uploadLevels(image);
     const {width, height} = this, {planes, cells, W: planeWidth, stride} = onGpu || coefficientPlanes(image), sigma = image.epf ? epfInverseSigma(image) : null;
     const gab = image.gab ? [0, 1, 2].map(c => image.gab === true ? GR_GAB : image.gab[c]) : null;
@@ -363,31 +363,15 @@ export class GpuMeasure {
       this.device.queue.submit([encoder.finish()]);
     }
     const linear = await this.pixels.readPlanes();
-    if (this.destroyed || this.lost) throw Object.assign(new Error('GPU metric device is unavailable.'), {code: 'JXL_GPU'});
-    return this.measurePixels(linear, {p, margin, ssimulacra2: wantS2, butteraugli: wantBA});
+    if (this.destroyed || this.lost) throw Object.assign(new Error('device unavailable'), {code: 'JXL_GPU'});
+    return this.measurePixels(linear, {ssimulacra2: wantS2});
   }
 
-  measurePixels(linear, {p = 3, margin = 2, ssimulacra2: wantS2 = false, butteraugli: wantBA = true} = {}) {
+  measurePixels(linear, {ssimulacra2: wantS2 = false} = {}) {
     const {width, height} = this, native = wantS2 === 'native';
     this.activePixelBytes = linear.reduce((n, plane) => n + plane.byteLength, 0);
     try {
       const out = {};
-      if (wantBA) {
-        const map = new Float32Array(width * height), referenceRow = new Float32Array(width);
-        const table = butteraugliLinearTable(), rgba = this.rgba;
-        this.activePixelBytes += map.byteLength + referenceRow.byteLength;
-        let score = 0;
-        butteraugliRows((c, y) => {
-          for (let x = 0; x < width; x++) referenceRow[x] = table[rgba[(y * width + x) * 4 + c]];
-          return referenceRow;
-        }, (c, y) => linear[c].subarray(y * width, (y + 1) * width), width, height, (y, row) => {
-          map.set(row, y * width);
-          for (const value of row) score = Math.max(score, value);
-        });
-        Object.assign(out, {butteraugli: score, butteraugli3: pnorm(map, 3),
-          cells: cellSums(map, width, height, p), blocks: blockDistances({map, width, height}, margin)});
-        this.activePixelBytes -= map.byteLength + referenceRow.byteLength;
-      }
       if (wantS2) {
         this.s2Reference ??= ssimulacra2Reference({rgba: this.rgba}, width, height, {immutable: true});
         const candidate = native ? {rgba: toRGBA(linear, width, height)} : linear;

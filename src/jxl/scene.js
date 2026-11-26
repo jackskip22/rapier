@@ -49,7 +49,7 @@
 
 		const start = performance.now(), frames = [], urls = [];
 		const targets = {};
-		let shown = true, frame = 0, drawnAt = 0, last = null, closed = false, offersVr = false;
+		let shown = true, frame = 0, drawnAt = 0, last = null, closed = false, offersVr = false, activeXR = null, openingXR = false;
 		const loop = now => {
 			frame = 0;
 			if (closed || view.lost()) return;
@@ -102,6 +102,7 @@
 				if (!target.scene) throw new Error('This browser cannot draw the picture.');
 				target.scene.draw(drawnAt);
 				const bytes = await RapierEmbeddedImages.codec('encode', target.canvas, OPTIONS[quality], {progress: value => { working.line.textContent = 'Saving · ' + Math.round(value * 100) + '%'; }});
+				if (closed) return;
 				const t1 = performance.now(), lost = dropped(t0, t1), blob = new Blob([bytes], {type: 'image/jxl'}), url = URL.createObjectURL(blob);
 				urls.push(url);
 				if (kind === 'panorama') last = blob;
@@ -118,13 +119,22 @@
 		});
 		navigator.xr?.isSessionSupported('immersive-vr').then(ok => { offersVr = ok; vr.hidden = !(ok && last); }, () => {});
 		vr.addEventListener('click', async () => {
-			if (!last) return;
-			try { await S.enterPanorama(await createImageBitmap(last)); }
-			catch (error) { row('Not in VR', String(error?.message || error)); }
+			if (!last || closed || activeXR || openingXR) return;
+			openingXR = true;
+			try {
+				const bitmap = await createImageBitmap(last);
+				if (closed) { bitmap.close(); return; }
+				const entered = await S.enterPanorama(bitmap);
+				if (closed) { await entered.end(); return; }
+				activeXR = entered;
+				entered.addEventListener('end', () => { if (activeXR === entered) activeXR = null; }, {once: true});
+			} catch (error) { if (!closed) row('Not in VR', String(error?.message || error)); }
+			finally { openingXR = false; }
 		});
 		return {unmount() {
 			closed = true; seen.disconnect();
 			if (frame) cancelAnimationFrame(frame);
+			if (activeXR) { const session = activeXR; activeXR = null; void session.end().catch(() => {}); }
 			view.release(); for (const target of Object.values(targets)) target.scene?.release();
 			for (const url of urls) URL.revokeObjectURL(url);
 		}};

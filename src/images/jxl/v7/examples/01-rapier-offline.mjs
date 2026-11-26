@@ -6,7 +6,7 @@ export async function run({dist, observe}) {
   input.data.fill(0);
   const [ordinary, embedded] = await Promise.all(pending);
   same(ordinary.bytes, embedded.bytes);
-  assert.ok(ordinary.fits && embedded.fits);
+  assert.ok(ordinary.meetsTarget && embedded.meetsTarget);
   assert.ok(ordinary.bytes.length > 0);
   await observe?.(before, ordinary, 'full');
   await observe?.(before, embedded, 'upload');

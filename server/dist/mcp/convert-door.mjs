@@ -4,7 +4,7 @@ const short = name => name.length > 64 ? name.slice(0, 30) + '…' + name.slice(
 
 const FAMILIES = ['codex', 'openai', 'claude', 'cursor', 'other', 'unknown'];
 export const converterFor = family => CONVERTER + '?from=' + (FAMILIES.includes(family) ? family : 'unknown');
-export function convertOnDoor({files = [], quality, effort} = {}, uncounted = 0, family = 'unknown') {
+export function convertOnDoor({files = [], quality, effort, max_bytes, longer_side, remove_location} = {}, uncounted = 0, family = 'unknown') {
 	const converter = converterFor(family);
 	const given = (Array.isArray(files) ? files : [files]).filter(file => file !== undefined && file !== null);
 	const usable = given.filter(file => typeof file === 'object' && typeof file.file_id === 'string' && file.file_id);
@@ -18,7 +18,8 @@ export function convertOnDoor({files = [], quality, effort} = {}, uncounted = 0,
 			'. Tell the person to choose ' + (unpassed === 1 ? 'it' : 'them') + ' in the converter.' : '') +
 		' The converter tells you what it got and how the conversion ended.';
 	return {reply: {outcome: 'converter', converter, pictures: count, ...(unpassed ? {unpassed} : {}), message: opened, ...(quality ? {quality} : {}), ...(effort ? {effort} : {}),
+		...(max_bytes ? {max_bytes} : {}), ...(longer_side ? {longer_side} : {}), ...(typeof remove_location === 'boolean' ? {remove_location} : {}),
 		hint: 'Where no view shows, give the person ' + converter + ' to add the pictures there. An agent with a shell converts its own files: ' +
-			'npx rapier-jxl <file> --json (a .jxl that carries its JPEG restores with --out <name>.jpg).',
+			'npx jpegxl <file> --json (a .jxl that carries its JPEG restores with --out <name>.jpg).',
 		files: named}, content: []};
 }

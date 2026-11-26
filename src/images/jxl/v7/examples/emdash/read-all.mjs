@@ -1,0 +1,100 @@
+// SPDX-License-Identifier: MIT
+const MAX_BYTES = 256 * 1024 * 1024;
+const fail = (code, message) => Object.assign(new Error(message), {code});
+const bufferLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get;
+const typedName = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag).get;
+const typedBuffer = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer').get;
+const typedLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'byteLength').get;
+const consume = promise => { Promise.resolve(promise).catch(() => {}); };
+
+function bufferBytes(value) {
+  if (ArrayBuffer.isView(value)) return null;
+  try { return bufferLength.call(value); } catch { return null; }
+}
+function viewLength(value) {
+  if (typedName.call(value) !== 'Uint8Array' || bufferBytes(typedBuffer.call(value)) === null)
+    throw fail('JXL_INPUT', "body: bytes, Blob or stream");
+  return typedLength.call(value);
+}
+function copy(value) {
+  viewLength(value);
+  try { return new Uint8Array(value); }
+  catch { throw fail('JXL_INPUT', "body: attached buffer"); }
+}
+function check(signal) {
+  if (signal?.aborted) throw signal.reason ?? fail('JXL_IO', "read: new signal");
+}
+function wait(promise, signal) {
+  if (!signal) return promise;
+  check(signal);
+  return new Promise((resolve, reject) => {
+    const abort = () => { release(); try { check(signal); } catch (error) { reject(error); } };
+    const release = () => signal.removeEventListener?.('abort', abort);
+    signal.addEventListener('abort', abort, {once: true});
+    Promise.resolve(promise).then(value => { release(); resolve(value); }, error => { release(); reject(error); });
+    if (signal.aborted) { release(); abort(); }
+  });
+}
+function settings(value) {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw fail('JXL_OPTIONS', "options: object");
+  if (Object.values(Object.getOwnPropertyDescriptors(value)).some(field => !('value' in field)))
+    throw fail('JXL_OPTIONS', "options: plain values");
+  for (const key of Object.keys(value)) if (key !== 'maxBytes' && key !== 'signal') throw fail('JXL_OPTIONS', `unknown option: ${key}`);
+  const {maxBytes = MAX_BYTES, signal} = value;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_BYTES)
+    throw fail('JXL_OPTIONS', "maxBytes: integer 1-268435456");
+  if (signal !== undefined && (!signal || typeof signal.aborted !== 'boolean' || typeof signal.addEventListener !== 'function'))
+    throw fail('JXL_OPTIONS', "signal: AbortSignal");
+  return {maxBytes, signal};
+}
+
+export async function readAll(body, options) {
+  const {maxBytes, signal} = settings(options);
+  check(signal);
+  const over = () => fail('JXL_LIMIT', `body: >maxBytes ${maxBytes}`);
+  if (typeof Blob !== 'undefined' && body instanceof Blob) {
+    if (body.size > maxBytes) throw over();
+    let buffer;
+    try { buffer = await wait(body.arrayBuffer(), signal); }
+    catch (cause) { if (signal?.aborted) throw cause; throw Object.assign(fail('JXL_IO', "read: storage failure"), {cause}); }
+    if (buffer.byteLength !== body.size) throw fail('JXL_INPUT', "file: changed; reread");
+    return new Uint8Array(buffer);
+  }
+  const length = bufferBytes(body);
+  if (length !== null) {
+    if (length > maxBytes) throw over();
+    try { return new Uint8Array(new Uint8Array(body)); }
+    catch { throw fail('JXL_INPUT', "body: attached buffer"); }
+  }
+  if (ArrayBuffer.isView(body)) { if (viewLength(body) > maxBytes) throw over(); return copy(body); }
+  if (!body || typeof body.getReader !== 'function') throw fail('JXL_INPUT', "body: bytes, Blob or stream");
+  const reader = body.getReader(), chunks = [];
+  let total = 0, ended = false;
+  try {
+    for (;;) {
+      check(signal);
+      let done, value;
+      try { ({done, value} = await wait(reader.read(), signal)); }
+      catch (cause) {
+        if (signal?.aborted || typeof cause?.code === 'string' && cause.code.startsWith('JXL_')) throw cause;
+        throw Object.assign(fail('JXL_IO', "read: storage failure"), {cause});
+      }
+      check(signal);
+      if (done) {
+        ended = true;
+        if (chunks.length === 1) return chunks[0];
+        const bytes = new Uint8Array(total);
+        let at = 0;
+        for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
+        return bytes;
+      }
+      const size = viewLength(value);
+      if (size > maxBytes - total) throw over();
+      chunks.push(copy(value)); total += size;
+    }
+  } finally {
+    if (!ended) { try { consume(reader.cancel(signal?.aborted ? signal.reason : undefined)); } catch {} }
+    try { reader.releaseLock(); } catch {}
+  }
+}

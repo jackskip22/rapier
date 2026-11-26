@@ -10,19 +10,19 @@ import {grid, physicalOrder, offsets, sectionInfo, admitRegion, regionOrder} fro
 const INDEX = 0x6a786c69, TOC_ENTRY = [[10, 0], [14, 1024], [22, 17408], [30, 4211712]];
 const invalid = message => fault('JXL_INPUT', message);
 function maximum(options) {
-  if (!options || typeof options !== 'object' || Array.isArray(options)) throw invalid('Delivery options are an object.');
+  if (!options || typeof options !== 'object' || Array.isArray(options)) throw invalid('options: object');
   const value = options.maxBytes ?? Number.MAX_SAFE_INTEGER;
-  if (!Number.isSafeInteger(value) || value < 1) throw invalid('maxBytes is a positive safe integer.');
-  if (options.iccBitLength !== undefined && (!Number.isSafeInteger(options.iccBitLength) || options.iccBitLength < 1)) throw invalid('iccBitLength is a positive safe integer.');
+  if (!Number.isSafeInteger(value) || value < 1) throw invalid('maxBytes: positive integer');
+  if (options.iccBitLength !== undefined && (!Number.isSafeInteger(options.iccBitLength) || options.iccBitLength < 1)) throw invalid('iccBitLength: positive integer');
   return value;
 }
 function boxMaximum(options) {
   const value = options.maxBoxes === undefined ? 65536 : options.maxBoxes;
-  if (!Number.isSafeInteger(value) || value < 1) throw invalid('maxBoxes is a positive safe integer.');
+  if (!Number.isSafeInteger(value) || value < 1) throw invalid('maxBoxes: positive integer');
   return value;
 }
 function bounded(size, max) {
-  if (!Number.isSafeInteger(size) || size > max) throw fault('JXL_SIZE', 'JPEG XL delivery exceeds maxBytes.');
+  if (!Number.isSafeInteger(size) || size > max) throw fault('JXL_SIZE', 'delivery: over maxBytes');
   return size;
 }
 function joined(parts, max) {
@@ -51,17 +51,17 @@ export function deliveryLayout(bytes, options = {}) {
 }
 
 function admitOrder(order, count) {
-  if (!Array.isArray(order) || order.length !== count) throw invalid('sectionOrder lists every section once, in delivery order.');
+  if (!Array.isArray(order) || order.length !== count) throw invalid('sectionOrder: all sections once');
   const seen = new Uint8Array(count);
   for (const value of order) {
-    if (!Number.isInteger(value) || value < 0 || value >= count || seen[value]) throw invalid('sectionOrder is a permutation of the section indexes.');
+    if (!Number.isInteger(value) || value < 0 || value >= count || seen[value]) throw invalid('sectionOrder: section permutation');
     seen[value] = 1;
   }
   return order.slice();
 }
 
 function rewriteFrame(stream, frame, order, max) {
-  if (order.length > 65536) throw invalid('A frame contains at most 65536 sections.');
+  if (order.length > 65536) throw invalid('sections: max 65536');
   const inverse = new Array(order.length); for (let physical = 0; physical < order.length; physical++) inverse[order[physical]] = physical;
   const writer = new BitWriter(); copyBits(writer, stream, frame.start * 8, frame.tocAt);
   writeTOCPermutation(writer, inverse); writer.zeroPadToByte();
@@ -75,7 +75,7 @@ function assemble(original, state, orders) {
   const {container, parsed, max} = state, frames = [...(parsed.preview ? [parsed.preview] : []), ...parsed.frames];
   const changed = frames.some(frame => orders.has(frame));
   if (!changed) return original.slice();
-  if (container.auxiliary.some(entry => entry.boxType === 'jbrd')) throw invalid('JPEG reconstruction files keep their section order.');
+  if (container.auxiliary.some(entry => entry.boxType === 'jbrd')) throw invalid('sectionOrder: not with JPEG reconstruction');
   const starts = new Map(), parts = [parsed.codestream.subarray(0, parsed.image.end)]; let at = parsed.image.end;
   for (const frame of frames) {
     starts.set(frame.start, at);
@@ -87,7 +87,7 @@ function assemble(original, state, orders) {
   const canonical = reframeContainer(original, {maxBytes: max}), index = readFrameIndex(canonical, {maxBytes: max});
   if (index) for (const frame of index.frames) {
     const moved = starts.get(Number(frame.byteOffset));
-    if (moved === undefined) throw invalid('A frame index must name parsed frame starts first.');
+    if (moved === undefined) throw invalid('jxli: frame start mismatch');
     frame.byteOffset = moved;
   }
   const output = [SIGNATURE.slice()];
@@ -102,11 +102,11 @@ function assemble(original, state, orders) {
 
 export function withDeliveryOrder(bytes, options = {}) {
   const state = read(bytes, options), {parsed} = state, strategy = options.strategy ?? 'region-first';
-  if (strategy !== 'region-first' && strategy !== 'pass-first') throw invalid('strategy is region-first or pass-first.');
+  if (strategy !== 'region-first' && strategy !== 'pass-first') throw invalid('strategy: region-first or pass-first');
   const frameIndex = options.frameIndex ?? parsed.frames.length - 1;
   if (!Number.isInteger(frameIndex) || frameIndex < -1 || frameIndex >= parsed.frames.length || frameIndex === -1 && !parsed.preview)
-    throw invalid('frameIndex selects a parsed frame; -1 requires a preview.');
-  if (options.sectionOrder !== undefined && options.region !== undefined) throw invalid('Supply either region or sectionOrder.');
+    throw invalid('frameIndex: valid frame or -1 preview');
+  if (options.sectionOrder !== undefined && options.region !== undefined) throw invalid('region or sectionOrder: not both');
   if (options.sectionOrder === undefined && options.region === undefined) return bytes.slice();
   const frame = frameIndex === -1 ? parsed.preview : parsed.frames[frameIndex];
   if (options.sectionOrder === undefined) admitRegion(frame, options.region, frameIndex === -1 ? parsed.image.preview : parsed.image);

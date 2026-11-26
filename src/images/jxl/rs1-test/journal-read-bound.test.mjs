@@ -35,7 +35,7 @@ test('a call ends at a miss once it has read the bound of saved values, and the 
     assert.ok(++calls < 200, 'the job finishes');
   }
   const output = [];
-  for await (const part of codec.outputParts(checkpoint, host())) output.push(...part);
+  for (const byte of await codec.output(checkpoint, host(), length => new Uint8Array(length))) output.push(byte);
   assert.deepEqual(output, [COUNT * (COUNT + 1) / 2]);
   assert.ok(most <= (16 << 20) + 2 * SIZE, `${(most / 1048576).toFixed(1)} MiB read in one call`);
 });

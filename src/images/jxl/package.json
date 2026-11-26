@@ -6,5 +6,5 @@
   "repository": {"type": "git", "url": "git+https://github.com/jackskip22/rapier-jxl.git"},
   "homepage": "https://github.com/jackskip22/rapier-jxl#readme",
   "bugs": {"url": "https://github.com/jackskip22/rapier-jxl/issues"},
-  "keywords": ["jpeg-xl", "jxl", "jpegxl", "encoder", "decoder", "image-compression", "image-optimization", "lossless", "lossy", "jpeg", "gif", "animation", "hdr", "webassembly", "wasm", "browser", "cloudflare-workers", "screenshot", "capture", "upload", "image", "images", "performance", "optimization", "withastro", "astro", "snapdom", "emdash"]
+  "keywords": ["jpeg-xl", "jxl", "jpegxl", "astro-integration", "vite-plugin", "encoder", "decoder", "image-compression", "image-optimization", "lossless", "lossy", "jpeg", "gif", "animation", "hdr", "webassembly", "wasm", "browser", "cloudflare-workers", "screenshot", "capture", "upload", "image", "images", "performance", "optimization", "withastro", "astro", "snapdom", "emdash"]
 }

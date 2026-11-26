@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: MIT
-import {exactExp, exactLog, exactLog2, exactPow} from './exact-math.mjs';
-import {vbPackSigned, token, VB_SMALL, VB_CONFIG, VB_ZD, VB_NZ, VB_TOKENS, tableFor, createStrategyBuilder, lazyStrategyImage} from './varblock-core.mjs';
+import {token, VB_SMALL, tableFor, createStrategyBuilder, lazyStrategyImage} from './varblock-core.mjs';
 export {nzBucket, token, rateModel, VB_DOUBT, strategyInputs, TransformCache, tokenRate, strategyImage, strategyTables, auditLevels, lazyStrategyImage, materialize} from './varblock-core.mjs';
 import {complete} from './bits.mjs';
 import {photoXYBSteps} from './photo-xyb.mjs';
 import {maskDoubtOver} from './photo-mask.mjs';
-import {scaledDCT, scaledDCTAt, smallTransform, naturalOrder, lowFrequencies, TRANSFORMS, scaledDCTBases} from './vardct-strategies.mjs';
-import {kernelHooks} from './kernel-hooks.mjs';
-import {zeroDensityContext} from './vardct.mjs';
-import {strategyAnsSteps} from './coefficient-ans.mjs';
-import {prepareCoefficientOrders, COEFFICIENT_ORDER_BUCKETS} from './coefficient-orders.mjs';
-import {prepareQuantParams, quantParamSteps} from './quantization-params.mjs';
-import {ZIGZAG} from './jpeg-tables.mjs';
-import {hybridToken, uintConfig} from './prefix.mjs';
-import {populationBits} from './entropy.mjs';
+import {TRANSFORMS} from './vardct-strategies.mjs';
+import {fault} from './fault.mjs';
 
 export function forcedLayout(id, stride, rows) {
   const t = TRANSFORMS[id], bw = t.width / 8, bh = t.height / 8, layout = [], fits = (bx, by) => bx + bw <= stride && by + bh <= rows;
@@ -53,7 +45,7 @@ function rateRound(value, up) {
   rateView.setUint32(0, hi, false); rateView.setUint32(4, lo, false);
   return rateView.getFloat64(0, false);
 }
-export function sumRateError(total, error, count) {
+function sumRateError(total, error, count) {
   if (!error) return 0;
   if (!Number.isFinite(error)) return Infinity;
   const nu = count * 2 ** -53;
@@ -64,23 +56,23 @@ export function sumRateError(total, error, count) {
   return rateRound(bound + rateRound(gamma * rateRound(rateRound(2 * sum, true) + bound, true), true), true);
 }
 
-export function sumStrategyValues(values, from, to, total = 0) {
+function sumStrategyValues(values, from, to, total = 0) {
   for (let k = from; k < to; k++) total += values[k];
   return total;
 }
-export function strategyCertifiedRateError(error) {
-  if (!(error >= 0 && Number.isFinite(error))) throw new Error('Certified measured rates need finite nonnegative Re.');
+function strategyCertifiedRateError(error) {
+  if (!(error >= 0 && Number.isFinite(error))) throw fault('JXL_INTERNAL', 'varblocks:Re');
   return error;
 }
-export function addStrategyMapCells(map, stride, bx, by, bw, from, to, m = 0) {
+function addStrategyMapCells(map, stride, bx, by, bw, from, to, m = 0) {
   for (let k = from; k < to; k++) m += map[(by + Math.floor(k / bw)) * stride + bx + k % bw];
   return m;
 }
-export function strategyMeasuredRateTotalDoubt(exactTotal, certifiedRates, error, total, rateDoubt, totalDoubt) {
+function strategyMeasuredRateTotalDoubt(exactTotal, certifiedRates, error, total, rateDoubt, totalDoubt) {
   return exactTotal ? 0 : certifiedRates ? error ? rateRound(error / total, true) : 0
     : !rateDoubt ? 0 : totalDoubt ?? rateDoubt;
 }
-export function strategyMeasuredPrice(m, R, lambda, mapTotal, rateTotal, doubt, exact, exactRate, certifiedRates, error, rateDoubt) {
+function strategyMeasuredPrice(m, R, lambda, mapTotal, rateTotal, doubt, exact, exactRate, certifiedRates, error, rateDoubt) {
   const r = lambda * R;
   return {J: m / mapTotal + r / rateTotal, m, me: exact ? 0 : doubt * m, r,
     re: exactRate ? 0 : certifiedRates ? Math.abs(lambda) * error : !rateDoubt ? 0 : rateDoubt * r};
@@ -125,7 +117,7 @@ export function createStrategySelector({options = {}, lambda = 1, stride, rows, 
   const best8 = (bx, by) => {
     if (force !== undefined) return candidate(VB_SMALL.has(force) ? force : 0, bx, by);
     let best = candidate(0, bx, by);
-    for (const id of [3, 12, 13]) if (allowed.has(id)) { const c = candidate(id, bx, by); if (beats(c, best)) best = c; }
+    if (!(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) for (const id of [3, 12, 13]) if (allowed.has(id)) { const c = candidate(id, bx, by); if (beats(c, best)) best = c; }
     return best;
   };
   const largerFirst = bounded && !useMask && force === undefined && lambda >= 0 && [...allowed].every(id => id === 4 || id === 5);
@@ -141,6 +133,11 @@ export function createStrategySelector({options = {}, lambda = 1, stride, rows, 
     let e = 0;
     for (const b of list) if (b.Re > e) e = b.Re;
     return 3 * inhom * lambda * e;
+  };
+  const halfOpen = (c, pen, j, pair) => {
+    if (!certifiedCosts) return;
+    const e = (c.Je || 0) + pair.reduce((sum, b) => sum + (b.Je || 0), 0) + penDoubt(pair), d = c.J + pen - j;
+    if (e === Infinity || e > 0 && Number.isFinite(d) && Math.abs(d) <= e + 1e-14 * (Math.abs(c.J) + Math.abs(j))) opened = true;
   };
   const best16 = (bx, by) => {
     if (largerFirst && allowed.has(4) && fits(4, bx, by)) {
@@ -166,7 +163,7 @@ export function createStrategySelector({options = {}, lambda = 1, stride, rows, 
       r.J += pen;
       r.Je += penDoubt(fb);
       if (beats(r, cur)) {
-        for (const b of list) if (!b.fallback) b.fallback = fb;
+        if (list.length === 1) for (const b of list) if (!b.fallback) b.fallback = fb;
         cur = r; best = list;
       }
     };
@@ -182,6 +179,7 @@ export function createStrategySelector({options = {}, lambda = 1, stride, rows, 
         const cL = candidate(6, bx, by, J => J + penL >= jL);
         const cR = candidate(6, bx + 1, by, J => J + penR >= jR);
         const winL = cL.J + penL < jL, winR = cR.J + penR < jR;
+        halfOpen(cL, penL, jL, pL); halfOpen(cR, penR, jR, pR);
         if (winL) cL.fallback = pL;
         if (winR) cR.fallback = pR;
         if (winL || winR) tryOne([...(winL ? [cL] : pL), ...(winR ? [cR] : pR)], (winL ? penL : 0) + (winR ? penR : 0), base8);
@@ -195,6 +193,7 @@ export function createStrategySelector({options = {}, lambda = 1, stride, rows, 
         const cT = candidate(7, bx, by, J => J + penT >= jT);
         const cB = candidate(7, bx, by + 1, J => J + penB >= jB);
         const winT = cT.J + penT < jT, winB = cB.J + penB < jB;
+        halfOpen(cT, penT, jT, pT); halfOpen(cB, penB, jB, pB);
         if (winT) cT.fallback = pT;
         if (winB) cB.fallback = pB;
         if (winT || winB) tryOne([...(winT ? [cT] : pT), ...(winB ? [cB] : pB)], (winT ? penT : 0) + (winB ? penB : 0), base8);
@@ -226,7 +225,7 @@ export function createStrategySelector({options = {}, lambda = 1, stride, rows, 
       const r = range(l);
       r.J += pen;
       if (beats(r, cur)) {
-        for (const b of l) if (!b.fallback) b.fallback = fb;
+        if (l.length === 1) l[0].fallback ??= fb;
         cur = r; list = l;
       }
     };
@@ -263,14 +262,21 @@ export function strategyFamilyCount(chosen, family) {
   for (const b of chosen) if (TRANSFORMS[b.id].table === family) count++;
   return count;
 }
+const REVERT_LIMITS = [[14, 6], [15, 6], [3, 4], [5, 8], [6, 8], [4, 8], [2, 4], [7, 6], [1, 6]];
+const REVERTED = new Set(REVERT_LIMITS.map(([f]) => f));
 export function revertStrategyFamily(chosen, family) {
   for (let i = chosen.length - 1; i >= 0; i--) {
-    if (TRANSFORMS[chosen[i].id].table === family && chosen[i].fallback) chosen.splice(i, 1, ...chosen[i].fallback);
+    const b = chosen[i];
+    if (TRANSFORMS[b.id].table !== family) continue;
+    if (b.fallback) chosen.splice(i, 1, ...b.fallback);
+    else {
+      const bw = TRANSFORMS[b.id].width >> 3, bh = TRANSFORMS[b.id].height >> 3, sub = [];
+      for (let dy = 0; dy < bh; dy++) for (let dx = 0; dx < bw; dx++) sub.push({id: 0, bx: b.bx + dx, by: b.by + dy, light: true});
+      chosen.splice(i, 1, ...sub);
+    }
   }
   return chosen;
 }
-
-const REVERTED = new Set([5, 4, 6]);
 function packChoices(chosen) {
   const out = [], open = new Set();
   const put = list => {
@@ -296,9 +302,9 @@ function unpackChoices(packed) {
 }
 export function strategyRowsLayout(bands) {
   const chosen = bands.flatMap(band => unpackChoices(band.chosen));
-  if (bands[0]?.useMask) for (const fam of [5, 4, 6]) {
+  if (bands[0]?.useMask || bands[0]?.pruneRare) for (const [fam, lim] of (bands[0]?.pruneRare ? REVERT_LIMITS : [[5, 8], [4, 8], [6, 8]])) {
     const count = strategyFamilyCount(chosen, fam);
-    if (count > 0 && count < 8) revertStrategyFamily(chosen, fam);
+    if (count > 0 && count < lim) revertStrategyFamily(chosen, fam);
   }
   return chosen.map(({id, bx, by}) => ({id, bx, by}));
 }
@@ -339,7 +345,7 @@ export function xybStrategies(base, width, height, options = {}) {
         rateTotalError = 0;
       }
     }
-    if (certifiedRates && !(rateTotal > 0 && Number.isFinite(rateTotal))) throw new Error('Certified measured rates need a positive finite normalizer.');
+    if (certifiedRates && !(rateTotal > 0 && Number.isFinite(rateTotal))) throw fault('JXL_INTERNAL', 'varblocks:rateTotal');
   }
   const doubt = options.mapDoubt || 0, totalDoubt = options.exactTotal ? 0 : options.totalDoubt ?? doubt;
   const rateTotalDoubt = strategyMeasuredRateTotalDoubt(options.exactTotal, certifiedRates, rateTotalError, rateTotal, rateDoubt, options.rateTotalDoubt);
@@ -401,11 +407,11 @@ export function xybStrategies(base, width, height, options = {}) {
       if (opened) open.push({bx: cx, by: cy, size: region});
     }
     if (options.band) return {chosen};
-    if (options.regionRows) return {chosen: packChoices(chosen), useMask};
-    if (useMask) {
-      for (const fam of [5, 4, 6]) {
+    if (options.regionRows) return {chosen: packChoices(chosen), useMask, pruneRare: !!options.pruneRare};
+    if (useMask || options.pruneRare) {
+      for (const [fam, lim] of (options.pruneRare ? REVERT_LIMITS : [[5, 8], [4, 8], [6, 8]])) {
         const count = strategyFamilyCount(chosen, fam);
-        if (count > 0 && count < 8) {
+        if (count > 0 && count < lim) {
           reverted += count;
           revertStrategyFamily(chosen, fam);
         }

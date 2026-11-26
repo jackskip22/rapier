@@ -4772,10 +4772,10 @@ function rapierWelcomeMarkdown() {
 		"npx rapier-html notes.md --view draw",
 		"npm install rapier-markdown-kit",
 		"npm install rapier-embed",
-		"npm install rapier-jxl",
+		"npm install jpegxl",
 		"```",
 		"",
-		"`rapier-html` opens a document in the whole editor. `rapier-markdown-kit` reads and writes Markdown. `rapier-embed` puts Rapier inside your app. `rapier-jxl` is the JPEG XL encoder. Agents read `llms.txt` and `agents.md`.",
+		"`rapier-html` opens a document in the whole editor. `rapier-markdown-kit` reads and writes Markdown. `rapier-embed` puts Rapier inside your app. `jpegxl` is the JPEG XL encoder. Agents read `llms.txt` and `agents.md`.",
 		"",
 		"Rapier is open source under AGPL-3.0-only. The Markdown kit, the JPEG XL encoder and Will are MIT.",
 		"",
@@ -48613,6 +48613,7 @@ function _rapierSwitchSlide(group) {
 		state.layout = (animate = false) => {
 			if (group.closest('[inert], [hidden], [aria-hidden="true"]')) { state.positioned = false; return; }
 			const chosen = buttons.find(button => button.hasAttribute('data-active'));
+			if (!chosen && group.clientWidth) { ink.style.clipPath = 'inset(0 100% 0 0)'; state.positioned = false; return; }
 			if (!chosen || !group.clientWidth || !group.clientHeight) { state.positioned = false; return; }
 			const clip = 'inset(' + chosen.offsetTop + 'px ' + Math.max(0, group.clientWidth - chosen.offsetLeft - chosen.offsetWidth) + 'px ' + Math.max(0, group.clientHeight - chosen.offsetTop - chosen.offsetHeight) + 'px ' + chosen.offsetLeft + 'px)';
 			if (ink.style.clipPath === clip && state.positioned) return;

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jpegxl/polyfill reference | jpegxl</title>
+<meta name="description" content="jpegxl/polyfill: null means policy or a timeout prevented detection, not lack of native support.">
+<link rel="canonical" href="https://rapier.website/jxl/docs/polyfill.html">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/jxl/docs/docs.css">
+<script src="/jxl/docs/docs.js" defer></script>
+</head>
+<body>
+<header class="bar"><a class="bar__title" href="/jxl/docs/">jpegxl docs</a><a class="bar__link" href="/jxl">Converter</a></header>
+<main>
+<h1>jpegxl/polyfill</h1>
+<p class="lede">null means policy or a timeout prevented detection, not lack of native support.</p>
+<nav class="contents" aria-label="On this page"><a class="choice" href="#import"><span>Import</span></a><a class="choice" href="#api"><span>API</span></a><a class="choice" href="#types"><span>Types</span></a><a class="choice" href="#errors"><span>Errors</span></a></nav>
+<section id="import">
+<h2>import</h2>
+<div class="code"><pre><code class="language-js">import {install, supportsJXL} from 'jpegxl/polyfill';</code></pre></div><p class="meta">about 21 KB Brotli, about 24 KB gzip. One file, no dependencies.</p>
+</section>
+<section id="api">
+<h2>api</h2>
+<article id="fn-install"><h3>install</h3><p>Shows JPEG XL images where the browser does not: those on the page and those added later. Importing installs nothing. One installation a document: a later call returns it until disconnect(). refresh() rereads the page at once. Options are read once, at the call. Invalid ones reject with JXL_OPTIONS and leave any earlier installation connected.</p><div class="code"><pre><code>function install(options?: PolyfillOptions): Promise&lt;PolyfillController&gt;</code></pre></div><h4>PolyfillOptions</h4><ul class="rows"><li><p><span class="name">document?</span> <span class="type">Document</span></p><p>The document to patch. Default the global one.</p></li><li><p><span class="name">root?</span> <span class="type">Document | Element | ShadowRoot</span></p><p>Where to look for images: a document, element or shadow root. Default the document.</p></li><li><p><span class="name">probeURL?</span> <span class="type">string</span></p><p>A JPEG XL data or image URL the native test loads. Default a built-in one.</p></li><li><p><span class="name">force?</span> <span class="type">boolean</span></p><p>true decodes every image here, even where the browser shows JPEG XL itself. Default false.</p></li><li><p><span class="name">workers?</span> <span class="type">1 | 2 | 3 | 4</span></p><p>Images decoded at once, 1 to 4. Default 2.</p></li><li><p><span class="name">maxDecodedBytes?</span> <span class="type">number</span></p><p>Bytes for decoded images, none by default: when set, each decode, one per worker at once, is bounded by it alone, and the images shown together stay under it. A decode holds about 32 bytes a pixel. A larger picture fails with JXL_DIMENSIONS, naming its size and this limit.</p></li><li><p><span class="name">maxInputBytes?</span> <span class="type">number</span></p><p>Largest file fetched, in bytes. None by default. A larger one fails with JXL_LIMIT.</p></li><li><p><span class="name">rootMargin?</span> <span class="type">string</span></p><p>How far off screen an image starts decoding, in pixels or percent. Default '1000px'.</p></li><li><p><span class="name">workerFactory?</span> <span class="type">(() =&gt; WorkerLike) | undefined</span></p><p>Makes the decode worker. For a bundler or a Content Security Policy that needs your own URL.</p></li><li><p><span class="name">decode?</span> <span class="type">((bytes: Bytes, options: DecodeOptions) =&gt; DecodedImage | PromiseLike&lt;DecodedImage&gt;) | undefined</span></p><p>Your own decoder in place of the package's (a native or a server-side one): it receives owned bytes and may return the decoded image directly or asynchronously.</p></li><li><p><span class="name">onError?</span> <span class="type">((error: unknown, element: Element) =&gt; void) | ((error: unknown, element: Element) =&gt; PromiseLike&lt;void&gt;) | undefined</span></p><p>An image that could not be shown, with its ErrorCode: JXL_IO where the image request failed, JXL_PLATFORM where the page's image policy refuses decoded images or the decoded picture could not be put on screen. A value this callback throws or rejects is reported unchanged through the window's reportError.</p></li></ul></article>
+<article id="fn-supportsJXL"><h3>supportsJXL</h3><p>null means policy or a timeout prevented detection, not lack of native support. A document unable to create images, or a non-string probeURL, refuses JXL_OPTIONS.</p><div class="code"><pre><code>function supportsJXL(document?: Document, probeURL?: string): Promise&lt;boolean | null&gt;</code></pre></div></article>
+</section>
+<section id="types">
+<h2>types</h2>
+<ul class="rows"><li id="type-PolyfillOptions"><p><span class="name">PolyfillOptions</span></p><p>Options for install(). All are optional.</p></li><li id="type-PolyfillController"><p><span class="name">PolyfillController</span></p><p>An image that could not be shown, with its ErrorCode: JXL_IO where the image request failed, JXL_PLATFORM where the page's image policy refuses decoded images or the decoded picture could not be put on screen. A value this callback throws or rejects is reported unchanged through the window's reportError.</p></li><li id="type-CodecError"><p><span class="name">CodecError</span></p></li><li id="type-ErrorCode"><p><span class="name">ErrorCode</span></p><p>The code every refusal carries, by what the caller does next. The call: JXL_OPTIONS (an option is unknown or its value is not allowed). The input: JXL_INPUT (the picture or bytes are missing, empty, not what the call takes, or a file that changed while it was read), JXL_DIMENSIONS (the picture is over maxPixels or the side limit), JXL_JPEG (the bytes are not a JPEG), JXL_DECODE (the file is not a valid JPEG XL), JXL_RECONSTRUCTION (no JPEG reconstruction data), JXL_TARGET (a measured fidelity this version cannot reach), JXL_PLATFORM (an input this realm cannot decode, or a host API this call needs, a missing decoder's message names configureDecoder or the effort that runs here). A bound: JXL_MEMORY (not enough memory for this picture here, or the queue's maxPendingBytes, maxPendingJobs), JXL_LIMIT (a parser's maxInputBytes or maxBytes, a written file over its byte bound, or capture's rectangle budget). The host: JXL_WASM (no WebAssembly with SIMD here), JXL_WEBGPU (webgpu: 'required' and a job this version would run on WebAssembly: efforts 1-6, an exact file, no usable device, a device that failed the job, or a route this version runs on WebAssembly only), JXL_WORKER (the worker could not start, stopped or failed, its message names the fix: a blocked worker-src, a start that timed out), JXL_IO (a Blob or an image request could not be read). The lifecycle: JXL_CLOSED (the module's queue is closed). A job canceled through its signal rejects with that signal's reason, an AbortError DOMException unless you passed one. Not done by this version: JXL_UNSUPPORTED, a valid request or file asking for something this version does not do. The setup commands: JXL_SETUP (<code>add</code> or <code>remove</code> cannot change a project's files safely. Its message names the step to do by hand). Ours: JXL_INTERNAL (a fault in jpegxl itself). A code keeps its meaning through 8.x. A later 8.x may add one.</p></li></ul>
+</section>
+<section id="errors">
+<h2>errors</h2>
+<p>A refusal carries a <code>code</code>. <a href="errors.html">Every code, and what to do</a>.</p>
+</section>
+</main>
+<footer class="foot"><a href="https://github.com/jackskip22/rapier-jxl">GitHub</a><a href="https://www.npmjs.com/package/jpegxl">npm</a><a href="/jxl/docs/">All docs</a></footer>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jpegxl/hdr reference | jpegxl</title>
+<meta name="description" content="jpegxl/hdr: Read an OpenEXR (.exr) or Radiance (.hdr) file.">
+<link rel="canonical" href="https://rapier.website/jxl/docs/hdr.html">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/jxl/docs/docs.css">
+<script src="/jxl/docs/docs.js" defer></script>
+</head>
+<body>
+<header class="bar"><a class="bar__title" href="/jxl/docs/">jpegxl docs</a><a class="bar__link" href="/jxl">Converter</a></header>
+<main>
+<h1>jpegxl/hdr</h1>
+<p class="lede">Read an OpenEXR (.exr) or Radiance (.hdr) file.</p>
+<nav class="contents" aria-label="On this page"><a class="choice" href="#import"><span>Import</span></a><a class="choice" href="#api"><span>API</span></a><a class="choice" href="#types"><span>Types</span></a><a class="choice" href="#errors"><span>Errors</span></a></nav>
+<section id="import">
+<h2>import</h2>
+<div class="code"><pre><code class="language-js">import {read} from 'jpegxl/hdr';</code></pre></div><p class="meta">about 13 KB Brotli, about 14 KB gzip. One file, no dependencies.</p>
+</section>
+<section id="api">
+<h2>api</h2>
+<article id="fn-read"><h3>read</h3><p>Read an OpenEXR (.exr) or Radiance (.hdr) file. Errors carry the encoder's codes: JXL_INPUT (malformed, or a feature named in the message that is not read), JXL_OPTIONS (invalid options), JXL_DIMENSIONS (invalid dimensions or the caller's maxPixels), JXL_MEMORY (host allocation refusal), JXL_IO (file read failure), JXL_PLATFORM (missing host API). OpenEXR: scan-line and tiled files (level 0 of mip and rip maps), the first image part in multi-part files. HALF or FLOAT R, G, B or Y with optional A, and luminance-chroma Y, RY, BY. Other channels are skipped. NONE, RLE, ZIPS, ZIP, PIZ, PXR24, B44, B44A, DWAA and DWAB. Refused by name: HTJ2K, LJ2K and ZSTD compression, deep files, UINT color or alpha, and subsampled color other than 2-by-2 RY/BY with full-size Y. Radiance: RGBE, either Y-row order and either X-column order, new run-length or flat rows. EXPOSURE and COLORCORR are not applied. Refused: XYZE, old run-length rows and X-major files. ZIP data is inflated by the platform's DecompressionStream, so the realm needs it (browsers, workers, Node 18+, Deno, Bun, Cloudflare Workers). A picture the host cannot hold refuses JXL_MEMORY.</p><div class="code"><pre><code>function read(input: Uint8Array | ArrayBuffer | Blob, options?: HdrOptions): Promise&lt;HdrPicture&gt;</code></pre></div><h4>HdrOptions</h4><ul class="rows"><li><p><span class="name">window?</span> <span class="type">'data' | 'display' | undefined</span></p><p>OpenEXR only. 'data' (default) is the pixels the file stores. 'display' is its display window, transparent black where the data window does not reach.</p></li><li><p><span class="name">maxPixels?</span> <span class="type">number</span></p><p>Optional caller ceiling in pixels. A picture above it refuses JXL_DIMENSIONS. Without it, only the host's allocation limits apply.</p></li></ul></article>
+</section>
+<section id="types">
+<h2>types</h2>
+<ul class="rows"><li id="type-HdrPicture"><p><span class="name">HdrPicture</span></p><p>The picture record <code>encode</code> takes, read from a file: RGBA, straight rows, linear light, exact samples. <code>sampleFormat</code> is 'float16' (raw binary16 words in a Uint16Array) when every sample is exactly a half, else 'float32'. A picture without alpha has alpha 1. Nothing is tone-mapped, converted or scaled.</p></li><li id="type-HdrOptions"><p><span class="name">HdrOptions</span></p><p>Number of parts in a multi-part OpenEXR file. The first image part supplies the picture.</p></li><li id="type-CodecError"><p><span class="name">CodecError</span></p></li><li id="type-ErrorCode"><p><span class="name">ErrorCode</span></p><p>The code every refusal carries, by what the caller does next. The call: JXL_OPTIONS (an option is unknown or its value is not allowed). The input: JXL_INPUT (the picture or bytes are missing, empty, not what the call takes, or a file that changed while it was read), JXL_DIMENSIONS (the picture is over maxPixels or the side limit), JXL_JPEG (the bytes are not a JPEG), JXL_DECODE (the file is not a valid JPEG XL), JXL_RECONSTRUCTION (no JPEG reconstruction data), JXL_TARGET (a measured fidelity this version cannot reach), JXL_PLATFORM (an input this realm cannot decode, or a host API this call needs, a missing decoder's message names configureDecoder or the effort that runs here). A bound: JXL_MEMORY (not enough memory for this picture here, or the queue's maxPendingBytes, maxPendingJobs), JXL_LIMIT (a parser's maxInputBytes or maxBytes, a written file over its byte bound, or capture's rectangle budget). The host: JXL_WASM (no WebAssembly with SIMD here), JXL_WEBGPU (webgpu: 'required' and a job this version would run on WebAssembly: efforts 1-6, an exact file, no usable device, a device that failed the job, or a route this version runs on WebAssembly only), JXL_WORKER (the worker could not start, stopped or failed, its message names the fix: a blocked worker-src, a start that timed out), JXL_IO (a Blob or an image request could not be read). The lifecycle: JXL_CLOSED (the module's queue is closed). A job canceled through its signal rejects with that signal's reason, an AbortError DOMException unless you passed one. Not done by this version: JXL_UNSUPPORTED, a valid request or file asking for something this version does not do. The setup commands: JXL_SETUP (<code>add</code> or <code>remove</code> cannot change a project's files safely. Its message names the step to do by hand). Ours: JXL_INTERNAL (a fault in jpegxl itself). A code keeps its meaning through 8.x. A later 8.x may add one.</p></li></ul>
+</section>
+<section id="errors">
+<h2>errors</h2>
+<p>A refusal carries a <code>code</code>. <a href="errors.html">Every code, and what to do</a>.</p>
+</section>
+</main>
+<footer class="foot"><a href="https://github.com/jackskip22/rapier-jxl">GitHub</a><a href="https://www.npmjs.com/package/jpegxl">npm</a><a href="/jxl/docs/">All docs</a></footer>
+</body>
+</html>

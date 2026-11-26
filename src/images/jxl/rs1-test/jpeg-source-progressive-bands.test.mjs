@@ -137,7 +137,7 @@ if (process.argv[2] === 'resume') {
   });
   test('the progressive pixel reference preserves the ordinary EXIF and P3 receipt', async () => {
     const picture = await ownDecoder.readJPEG(original, {maxPixels: 40000000});
-    const result = await encode({data: picture.data, width: picture.width, height: picture.height, colorSpace: picture.colorSpace},
+    const result = await encode({data: picture.data, width: picture.width, height: picture.height, colorEncoding: picture.colorEncoding},
       {fidelity: 'exact', effort: 1, webgpu: false});
     let strips = 0;
     const journal = Object.assign(async request => { if (request.unitDone === 'reference-scan-coefficients') strips++; }, {join: joinedBytes, tools});

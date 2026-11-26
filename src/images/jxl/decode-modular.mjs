@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {readEntropy, streamSizes, writeStream, syncStream} from './decode-entropy.mjs';
+import {readEntropy, modelSizes, windowBytes, writeModel, writeBlock, syncStream, STREAM_BLOCK_BYTES, HISTORY_BYTES} from './decode-entropy.mjs';
 import {streamKernels} from './decode-kernels.mjs';
 import {requireDecode, unpackSigned} from './decode-bits.mjs';
 import {DEFAULT_WEIGHTED, RECIPROCAL} from './decode-modular-weights.mjs';
@@ -8,28 +8,23 @@ import {part} from './decode-parts.mjs';
 const POWERS = [1]; for (let i = 1; i <= 32; i++) POWERS.push(POWERS[i - 1] * 2);
 const DEFAULT_MAX_SAMPLES = 134217728;
 const DEFAULT_MAX_WORK = 536870912;
-const EMPTY_I32 = new Int32Array(0);
-function emptyRefList() {
-  const a = [EMPTY_I32];
-  a.length = 0;
-  return a;
-}
+const EMPTY_I32 = /* @__PURE__ */ new Int32Array(0);
 function workLimit(modularWork, remaining) {
   modularWork.remaining = remaining;
-  throw Object.assign(new RangeError('JPEG XL Modular work exceeds the limit.'), {code: 'JXL_LIMIT'});
+  throw Object.assign(new RangeError('Modular work: over maxPixels budget'), {code: 'JXL_LIMIT'});
 }
 
 export function readMATree(r, {maxNodes = 1048576, maxDepth = 2048} = {}) {
-  requireDecode(Number.isSafeInteger(maxNodes) && maxNodes > 0 && maxNodes <= 1048576, 'Invalid MA tree bound.', r);
+  requireDecode(Number.isSafeInteger(maxNodes) && maxNodes > 0 && maxNodes <= 1048576, 'MA tree bound', r);
   const coding = readEntropy(r, 6, {values: maxNodes * 5, distanceMultiplier: 0});
   const nodes = [{depth: 0}];
   let leaves = 0, weighted = false;
   for (let i = 0; i < nodes.length; i++) {
-    requireDecode(nodes.length <= maxNodes && nodes[i].depth <= maxDepth, 'JPEG XL MA tree exceeds its bound.', r);
+    requireDecode(nodes.length <= maxNodes && nodes[i].depth <= maxDepth, 'MA tree: over limit', r);
     const node = nodes[i], property = coding.read(1);
     if (property) {
       node.property = property - 1; node.value = unpackSigned(coding.read(0));
-      requireDecode(node.property <= 0xffffffff, 'Invalid MA property.', r);
+      requireDecode(node.property <= 255, 'MA property', r);
       node.left = nodes.length; node.right = nodes.length + 1;
       nodes.push({depth: node.depth + 1}, {depth: node.depth + 1});
       weighted ||= node.property === 15;
@@ -37,7 +32,7 @@ export function readMATree(r, {maxNodes = 1048576, maxDepth = 2048} = {}) {
       node.property = -1; node.context = leaves++; node.predictor = coding.read(2);
       node.offset = unpackSigned(coding.read(3));
       const exponent = coding.read(4), mantissa = coding.read(5);
-      requireDecode(node.predictor <= 13 && exponent <= 30 && mantissa <= POWERS[31 - exponent] - 2, 'Invalid MA leaf.', r);
+      requireDecode(node.predictor <= 13 && exponent <= 30 && mantissa <= POWERS[31 - exponent] - 2, 'MA leaf', r);
       node.multiplier = (mantissa + 1) * POWERS[exponent];
       weighted ||= node.predictor === 6;
     }
@@ -52,9 +47,9 @@ function channelSamples(channels, maximum) {
   for (const c of channels) {
     requireDecode(Number.isSafeInteger(c.width) && Number.isSafeInteger(c.height) && c.width >= 0 && c.height >= 0 &&
       Number.isInteger(c.hshift) && Number.isInteger(c.vshift) && c.hshift >= -1 && c.vshift >= -1 && c.hshift <= 31 && c.vshift <= 31,
-      'Invalid Modular channel dimensions.');
+      'Modular channel dimensions');
     const samples = c.width * c.height;
-    if (!Number.isSafeInteger(samples) || samples > maximum - total) throw Object.assign(new RangeError('JPEG XL Modular samples exceed the memory limit.'), {code: 'JXL_MEMORY'});
+    if (!Number.isSafeInteger(samples) || samples > maximum - total) throw Object.assign(new RangeError('Modular samples: over limit'), {code: 'JXL_MEMORY'});
     total += samples;
   }
   return total;
@@ -69,7 +64,21 @@ export function localTree(nodes) {
     if (prop >= 0) { value[i] = node.value; left[i] = node.left; right[i] = node.right; }
     else { context[i] = node.context; predictor[i] = node.predictor; offset[i] = node.offset; multiplier[i] = node.multiplier; }
   }
-  return {property, value, left, right, context, predictor, offset, multiplier, tables: new Map(), references: nodes.some(node => node.property >= 16)};
+  return {property, value, left, right, context, predictor, offset, multiplier, tables: new Map(), weighted: new Map(), references: nodes.some(node => node.property >= 16)};
+}
+
+function subtreeWeighted(tree, root) {
+  if (!tree.weighted.has(root)) {
+    const {property, predictor, left, right} = tree, stack = [root];
+    let used = false;
+    while (stack.length && !used) {
+      const node = stack.pop(), prop = property[node];
+      if (prop < 0) used = predictor[node] === 6;
+      else { used = prop === 15; stack.push(left[node], right[node]); }
+    }
+    tree.weighted.set(root, used);
+  }
+  return tree.weighted.get(root);
 }
 
 function propertyPlan(tree, root) {
@@ -101,33 +110,48 @@ function propertyTable(tree, root, samples) {
   return plan;
 }
 
+let cachedStreamTree = null;
 function streamChannels(entropy, tree, channels) {
-  const kernels = streamKernels(), nodes = tree.local.property.length, stream = streamSizes(entropy);
+  const kernels = streamKernels(), m = entropy.model, nodes = tree.local.property.length, model = modelSizes(m);
   let stride = 2;
   for (const c of channels) stride = Math.max(stride, c.width + 2);
-  const sizes = [...stream, nodes * 32, 4096 * 8, 44, 5 * stride * 8, 65 * 4, 128, channels.length * 4, ...channels.map(c => c.width * c.height * 4)];
+  const sizes = [...model, nodes * 32, 65 * 4, STREAM_BLOCK_BYTES, windowBytes(entropy), m.lz ? HISTORY_BYTES : 0,
+    4096 * 8, 44, 5 * stride * 8, 128, channels.length * 4, ...channels.map(c => c.width * c.height * 4)];
   let end = kernels.arena;
   for (const size of sizes) {
-    requireDecode(Number.isSafeInteger(size) && size >= 0, 'Invalid Modular channel dimensions.');
+    requireDecode(Number.isSafeInteger(size) && size >= 0, 'Modular channel dimensions');
     end += Math.ceil(size / 16) * 16;
-    if (end > 0x80000000) throw Object.assign(new RangeError('JPEG XL kernel memory request exceeds its limit.'), {code: 'JXL_MEMORY'});
+    if (end > 0x80000000) throw Object.assign(new RangeError('kernel memory: over 2 GiB'), {code: 'JXL_MEMORY'});
   }
-  const at = kernels.reserve(sizes), [nodeAt, leafAt, parametersAt, weightedAt, reciprocalsAt, io, refsAt] = at.slice(stream.length, stream.length + 7);
-  const block = writeStream(kernels, entropy, at.slice(0, stream.length)), i32 = kernels.i32;
-  const {property, value, left, right, context, predictor, offset, multiplier} = tree.local;
-  for (let k = 0, p = nodeAt / 4; k < nodes; k++, p += 8) {
-    i32[p] = property[k]; i32[p + 1] = value[k]; i32[p + 2] = left[k]; i32[p + 3] = right[k];
-    i32[p + 4] = context[k]; i32[p + 5] = predictor[k]; i32[p + 6] = offset[k]; i32[p + 7] = multiplier[k];
+  const prevEpoch = kernels.epoch, prevBuffer = kernels.buffer;
+  const at = kernels.reserve(sizes), i32 = kernels.i32;
+  const [nodeAt, reciprocalsAt, blockAt, bytesAt, historyAt, leafAt, parametersAt, weightedAt, io, refsAt] = at.slice(model.length, model.length + 10);
+  let modelAddrs;
+  if (cachedStreamTree && cachedStreamTree.tree === tree && cachedStreamTree.buffer === prevBuffer && cachedStreamTree.buffer === kernels.buffer && cachedStreamTree.epoch === prevEpoch) {
+    modelAddrs = cachedStreamTree.modelAddrs;
+    cachedStreamTree.epoch = kernels.epoch;
+  } else {
+    modelAddrs = writeModel(kernels, m, at.slice(0, model.length));
+    const {property, value, left, right, context, predictor, offset, multiplier} = tree.local;
+    for (let k = 0, p = nodeAt / 4; k < nodes; k++, p += 8) {
+      i32[p] = property[k]; i32[p + 1] = value[k]; i32[p + 2] = left[k]; i32[p + 3] = right[k];
+      i32[p + 4] = context[k]; i32[p + 5] = predictor[k]; i32[p + 6] = offset[k]; i32[p + 7] = multiplier[k];
+    }
+    new Uint32Array(kernels.buffer, reciprocalsAt, 65).set(RECIPROCAL);
+    cachedStreamTree = {tree, buffer: kernels.buffer, epoch: kernels.epoch, modelAddrs};
   }
-  new Uint32Array(kernels.buffer, reciprocalsAt, 65).set(RECIPROCAL);
-  return {kernels, i32, block, samples: at.slice(stream.length + 7), nodeAt, leafAt, parametersAt, weightedAt, reciprocalsAt, io, refsAt, stride};
+  const block = writeBlock(kernels, entropy, blockAt, bytesAt, modelAddrs, historyAt);
+  return {kernels, i32, block, samples: at.slice(model.length + 10), nodeAt, leafAt, parametersAt, weightedAt, reciprocalsAt, io, refsAt, stride};
 }
+
 function kernelLocal(K, channel, samples, referencesAt, referenceCount, tree, root, parameters, channelIndex, streamIndex, remaining) {
   const {kernels, i32} = K, width = channel.width, height = channel.height;
   const table = propertyTable(tree.local, root, width * height);
   if (table) { i32.set(table.leaf, K.leafAt / 4); i32.set(table.depth, K.leafAt / 4 + 4096); }
-  if (parameters) i32.set(parameters, K.parametersAt / 4);
-  i32.fill(0, K.weightedAt / 4, K.weightedAt / 4 + 10 * K.stride);
+  if (parameters) {
+    i32.set(parameters, K.parametersAt / 4);
+    i32.fill(0, K.weightedAt / 4, K.weightedAt / 4 + 10 * K.stride);
+  }
   const io = K.io / 4;
   i32.fill(0, io, io + 32);
   i32.set([samples, width, height, K.nodeAt, root, table ? K.leafAt : 0, K.leafAt + 4096 * 4, table?.tested ?? 0, table?.low ?? 0, table?.high ?? 0,
@@ -138,6 +162,7 @@ function kernelLocal(K, channel, samples, referencesAt, referenceCount, tree, ro
 }
 
 export function decodeLocal(channel, tree, root, parameters, channelIndex, streamIndex, entropy, remaining, modularWork, references = []) {
+  tree.weighted ??= new Map();
   const wrapped = {local: tree}, shapes = [...references.map(data => ({width: channel.width, height: channel.height, data})), channel];
   const K = streamChannels(entropy, wrapped, shapes);
   references.forEach((data, k) => K.i32.set(data, K.samples[k] / 4));
@@ -149,7 +174,49 @@ export function decodeLocal(channel, tree, root, parameters, channelIndex, strea
   return result.remaining;
 }
 
-function decodeChannels(r, channels, tree, parameters, streamIndex, modularWork) {
+function tryConstantChannels(channels, nodes, entropy, streamIndex, remaining, modularWork, deferData = false) {
+  const m = entropy.model;
+  if (entropy.left !== 0 || (!m.prefix && (entropy.state === null || entropy.state < 65536))) return false;
+  let steps = 0;
+  const constants = new Int32Array(channels.length);
+  for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
+    const count = channels[channelIndex].width * channels[channelIndex].height;
+    if (!count) continue;
+    let rootIndex = 0;
+    while (nodes[rootIndex].property === 0 || nodes[rootIndex].property === 1) {
+      steps++;
+      const root = nodes[rootIndex];
+      rootIndex = (root.property === 0 ? channelIndex : streamIndex) > root.value ? root.left : root.right;
+    }
+    const leaf = nodes[rootIndex];
+    if (leaf.property >= 0 || leaf.context < 0 || leaf.context >= m.contexts) return false;
+    const cluster = m.map[leaf.context], code = m.codes[cluster], cfg = m.configs[cluster];
+    if (code.single < 0 || code.single >= cfg.fastLimit) return false;
+    const val = (leaf.offset + Math.imul(unpackSigned(code.single), leaf.multiplier)) | 0;
+    if (leaf.predictor !== 0 && (leaf.predictor === 6 || val !== 0)) return false;
+    constants[channelIndex] = val;
+  }
+  if (remaining - steps < 0) return false;
+  modularWork.remaining = remaining - steps;
+  for (let c = 0; c < channels.length; c++) {
+    const channel = channels[c], count = channel.width * channel.height, val = constants[c];
+    channel.decoded = count;
+    if (deferData) {
+      channel.data = EMPTY_I32;
+    } else {
+      const data = new Int32Array(count);
+      if (count && val !== 0) data.fill(val);
+      channel.data = data;
+    }
+    channel.constant = val;
+    entropy.remaining -= count;
+    entropy.position += count;
+  }
+  entropy.finish();
+  return true;
+}
+
+function decodeChannels(r, channels, tree, parameters, streamIndex, modularWork, deferData = false) {
   if (!channels.length) return;
   let values = 0, distanceMultiplier = 0;
   for (const c of channels) { values += c.width * c.height; distanceMultiplier = Math.max(distanceMultiplier, c.width); }
@@ -158,8 +225,10 @@ function decodeChannels(r, channels, tree, parameters, streamIndex, modularWork)
   if (remaining < 0) workLimit(modularWork, remaining);
   const entropy = tree.entropy.start(r, {values, distanceMultiplier});
   entropy.begin();
-  tree.local ??= localTree(tree.nodes);
-  const K = streamChannels(entropy, tree, channels), nodes = tree.nodes;
+  const nodes = tree.nodes;
+  if (tryConstantChannels(channels, nodes, entropy, streamIndex, remaining, modularWork, deferData)) return;
+  tree.local ??= localTree(nodes);
+  const K = streamChannels(entropy, tree, channels);
   const shapes = new Map(), lists = new Int32Array(channels.length);
   channels.forEach((c, i) => {
     const key = c.width + ',' + c.height + ',' + c.hshift + ',' + c.vshift;
@@ -183,7 +252,8 @@ function decodeChannels(r, channels, tree, parameters, streamIndex, modularWork)
       const root = nodes[rootIndex];
       rootIndex = (root.property === 0 ? channelIndex : streamIndex) > root.value ? root.left : root.right;
     }
-    ({remaining, fault} = kernelLocal(K, channel, K.samples[channelIndex], shape.at, tree.local.references ? shape.seen : 0, tree, rootIndex, tree.weighted ? parameters : null, channelIndex, streamIndex, remaining));
+    const useWeighted = tree.weighted && subtreeWeighted(tree.local, rootIndex);
+    ({remaining, fault} = kernelLocal(K, channel, K.samples[channelIndex], shape.at, tree.local.references ? shape.seen : 0, tree, rootIndex, useWeighted ? parameters : null, channelIndex, streamIndex, remaining));
     shape.seen++;
     modularWork.remaining = remaining;
   }
@@ -194,12 +264,12 @@ function decodeChannels(r, channels, tree, parameters, streamIndex, modularWork)
 }
 
 export function createModular(r, inputChannels, options = {}) {
-  const {globalTree, groupDim = 256, bitDepth = 8, maxSamples = DEFAULT_MAX_SAMPLES, maxModularWork = DEFAULT_MAX_WORK} = options;
-  requireDecode(Number.isSafeInteger(maxSamples) && maxSamples >= 0 && maxSamples <= 2147483647, 'Invalid Modular memory bound.');
-  requireDecode(Number.isSafeInteger(maxModularWork) && maxModularWork >= 0, 'Invalid Modular work bound.');
+  const {globalTree, groupDim = 256, bitDepth = 8, maxSamples = DEFAULT_MAX_SAMPLES, maxModularWork = DEFAULT_MAX_WORK, deferConstantData = false, deferConstantFill = false} = options;
+  requireDecode(Number.isSafeInteger(maxSamples) && maxSamples >= 0 && maxSamples <= 2147483647, 'maxSamples: integer 0-2147483647');
+  requireDecode(Number.isSafeInteger(maxModularWork) && maxModularWork >= 0, 'maxModularWork: nonnegative integer');
   const modularWork = options.modularWork ?? {remaining: maxModularWork};
-  requireDecode(typeof modularWork === 'object' && Number.isSafeInteger(modularWork.remaining) && modularWork.remaining >= 0, 'Invalid shared Modular work budget.');
-  requireDecode(Number.isInteger(bitDepth) && bitDepth >= 1 && bitDepth <= 32, 'Invalid Modular bit depth.');
+  requireDecode(typeof modularWork === 'object' && Number.isSafeInteger(modularWork.remaining) && modularWork.remaining >= 0, 'modularWork: {remaining}');
+  requireDecode(Number.isInteger(bitDepth) && bitDepth >= 1 && bitDepth <= 32, 'bitDepth: integer 1-32');
   const channels = inputChannels.map(c => ({width: c.width, height: c.height, hshift: c.hshift ?? 0, vshift: c.vshift ?? 0, data: EMPTY_I32, decoded: 0, regions: null}));
   const size = list => channelSamples(list, maxSamples);
   size(channels);
@@ -214,37 +284,38 @@ export function createModular(r, inputChannels, options = {}) {
       modularWork.remaining = remaining;
     };
     if (count) ({transforms, meta} = part('transforms').readModularTransforms(r, channels, count, parameters, size, chargeTransform));
-    if (useGlobal) requireDecode(!!tree, 'JPEG XL Modular stream has no global tree.', r);
+    if (useGlobal) requireDecode(!!tree, 'missing global MA tree', r);
     else tree = readMATree(r, {maxNodes: Math.min(1048576, 1024 + size(channels))});
   }
   const region = options.region && transforms.length <= 1 && transforms.every(t => t.type === 0 || t.type === 1 && t.predictor === 0) &&
     channels.slice(meta).every(c => c.hshift === 0 && c.vshift === 0) ? options.region : null;
   let globalCount = 0, closed = false;
-  const admitOpen = () => requireDecode(!closed, 'Modular image has already been finished.');
+  const admitOpen = () => requireDecode(!closed, 'Modular: already finished');
+  const deferStreamConstants = deferConstantData || deferConstantFill;
   const state = {
     channels, transforms, metaChannels: meta, tree, groupDim, bitDepth, modularWork, region,
     decodeAll(reader, streamIndex = 0) {
       admitOpen();
-      decodeChannels(reader, channels, tree, parameters, streamIndex, modularWork);
+      decodeChannels(reader, channels, tree, parameters, streamIndex, modularWork, deferStreamConstants);
       globalCount = channels.length;
       return state;
     },
     decodeGlobal(reader, streamIndex = 0) {
       admitOpen();
-      requireDecode(globalCount === 0, 'Modular global stream was already decoded.');
+      requireDecode(globalCount === 0, 'duplicate Modular global stream');
       while (globalCount < channels.length && (globalCount < meta || channels[globalCount].width <= groupDim && channels[globalCount].height <= groupDim)) globalCount++;
-      if (globalCount) decodeChannels(reader, channels.slice(0, globalCount), tree, parameters, streamIndex, modularWork);
+      if (globalCount) decodeChannels(reader, channels.slice(0, globalCount), tree, parameters, streamIndex, modularWork, deferStreamConstants);
       else if (channels.length) { const entropy = tree.entropy.start(reader, {values: 0}); entropy.begin(); entropy.finish(); }
       return state;
     },
     decodeGroup(reader, {x, y, width, height, minShift = 0, maxShift = 3, lf = false, streamIndex = 0}) {
       admitOpen();
-      requireDecode([x, y, width, height].every(n => Number.isSafeInteger(n) && n >= 0), 'Invalid Modular group region.');
+      requireDecode([x, y, width, height].every(n => Number.isSafeInteger(n) && n >= 0), 'Modular group region');
       const selection = [], destinations = [];
       for (let i = globalCount; i < channels.length; i++) {
         const c = channels[i], shift = Math.min(c.hshift, c.vshift);
         if (lf ? shift < 3 : shift < minShift || shift >= maxShift || shift >= 3) continue;
-        requireDecode(c.hshift >= 0 && c.vshift >= 0, 'A Modular meta channel escaped the global stream.');
+        requireDecode(c.hshift >= 0 && c.vshift >= 0, 'meta channel outside global stream');
         const scaleX = POWERS[c.hshift], scaleY = POWERS[c.vshift];
         const left = Math.floor(x / scaleX), top = Math.floor(y / scaleY);
         const right = Math.min(c.width, Math.ceil((x + width) / scaleX)), bottom = Math.min(c.height, Math.ceil((y + height) / scaleY));
@@ -254,38 +325,88 @@ export function createModular(r, inputChannels, options = {}) {
         destinations.push({channel: c, left, top, width: w, height: h});
       }
       if (!selection.length) return state;
-      const decoded = decodeModularStream(reader, selection, {globalTree: tree, groupDim, bitDepth, maxSamples, maxModularWork, modularWork, streamIndex});
+      const decoded = decodeModularStream(reader, selection, {globalTree: tree, groupDim, bitDepth, maxSamples, maxModularWork, modularWork, streamIndex, deferConstantData: true});
       for (let i = 0; i < destinations.length; i++) {
         const {channel: c, left, top, width: w, height: h} = destinations[i];
         c.regions ??= [];
-        requireDecode(!c.regions.some(q => left < q[0] + q[2] && left + w > q[0] && top < q[1] + q[3] && top + h > q[1]), 'Overlapping Modular groups.');
+        const prevRegions = c.regions.length;
+        requireDecode(!c.regions.some(q => left < q[0] + q[2] && left + w > q[0] && top < q[1] + q[3] && top + h > q[1]), 'overlapping Modular groups');
         c.regions.push([left, top, w, h]);
         const area = region ?? {x: 0, y: 0, width: c.width, height: c.height};
         const x0 = Math.max(left, area.x), y0 = Math.max(top, area.y), x1 = Math.min(left + w, area.x + area.width), y1 = Math.min(top + h, area.y + area.height);
+        const added = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+        const dec = decoded[i];
+        if (!region && prevRegions === 0 && left === 0 && top === 0 && w === c.width && h === c.height) {
+          c.data = dec.data;
+          if (dec.constant !== undefined) c.constant = dec.constant;
+          c.decoded = added;
+          continue;
+        }
+        if (!region && dec.constant !== undefined && (prevRegions === 0 || c.constant === dec.constant)) {
+          c.constant = dec.constant;
+          c.decoded = (c.decoded ?? 0) + added;
+          continue;
+        }
+        if (c.constant !== undefined) {
+          c.data = new Int32Array(area.width * area.height);
+          if (c.constant !== 0) {
+            for (let rIdx = 0; rIdx < prevRegions; rIdx++) {
+              const [pl, pt, pw, ph] = c.regions[rIdx];
+              if (pl === 0 && pw === area.width) c.data.fill(c.constant, pt * area.width, (pt + ph) * area.width);
+              else for (let row = pt; row < pt + ph; row++) c.data.fill(c.constant, row * area.width + pl, row * area.width + pl + pw);
+            }
+          }
+          delete c.constant;
+        }
         if (!c.data.length) c.data = new Int32Array(area.width * area.height);
-        for (let row = y0; row < y1; row++) c.data.set(decoded[i].data.subarray((row - top) * w + x0 - left, (row - top) * w + x1 - left), (row - area.y) * area.width + x0 - area.x);
-        c.decoded = (c.decoded ?? 0) + Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+        if (dec.constant !== undefined) {
+          if (dec.constant !== 0 && x1 > x0 && y1 > y0) {
+            if (x0 === area.x && x1 === area.x + area.width) c.data.fill(dec.constant, (y0 - area.y) * area.width, (y1 - area.y) * area.width);
+            else for (let row = y0; row < y1; row++) c.data.fill(dec.constant, (row - area.y) * area.width + x0 - area.x, (row - area.y) * area.width + x1 - area.x);
+          }
+        } else if (x1 > x0 && y1 > y0) {
+          if (x0 === area.x && x1 === area.x + area.width && left === x0 && w === area.width)
+            c.data.set(dec.data.subarray((y0 - top) * w, (y1 - top) * w), (y0 - area.y) * area.width);
+          else for (let row = y0; row < y1; row++)
+            c.data.set(dec.data.subarray((row - top) * w + x0 - left, (row - top) * w + x1 - left), (row - area.y) * area.width + x0 - area.x);
+        }
+        c.decoded = (c.decoded ?? 0) + added;
       }
       return state;
     },
     finish() {
       admitOpen();
+      const hasTransforms = transforms.length > 0;
       for (let i = 0; i < channels.length; i++) {
         const c = channels[i], cropped = region && i >= meta, global = i < globalCount;
         const count = cropped && !global ? region.width * region.height : c.width * c.height;
-        requireDecode((c.decoded ?? 0) === count, 'JPEG XL Modular image has missing groups.');
+        requireDecode((c.decoded ?? 0) === count, 'missing Modular groups');
         if (!c.data) c.data = EMPTY_I32;
         if (cropped) {
-          if (global) {
-            const data = new Int32Array(region.width * region.height);
+          const outCount = region.width * region.height;
+          if (c.constant !== undefined) {
+            const data = new Int32Array(outCount);
+            if (c.constant !== 0) data.fill(c.constant);
+            c.data = data;
+          } else if (global) {
+            const data = new Int32Array(outCount);
             for (let row = 0; row < region.height; row++) data.set(c.data.subarray((region.y + row) * c.width + region.x, (region.y + row) * c.width + region.x + region.width), row * region.width);
             c.data = data;
           }
           c.width = region.width; c.height = region.height;
+          delete c.constant;
+        } else if (c.constant !== undefined) {
+          if (deferConstantData && !hasTransforms) {
+            c.data = EMPTY_I32;
+          } else {
+            if (c.data.length < count) c.data = new Int32Array(count);
+            if (c.constant !== 0 && (hasTransforms || !deferConstantFill)) c.data.fill(c.constant);
+          }
         }
       }
       closed = true;
       const inverses = region ? transforms.map(t => t.type === 1 ? {...t, original: t.original.map(c => ({...c, width: region.width, height: region.height}))} : t) : transforms;
+      if (inverses.length) for (const c of channels) delete c.constant;
       return inverses.length ? part('transforms').inverseModularTransforms(channels, inverses, bitDepth) : channels;
     },
   };

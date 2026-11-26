@@ -1,3 +1,4 @@
+import {jpegKernels} from './jpeg-kernels.mjs';
 // SPDX-License-Identifier: MIT
 import {readAll, journaling, journalJoin, journalTool} from './step-journal.mjs';
 import {BitWriter, floorLog2, ceilLog2, complete} from './bits.mjs';
@@ -6,16 +7,16 @@ import {fault} from './fault.mjs';
 import {populationBits} from './entropy.mjs';
 import {INSERT_BITS, COPY_BITS, INSERT_GROUP, COPY_GROUP, INSERT_BASE, COPY_BASE, literalContext, brotliReader} from './brotli-read.mjs';
 
-const invalid = message => fault('JXL_INPUT', 'Portable Brotli: ' + message);
-const need = (value, message = 'invalid compressed data.') => { if (!value) throw invalid(message); };
-const tooLarge = () => fault('JXL_SIZE', 'The Brotli result exceeds maxOutputLength.');
+const invalid = message => fault('JXL_INPUT', 'Brotli: ' + message);
+const need = (value, message = 'corrupt stream') => { if (!value) throw invalid(message); };
+const tooLarge = () => fault('JXL_SIZE', 'Brotli: over maxOutputLength');
 const COMMAND_GROUP = [128,192,384,256,320,512,448,576,640];
 
 function admission(bytes, options) {
-  if (!(bytes instanceof Uint8Array)) throw invalid('bytes are a Uint8Array.');
-  if (!options || typeof options !== 'object' || Array.isArray(options)) throw invalid('options are an object.');
-  const maximum = options.maxOutputLength ?? 67108864;
-  if (!Number.isSafeInteger(maximum) || maximum < 0) throw invalid('maxOutputLength is a nonnegative safe integer.');
+  if (!(bytes instanceof Uint8Array)) throw invalid('bytes: Uint8Array');
+  if (!options || typeof options !== 'object' || Array.isArray(options)) throw invalid('options: object');
+  const maximum = options.maxOutputLength ?? Number.MAX_SAFE_INTEGER;
+  if (!Number.isSafeInteger(maximum) || maximum < 0) throw invalid('maxOutputLength: nonnegative integer');
   return maximum;
 }
 function lengthCode(length, base) {
@@ -177,6 +178,19 @@ function bestCommands(data, start, end, found, ring, cache) {
   return best;
 }
 
+function parsePrices(plan) {
+  const prices = new Uint8Array(1284).fill(15);
+  for (const [at, code] of [[0, plan.literal], [256, plan.command], [960, plan.distance]]) {
+    for (let i = 0; i < code.lengths.length; i++) if (code.lengths[i]) prices[at + i] = code.lengths[i];
+    if (code.simple?.length === 1) prices[at + code.simple[0]] = 0;
+  }
+  new Uint32Array(prices.buffer, 1024, 24).set(INSERT_BASE);
+  new Uint32Array(prices.buffer, 1120, 24).set(COPY_BASE);
+  prices.set(INSERT_BITS, 1216); prices.set(COPY_BITS, 1240);
+  new Uint16Array(prices.buffer, 1264, 9).set(COMMAND_GROUP);
+  return prices;
+}
+
 function blockHeader(writer, length, uncompressed) {
   writer.write(1, 0); writer.write(2, 0); writer.write(16, length - 1); writer.write(1, uncompressed);
 }
@@ -185,34 +199,17 @@ function histogramBits(a, b) {
   for (let s = 0; s < 256; s++) { const f = b ? a[s] + b[s] : a[s]; if (f) { total += f; bits -= populationBits(f); used++; } }
   return bits + populationBits(total) + (used > 1 ? 16 + 5 * used : 8);
 }
-function modeModel(data, commands, kernels, mode) {
+const modeModel = (typeof __RAPIER_JXL_METADATA__ !== 'undefined' && __RAPIER_JXL_METADATA__ === true) ? null : function modeModel(data, commands, kernels, mode) {
   const histograms = Array.from({length: 64}, () => new Uint32Array(256));
   for (const command of commands) for (let at = command.start; at < command.start + command.insert; at++)
     histograms[literalContext(mode, at ? data[at - 1] : 0, at > 1 ? data[at - 2] : 0)][data[at]]++;
   const clusters = histograms.map((freqs, i) => ({freqs, contexts: [i], bits: histogramBits(freqs)})).filter(c => c.freqs.some(Boolean));
   if (clusters.length < 2) return null;
-  let kept;
-  if (kernels) kept = kernels.literalClusters(clusters);
-  else {
-    const n = clusters.length, gains = new Float64Array(n * n), alive = new Uint8Array(n).fill(1);
-    const gain = (i, j) => clusters[i].bits + clusters[j].bits - histogramBits(clusters[i].freqs, clusters[j].freqs);
-    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) gains[i * n + j] = gain(i, j);
-    let count = n;
-    while (count > 1) {
-      let pi = -1, pj = -1, pg = -Infinity;
-      for (let i = 0; i < n; i++) if (alive[i]) for (let j = i + 1; j < n; j++) if (alive[j] && gains[i * n + j] > pg) { pg = gains[i * n + j]; pi = i; pj = j; }
-      if (pg <= 0 && count <= 256) break;
-      const a = clusters[pi], b = clusters[pj];
-      for (let s = 0; s < 256; s++) a.freqs[s] += b.freqs[s];
-      a.contexts.push(...b.contexts); a.bits = histogramBits(a.freqs); alive[pj] = 0; count--;
-      for (let k = 0; k < n; k++) if (alive[k] && k !== pi) gains[Math.min(k, pi) * n + Math.max(k, pi)] = gain(Math.min(k, pi), Math.max(k, pi));
-    }
-    kept = clusters.filter((_, i) => alive[i]);
-  }
+  const kept = (kernels ?? ((typeof __RAPIER_JXL_METADATA__ !== 'undefined' && __RAPIER_JXL_METADATA__ === true) ? null : jpegKernels())).literalClusters(clusters);
   const map = new Uint8Array(64);
   kept.forEach((cluster, k) => { for (const c of cluster.contexts) map[c] = k; });
   return {mode, map, bits: kept.reduce((total, c) => total + c.bits, 0) + (kept.length > 1 ? 64 * Math.max(1, ceilLog2(kept.length)) : 0), trees: kept.length};
-}
+};
 function literalModel(data, commands, kernels, modes, models = null) {
   const single = new Uint32Array(256);
   for (const command of commands) for (let at = command.start; at < command.start + command.insert; at++) single[data[at]]++;
@@ -311,6 +308,10 @@ const decodedBytes = parts => {
 const joinDecoded = parts => journaling() ? journalJoin(parts) : decodedBytes(parts);
 
 export const compressBrotli = (bytes, options = {}) => complete(compressBrotliSteps(bytes, options));
+const placed = (bytes, from, to) => {
+  if (ArrayBuffer.isView(bytes)) return bytes;
+  const out = new Uint8Array(bytes.length); out.set(bytes.subarray(from, Math.min(bytes.length, to + 8)), from); return out;
+};
 const ran = function* (name, run) { return run(); };
 const MATCH_BYTES = 16384;
 export function* compressBrotliSteps(bytes, options = {}, unit = ran) {
@@ -336,12 +337,13 @@ export function* compressBrotliSteps(bytes, options = {}, unit = ran) {
     let at = start, history = ring, part;
     for (let to = start + MATCH_BYTES; at < end; to += MATCH_BYTES) {
       ({at, found: part, history} = yield* unit('brotli-matches', () => {
-        if (matched !== at) {
-          matches = matcher(bytes, windowBits, cache, thorough);
+        const data = placed(bytes, Math.max(0, at - span), end);
+        if (matched !== at || data !== bytes) {
+          matches = matcher(data, windowBits, cache, thorough);
           matches.fill(Math.max(0, at - span), at);
         }
         matches.history = history.slice();
-        const list = [], next = matchesFor(bytes, at, Math.min(end, to), end, matches, blockCache, thorough && blockCache, list);
+        const list = [], next = matchesFor(data, at, Math.min(end, to), end, matches, blockCache, thorough && blockCache, list);
         matched = next;
         return {at: next, found: Int32Array.from(list), history: matches.history.slice()};
       }));
@@ -351,12 +353,27 @@ export function* compressBrotliSteps(bytes, options = {}, unit = ran) {
     let models = null;
     if (!(typeof __RAPIER_JXL_METADATA__ !== 'undefined' && __RAPIER_JXL_METADATA__ === true) && blockCache) {
       models = [];
-      for (const pair of [[0, 1], [2, 3]]) models.push(...yield* unit('brotli-modes', () => { const spans = literalSpans(foundOf(), start, end); return pair.map(mode => modeModel(bytes, spans, options.kernels, mode)); }));
+      for (const pair of [[0, 1], [2, 3]]) models.push(...yield* unit('brotli-modes', () => { const spans = literalSpans(foundOf(), start, end), data = placed(bytes, Math.max(0, start - span), end); return pair.map(mode => modeModel(data, spans, options.kernels, mode)); }));
     }
     const compressed = yield* unit('brotli-block', () => {
-      const found = foundOf(), commands = !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && !(typeof __RAPIER_JXL_METADATA__ !== 'undefined' && __RAPIER_JXL_METADATA__ === true) && thorough && blockCache ? bestCommands(bytes, start, end, found, ring, true) : commandsFor(bytes, start, end, found, ring.slice(), blockCache, 0, 0);
-      const block = compressedBlock(bytes, start, end, commands, blockCache, options.kernels, thorough && blockCache, models);
-      return {bytes: block.bytes.subarray(0, block.at), at: block.at, pending: block.pending, acc: block.acc, history: history.slice()};
+      const data = placed(bytes, Math.max(0, start - span), end);
+      const found = foundOf(), commands = !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && !(typeof __RAPIER_JXL_METADATA__ !== 'undefined' && __RAPIER_JXL_METADATA__ === true) && thorough && blockCache ? bestCommands(data, start, end, found, ring, true) : commandsFor(data, start, end, found, ring.slice(), blockCache, 0, 0);
+      let block = compressedBlock(data, start, end, commands, blockCache, options.kernels, thorough && blockCache, models), keptHistory = history.slice();
+      if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) &&
+          !(typeof __RAPIER_JXL_METADATA__ !== 'undefined' && __RAPIER_JXL_METADATA__ === true) && options.optimal) {
+        if (!options.kernels?.brotliParse) throw fault('JXL_WASM', 'Brotli parser unavailable');
+        let seed = commandsFor(data, start, end, found, ring.slice(), false);
+        for (let pass = 0; pass < 2; pass++) {
+          const parsed = options.kernels.brotliParse(data, start, end, windowBits, parsePrices(seed));
+          for (const useCache of blockCache ? [false, true] : [false]) {
+            const nextHistory = ring.slice(), plan = commandsFor(data, start, end, parsed, nextHistory, useCache);
+            if (!useCache) seed = plan;
+            const candidate = compressedBlock(data, start, end, plan, blockCache, options.kernels, true);
+            if (candidate.at * 8 + candidate.pending < block.at * 8 + block.pending) { block = candidate; keptHistory = nextHistory; }
+          }
+        }
+      }
+      return {bytes: block.bytes.subarray(0, block.at), at: block.at, pending: block.pending, acc: block.acc, history: keptHistory};
     });
     const rawBits = 20 + ((8 - (bitLength + 20) % 8) % 8) + (end - start) * 8;
     const bits = compressed.at * 8 + compressed.pending, chosenBits = Math.min(rawBits, bits);
@@ -387,102 +404,4 @@ export function* compressBrotliSteps(bytes, options = {}, unit = ran) {
   const output = joinDecoded(pieces); if (output.length > maximum) throw tooLarge(); return output;
 }
 
-class Reader {
-  constructor(bytes, pos = 0) { this.bytes = bytes; this.pos = pos; this.start = 0; this.part = null; }
-  byte(at) {
-    if (!this.part || at < this.start || at >= this.start + this.part.length) {
-      this.start = at; this.part = this.bytes.subarray(at, Math.min(this.bytes.length, at + 65536));
-    }
-    return this.part[at - this.start];
-  }
-  read(count) {
-    need(this.pos + count <= this.bytes.length * 8, 'the compressed stream is truncated.');
-    let value = 0, shift = 0;
-    while (count) {
-      const available = Math.min(count, 8 - (this.pos & 7));
-      value += ((this.byte(this.pos >> 3) >> (this.pos & 7)) & ((1 << available) - 1)) * (1 << shift);
-      this.pos += available; count -= available; shift += available;
-    }
-    return value;
-  }
-  pad() { need(this.read((8 - this.pos % 8) % 8) === 0, 'padding bits must be zero.'); }
-  get bit() { return this.pos; }
-  skip(count) { need(this.pos + count <= this.bytes.length * 8, 'the compressed stream is truncated.'); this.pos += count; }
-  align() { this.pad(); }
-  end() { this.align(); need(this.pos === this.bytes.length * 8, 'bytes follow the final meta-block.'); }
-}
-function prefixModel(lengths, explicit) {
-  const codes = explicit ?? canonicalCodes(lengths), levels = Array(16).fill(null); let used = 0, only = 0, maximum = 0, space = 0;
-  for (let i = 0; i < lengths.length; i++) if (lengths[i]) {
-    const count = lengths[i]; need(count <= 15);
-    (levels[count] ??= new Map()).set(codes[i], i); maximum = Math.max(maximum, count); space += 32768 >> count; used++; only = i;
-  }
-  need(used > 0 && (used === 1 || space === 32768), 'invalid prefix-code lengths.');
-  return {levels, maximum, only: used === 1 ? only : -1};
-}
-function prefixRead(model, reader) {
-  if (model.only >= 0) return model.only;
-  let value = 0;
-  for (let count = 1; count <= model.maximum; count++) {
-    value |= reader.read(1) << (count - 1); const symbol = model.levels[count]?.get(value); if (symbol !== undefined) return symbol;
-  }
-  throw invalid('invalid prefix symbol.');
-}
-function readTree(reader, alphabet) {
-  const form = reader.read(2), lengths = new Uint8Array(alphabet);
-  if (form === 1) {
-    const count = reader.read(2) + 1, symbols = Array.from({length: count}, () => reader.read(ceilLog2(alphabet)));
-    need(new Set(symbols).size === count && symbols.every(value => value < alphabet), 'invalid simple prefix tree.');
-    if (count === 1) return {only: symbols[0], maximum: 0, levels: []};
-    const depths = count === 2 ? [1,1] : count === 3 ? [1,2,2] : reader.read(1) ? [1,2,3,3] : [2,2,2,2];
-    for (let i = 0; i < count; i++) lengths[symbols[i]] = depths[i];
-  } else {
-    const order = [1,2,3,4,0,5,17,6,16,7,8,9,10,11,12,13,14,15], codeLengths = new Uint8Array(18);
-    const fixed = prefixModel([2,4,3,2,2,4], [0,7,3,2,1,15]); let space = 32, used = 0;
-    for (let i = form; i < order.length && space > 0; i++) {
-      const length = prefixRead(fixed, reader); codeLengths[order[i]] = length;
-      if (length) { space -= 32 >> length; used++; }
-    }
-    need(space === 0 || used === 1, 'invalid code-length prefix tree.');
-    const next = prefixModel(codeLengths); let at = 0, previous = 8, repeated = -1, repeat = 0;
-    space = 32768;
-    while (at < alphabet && space > 0) {
-      const value = prefixRead(next, reader);
-      if (value < 16) {
-        lengths[at++] = value; if (value) { previous = value; space -= 32768 >> value; }
-        repeated = -1; repeat = 0;
-      } else {
-        const length = value === 16 ? previous : 0, bits = value === 16 ? 2 : 3;
-        if (length !== repeated) repeat = 0;
-        const old = repeat; repeat = (repeat ? (repeat - 2) * (1 << bits) : 0) + reader.read(bits) + 3;
-        const amount = repeat - old; need(amount > 0 && at + amount <= alphabet, 'prefix repeat exceeds the alphabet.');
-        lengths.fill(length, at, at + amount); at += amount; repeated = length;
-        if (length) space -= amount * (32768 >> length);
-      }
-      need(space >= 0, 'oversubscribed prefix tree.');
-    }
-    need(space === 0, 'incomplete prefix tree.');
-  }
-  return prefixModel(lengths);
-}
-const readerAt = (bytes, bit = 0) => new Reader(bytes, bit);
-function brotliLimits(bytes, options = {}) {
-  const maxOutput = admission(bytes, options), maxBlocks = options.maxBlocks ?? 65536, {dictionary} = options;
-  need(Number.isSafeInteger(maxBlocks) && maxBlocks > 0, 'maxBlocks is a positive safe integer.');
-  let words;
-  return {maxOutput, maxBlocks, dictionary() {
-    if (words) return words;
-    words = typeof dictionary === 'function' ? dictionary() : dictionary;
-    if (!words) throw Object.assign(invalid('static dictionary references require a full decoder or the dictionary.'), {dictionary: true});
-    need(words instanceof Uint8Array && words.length === 122784, 'Invalid Brotli dictionary bytes.');
-    return words;
-  }};
-}
-const sharedBrotli = /* @__PURE__ */ brotliReader(readTree, (r, m) => prefixRead(m, r), need, blocks => {
-  throw blocks ? fault('JXL_SIZE', 'The Brotli stream exceeds maxBlocks.') : tooLarge();
-}, readerAt, brotliLimits);
-export const decompressBrotli = (bytes, options = {}) => sharedBrotli.read(bytes, options);
-export function* decompressBrotliSteps(bytes, options = {}) {
-  if (!journaling()) return decompressBrotli(bytes, options);
-  return yield* journalTool('readBrotli')(bytes, options, sharedBrotli.owner);
-}
+export {decompressBrotli, decompressBrotliSteps} from './brotli-read.mjs';

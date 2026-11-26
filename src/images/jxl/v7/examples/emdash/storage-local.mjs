@@ -10,7 +10,7 @@ import {restore} from 'rapier-jxl/jpeg';
 configureDecoder(decode, restore);
 
 export function createStorage(config) {
-  const limits = {maxPixels: 40e6, maxInputBytes: 256 * 1024 * 1024, ...config.rapier};
+  const limits = {maxInputBytes: 256 * 1024 * 1024, ...config.rapier};
   const scope = JSON.stringify(['local', resolve(config.directory)]);
   const {store, create, compareAndSet, head, replace} = localStore(createLocal(config), config.directory, limits.maxInputBytes);
   return registerStorage(withMediaCopies(store, {...limits, create, compareAndSet,

@@ -6,10 +6,10 @@ import {IccCursor, iccInverse} from './icc-profile.mjs';
 
 function limit(value, maxBytes) {
   if (!Number.isSafeInteger(value) || value < 0 || value > maxBytes)
-    throw Object.assign(new RangeError('JPEG XL ICC profile exceeds its allocation limit.'), {code: 'JXL_LIMIT'});
+    throw Object.assign(new RangeError('ICC: over limit'), {code: 'JXL_LIMIT'});
 }
 
-function context(i, a, b) {
+export function context(i, a, b) {
   if (i <= 128) return 0;
   const alpha = v => v >= 65 && v <= 90 || v >= 97 && v <= 122;
   const digit = v => v >= 48 && v <= 57 || v === 44 || v === 46;
@@ -28,8 +28,8 @@ function iccLength(reader, maxBytes, maxProfileBytes) {
 function entropyPart(reader, code, from, count, state, start) {
   const bytes = new Uint8Array(count); let {a, b} = state;
   for (let n = 0, i = from; n < count; n++, i++) {
-    if (i >= 20 && (i & 65535) === 0) requireDecode(i <= (reader.bit - start) * 32, 'Invalid JPEG XL ICC expansion.', reader);
-    const value = code.read(context(i, a, b)); requireDecode(value < 256, 'JPEG XL ICC entropy value exceeds one byte.', reader);
+    if (i >= 20 && (i & 65535) === 0) requireDecode(i <= (reader.bit - start) * 32, 'ICC expansion', reader);
+    const value = code.read(context(i, a, b)); requireDecode(value < 256, 'ICC symbol: over 255', reader);
     bytes[n] = value; b = a; a = value;
   }
   return {bytes, a, b, bit: reader.bit};
@@ -40,7 +40,7 @@ function entropyPrefix(reader, code, head, maximum) {
   const preamble = new IccCursor(first.bytes, requireDecode), outputSize = preamble.integer(), commandSize = preamble.integer();
   limit(outputSize, maximum);
   requireDecode(commandSize <= head.size - preamble.at && head.size <= outputSize + 65536,
-    'Invalid JPEG XL ICC preamble.', reader);
+    'ICC preamble', reader);
   return first;
 }
 export function readICC(reader, {maxBytes = 268435456, maxProfileBytes = maxBytes} = {}) {

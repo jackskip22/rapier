@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: MIT
+import {withTail, admitTail, packTailSteps, isoGainMap, validIsoGainMap, gainMapOf, mpfImages, mpfScan, restoreJPEGSteps, MAX_NESTING} from './jpeg-reconstruction.mjs';
+import {fault} from './admit.mjs';
+import {carried, stage, PASSED, unread, journaling} from './step-journal.mjs';
+
+const WINDOW = 131072;
+function* nextJPEG(jpeg, end, skip = 0) {
+  return yield* stage('tail-search', function* () {
+    let at = skip, found = false;
+    while (!found && at + 2 < jpeg.length - end) {
+      const next = yield* carried('tail-search-window', () => {
+        const part = jpeg.subarray(end + at, Math.min(jpeg.length, end + at + WINDOW + 2));
+        let i = 0;
+        while (i + 2 < part.length && !(part[i] === 255 && part[i + 1] === 216 && part[i + 2] === 255)) i++;
+        return {at: at + i, found: i + 2 < part.length};
+      });
+      if (next !== PASSED) ({at, found} = next);
+    }
+    return at;
+  });
+}
+
+function* exactTail(jpeg, file, maxPixels) {
+  return yield* stage('tail-check', function* () {
+    let back;
+    try { back = yield* restoreJPEGSteps(file, null, {maxPixels}); }
+    catch (error) { if (unread(error)) throw error; return false; }
+    if (!back || back.length !== jpeg.length) return false;
+    let at = 0, same = true;
+    while (same && at < jpeg.length) {
+      const next = yield* carried('tail-compare', () => {
+        const end = Math.min(jpeg.length, at + WINDOW), actual = back.subarray(at, end), expected = jpeg.subarray(at, end);
+        return {at: end, same: actual.every((v, i) => v === expected[i])};
+      });
+      if (next !== PASSED) ({at, same} = next);
+    }
+    return same;
+  });
+}
+
+export function* longTail(jpeg, end, file, depth, next, maxPixels, gainMap = null, knownGainMap = null) {
+  const tailLength = jpeg.length - end;
+  let out = null, skip = 0;
+  const promoted = !depth && gainMap ? (yield* stage('tail-gain-map', function* () { return knownGainMap || gainMap(jpeg, end); })) : null;
+  let tryPromoted = promoted && promoted.start >= end && promoted.start + 2 < jpeg.length;
+  for (let tries = 0; !out && tries < 5 && depth + 2 <= MAX_NESTING; tries++) {
+    let soi;
+    if (tryPromoted) {
+      soi = promoted.start - end;
+      tryPromoted = false;
+    } else {
+      soi = yield* nextJPEG(jpeg, end, skip);
+      if (soi + 2 >= tailLength) break;
+      skip = soi + 2;
+    }
+    try {
+      admitTail(soi);
+      const inner = yield* next(jpeg.subarray(end + soi)), packed = yield* packTailSteps(jpeg.subarray(end, end + soi));
+      const size = Uint8Array.of(packed.length >>> 24, (packed.length >>> 16) & 255, (packed.length >>> 8) & 255, packed.length & 255);
+      const primaryIso = !depth ? isoGainMap(jpeg) : null;
+      const declared = !depth && primaryIso?.length === 4 && primaryIso[0] === 0 && primaryIso[1] === 0 &&
+        !mpfScan(jpeg).bad && mpfImages(jpeg).some(image => image.start === end + soi);
+      const declaredMeta = declared ? isoGainMap(jpeg.subarray(end + soi)) : null;
+      const metadata = declaredMeta && validIsoGainMap(declaredMeta) ? declaredMeta.slice()
+        : promoted?.start === end + soi ? promoted.metadata : null;
+      if (metadata && metadata.length > 4 && metadata.length < 65536) {
+        const {bundle, rest} = gainMapOf(inner, metadata);
+        out = withTail(file, 2, soi, [size, packed, rest], bundle);
+      } else out = withTail(file, 1, soi, [size, packed, inner]);
+    } catch (error) {
+      if (error.code !== 'JXL_JPEG' && error.code !== 'JXL_DIMENSIONS') throw error;
+    }
+  }
+  if (!out) { admitTail(tailLength); out = withTail(file, 0, tailLength, [yield* packTailSteps(jpeg.subarray(end))]); }
+  if (!depth) {
+    if (!(yield* exactTail(jpeg, out, maxPixels))) throw fault('JXL_JPEG', 'syntax: not exact');
+  }
+  return out;
+}

@@ -3,7 +3,6 @@ import {xybKernelConstants} from './vardct-render.mjs';
 import {requireDecode} from './decode-bits.mjs';
 import {signature, nativeEncoding} from './color-encoding.mjs';
 export {nativeEncoding};
-import {exactCbrt} from './exact-math.mjs';
 import {part} from './decode-parts.mjs';
 import {decodeKernels} from './decode-kernels.mjs';
 import {D50,SRGB_D50,D50_SRGB,IDENTITY3,adaptWhite,whiteXYZ,primariesXYZ,floatColorMatrix,inverse3,multiply3,transferCurve,hlgScale} from './decode-color-math.mjs';
@@ -39,6 +38,53 @@ function xybConstants(h,transform) {
   const f=Math.fround,{inverseMatrix,opsinBiases}=h.opsinInverseMatrix;
   return xybKernelConstants(transform===IDENTITY3?inverseMatrix.map(f):multiply3(transform,inverseMatrix.map(f)).map(f),opsinBiases,h.toneMapping.intensityTarget);
 }
+export function xybSrgbConstants(h,encoding=nativeEncoding(h)) {
+  let transform=IDENTITY3;
+  if(encoding.primaries!=='srgb'||encoding.whitePoint!=='d65')
+    transform=multiply3(inverse3(floatColorMatrix(encoding.primaries,encoding.whitePoint).pcs).map(Math.fround),floatColorMatrix().pcs).map(Math.fround);
+  return xybConstants(h,transform);
+}
+export function xybToRGBA8(planes,srcWidth,sx0,sy0,width,height,h,dst,dstWidth,dx0,dy0,constants=xybSrgbConstants(h)) {
+  if(width<=0||height<=0)return dst;
+  const kernels=decodeKernels(),contiguous=sx0===0&&width===srcWidth&&dx0===0&&width===dstWidth;
+  if(contiguous) {
+    const total=width*height,chunk=Math.min(total,65536),at=kernels.reserve([chunk*4,chunk*4,chunk*4,chunk*4]);
+    const kx=new Float32Array(kernels.buffer,at[0],chunk),ky=new Float32Array(kernels.buffer,at[1],chunk),kb=new Float32Array(kernels.buffer,at[2],chunk);
+    const out=new Uint8Array(kernels.buffer,at[3],chunk*4),sBase=sy0*srcWidth,dBase=dy0*dstWidth*4;
+    for(let i=0;i<total;i+=chunk) {
+      const m=Math.min(chunk,total-i);
+      kx.set(planes[0].subarray(sBase+i,sBase+i+m));
+      ky.set(planes[1].subarray(sBase+i,sBase+i+m));
+      kb.set(planes[2].subarray(sBase+i,sBase+i+m));
+      kernels.xyb(m,kx.subarray(0,m),ky.subarray(0,m),kb.subarray(0,m),constants,out.subarray(0,m*4));
+      dst.set(out.subarray(0,m*4),dBase+i*4);
+    }
+    return dst;
+  }
+  const rowsPerChunk=Math.max(1,Math.min(height,Math.floor(65536/width))),maxSamples=rowsPerChunk*width;
+  const at=kernels.reserve([maxSamples*4,maxSamples*4,maxSamples*4,maxSamples*4]);
+  const kx=new Float32Array(kernels.buffer,at[0],maxSamples),ky=new Float32Array(kernels.buffer,at[1],maxSamples),kb=new Float32Array(kernels.buffer,at[2],maxSamples);
+  const out=new Uint8Array(kernels.buffer,at[3],maxSamples*4);
+  for(let y=0;y<height;y+=rowsPerChunk) {
+    const rows=Math.min(rowsPerChunk,height-y),m=rows*width;
+    for(let r=0;r<rows;r++) {
+      const sOff=(sy0+y+r)*srcWidth+sx0,kOff=r*width;
+      kx.set(planes[0].subarray(sOff,sOff+width),kOff);
+      ky.set(planes[1].subarray(sOff,sOff+width),kOff);
+      kb.set(planes[2].subarray(sOff,sOff+width),kOff);
+    }
+    kernels.xyb(m,kx.subarray(0,m),ky.subarray(0,m),kb.subarray(0,m),constants,out.subarray(0,m*4));
+    for(let r=0;r<rows;r++)dst.set(out.subarray(r*width*4,(r+1)*width*4),((dy0+y+r)*dstWidth+dx0)*4);
+  }
+  return dst;
+}
+export function materializePostColor(ref,h) {
+  if(ref&&!ref.planes&&ref.xybPlanes) {
+    ref.planes=xybToEnum({width:ref.width,height:ref.height,planes:ref.xybPlanes,extraChannels:ref.extraChannels},h,ref.colorEncoding,true).planes;
+    ref.xybPlanes=null;ref.rgba8=null;
+  }
+  return ref;
+}
 function xybInverse(h,transform=IDENTITY3) {
   const {bias,root,m}=xybConstants(h,transform);
   return {op:OP.xybInverse,data:Float64Array.of(...bias,...root,...m)};
@@ -73,7 +119,7 @@ function xybToEnum(frame,h,encoding,inPlace=false,rgba8=null) {
   return finish(frame,planes,encoding);
 }
 function xybForward(h) {
-  const m=inverse3(h.opsinInverseMatrix.inverseMatrix),bias=h.opsinInverseMatrix.opsinBiases,root=bias.map(exactCbrt),scale=h.toneMapping.intensityTarget/255;
+  const m=inverse3(h.opsinInverseMatrix.inverseMatrix),bias=h.opsinInverseMatrix.opsinBiases,root=bias.map(Math.cbrt),scale=h.toneMapping.intensityTarget/255;
   return {op:OP.xybForward,data:Float64Array.of(...m,...bias,...root,scale)};
 }
 function enumToPCS(encoding,h) {
@@ -126,6 +172,7 @@ function convert(frame,h,source,target,sourceICC,targetICC,preserveAssociation=f
   const n=frame.width*frame.height,inputCount=inputProfile?.channels??(source.space==='gray'?1:3),outputCount=outputProfile?.channels??(target.space==='gray'?1:3);
   const black=frame.extraChannels?.findIndex(c=>c.type===4)??-1;
   requireDecode(inputCount!==4||black>=0,'CMYK JPEG XL image is missing its black channel.');
+  requireDecode(inputCount!==4||frame.extraChannels[black].data?.length===n,'CMYK JPEG XL black channel is not the frame\'s size.');
   const planes=Array.from({length:Math.min(3,outputCount)},()=>new Float32Array(n)),k=outputCount===4?new Float32Array(n):null;
   const inputInk=inputCount===4&&source.invertedCMYK!==false,outputInk=outputCount===4&&target.invertedCMYK!==false;
   const firstAlpha=preserveAssociation?frame.extraChannels?.find(c=>c.type===0):null,alpha=firstAlpha?.associated?firstAlpha.data:null;

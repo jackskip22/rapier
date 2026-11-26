@@ -161,18 +161,51 @@ export function createSettings(initial, {read, write, change = () => {}}) {
   };
 }
 
-export async function rewriteAndRead(result, {rewrite, read, signal}) {
+export async function rewriteAndRead(result, {rewrite, read, signal, concurrency = 8}) {
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 32)
+    throw new RangeError('concurrency: integer 1-32');
   check(signal);
   try { await rewrite(result.urlMap, signal); }
   catch (error) { check(signal); throw atPhase(error, 'rewrite'); }
   check(signal);
-  const items = [];
-  for (const imported of result.imported) {
-    check(signal);
-    items.push(await read(imported.mediaId, signal));
-    check(signal);
+  const imported = result.imported ?? [];
+  if (!imported.length) return [];
+  const batch = new AbortController();
+  const onAbort = () => batch.abort();
+  signal?.addEventListener('abort', onAbort, {once: true});
+  const uniqueIds = [];
+  const resolved = new Map();
+  for (const entry of imported) {
+    if (!resolved.has(entry.mediaId)) {
+      resolved.set(entry.mediaId, undefined);
+      uniqueIds.push(entry.mediaId);
+    }
   }
-  return items;
+  let next = 0, firstError = null;
+  const worker = async () => {
+    while (next < uniqueIds.length && !firstError) {
+      check(signal);
+      const id = uniqueIds[next++];
+      try {
+        const item = await read(id, batch.signal);
+        check(signal);
+        resolved.set(id, item);
+      } catch (error) {
+        if (!firstError) {
+          firstError = signal?.aborted ? canceled() : error;
+          batch.abort();
+        }
+      }
+    }
+  };
+  try {
+    await Promise.all(Array.from({length: Math.min(concurrency, uniqueIds.length)}, worker));
+    check(signal);
+    if (firstError) throw firstError;
+    return imported.map(entry => resolved.get(entry.mediaId));
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
 }
 
 export function createLibraryClient({request, change = () => {}}) {

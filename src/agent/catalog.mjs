@@ -35,7 +35,16 @@ const readSelection = {
   after_revision: {...integer(0), description: 'With wait_ms: return when the revision passes this.'}, wait_ms: {...integer(0, 20000), description: 'Bounded wait (ms) for the next human revision.'},
 };
 
+export const FEEDBACK_MAX_TEXT = 500, FEEDBACK_MAX_HOST = 40;
+export const FEEDBACK_TOOLS = Object.freeze(['open', 'read', 'edit', 'undo', 'show', 'export', 'convert', 'feedback']);
+export const FEEDBACK_DESCRIPTION = 'Tell the Rapier team, in one short line, when Rapier got in the way or did not do what the person asked. Never include document text or personal details.';
 export const CONVERT_FILES = 32, CONVERT_BYTES = 32 * 1024 * 1024, CONVERT_PIXELS = 400_000_000;
+export const CONVERT_LIMITS = Object.freeze([100000, 250000, 500000, 1000000, 2000000]), CONVERT_SIDES = Object.freeze([1920, 1280, 640]);
+const CONVERT_WORDS = 'quality: lossless, high (default), medium, or a number 1-100 (100 is lossless). effort 1-10 (default 7: higher is smaller and slower; 9 and 10 take a while, longer on a slower machine, and 10 can take 20 to 30 minutes for a 12 MP photo). max_bytes: each picture made the best that fits under ' + CONVERT_LIMITS.join(', ') + ' bytes (a JPEG carried exactly when it fits). longer_side: ' + CONVERT_SIDES.join(', ') + ' px, never larger than the picture. remove_location: true takes a photo\'s location out. The date, camera and other metadata are kept.';
+const convertOptions = {
+  quality: {anyOf: [{...string(16), enum: ['lossless', 'high', 'medium']}, integer(1, 100)]}, effort: integer(1, 10),
+  max_bytes: {type: 'integer', enum: CONVERT_LIMITS}, longer_side: {type: 'integer', enum: CONVERT_SIDES}, remove_location: {type: 'boolean'},
+};
 const convertFile = object({name: {...string(256), minLength: 1, description: 'The file name, with its extension.'},
   data: {type: 'string', maxLength: Math.ceil(CONVERT_BYTES / 3) * 4, contentEncoding: 'base64', description: 'The file\'s exact bytes, base64.'}}, ['name', 'data']);
 
@@ -64,10 +73,13 @@ export const TOOLS = Object.freeze([
     format: {...string(32), enum: ['markdown', 'html', 'page', 'txt', 'docx', 'pdf', 'plain', 'formatted', 'complete']}, to: {...string(32), enum: ['file', 'save', 'clipboard', 'sync']}, text, ...scope, revision, compare_id: string(128),
   }, [], {allOf: [{if: {required: ['to'], properties: {to: {type: 'string', const: 'sync'}}},
     then: lacking(['format', 'text', 'block', 'heading', 'revision', 'compare_id'])}]}),
-  tool('convert', 'Convert pictures with Rapier', 'Convert pictures to JPEG XL, or JPEG XL back. Each file\'s own kind decides: a JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL (a JPEG at lossless is carried exactly and restores byte for byte). A .jxl that carries its JPEG gives back that JPEG byte for byte, any other .jxl a PNG. quality: lossless, high (default) or medium. effort 1-9 (default 7: higher is smaller and slower). At most ' + CONVERT_FILES + ' files and ' + CONVERT_BYTES / 1048576 + ' MB in all per call, pictures to ' + CONVERT_PIXELS / 1e6 + ' megapixels in all. Returns each file\'s name, sizes and what was kept. The files go to the person.', 'create', {
-    files: {type: 'array', items: convertFile, minItems: 1, maxItems: CONVERT_FILES},
-    quality: {...string(16), enum: ['lossless', 'high', 'medium']}, effort: integer(1, 9),
+  tool('convert', 'Convert pictures with Rapier', 'Convert pictures to JPEG XL, or JPEG XL back. Each file\'s own kind decides: a JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL (a JPEG at lossless is carried exactly and restores byte for byte). A .jxl that carries its JPEG gives back that JPEG byte for byte, any other .jxl a PNG. ' + CONVERT_WORDS + ' At most ' + CONVERT_FILES + ' files and ' + CONVERT_BYTES / 1048576 + ' MB in all per call, pictures to ' + CONVERT_PIXELS / 1e6 + ' megapixels in all. Returns each file\'s name, sizes and what was kept. The files go to the person.', 'create', {
+    files: {type: 'array', items: convertFile, minItems: 1, maxItems: CONVERT_FILES}, ...convertOptions,
   }, ['files']),
+  tool('feedback', 'Tell the Rapier team', FEEDBACK_DESCRIPTION, 'report', {
+    text: {...string(FEEDBACK_MAX_TEXT), minLength: 1, description: 'What the person wanted and what Rapier did wrong.'},
+    tool: {...string(16), enum: FEEDBACK_TOOLS, description: 'The Rapier tool involved.'}, host: {...string(FEEDBACK_MAX_HOST), description: 'Your assistant or app.'},
+  }, ['text']),
 ]);
 
 export const EDITOR_TOOLS = Object.freeze(OPERATIONS
@@ -76,7 +88,8 @@ export const HUMAN_OPERATIONS = KERNEL_OPERATIONS.filter(entry => ['comments.wri
 export const getOwnedOperation = name => KERNEL_OPERATIONS.find(entry => entry.name === name);
 export const getHumanOperation = name => HUMAN_OPERATIONS.find(entry => entry.name === name);
 export const HOST_TOOLS = EDITOR_TOOLS;
-export const PAGE_TOOLS = Object.freeze(TOOLS.map(entry => entry.name !== 'open' ? entry : Object.freeze({...entry,
+export const DOOR_ONLY_TOOLS = Object.freeze(['feedback']);
+export const PAGE_TOOLS = Object.freeze(TOOLS.filter(entry => !DOOR_ONLY_TOOLS.includes(entry.name)).map(entry => entry.name !== 'open' ? entry : Object.freeze({...entry,
   description: 'Read the current page or open/create a Note. To choose a device file, use show with target:file.',
   inputSchema: {...entry.inputSchema,
     properties: Object.fromEntries(Object.entries(entry.inputSchema.properties).filter(([key]) =>
@@ -97,6 +110,7 @@ function hostedSchema(entry) {
   if (entry.name === 'convert') return {...entry.inputSchema, properties: {...entry.inputSchema.properties,
     files: {type: 'array', items: object({download_url: string(8192), file_id: string(256), mime_type: string(128), file_name: string(256)},
       ['download_url', 'file_id']), maxItems: CONVERT_FILES}}, required: []};
+  if (entry.name === 'feedback') return entry.inputSchema;
   if (entry.name === 'open') return {...entry.inputSchema, oneOf: [
     {required: ['text'], ...lacking(['document', 'url', 'file', 'note', 'title'])},
     {required: ['document'], ...lacking(['url', 'file', 'filename', 'createToken']),
@@ -118,7 +132,7 @@ export function annotations(effect, host = 'mcp', name = '') {
     idempotentHint: effect === 'read', openWorldHint: OPEN_WORLD.has(name)};
 }
 export const OPEN_WORLD = new Set(['open', 'show', 'export']);
-const HOSTED_CONVERT = 'Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person\'s own device. Opens Rapier\'s converter in this app\'s view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier\'s server: the view reads them from the chat on the person\'s device. Without a view, answers with the converter\'s link (https://rapier.website/jxl) for the person. files: the chat\'s pictures. Omit it to let the person pick them. quality: lossless, high (default) or medium. effort 1-9 (default 7, higher is smaller and slower). To convert files in your own sandbox, run npx rapier-jxl <file|folder>: it prints each size before and after.';
+const HOSTED_CONVERT = 'Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person\'s own device. Opens Rapier\'s converter in this app\'s view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier\'s server: the view reads them from the chat on the person\'s device. Without a view, answers with the converter\'s link (https://rapier.website/jxl) for the person. files: the chat\'s pictures. Omit it to let the person pick them. ' + CONVERT_WORDS + ' To convert files in your own sandbox, run npx jpegxl <file|folder>: it prints each size before and after.';
 export function mcpDescriptors({uiResource, auth = 'anonymous', editor = false} = {}) {
   if (!['anonymous', 'oauth', 'server-bearer'].includes(auth)) throw new TypeError('Unknown MCP authentication profile');
   return (editor ? EDITOR_TOOLS : TOOLS).map(entry => {

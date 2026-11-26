@@ -3,12 +3,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {gunzipSync} from 'node:zlib';
-import {capture as captureComplete} from '../v7/capture-complete.mjs';
+import {capture as captureComplete, configureDecoder} from '../v7/capture-complete.mjs';
+import {decode} from '../v7/decode.mjs';
 import {capture} from '../v7/capture.mjs';
 import {encode} from '../v7/index.mjs';
 import {start, advance, finish} from '../v7/resumable.mjs';
 import {memoryStore, sourceRecord, sha256} from './durable-host.mjs';
 
+configureDecoder(decode);
 const data = new Uint8Array(gunzipSync(Buffer.from(await readFile(new URL('../v7/test/fixtures/kodim03-small.rgba.gz.base64', import.meta.url), 'utf8'), 'base64')));
 const width = 128, height = 85, photoRects = [{x: 0, y: 0, width, height: 60}];
 for (const [name, verb, options] of [['encode e3', encode, {effort: 3, fidelity: {quality: 85}}], ['capture e3', capture, {effort: 3}],

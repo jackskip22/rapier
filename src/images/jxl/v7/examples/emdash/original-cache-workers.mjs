@@ -4,7 +4,8 @@ export function originalWorkerCache(scope) {
   let namespace;
   async function request(key) {
     namespace ??= await digest(new TextEncoder().encode(scope));
-    return new Request(`https://rapier-original-cache.invalid/${namespace}/${key}`);
+    const identity = await digest(new TextEncoder().encode(key));
+    return new Request(`https://rapier-original-cache.invalid/${namespace}/${identity}`);
   }
   return {
     async get(key, {signal} = {}) {

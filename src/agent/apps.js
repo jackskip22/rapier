@@ -2256,7 +2256,6 @@
     }
   }
 
-  const CONVERT_MODES = Object.freeze({lossless: 'lossless', high: 'high', medium: 'smaller'});
   const CHAT_PICTURE_BYTES = 256 * 1024 * 1024, CHAT_PICTURE_STALL_MS = 20000, CHAT_PICTURE_MS = 300000;
   const PICTURE_TYPES = Object.freeze({'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/avif': '.avif', 'image/jxl': '.jxl', 'image/heic': '.heic'});
   const chatPictures = new Map(), chatLinks = new Map();
@@ -2278,7 +2277,8 @@
     const run = ++converterRun, view = _rapierJxlPart;
     view.open();
     if (!view.state.open) return;
-    view.configure({mode: CONVERT_MODES[data.quality], effort: data.effort});
+    view.configure({quality: data.quality, effort: data.effort, ...(data.max_bytes !== undefined ? {maxBytes: data.max_bytes} : {}),
+      ...(data.longer_side !== undefined ? {side: data.longer_side} : {}), ...(data.remove_location !== undefined ? {location: !data.remove_location} : {})});
     rememberChatLinks(window.openai?.toolInput);
     const passed = Array.isArray(data.files) ? data.files.filter(object) : [];
     const chat = passed.filter(file => typeof file.file_id === 'string' && file.file_id).slice(0, 32);

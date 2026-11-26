@@ -2,13 +2,13 @@
 import {BitWriter} from './bits.mjs';
 import {fault} from './admit.mjs';
 import {uintConfig, countToken, buildCode, writeHistograms, writeHybrid} from './prefix.mjs';
-import {TRANSFORMS} from './vardct-strategies.mjs';
+import {TRANSFORMS} from './vardct-bases.mjs';
 import {naturalOrder, ORDER_STRATEGY_BUCKETS} from './coefficient-layout.mjs';
 export {ORDER_STRATEGY_BUCKETS} from './coefficient-layout.mjs';
 
 const ORDER_BUCKET_NAMES = ['dct8', 'small', 'dct16', 'dct32', 'dct16x8', 'dct32x8', 'dct32x16',
   'dct64', 'dct64x32', 'dct128', 'dct128x64', 'dct256', 'dct256x128'];
-export const COEFFICIENT_ORDER_BUCKETS = Object.freeze(ORDER_BUCKET_NAMES.map((name, id) => {
+export const COEFFICIENT_ORDER_BUCKETS = /* @__PURE__ */ Object.freeze(ORDER_BUCKET_NAMES.map((name, id) => {
   const strategies = TRANSFORMS.filter(strategy => ORDER_STRATEGY_BUCKETS[strategy.id] === id), first = strategies[0];
   const width = Math.max(first.width, first.height), height = Math.min(first.width, first.height);
   return Object.freeze({name, id, width, height, lowFrequencyCount: width * height / 64,
@@ -18,15 +18,15 @@ export const COEFFICIENT_ORDER_BUCKETS = Object.freeze(ORDER_BUCKET_NAMES.map((n
 function admitOrderPermutation(value, size, skip) {
   if (value === null) return null;
   if (!value || typeof value !== 'object' || value.length !== size)
-    throw fault('JXL_INPUT', 'A coefficient order is a natural-scan-rank permutation, or null.');
+    throw fault('JXL_INPUT', 'coefficient order: permutation or null');
   const permutation = new Uint32Array(size), seen = new Uint8Array(size);
   let changed = false;
   for (let i = 0; i < size; i++) {
     const rank = value[i];
     if (!Number.isInteger(rank) || rank < 0 || rank >= size || seen[rank])
-      throw fault('JXL_INPUT', 'A coefficient order has each rank exactly once.');
+      throw fault('JXL_INPUT', 'coefficient order: duplicate or missing rank');
     if (i < skip && rank !== i)
-      throw fault('JXL_INPUT', 'A coefficient order keeps every low-frequency prefix rank in place.');
+      throw fault('JXL_INPUT', 'coefficient order: fixed LF ranks');
     permutation[i] = rank; seen[rank] = 1; changed ||= rank !== i;
   }
   return changed ? permutation : null;
@@ -50,13 +50,13 @@ function orderPermutationTokens(permutation, skip, size) {
 
 function prepareOrderPass(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || ArrayBuffer.isView(value))
-    throw fault('JXL_INPUT', 'coefficientOrders maps bucket names to three channel permutations.');
+    throw fault('JXL_INPUT', 'coefficientOrders: bucket map');
   const entries = new Map();
   for (const [name, channels] of Object.entries(value)) {
     const id = ORDER_BUCKET_NAMES.indexOf(name);
-    if (id < 0) throw fault('JXL_INPUT', 'Coefficient-order keys are COEFFICIENT_ORDER_BUCKETS names.');
+    if (id < 0) throw fault('JXL_INPUT', 'coefficientOrders: unknown bucket');
     if (!Array.isArray(channels) || channels.length !== 3)
-      throw fault('JXL_INPUT', 'Each bucket has three channel permutations in frame order.');
+      throw fault('JXL_INPUT', 'coefficientOrders bucket: 3 permutations');
     const bucket = COEFFICIENT_ORDER_BUCKETS[id], size = bucket.width * bucket.height;
     const permutations = Array.from({length: 3}, (_, channel) => admitOrderPermutation(channels[channel], size, bucket.lowFrequencyCount));
     if (permutations.some(Boolean)) entries.set(id, permutations);
@@ -89,12 +89,12 @@ function prepareOrderPass(value) {
 export function prepareCoefficientOrders(value, numPasses) {
   if (value === undefined) return null;
   if (!value || typeof value !== 'object' || Array.isArray(value) || ArrayBuffer.isView(value))
-    throw fault('JXL_INPUT', 'coefficientOrders is a bucket map or one map per pass.');
+    throw fault('JXL_INPUT', 'coefficientOrders: bucket map or {passes}');
   const fields = new Map(Object.entries(value));
   if (fields.has('passes')) {
     const passes = fields.get('passes');
     if (fields.size !== 1 || !Array.isArray(passes) || passes.length !== numPasses)
-      throw fault('JXL_INPUT', 'coefficientOrders.passes has one order map per pass.');
+      throw fault('JXL_INPUT', 'coefficientOrders.passes: 1 map per pass');
     return Array.from(passes, prepareOrderPass);
   }
   return Array(numPasses).fill(prepareOrderPass(value));

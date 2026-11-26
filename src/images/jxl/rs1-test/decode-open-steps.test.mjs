@@ -9,6 +9,7 @@ import {fileHeader, boxHeader, FTYP, BRAND, CODESTREAM, BROB} from '../container
 import {boundedHeaderSteps, header} from '../v7/inspect.mjs';
 import {decode, prepare} from '../v7/decode.mjs';
 import {recompress} from '../v7/jpeg.mjs';
+import {transcode} from '../jpeg.mjs';
 import {decodeOptions} from '../decode-image.mjs';
 import {decodeBands} from '../decode-parallel.mjs';
 import {displayProfile} from '../public/test/icc.mjs';
@@ -55,7 +56,7 @@ function withICC(photo,profile) {
 test('saved provider preparation resumes ICC and brob once, then opens the same photographic region', {timeout:30000}, async () => {
   const photo = new Uint8Array(await readFile(new URL('../public/test/fixtures/bands-420-restart.jpg',import.meta.url)));
   const profile = displayProfile({curve:'table',description:'ICC description boundary '.repeat(4000)});
-  const encoded = (await recompress(withICC(photo,profile),{effort:1,icc:'preserve'})).bytes;
+  const encoded = transcode(withICC(photo,profile),{effort:1,icc:'preserve'}).bytes;
   const metadata = new Uint8Array(140003); for (let i = 0; i < metadata.length; i++) metadata[i] = photo[i % photo.length];
   const compressed = new Uint8Array(brotliCompressSync(metadata,{params:{[constants.BROTLI_PARAM_QUALITY]:4}}));
   const input = join([fileHeader(),boxHeader(BROB,compressed.length + 4),u32(0x75756964),compressed,encoded.subarray(fileHeader().length)]);
@@ -81,7 +82,7 @@ test('saved provider preparation resumes ICC and brob once, then opens the same 
     keep(await codec().advance(checkpoint,host(),{units:1}));
     assert.ok(++calls < 180,'saved provider preparation makes progress');
   }
-  const output = []; for await (const bytes of codec().outputParts(checkpoint,host())) output.push(bytes);
+  const output = []; output.push(await codec().output(checkpoint,host(), length => new Uint8Array(length)));
   assert.deepEqual(join(output),join([profile,metadata,new Uint8Array(expected.data)]));
   assert.ok(calls > 12,'metadata crosses actual serialized advances');
   assert.ok(units['decode-icc-profile-part'] > 1 && units['decode-brotli-output'] > 1,'both metadata readers expose their output units');

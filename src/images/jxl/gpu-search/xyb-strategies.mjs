@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {strategyTableList} from '../vardct-tables.mjs';
+import {fitRawSteps} from '../vardct-planes.mjs';
 import {complete} from '../bits.mjs';
 import {readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -68,7 +69,7 @@ function tableFor(id, components, sizeScale, cache) {
   const targets = components.map(comp => Float64Array.from({length: L * S}, (_, k) => stepAt(comp.quant, id, k, sizeScale)));
   const weight = step => 8 * 255 * QS / (FIELD * step);
   let table, input;
-  if (id === 0) table = {w: L, h: S, planes: targets.map(p => Int32Array.from(p))};
+  if (id === 0) table = {w: L, h: S, planes: fitRawSteps(targets.map(p => Int32Array.from(p)))};
   else if (id === 3) {
     const bands = targets.map(p => fitBands(Float64Array.from({length: 16}, (_, k) => p[2 * (k >> 2) * 8 + 2 * (k & 3)]), 4, 4));
     input = {mode: 'dct4', bands, multipliers: targets.map((p, c) => [bands[c][0] / weight(p[1]), bands[c][0] / weight(p[9])])};
