@@ -45,7 +45,7 @@ export async function storeFeedback(env, fields, now = Date.now()) {
       write = await db.prepare(WRITE).bind(crypto.randomUUID(), fields.text, VERSION, fields.tool, fields.host).run();
     } catch (_) { write = null; }
     if (!write?.success) {
-      for (const sql of REFUND) await db.prepare(sql).bind(bucket).run().catch(() => {});
+      await db.batch(REFUND.map(sql => db.prepare(sql).bind(bucket))).catch(() => {});
       return 'unavailable';
     }
     return 'stored';

@@ -5,6 +5,18 @@ export const turn = () => new Promise(resolve => {
   try { const channel = new MessageChannel(); channel.port1.onmessage = () => { channel.port1.close(); resolve(); }; channel.port2.postMessage(0); return; } catch {}
   setTimeout(resolve, 0);
 });
+export let gpuReadPending = null;
+export function gpuReadTurn(work, limit) {
+  let release, timer;
+  const quiet = new Promise(resolve => { release = resolve; });
+  const read = turn().then(() => { timer = setTimeout(release, limit); return work(); });
+  const finish = () => { clearTimeout(timer); release(); };
+  read.then(finish, finish);
+  const pending = gpuReadPending ? Promise.all([gpuReadPending, quiet]) : quiet;
+  gpuReadPending = pending;
+  pending.then(() => { if (gpuReadPending === pending) gpuReadPending = null; });
+  return read;
+}
 let held = () => false, active = false, locked = false;
 const waiting = [];
 export const captureHeld = check => { held = check; };

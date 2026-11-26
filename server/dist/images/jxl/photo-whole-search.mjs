@@ -32,6 +32,7 @@ import {admitSize} from './admit.mjs';
 import {s2Dimensions, s2RGBA} from './ssimulacra2-input.mjs';
 import {EDGE} from './limits.mjs';
 import {fault} from './fault.mjs';
+import {srgbLinear} from './color-bytes.mjs';
 import {trialDue, tryStage, leftDevice} from './device-trial.mjs';
 import {offloading} from './offload.mjs';
 import {layoutPicture, scoreBandPicture, packLayout, unpackLayout} from './photo-layout-picture.mjs';
@@ -46,6 +47,9 @@ import {photoEffortTenPass2Steps} from './photo-effort-ten.mjs';
 const CAPTURE_PHOTO = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true);
 const check = signal => { if (signal?.aborted) throw signal.reason; };
 const ROWS = 256;
+const STATED_ZONES = false;
+const zoneReference = (data, width, height, color) => STATED_ZONES && color?.transform
+  ? {lin: srgbLinear(data, width * height, color.transform), source: data} : {rgba: data};
 const DUMMY_8X8 = new Uint8Array(256).fill(128), EMPTY_I16 = new Int16Array(0);
 
 function plainRows(data, width, height, color) {
@@ -856,7 +860,7 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
     let written = null;
     const sameWriteEffort = (a, b) => a === b || (!CAPTURE_PHOTO && !measureOutput && a <= 6 && b <= 6);
     const keepWinningMemo = !journal && (banded || width * height <= 2621440);
-    const s2Ref = _sharedNine ? (_sharedNine.s2Ref ??= {rgba: data}) : {rgba: data};
+    const s2Ref = _sharedNine ? (_sharedNine.s2Ref ??= zoneReference(data, width, height, color)) : zoneReference(data, width, height, color);
     const memoAt = (fn, q0 = NaN, img0 = null, maxHeld = 1) => {
       const held = new Map(), tags = CAPTURE_PHOTO ? null : new Map(), tag = q => tags.get(q) ?? tags.set(q, {}).get(q);
       if (img0) { if (tags) img0.lookTag = tag(q0); held.set(q0, img0); }

@@ -551,6 +551,9 @@ export default {
 			const method = request.method.toUpperCase();
 			if (method !== 'GET' && method !== 'HEAD') return plain();
 			const path = url.pathname.replace(/\/+$/, '');
+			// The converter's tabs have their own addresses: each goes to /jxl with the tab's fragment, which opens it (jxl/door.js).
+			const tab = /^\/jxl\/(animated|xr|glitch)$/.exec(path);
+			if (tab) return Response.redirect(url.origin + '/jxl' + url.search + '#' + tab[1], 302);
 			if (!DOORS[path]) return plain();
 			// The routes of `_redirects`, kept: a trailing slash goes to the address without it.
 			if (url.pathname !== path) return Response.redirect(url.origin + path + url.search, 308);

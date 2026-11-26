@@ -48,3 +48,19 @@ export function linearFromTransform(rgba, pixels, transform, into = linear(pixel
   run(k => k.linearBytes, pixels, [part(Uint8Array, rgba, 4), BAND, constants(transform), ...into.map(p => partOut(OutT, p)), OutT === Float32Array ? 1 : 0]);
   return into;
 }
+const SRGB_BYTES = {lms: null, tables: [SRGB_CURVE, SRGB_CURVE, SRGB_CURVE]}, VIEW_BAND = 65536;
+export function srgbView(data, pixels, transform) {
+  const view = new Uint8Array(pixels * 4), planes = [0, 1, 2].map(() => new Float32Array(Math.min(pixels, VIEW_BAND)));
+  for (let at = 0; at < pixels; at += VIEW_BAND) {
+    const m = Math.min(VIEW_BAND, pixels - at), lin = m === planes[0].length ? planes : planes.map(p => p.subarray(0, m));
+    linearFromTransform(data.subarray(at * 4, (at + m) * 4), m, transform, lin);
+    codedBytesFromLinear(lin, m, SRGB_BYTES, view.subarray(at * 4, (at + m) * 4));
+  }
+  for (let i = 3; i < view.length; i += 4) view[i] = data[i];
+  return view;
+}
+export function srgbLinear(data, pixels, transform) {
+  const into = [0, 1, 2].map(() => new Uint16Array(pixels));
+  run(k => k.linearBytes, pixels, [part(Uint8Array, data, 4), BAND, constants(transform), ...into.map(p => partOut(Uint16Array, p)), 2]);
+  return into;
+}

@@ -364,7 +364,7 @@ async function encodeOwned(input, options, helpers, {codec, target, webgpu, maxP
     const {plan} = planGate(hooks.lexer, data, width, height, settings.quality, codec.qualityIntent, MEASURED_EFFORT);
     sampledDecline = declineSampledSeed(data, width, height, settings.quality, plan);
   }
-  const lowFive = (codec.effort === MEASURED_EFFORT || codec.effort === MEASURED_EFFORT + 1) && fit === undefined && settings.quality < 100 && captured.target === undefined
+  const lowFive = codec.effort === MEASURED_EFFORT && fit === undefined && settings.quality < 100 && captured.target === undefined
     && !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)
     ? async () => {
       const five = await settle(captured.input, false, {...codec, effort: MEASURED_EFFORT - 1});

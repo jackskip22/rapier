@@ -715,7 +715,7 @@
 	function configure({mode, quality, effort, maxBytes, side, location} = {}) {
 		if (!view) return;
 		let again = false;
-		const asked = typeof quality === 'number' ? C.qualityOf(quality) : quality === 'medium' ? C.qualityOf(75) : C.QUALITY[quality] ?? C.QUALITY[mode];
+		const asked = typeof quality === 'number' ? C.qualityOf(quality) : C.QUALITY[quality] ?? C.QUALITY[mode];
 		if (asked !== undefined && asked !== view.quality) { setQuality(view, asked); again = true; }
 		const advanced = {...maxBytes !== undefined && {limit: C.ADVANCED.limits.includes(maxBytes) ? maxBytes : 0}, ...side !== undefined && {side: C.ADVANCED.sides.includes(side) ? side : 0}, ...location !== undefined && {location: !!location}};
 		if (Object.keys(advanced).length) {

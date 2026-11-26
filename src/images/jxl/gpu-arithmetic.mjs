@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {fault} from './fault.mjs';
-import {turn} from './turn.mjs';
+import {gpuReadTurn} from './turn.mjs';
 import {gpuWait, gpuFloat as gcF, gpuSplit as gcSplit, gpuDestroy, gpuCached, gpuKernel, gpuScoped, gpuAlloc, gpuUpload, gpuUni, gpuStep, gpuStage} from './gpu-kit.mjs';
 export {gcF, gcSplit};
 export const GC_BOUNDS = /* @__PURE__ */ Object.freeze({op: 4e-14, plane: 2e-8, planeMax: 1300, sum: 1e-11, rel: 1e-12, frac: 2.4e-7, floor: 1e-30});
@@ -97,6 +97,7 @@ export function gcQualificationCheck(cases, out) {
 
 const gcQualifications = /* @__PURE__ */ new WeakMap();
 const gcReadMs = /* @__PURE__ */ new WeakMap();
+export const PROBE_DESKTOP_MS = 25, PROBE_SLOW_MS = 220, SLOW_READ_MS = 400;
 export const gpuCoreReadMs = device => gcReadMs.get(device) ?? 0;
 export async function gpuCoreQualification(device, ds = GC_DS) {
   const cases = gcQualificationCases(), made = [], alloc = gpuAlloc(device, made);
@@ -108,11 +109,13 @@ export async function gpuCoreQualification(device, ds = GC_DS) {
       const encoder = device.createCommandEncoder();
       gpuStep(device, encoder, kernel, [inp, out, one], cases.length / 4);
       const [map, take] = gpuStage(device, alloc, encoder, [[out, 0, cases.byteLength * 3]]);
-      const read = readTimer();
-      device.queue.submit([encoder.finish()]);
-      seal();
-      await map();
-      gcReadMs.set(device, read());
+      await gpuReadTurn(async () => {
+        const read = readTimer();
+        device.queue.submit([encoder.finish()]);
+        seal();
+        await map();
+        gcReadMs.set(device, read());
+      }, SLOW_READ_MS);
       return take;
     }, false);
     const failures = gcQualificationCheck(cases, new Float32Array(take()[0]));
@@ -124,9 +127,8 @@ export const gpuCoreQualified = device =>
   gpuCached(gcQualifications, device, 'ok', () => gpuCoreQualification(device).then(r => r.ok));
 
 function readTimer() {
-  let free = Infinity;
-  turn().then(() => { free = performance.now(); });
-  return () => { const end = performance.now(); return end - Math.min(free, end); };
+  const start = performance.now();
+  return () => performance.now() - start;
 }
 
 const gcProbes = /* @__PURE__ */ new WeakMap();
@@ -141,7 +143,7 @@ export function gpuDeviceProbe(device) {
     }
     const made = [], alloc = gpuAlloc(device, made);
     try {
-      return await gpuScoped(device, 'device-probe', async seal => {
+      return await gpuReadTurn(() => gpuScoped(device, 'device-probe', async seal => {
         const src = alloc(4096, GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
         const dst = alloc(4096, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST);
         device.queue.writeBuffer(src, 0, words);
@@ -162,7 +164,7 @@ export function gpuDeviceProbe(device) {
         } finally {
           if (mapped) try { dst.unmap(); } catch {}
         }
-      }, false);
+      }, false), PROBE_SLOW_MS);
     } finally { gpuDestroy(made); }
   });
 }
@@ -174,7 +176,7 @@ export function gpuBulkProbe(device) {
   return gpuCached(gcBulk, device, 'bulk', async () => {
     const made = [], alloc = gpuAlloc(device, made);
     try {
-      return await gpuScoped(device, 'device-bulk-probe', async seal => {
+      return await gpuReadTurn(() => gpuScoped(device, 'device-bulk-probe', async seal => {
         const src = alloc(PROBE_BULK_BYTES, GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
         const dst = alloc(PROBE_BULK_BYTES, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST);
         device.queue.writeBuffer(src, 0, new Uint32Array(PROBE_BULK_BYTES / 4).fill(7));
@@ -189,7 +191,7 @@ export function gpuBulkProbe(device) {
           mapped = true;
           return {ok: true, ms: read(), synthetic: false};
         } finally { if (mapped) try { dst.unmap(); } catch {} }
-      }, false);
+      }, false), PROBE_SLOW_MS);
     } finally { gpuDestroy(made); }
   });
 }

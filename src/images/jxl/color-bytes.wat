@@ -109,8 +109,9 @@
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $pixel)))
   (if (local.get $lr) (then (call $linearBytes (local.get $rgba) (local.get $n) (local.get $consts) (local.get $lr) (local.get $lg) (local.get $lb) (local.get $outNarrow)))))
-;; $n pixels of RGBA8 at $rgba to linear sRGB, f32 ($outNarrow) or f64 planes at $lr, $lg, $lb: back (at $consts + 72) x
-;; the channels' table values (at $consts + 144, [3][256]).
+;; $n pixels of RGBA8 at $rgba to linear sRGB, f32 ($outNarrow 1), f64 ($outNarrow 0) or Q15 ($outNarrow 2: u16, the
+;; value clipped to [0, 1] times 32768, rounded half up, NaN 0) planes at $lr, $lg, $lb: back (at $consts + 72) x the
+;; channels' table values (at $consts + 144, [3][256]).
 (func $linearBytes (export "linearBytes") (param $rgba i32) (param $n i32) (param $consts i32) (param $lr i32) (param $lg i32) (param $lb i32) (param $outNarrow i32)
   (local $i i32) (local $m i32) (local $p i32) (local $x f64) (local $y f64) (local $z f64)
   (local $b00 f64) (local $b01 f64) (local $b02 f64) (local $b10 f64) (local $b11 f64) (local $b12 f64) (local $b20 f64) (local $b21 f64) (local $b22 f64)
@@ -124,7 +125,13 @@
       (local.set $x (f64.load offset=144 (i32.add (local.get $consts) (i32.shl (i32.load8_u (local.get $m)) (i32.const 3)))))
       (local.set $y (f64.load offset=2192 (i32.add (local.get $consts) (i32.shl (i32.load8_u offset=1 (local.get $m)) (i32.const 3)))))
       (local.set $z (f64.load offset=4240 (i32.add (local.get $consts) (i32.shl (i32.load8_u offset=2 (local.get $m)) (i32.const 3)))))
-      (if (local.get $outNarrow)
+      (if (i32.eq (local.get $outNarrow) (i32.const 2))
+        (then
+          (local.set $p (i32.shl (local.get $i) (i32.const 1)))
+          (i32.store16 (i32.add (local.get $lr) (local.get $p)) (call $q15 (f64.add (f64.add (f64.mul (local.get $b00) (local.get $x)) (f64.mul (local.get $b01) (local.get $y))) (f64.mul (local.get $b02) (local.get $z)))))
+          (i32.store16 (i32.add (local.get $lg) (local.get $p)) (call $q15 (f64.add (f64.add (f64.mul (local.get $b10) (local.get $x)) (f64.mul (local.get $b11) (local.get $y))) (f64.mul (local.get $b12) (local.get $z)))))
+          (i32.store16 (i32.add (local.get $lb) (local.get $p)) (call $q15 (f64.add (f64.add (f64.mul (local.get $b20) (local.get $x)) (f64.mul (local.get $b21) (local.get $y))) (f64.mul (local.get $b22) (local.get $z))))))
+      (else (if (local.get $outNarrow)
         (then
           (local.set $p (i32.shl (local.get $i) (i32.const 2)))
           (f32.store (i32.add (local.get $lr) (local.get $p)) (f32.demote_f64 (f64.add (f64.add (f64.mul (local.get $b00) (local.get $x)) (f64.mul (local.get $b01) (local.get $y))) (f64.mul (local.get $b02) (local.get $z)))))
@@ -134,9 +141,14 @@
           (local.set $p (i32.shl (local.get $i) (i32.const 3)))
           (f64.store (i32.add (local.get $lr) (local.get $p)) (f64.add (f64.add (f64.mul (local.get $b00) (local.get $x)) (f64.mul (local.get $b01) (local.get $y))) (f64.mul (local.get $b02) (local.get $z))))
           (f64.store (i32.add (local.get $lg) (local.get $p)) (f64.add (f64.add (f64.mul (local.get $b10) (local.get $x)) (f64.mul (local.get $b11) (local.get $y))) (f64.mul (local.get $b12) (local.get $z))))
-          (f64.store (i32.add (local.get $lb) (local.get $p)) (f64.add (f64.add (f64.mul (local.get $b20) (local.get $x)) (f64.mul (local.get $b21) (local.get $y))) (f64.mul (local.get $b22) (local.get $z))))))
+          (f64.store (i32.add (local.get $lb) (local.get $p)) (f64.add (f64.add (f64.mul (local.get $b20) (local.get $x)) (f64.mul (local.get $b21) (local.get $y))) (f64.mul (local.get $b22) (local.get $z))))))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $pixel))))
+;; A linear value as Q15 (s2-cells.mjs's linear light): clipped to [0, 1] (NaN 0), times 32768, rounded half up.
+(func $q15 (param $v f64) (result i32)
+  (if (i32.eqz (f64.gt (local.get $v) (f64.const 0))) (then (return (i32.const 0))))
+  (if (f64.ge (local.get $v) (f64.const 1)) (then (return (i32.const 32768))))
+  (i32.trunc_f64_u (f64.floor (f64.add (f64.mul (local.get $v) (f64.const 32768)) (f64.const 0.5)))))
 ;; The sRGB curve's levels as levelExact writes them, halved on the doubles' bits: at[k] (f64, 257 at $at), the least
 ;; double of level k or more (at[0] 0, at[256] Infinity), and $first (u8[8192]), each bucket's first level.
 (func $srgbLevels (export "srgbLevels") (param $at i32) (param $first i32)

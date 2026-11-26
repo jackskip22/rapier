@@ -5,24 +5,14 @@ import {nativeStillPrediction, filteredStillQuality, alphaStillQuality, ALPHA_OP
 import {qualityForIntent, smallReading} from './intent-quality.mjs';
 import {fault} from '../fault.mjs';
 import {admitSampleFormat, statedSpace} from '../admit-samples.mjs';
-import {linearFromTransform, codedBytesFromLinear} from '../color-bytes.mjs';
-import {SRGB_CURVE, P3_TRANSFORM} from '../color-transform.mjs';
+import {srgbView} from '../color-bytes.mjs';
+import {P3_TRANSFORM} from '../color-transform.mjs';
 const statedPicture = picture => {
   if (!picture || picture.icc !== undefined || picture.orientation !== undefined || picture.extraChannels !== undefined) return false;
   try { return !!statedSpace(admitSampleFormat(picture.data, picture)); } catch { return false; }
 };
-const SRGB_BYTES = {lms: null, tables: [SRGB_CURVE, SRGB_CURVE, SRGB_CURVE]}, VIEW_BAND = 65536;
-function statedView(picture, transform = statedSpace(admitSampleFormat(picture.data, picture)).transform) {
-  const {data, width, height} = picture, n = width * height;
-  const view = new Uint8Array(n * 4), planes = [0, 1, 2].map(() => new Float32Array(Math.min(n, VIEW_BAND)));
-  for (let at = 0; at < n; at += VIEW_BAND) {
-    const m = Math.min(VIEW_BAND, n - at), lin = m === planes[0].length ? planes : planes.map(p => p.subarray(0, m));
-    linearFromTransform(data.subarray(at * 4, (at + m) * 4), m, transform, lin);
-    codedBytesFromLinear(lin, m, SRGB_BYTES, view.subarray(at * 4, (at + m) * 4));
-  }
-  for (let i = 3; i < view.length; i += 4) view[i] = data[i];
-  return {data: view, width, height};
-}
+const statedView = (picture, transform = statedSpace(admitSampleFormat(picture.data, picture)).transform) =>
+  ({data: srgbView(picture.data, picture.width * picture.height, transform), width: picture.width, height: picture.height});
 import {measuredLook, usesRegionalCalibration, landsAtEffort, settlesOnCoefficients, landSteps} from '../photo-quality-table.mjs';
 import {MEASURED_EFFORT} from '../effort-level.mjs';
 import {profileTransform} from '../icc-transform.mjs';

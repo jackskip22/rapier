@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import * as paint from '../../draw/paint.mjs';
 import * as drawCore from '../../draw/core.mjs';
 import {_rapierDrawAdmitRecipe as admit, _rapierDrawBuildSVG as svg, RAPIER_DRAW_VERSION} from '../../draw/core.mjs';
-import {encode as encodeJXL} from '../../images/jxl/v7/offline.mjs';
+import {encode as encodeFull} from '../../images/jxl/v7/index.mjs';
+const encodeJXL = async (...args) => (await encodeFull(...args)).bytes;
 import {refractionRecipeKey} from '../../draw/refraction-rendition.mjs';
 
 let renditionFixture;

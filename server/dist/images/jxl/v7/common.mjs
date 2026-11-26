@@ -4,7 +4,7 @@ import {encodeCaptureSteps, compileCaptureKernels, captureBusy, CAPTURE_TOOLS, C
 import {screenPhotoSteps} from '../screen-photo-mixed.mjs';
 export {encodeOptions, callOptions} from './encode-options.mjs';
 import {gpuQueue} from '../gpu-queue.mjs';
-import {exclusive, exclusiveActive, turn} from '../turn.mjs';
+import {exclusive, exclusiveActive, turn, gpuReadPending} from '../turn.mjs';
 import {journalNext} from '../step-journal.mjs';
 import {deviceTrials} from '../device-trial.mjs';
 import {deferRetirement} from '../call-scope.mjs';
@@ -28,6 +28,7 @@ export async function drain(iterator, hooks = {}, gpuAnswer) {
     const warm = gpuAnswer?.warm?.();
     if (warm !== undefined) await abortable(warm, signal);
     for (;;) {
+      while (gpuReadPending) await abortable(gpuReadPending, signal);
       check(signal);
       deviceTrials(gpu?.trials, gpu?.generation, gpu?.phoneRequired);
       const step = await (journal ? journalNext(iterator, reply, journal) : iterator.next(reply));

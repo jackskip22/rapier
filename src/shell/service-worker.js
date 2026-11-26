@@ -93,6 +93,12 @@ self.addEventListener('fetch', event => {
 
   const isNavigation = req.mode === 'navigate';
 
+  const tab = isNavigation ? /^\/jxl\/(animated|xr|glitch)$/.exec(scopePath(url) || '') : null;
+  if (tab) {
+    event.respondWith(Response.redirect(new URL('jxl' + url.search + '#' + tab[1], SHELL_ROOT_URL).href, 302));
+    return;
+  }
+
   if (isNavigation && isSitePage(url)) {
     event.respondWith(sitePageNavigation(req));
     return;

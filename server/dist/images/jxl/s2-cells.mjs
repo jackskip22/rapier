@@ -58,9 +58,9 @@ function kernelSums(P1, P2, w, h, sh, stride, acc1, acc4, span = null) {
 
 export function s2CellStream(reference, width, height, yOnly = false) {
   const scales = s2cScales(width, height), stride = Math.ceil(width / 8), rows = Math.ceil(height / 8);
-  const raw = reference.rgba, prev = raw && ArrayBuffer.isView(raw) ? (reference.s2c?.rgba === raw ? reference.s2c : S2C_REFS.get(raw)) : null;
-  const cachedRef = raw && ArrayBuffer.isView(raw) ? (prev?.rgba === raw && prev.width === width && prev.height === height ? prev
-    : {rgba: raw, width, height, p0: [null, null, null], below: []}) : null;
+  const raw = reference.rgba, prev = raw && ArrayBuffer.isView(raw) ? (reference.s2c?.raw === raw ? reference.s2c : S2C_REFS.get(raw)) : null;
+  const cachedRef = raw && ArrayBuffer.isView(raw) ? (prev?.raw === raw && prev.width === width && prev.height === height ? prev
+    : {raw, rgba: raw, width, height, p0: [null, null, null], below: []}) : null;
   if (cachedRef) { S2C_REFS.set(raw, cachedRef); reference.s2c = cachedRef; cachedRef.p0 ??= [null, null, null]; }
   const ref = {rgba: reference.rgba, y: 0}, held = scales.map(() => ({next: 0, have: 0, a: null, b: null}));
   const terms = scales.map((_, s) => {
@@ -166,9 +166,9 @@ export function s2CellStream(reference, width, height, yOnly = false) {
 const S2C_REFS = new WeakMap();
 export function s2CellSums(reference, candidate, width, height, yOnly = false) {
   const scales = s2cScales(width, height), stride = Math.ceil(width / 8), rows = Math.ceil(height / 8), out = [];
-  const raw = reference.rgba, held = reference.s2c?.rgba === raw ? reference.s2c : S2C_REFS.get(raw);
-  const kept = held?.rgba === raw && held.width === width && held.height === height ? held
-    : {rgba: raw, width, height, p0: [null, null, null], below: []};
+  const raw = reference.rgba ?? reference.lin?.[0], held = reference.s2c?.raw === raw ? reference.s2c : S2C_REFS.get(raw);
+  const kept = held?.raw === raw && held.width === width && held.height === height ? held
+    : {raw, ...(reference.rgba ? {rgba: raw} : {lin: reference.lin}), width, height, p0: [null, null, null], below: []};
   if (ArrayBuffer.isView(raw)) S2C_REFS.set(raw, kept);
   reference.s2c = kept;
   kept.p0 ??= [null, null, null];
@@ -181,7 +181,7 @@ export function s2CellSums(reference, candidate, width, height, yOnly = false) {
     }
     const n = s <= 3 ? stride * rows : w * h, sh = s <= 3 ? 3 - s : -1, sums = [];
     if (!s && !yOnly) {
-      if (!kept.p0[0] || !kept.p0[1] || !kept.p0[2]) { const [rx, ry, rb] = rgbaPlanes(kept.rgba, w * h); kept.p0[0] ??= rx; kept.p0[1] ??= ry; kept.p0[2] ??= rb; }
+      if (!kept.p0[0] || !kept.p0[1] || !kept.p0[2]) { const [rx, ry, rb] = kept.rgba ? rgbaPlanes(kept.rgba, w * h) : linPlanes(kept.lin, w * h); kept.p0[0] ??= rx; kept.p0[1] ??= ry; kept.p0[2] ??= rb; }
       b.xyb = rgbaPlanes(b.rgba, w * h);
     } else if (s) {
       a.xyb ??= linPlanes(a.lin, w * h);
@@ -197,7 +197,7 @@ export function s2CellSums(reference, candidate, width, height, yOnly = false) {
         (p === 1 ? acc1 : acc4)[t] = sum; active.push({k, c, t, p, sum});
       }
       if (!active.length) continue;
-      const refP = s ? a.xyb[c] : (kept.p0[c] ??= rgbaChannel(kept.rgba, w * h, c, new Int16Array(w * h)));
+      const refP = s ? a.xyb[c] : (kept.p0[c] ??= kept.rgba ? rgbaChannel(kept.rgba, w * h, c, new Int16Array(w * h)) : linPlanes(kept.lin, w * h)[c]);
       const candP = b.xyb ? b.xyb[c] : rgbaChannel(b.rgba, w * h, c, P2 ??= new Int16Array(w * h));
       kernelSums(refP, candP, w, h, sh, stride, acc1, acc4);
       sums.push(...active);

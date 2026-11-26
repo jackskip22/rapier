@@ -119,7 +119,7 @@ function driver(owner, gpu = null, dispatch) {
       promise.deps = [counts, ...lf];
     } else if (task.kind === 'score-band') promise = pool.run(msg, [], scoreBandTransfers(msg), result => scoreBandReply(msg, result));
     else if (task.kind === 'lf-code') promise = pool.run(msg, [], [], result => result?.bytes instanceof Uint8Array && Number.isSafeInteger(result.at));
-    else if (task.kind === 'zone-cells') promise = pool.run(msg, [], [msg.rows.buffer], result => zoneCellsReply(msg, result));
+    else if (task.kind === 'zone-cells') promise = pool.run(msg, [], [msg.rows.buffer, ...msg.lin?.map(p => p.buffer) ?? []], result => zoneCellsReply(msg, result));
     else if (!CAPTURE_OR_UPLOAD && task.kind === 'shape-band') promise = pool.run(msg, [], [msg.input], result => result?.chosen instanceof Int32Array && result.input instanceof ArrayBuffer && result.input.byteLength === msg.inputBytes);
     else if (!CAPTURE_OR_UPLOAD && task.kind === 'mask-band') promise = pool.run(msg, [], [msg.input], result => result?.hf instanceof Float64Array && result.input instanceof ArrayBuffer && result.input.byteLength === msg.inputBytes);
     else if (!CAPTURE_OR_UPLOAD && task.kind === 'pack-band') promise = pool.run(msg, [], [msg.input], result => Array.isArray(result?.packed?.groups) && result.input instanceof ArrayBuffer && result.input.byteLength === msg.inputBytes);

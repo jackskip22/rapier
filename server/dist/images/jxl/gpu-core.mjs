@@ -4,7 +4,7 @@ import {gpuTrees} from './gpu-trees.mjs';
 import {fault} from './fault.mjs';
 import {gpuDevice} from './gpu-device.mjs';
 import {traced, tracing} from './stage-trace.mjs';
-import {GC_BOUNDS, GC_DS, GC_CBRT, gcF, gcSplit, gpuCoreQualified, gpuCoreReadMs, gpuDeviceProbe, gpuBulkProbe, PROBE_BULK_BYTES} from './gpu-arithmetic.mjs';
+import {GC_BOUNDS, GC_DS, GC_CBRT, gcF, gcSplit, gpuCoreQualified, gpuCoreReadMs, gpuDeviceProbe, gpuBulkProbe, PROBE_BULK_BYTES, PROBE_DESKTOP_MS, PROBE_SLOW_MS, SLOW_READ_MS} from './gpu-arithmetic.mjs';
 export {GC_BOUNDS, gcQualificationCases, gcQualificationCheck, gpuCoreQualification, gpuCoreQualified} from './gpu-arithmetic.mjs';
 import {gpuBlocks16Mask, gpuBlocks16EnergyHook} from './gpu-blocks16.mjs';
 import {gpuBlocksCosts, gpuBlocksLevels, gpuBlocksPipelines, gpuBlocksLevelsPipelines} from './gpu-blocks.mjs';
@@ -559,9 +559,6 @@ export class GpuCore {
 const gcCores = new WeakMap();
 const gcSettled = new WeakMap();
 const gcPhoneReady = new WeakMap();
-const SLOW_READ_MS = 400;
-const PROBE_DESKTOP_MS = 25, PROBE_SLOW_MS = 220;
-
 export function gpuCorePrewarmCells(device) {
   Promise.resolve().then(() => gpuS2CellsPipelines(device)).catch(() => {});
 }

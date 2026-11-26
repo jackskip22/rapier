@@ -4,6 +4,7 @@ import {answer, guard} from './admit.mjs';
 import {gpuQueue} from './gpu-queue.mjs';
 import {deviceTrials} from './device-trial.mjs';
 import {deferRetirement} from './call-scope.mjs';
+import {gpuReadPending} from './turn.mjs';
 
 export async function* driven(steps, signal, it, gpu, offload, queued) {
   const device = queued ?? (gpu ? gpuQueue(gpu) : () => null);
@@ -19,11 +20,14 @@ export async function* driven(steps, signal, it, gpu, offload, queued) {
   };
   let step, reply, last, done = false;
   try {
-    while (!(step = guard(() => {
-      signal?.throwIfAborted();
-      deviceTrials(device.trials, device.generation, device.phoneRequired);
-      return offload ? offload.step(steps, reply) : steps.next(reply);
-    })).done) {
+    for (;;) {
+      while (gpuReadPending) await settle(gpuReadPending);
+      step = guard(() => {
+        signal?.throwIfAborted();
+        deviceTrials(device.trials, device.generation, device.phoneRequired);
+        return offload ? offload.step(steps, reply) : steps.next(reply);
+      });
+      if (step.done) break;
       const value = step.value;
       reply = undefined;
       if (typeof value === 'number') { yield last = value; reply = it.hurry; }

@@ -490,6 +490,8 @@ export default {
 			const method = request.method.toUpperCase();
 			if (method !== 'GET' && method !== 'HEAD') return plain();
 			const path = url.pathname.replace(/\/+$/, '');
+			const tab = /^\/jxl\/(animated|xr|glitch)$/.exec(path);
+			if (tab) return Response.redirect(url.origin + '/jxl' + url.search + '#' + tab[1], 302);
 			if (!DOORS[path]) return plain();
 			if (url.pathname !== path) return Response.redirect(url.origin + path + url.search, 308);
 			const published = await env.ASSETS.fetch(new Request(new URL(doorAssetPath(path), url), request));

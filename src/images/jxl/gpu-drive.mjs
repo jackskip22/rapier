@@ -7,6 +7,7 @@ import {gpuQueue} from './gpu-queue.mjs';
 import {deviceTrials} from './device-trial.mjs';
 import {gpuCoreDevice, gpuCoreImage} from './gpu-core.mjs';
 import {deferRetirement} from './call-scope.mjs';
+import {gpuReadPending} from './turn.mjs';
 
 export const gpuWanted = (options, width, height) => options?.gpu !== false && (!!options?.gpu || gpuOffered(width, height, options?.effort ?? FAST_EFFORT) && !!hostGPU());
 
@@ -19,7 +20,10 @@ export async function driveGpu(it, given) {
   let step, reply;
   const gpu = gpuQueue(request => gpuAnswer(request, given));
   try {
-    while (!(step = guard(() => { deviceTrials(false); return it.next(reply); })).done) {
+    for (;;) {
+      while (gpuReadPending) await gpuReadPending;
+      step = guard(() => { deviceTrials(false); return it.next(reply); });
+      if (step.done) break;
       const v = step.value;
       reply = v?.gpu ? (v.later ? gpu(v.gpu) : await gpu(v.gpu)) : v?.await !== undefined ? await gpu.watch(v.await)
         : v?.capture ? await captureAnswer(v.capture) : v?.screenPhoto ? await screenPhotoAnswer(v.screenPhoto) : undefined;
@@ -32,7 +36,10 @@ export function gpuJob(steps, device) {
   const it = (async function* () {
     let step, last, reply;
     const gpu = device ? gpuQueue(request => gpuAnswer(request, device)) : () => null;
-    try { while (!(step = guard(() => { deviceTrials(false); return steps.next(reply); })).done) {
+    try { for (;;) {
+      while (gpuReadPending) await gpuReadPending;
+      step = guard(() => { deviceTrials(false); return steps.next(reply); });
+      if (step.done) break;
       if (step.value?.gpu) reply = step.value.later ? gpu(step.value.gpu) : await gpu(step.value.gpu);
       else if (step.value?.await !== undefined) reply = await (gpu.watch ? gpu.watch(step.value.await) : step.value.await);
       else if (step.value?.capture) reply = await captureAnswer(step.value.capture);

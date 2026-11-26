@@ -343,7 +343,7 @@ export function createUseObservation(originRoute, options = {}) {
       facts.pictures = countBucket(count);
       facts.picture_format = pictureFormat(files);
       facts.unpassed = Number.isSafeInteger(unpassed) && unpassed > 0 ? 'unpassed' : 'all_ids';
-      facts.quality = Number.isSafeInteger(quality) && quality >= 1 && quality <= 100 ? 'number' : member(['lossless', 'high', 'medium'], quality, quality === undefined ? 'none' : 'other');
+      facts.quality = Number.isSafeInteger(quality) && quality >= 1 && quality <= 100 ? 'number' : member(['high', 'veryhigh', 'lossless'], quality, quality === undefined ? 'none' : 'other');
       facts.effort = Number.isSafeInteger(effort) && effort >= 1 && effort <= 10 ? String(effort) : effort === undefined ? 'none' : 'other';
     },
     attempted(name) {

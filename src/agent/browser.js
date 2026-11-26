@@ -1686,7 +1686,7 @@
       if (partStatus === 'carried') { await RapierParts.need('jxlcomplete'); return; }
       if (!['ready', 'stored'].includes(partStatus)) throw Object.assign(new Error('Not converted: needs JPEG XL complete. Open the JPEG XL converter once to get it.'), {shown: true});
     };
-    const quality = typeof input.quality === 'number' ? input.quality : {lossless: 100, high: 90, medium: 75}[input.quality] ?? 90;
+    const quality = typeof input.quality === 'number' ? input.quality : {high: 90, veryhigh: 95, lossless: 100}[input.quality] ?? 90;
     const advanced = {maxBytes: input.max_bytes, side: input.longer_side, location: input.remove_location !== true};
     const lossy = 'quality ' + quality + (input.max_bytes ? ' or the highest that fits' : '');
     const kept = r => (r.back === 'jpeg' ? 'original JPEG, byte for byte' : r.back === 'png' ? 'PNG' : r.exact ? 'JPEG carried exactly; restores byte for byte'

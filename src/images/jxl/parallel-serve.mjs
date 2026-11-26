@@ -88,7 +88,7 @@ export function serveParallel(message, relay) {
       return [{id, result: written}, [written.bytes.buffer]];
     }
     if (task.kind === 'zone-cells' && zoneCells) {
-      const {sums, rates} = zoneCells(task.recipe, task.rows, task.width, task.height, task.yOnly);
+      const {sums, rates} = zoneCells(task.recipe, task.rows, task.width, task.height, task.yOnly, task.lin ?? null);
       return [{id, result: {sums, rates}}, [rates.buffer]];
     }
     if (task.kind === 'shape-band' && shapeBand) {

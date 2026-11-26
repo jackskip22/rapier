@@ -1,5 +1,5 @@
 {
-  "release": "1.2.77",
+  "release": "1.2.78",
   "core": [
     {
       "name": "open",
@@ -798,7 +798,7 @@
     {
       "name": "convert",
       "title": "Convert pictures with Rapier",
-      "description": "Convert pictures to JPEG XL, or JPEG XL back. Each file's own kind decides: a JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL (a JPEG at lossless is carried exactly and restores byte for byte). A .jxl that carries its JPEG gives back that JPEG byte for byte, any other .jxl a PNG. quality: lossless, high (default), medium, or a number 1-100 (100 is lossless). effort 1-10 (default 7: higher is smaller and slower; 9 and 10 take a while, longer on a slower machine, and 10 can take 20 to 30 minutes for a 12 MP photo). max_bytes: each picture made the best that fits under 100000, 250000, 500000, 1000000, 2000000 bytes (a JPEG carried exactly when it fits). longer_side: 1920, 1280, 640 px, never larger than the picture. remove_location: true takes a photo's location out. The date, camera and other metadata are kept. At most 32 files and 32 MB in all per call, pictures to 400 megapixels in all. Returns each file's name, sizes and what was kept. The files go to the person.",
+      "description": "Convert pictures to JPEG XL, or JPEG XL back. Each file's own kind decides: a JPEG, PNG, WebP, AVIF, GIF or video becomes JPEG XL (a JPEG at lossless is carried exactly and restores byte for byte). A .jxl that carries its JPEG gives back that JPEG byte for byte, any other .jxl a PNG. quality: high (default), veryhigh, lossless, or a number 1-100 (100 is lossless). effort 1-10 (default 7: higher is smaller and slower; 9 and 10 take a while, longer on a slower machine, and 10 can take 20 to 30 minutes for a 12 MP photo). max_bytes: each picture made the best that fits under 100000, 250000, 500000, 1000000, 2000000 bytes (a JPEG carried exactly when it fits). longer_side: 1920, 1280, 640 px, never larger than the picture. remove_location: true takes a photo's location out. The date, camera and other metadata are kept. At most 32 files and 32 MB in all per call, pictures to 400 megapixels in all. Returns each file's name, sizes and what was kept. The files go to the person.",
       "effect": "create",
       "class": "write",
       "inputSchema": {
@@ -837,9 +837,9 @@
                 "type": "string",
                 "maxLength": 16,
                 "enum": [
-                  "lossless",
                   "high",
-                  "medium"
+                  "veryhigh",
+                  "lossless"
                 ]
               },
               {
@@ -1827,7 +1827,7 @@
     {
       "name": "convert",
       "title": "Convert pictures with Rapier",
-      "description": "Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures. Omit it to let the person pick them. quality: lossless, high (default), medium, or a number 1-100 (100 is lossless). effort 1-10 (default 7: higher is smaller and slower; 9 and 10 take a while, longer on a slower machine, and 10 can take 20 to 30 minutes for a 12 MP photo). max_bytes: each picture made the best that fits under 100000, 250000, 500000, 1000000, 2000000 bytes (a JPEG carried exactly when it fits). longer_side: 1920, 1280, 640 px, never larger than the picture. remove_location: true takes a photo's location out. The date, camera and other metadata are kept. To convert files in your own sandbox, run npx jpegxl <file|folder>: it prints each size before and after.",
+      "description": "Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person's own device. Opens Rapier's converter in this app's view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier's server: the view reads them from the chat on the person's device. Without a view, answers with the converter's link (https://rapier.website/jxl) for the person. files: the chat's pictures. Omit it to let the person pick them. quality: high, veryhigh, lossless, or a number 1-100 (100 is lossless). A fresh view starts on high. A quality or effort left out keeps the view's current choice, so pass quality to be sure. effort 1-10 (7 on a fresh view: higher is smaller and slower; 9 and 10 take a while, longer on a slower machine, and 10 can take 20 to 30 minutes for a 12 MP photo). max_bytes: each picture made the best that fits under 100000, 250000, 500000, 1000000, 2000000 bytes (a JPEG carried exactly when it fits). longer_side: 1920, 1280, 640 px, never larger than the picture. remove_location: true takes a photo's location out. The date, camera and other metadata are kept. To convert files in your own sandbox, run npx jpegxl <file|folder>: it prints each size before and after.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1867,9 +1867,9 @@
                 "type": "string",
                 "maxLength": 16,
                 "enum": [
-                  "lossless",
                   "high",
-                  "medium"
+                  "veryhigh",
+                  "lossless"
                 ]
               },
               {

@@ -40,9 +40,9 @@ export const FEEDBACK_TOOLS = Object.freeze(['open', 'read', 'edit', 'undo', 'sh
 export const FEEDBACK_DESCRIPTION = 'Tell the Rapier team, in one short line, when Rapier got in the way or did not do what the person asked. Never include document text or personal details.';
 export const CONVERT_FILES = 32, CONVERT_BYTES = 32 * 1024 * 1024, CONVERT_PIXELS = 400_000_000;
 export const CONVERT_LIMITS = Object.freeze([100000, 250000, 500000, 1000000, 2000000]), CONVERT_SIDES = Object.freeze([1920, 1280, 640]);
-const CONVERT_WORDS = 'quality: lossless, high (default), medium, or a number 1-100 (100 is lossless). effort 1-10 (default 7: higher is smaller and slower; 9 and 10 take a while, longer on a slower machine, and 10 can take 20 to 30 minutes for a 12 MP photo). max_bytes: each picture made the best that fits under ' + CONVERT_LIMITS.join(', ') + ' bytes (a JPEG carried exactly when it fits). longer_side: ' + CONVERT_SIDES.join(', ') + ' px, never larger than the picture. remove_location: true takes a photo\'s location out. The date, camera and other metadata are kept.';
+const CONVERT_WORDS = 'quality: high (default), veryhigh, lossless, or a number 1-100 (100 is lossless). effort 1-10 (default 7: higher is smaller and slower; 9 and 10 take a while, longer on a slower machine, and 10 can take 20 to 30 minutes for a 12 MP photo). max_bytes: each picture made the best that fits under ' + CONVERT_LIMITS.join(', ') + ' bytes (a JPEG carried exactly when it fits). longer_side: ' + CONVERT_SIDES.join(', ') + ' px, never larger than the picture. remove_location: true takes a photo\'s location out. The date, camera and other metadata are kept.';
 const convertOptions = {
-  quality: {anyOf: [{...string(16), enum: ['lossless', 'high', 'medium']}, integer(1, 100)]}, effort: integer(1, 10),
+  quality: {anyOf: [{...string(16), enum: ['high', 'veryhigh', 'lossless']}, integer(1, 100)]}, effort: integer(1, 10),
   max_bytes: {type: 'integer', enum: CONVERT_LIMITS}, longer_side: {type: 'integer', enum: CONVERT_SIDES}, remove_location: {type: 'boolean'},
 };
 const convertFile = object({name: {...string(256), minLength: 1, description: 'The file name, with its extension.'},
@@ -132,7 +132,11 @@ export function annotations(effect, host = 'mcp', name = '') {
     idempotentHint: effect === 'read', openWorldHint: OPEN_WORLD.has(name)};
 }
 export const OPEN_WORLD = new Set(['open', 'show', 'export']);
-const HOSTED_CONVERT = 'Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person\'s own device. Opens Rapier\'s converter in this app\'s view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier\'s server: the view reads them from the chat on the person\'s device. Without a view, answers with the converter\'s link (https://rapier.website/jxl) for the person. files: the chat\'s pictures. Omit it to let the person pick them. ' + CONVERT_WORDS + ' To convert files in your own sandbox, run npx jpegxl <file|folder>: it prints each size before and after.';
+const HOSTED_CONVERT_WORDS = CONVERT_WORDS
+  .replace('quality: high (default), veryhigh, lossless, or a number 1-100 (100 is lossless).', 'quality: high, veryhigh, lossless, or a number 1-100 (100 is lossless). A fresh view starts on high. A quality or effort left out keeps the view\'s current choice, so pass quality to be sure.')
+  .replace('effort 1-10 (default 7: ', 'effort 1-10 (7 on a fresh view: ');
+if (HOSTED_CONVERT_WORDS === CONVERT_WORDS) throw new Error('The hosted convert words did not change');
+const HOSTED_CONVERT = 'Use this when the person wants pictures converted to JPEG XL, or JPEG XL pictures converted back. Free, on the person\'s own device. Opens Rapier\'s converter in this app\'s view where the app can show one: pictures from the chat passed in files open there and convert at once, and the person can add more and saves the results. The pictures never reach Rapier\'s server: the view reads them from the chat on the person\'s device. Without a view, answers with the converter\'s link (https://rapier.website/jxl) for the person. files: the chat\'s pictures. Omit it to let the person pick them. ' + HOSTED_CONVERT_WORDS + ' To convert files in your own sandbox, run npx jpegxl <file|folder>: it prints each size before and after.';
 export function mcpDescriptors({uiResource, auth = 'anonymous', editor = false} = {}) {
   if (!['anonymous', 'oauth', 'server-bearer'].includes(auth)) throw new TypeError('Unknown MCP authentication profile');
   return (editor ? EDITOR_TOOLS : TOOLS).map(entry => {
