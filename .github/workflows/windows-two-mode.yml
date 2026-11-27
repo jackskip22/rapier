@@ -35,13 +35,19 @@ jobs:
             foreach ($who in 'admin', 'standard') {
               foreach ($flag in 'generic', 'strict') {
                 $argList = if ($flag -eq 'strict') { '--self-test --require-symlink-fixtures' } else { '--self-test' }
-                Remove-Item C:\ci\exit.txt, C:\ci\log.txt, C:\ci\priv.txt -ErrorAction SilentlyContinue
+                Remove-Item C:\ci\exit.txt, C:\ci\log.txt, C:\ci\priv.txt, C:\ci\who.txt -ErrorAction SilentlyContinue
+                # Each account's own temporary folder: a process started with -Credential can inherit the runner's TEMP,
+                # which a standard user cannot write (the converter's folder check then fails, exit 14).
                 Set-Content -Path C:\ci\run.cmd -Encoding ascii -Value @(
                   '@echo off',
+                  'set "TEMP=%USERPROFILE%\AppData\Local\Temp"',
+                  'set "TMP=%USERPROFILE%\AppData\Local\Temp"',
+                  'if not exist "%TEMP%" mkdir "%TEMP%"',
                   'del /q "%TEMP%\rapier-self-test.log" 2>nul',
                   "start `"`" /wait C:\ci\rapier-host.exe $argList",
-                  'echo %ERRORLEVEL%> C:\ci\exit.txt',
+                  '> C:\ci\exit.txt echo %ERRORLEVEL%',
                   'copy /y "%TEMP%\rapier-self-test.log" C:\ci\log.txt >nul 2>nul',
+                  '> C:\ci\who.txt echo %USERNAME% %TEMP%',
                   'whoami /priv > C:\ci\priv.txt')
                 $how = 'direct'
                 try {
@@ -51,7 +57,8 @@ jobs:
                 $code = if (Test-Path C:\ci\exit.txt) { (Get-Content C:\ci\exit.txt -Raw).Trim() } else { 'none' }
                 $log = if (Test-Path C:\ci\log.txt) { ((Get-Content C:\ci\log.txt) -join ' / ') } else { 'no log' }
                 $priv = if (Test-Path C:\ci\priv.txt) { if (Select-String -Path C:\ci\priv.txt -Pattern 'SeCreateSymbolicLinkPrivilege' -Quiet) { 'link privilege listed' } else { 'no link privilege' } } else { 'no priv read' }
-                echo "::notice title=$os dev$dev $who $flag::exit $code; $priv; $how; $log"
+                $whoami = if (Test-Path C:\ci\who.txt) { (Get-Content C:\ci\who.txt -Raw).Trim() } else { 'unknown' }
+                echo "::notice title=$os dev$dev $who $flag::exit $code; $whoami; $priv; $how; $log"
               }
             }
           }
