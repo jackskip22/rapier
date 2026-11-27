@@ -1,0 +1,51 @@
+name: Windows converter and Watercolor checks
+on:
+  push:
+    branches: [ci/windows-converter-check-20261128]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Archive keeps every file it is not sure of (before and after the fix, on NTFS)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $cells = 'part-exists part-denied walk-part receipt-flush receipt-short written-open written-write written-flush saved-open saved-write saved-flush stop-replacement fail-replacement verify-replacement stop-original-gone restart-original-gone restart-replacement verify-locks normal owned-part self-test'.Split(' ')
+          $controls = @('normal', 'owned-part', 'self-test')
+          $rows = @{}
+          foreach ($side in 'base', 'after') {
+            foreach ($cell in $cells) {
+              $work = Join-Path $env:RUNNER_TEMP ("cell-" + $side + "-" + $cell)
+              New-Item -ItemType Directory -Force -Path $work | Out-Null
+              Push-Location $work
+              $text = & (Join-Path $env:GITHUB_WORKSPACE "ci-inputs/archive-$side.exe") $cell 2>&1 | Out-String
+              $code = $LASTEXITCODE
+              Pop-Location
+              $row = $null
+              foreach ($line in $text -split "`n") { try { $j = $line.Trim() | ConvertFrom-Json -ErrorAction Stop; if ($j.case -eq $cell) { $row = $j } } catch {} }
+              $pass = $row -ne $null -and $row.pass -eq $true -and $code -eq 0
+              $rows["$side/$cell"] = $pass
+              Write-Output "$side $cell exit=$code pass=$pass $($text.Trim() -replace "`r?`n", ' | ')"
+            }
+          }
+          $problems = @()
+          foreach ($cell in $cells) {
+            if (-not $rows["after/$cell"]) { $problems += "$cell candidate failed" }
+            if ($controls -contains $cell) { if (-not $rows["base/$cell"]) { $problems += "$cell base control failed" } }
+            elseif ($rows["base/$cell"]) { $problems += "$cell base did not reproduce the bug" }
+          }
+          if ($problems.Count -eq 0) { echo "::notice title=Archive custody::PASS: 18 safety cases red before the fix and green after, 3 controls green, on Windows NTFS" }
+          else { foreach ($p in $problems | Select-Object -First 9) { echo "::error title=Archive custody::$p" } }
+      - name: Self-tests on real Windows (converter, Watercolor)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          foreach ($pair in @(@('converter', 'ci-inputs/RapierJxlConverter.exe'), @('watercolor', 'ci-inputs/watercolor/rapier-host.exe'))) {
+            $exe = Join-Path $env:GITHUB_WORKSPACE $pair[1]
+            $p = Start-Process -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
+            echo "::notice title=Self-test $($pair[0])::exit $($p.ExitCode) on $([System.Environment]::OSVersion.VersionString), Developer Mode $((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Name AllowDevelopmentWithoutDevLicense -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense)"
+          }
