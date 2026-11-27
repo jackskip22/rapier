@@ -1,0 +1,24 @@
+name: Windows file contracts with Developer Mode on and off
+on:
+  push:
+    branches: [ci/windows-devmode-20261128]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Self-test with Developer Mode on, then off (exit 12 is the file contracts; 2 is the next check, the version)
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'ci-inputs/rapier-host.exe'
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+          $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          foreach ($mode in 1, 0) {
+            New-Item -Path $key -Force | Out-Null
+            Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value $mode -Type DWord
+            $p = Start-Process -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
+            echo "::notice title=Developer Mode $mode::self-test exit $($p.ExitCode), elevated $elevated, $([System.Environment]::OSVersion.VersionString)"
+          }
