@@ -20,7 +20,7 @@ if ($StandardUser) {
   # Windows PowerShell 5.1 inherits pwsh 7's PSModulePath and then cannot find its own Get-FileHash: give it its own.
   $env:PSModulePath = "$env:ProgramFiles\WindowsPowerShell\Modules;$env:SystemRoot\system32\WindowsPowerShell\v1.0\Modules"
   try {
-    $p = Start-Process -FilePath 'powershell.exe' -Credential $cred -LoadUserProfile -Wait -PassThru -WindowStyle Hidden `
+    $p = Start-Process -FilePath 'powershell.exe' -Credential $cred -LoadUserProfile -UseNewEnvironment -Wait -PassThru -WindowStyle Hidden `
       -WorkingDirectory $in -RedirectStandardOutput (Join-Path $Out 'user-stdout.txt') -RedirectStandardError (Join-Path $Out 'user-stderr.txt') `
       -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner, '-Exe', $Exe, '-Out', $Out)
     $how = "standard user $name (unelevated), powershell exit $($p.ExitCode)"

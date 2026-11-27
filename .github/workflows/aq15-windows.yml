@@ -38,7 +38,7 @@ jobs:
         run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-off -DeveloperMode 0 -Label "diagnostic-off ${{ matrix.os }}"
       - name: the converter's own code, diagnostic host, elevated and standard user
         shell: pwsh
-        run: ./ci-inputs/converter-code.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe"
+        run: ./ci-inputs/converter-code.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Tag diag
       - name: the converter's own code, base host, elevated and standard user
         shell: pwsh
-        run: ./ci-inputs/converter-code.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe"
+        run: ./ci-inputs/converter-code.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe" -Tag base
