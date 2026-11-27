@@ -41,14 +41,14 @@ jobs:
                 # TEMP (the converter's folder check then fails, exit 14).
                 # The known folders expand %USERPROFILE% from the process environment too (LocalAppData gave exit 16), so the
                 # standard user's whole profile is named.
-                $home = if ($who -eq 'admin') { $env:USERPROFILE } else { 'C:\Users\rapiertest' }
+                $profileDir = if ($who -eq 'admin') { $env:USERPROFILE } else { 'C:\Users\rapiertest' }
                 $tempDir = if ($who -eq 'admin') { $env:TEMP } else { 'C:\Users\rapiertest\AppData\Local\Temp' }
                 Set-Content -Path C:\ci\run.cmd -Encoding ascii -Value @(
                   '@echo off',
-                  "set `"USERPROFILE=$home`"",
-                  "set `"LOCALAPPDATA=$home\AppData\Local`"",
-                  "set `"APPDATA=$home\AppData\Roaming`"",
-                  "set `"HOMEPATH=$($home.Substring(2))`"",
+                  "set `"USERPROFILE=$profileDir`"",
+                  "set `"LOCALAPPDATA=$profileDir\AppData\Local`"",
+                  "set `"APPDATA=$profileDir\AppData\Roaming`"",
+                  "set `"HOMEPATH=$($profileDir.Substring(2))`"",
                   "set `"TEMP=$tempDir`"",
                   "set `"TMP=$tempDir`"",
                   'if not exist "%TEMP%" mkdir "%TEMP%"',
