@@ -10,15 +10,23 @@ if ($StandardUser) {
   # An unelevated standard user, so the unprivileged symbolic-link route is the one exercised.
   $name = 'aq15user'; $pw = 'Aq15-' + [guid]::NewGuid().ToString('N').Substring(0, 16) + '!a'
   net user $name $pw /add /y | Out-Null
+  # Copies outside the workspace, so the user's rights are only what is granted here.
+  $in = 'C:\aq15\in-user'; New-Item -ItemType Directory -Force -Path $in | Out-Null
+  Copy-Item -LiteralPath $Exe, $runner -Destination $in -Force
+  $Exe = Join-Path $in (Split-Path $Exe -Leaf); $runner = Join-Path $in 'windows-self-test.ps1'
+  icacls $in /grant "${name}:(OI)(CI)RX" | Out-Null
   icacls $Out /grant "${name}:(OI)(CI)F" | Out-Null
-  icacls (Split-Path $Exe) /grant "${name}:(OI)(CI)RX" | Out-Null
-  icacls $PSScriptRoot /grant "${name}:(OI)(CI)RX" | Out-Null
   $cred = New-Object System.Management.Automation.PSCredential($name, (ConvertTo-SecureString $pw -AsPlainText -Force))
   try {
     $p = Start-Process -FilePath 'powershell.exe' -Credential $cred -LoadUserProfile -Wait -PassThru -WindowStyle Hidden `
+      -WorkingDirectory $in -RedirectStandardOutput (Join-Path $Out 'user-stdout.txt') -RedirectStandardError (Join-Path $Out 'user-stderr.txt') `
       -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner, '-Exe', $Exe, '-Out', $Out)
     $how = "standard user $name (unelevated), powershell exit $($p.ExitCode)"
   } catch { $how = "standard user route failed to start: $($_.Exception.Message)" }
+  foreach ($f in 'user-stdout.txt', 'user-stderr.txt') {
+    $t = Join-Path $Out $f
+    if ((Test-Path $t) -and (Get-Item $t).Length -gt 0) { echo "::notice title=$Label $f::$(((Get-Content $t -Raw) -replace "`r", '' -replace "`n", ' | ').Substring(0, [Math]::Min(3000, (Get-Content $t -Raw).Length)))" }
+  }
 } else {
   try { & powershell -NoProfile -ExecutionPolicy Bypass -File $runner -Exe $Exe -Out $Out *> (Join-Path $Out 'runner.txt') } catch {}
 }

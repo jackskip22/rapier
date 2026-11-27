@@ -6,7 +6,11 @@ permissions:
   contents: read
 jobs:
   check:
-    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -19,16 +23,16 @@ jobs:
           if ($b -ne 'e51f4eec5b45c03576d2d061988f300da37c4f7c459ef3fcab52fad707551c53' -or $d -ne 'b3fa63b2e60eec81ac0a424acf04ee2c06b8cf06a1d33cdf05e2525c5077ddb7') { throw 'host hash mismatch' }
       - name: base, Developer Mode off, elevated
         shell: pwsh
-        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe" -Out C:\aq15\base-off -DeveloperMode 0 -Label base-off
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe" -Out C:\aq15\base-off -DeveloperMode 0 -Label "base-off ${{ matrix.os }}"
       - name: base, Developer Mode on, elevated
         shell: pwsh
-        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe" -Out C:\aq15\base-on -DeveloperMode 1 -Label base-on
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe" -Out C:\aq15\base-on -DeveloperMode 1 -Label "base-on ${{ matrix.os }}"
       - name: diagnostic, Developer Mode on, unelevated standard user
         shell: pwsh
-        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-on-user -DeveloperMode 1 -StandardUser -Label diagnostic-on-user
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-on-user -DeveloperMode 1 -StandardUser -Label "diagnostic-on-user ${{ matrix.os }}"
       - name: diagnostic, Developer Mode on, elevated
         shell: pwsh
-        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-on -DeveloperMode 1 -Label diagnostic-on
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-on -DeveloperMode 1 -Label "diagnostic-on ${{ matrix.os }}"
       - name: diagnostic, Developer Mode off, elevated
         shell: pwsh
-        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-off -DeveloperMode 0 -Label diagnostic-off
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-off -DeveloperMode 0 -Label "diagnostic-off ${{ matrix.os }}"
