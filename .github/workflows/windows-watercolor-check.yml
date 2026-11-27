@@ -1,0 +1,18 @@
+name: Windows Watercolor self-test
+on:
+  push:
+    branches: [ci/windows-watercolor-check-20261128]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Watercolor's self-test and its embedded version on real Windows
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'ci-inputs/rapier-host.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
+          echo "::notice title=Self-test watercolor 1.2.80::exit $($p.ExitCode) on $([System.Environment]::OSVersion.VersionString)"
