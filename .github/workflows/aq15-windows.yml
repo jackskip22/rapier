@@ -1,0 +1,34 @@
+name: AQ15 Windows self-test, base and diagnostic, Developer Mode on and off
+on:
+  push:
+    branches: [ci/aq15-windows-20261128]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: unpack the two hosts and check their SHA-256
+        shell: pwsh
+        run: |
+          Expand-Archive -Path ci-inputs/base.zip -DestinationPath ci-inputs -Force; Expand-Archive -Path ci-inputs/diag.zip -DestinationPath ci-inputs -Force
+          $b = (Get-FileHash ci-inputs/base/rapier-host.exe -Algorithm SHA256).Hash.ToLower(); $d = (Get-FileHash ci-inputs/diag/rapier-host.exe -Algorithm SHA256).Hash.ToLower()
+          echo "::notice title=hosts::base $b, diagnostic $d, runner script $((Get-FileHash ci-inputs/windows-self-test.ps1 -Algorithm SHA256).Hash.ToLower()), $([System.Environment]::OSVersion.VersionString), WebView2 $((Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv)"
+          if ($b -ne 'e51f4eec5b45c03576d2d061988f300da37c4f7c459ef3fcab52fad707551c53' -or $d -ne 'b3fa63b2e60eec81ac0a424acf04ee2c06b8cf06a1d33cdf05e2525c5077ddb7') { throw 'host hash mismatch' }
+      - name: base, Developer Mode off, elevated
+        shell: pwsh
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe" -Out C:\aq15\base-off -DeveloperMode 0 -Label base-off
+      - name: base, Developer Mode on, elevated
+        shell: pwsh
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\base\rapier-host.exe" -Out C:\aq15\base-on -DeveloperMode 1 -Label base-on
+      - name: diagnostic, Developer Mode on, unelevated standard user
+        shell: pwsh
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-on-user -DeveloperMode 1 -StandardUser -Label diagnostic-on-user
+      - name: diagnostic, Developer Mode on, elevated
+        shell: pwsh
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-on -DeveloperMode 1 -Label diagnostic-on
+      - name: diagnostic, Developer Mode off, elevated
+        shell: pwsh
+        run: ./ci-inputs/run.ps1 -Exe "$env:GITHUB_WORKSPACE\ci-inputs\diag\rapier-host.exe" -Out C:\aq15\diagnostic-off -DeveloperMode 0 -Label diagnostic-off
