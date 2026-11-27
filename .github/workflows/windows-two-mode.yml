@@ -1,0 +1,57 @@
+name: Windows self-test in two modes (generic and strict) on four account modes
+on:
+  push:
+    branches: [ci/aq15-two-mode-20261128]
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Developer Mode on and off, admin and standard user, --self-test and --self-test --require-symlink-fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $os = '${{ matrix.os }}'
+          New-Item -ItemType Directory -Force C:\ci | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'ci-inputs/rapier-host.exe') C:\ci\rapier-host.exe
+          $hash = (Get-FileHash C:\ci\rapier-host.exe -Algorithm SHA256).Hash.ToLower()
+          echo "::notice title=$os exe::sha256 $hash, $([System.Environment]::OSVersion.VersionString)"
+          # A standard user with no link privilege (not in Administrators). The password lives only in this job.
+          $pw = 'Aa1!' + [guid]::NewGuid().ToString('N')
+          net user rapiertest $pw /add /y | Out-Null
+          $cred = New-Object System.Management.Automation.PSCredential('rapiertest', (ConvertTo-SecureString $pw -AsPlainText -Force))
+          icacls C:\ci /grant 'rapiertest:(OI)(CI)M' | Out-Null
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+          New-Item -Path $key -Force | Out-Null
+          foreach ($dev in 1, 0) {
+            Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value $dev -Type DWord
+            foreach ($who in 'admin', 'standard') {
+              foreach ($flag in 'generic', 'strict') {
+                $argList = if ($flag -eq 'strict') { '--self-test --require-symlink-fixtures' } else { '--self-test' }
+                Remove-Item C:\ci\exit.txt, C:\ci\log.txt, C:\ci\priv.txt -ErrorAction SilentlyContinue
+                Set-Content -Path C:\ci\run.cmd -Encoding ascii -Value @(
+                  '@echo off',
+                  'del /q "%TEMP%\rapier-self-test.log" 2>nul',
+                  "start `"`" /wait C:\ci\rapier-host.exe $argList",
+                  'echo %ERRORLEVEL%> C:\ci\exit.txt',
+                  'copy /y "%TEMP%\rapier-self-test.log" C:\ci\log.txt >nul 2>nul',
+                  'whoami /priv > C:\ci\priv.txt')
+                $how = 'direct'
+                try {
+                  if ($who -eq 'admin') { Start-Process cmd.exe -ArgumentList '/c', 'C:\ci\run.cmd' -Wait -NoNewWindow }
+                  else { Start-Process cmd.exe -ArgumentList '/c', 'C:\ci\run.cmd' -Credential $cred -LoadUserProfile -WorkingDirectory C:\ci -Wait }
+                } catch { $how = "start failed: $($_.Exception.Message)" }
+                $code = if (Test-Path C:\ci\exit.txt) { (Get-Content C:\ci\exit.txt -Raw).Trim() } else { 'none' }
+                $log = if (Test-Path C:\ci\log.txt) { ((Get-Content C:\ci\log.txt) -join ' / ') } else { 'no log' }
+                $priv = if (Test-Path C:\ci\priv.txt) { if (Select-String -Path C:\ci\priv.txt -Pattern 'SeCreateSymbolicLinkPrivilege' -Quiet) { 'link privilege listed' } else { 'no link privilege' } } else { 'no priv read' }
+                echo "::notice title=$os dev$dev $who $flag::exit $code; $priv; $how; $log"
+              }
+            }
+          }
