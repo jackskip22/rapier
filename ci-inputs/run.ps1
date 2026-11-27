@@ -17,6 +17,8 @@ if ($StandardUser) {
   icacls $in /grant "${name}:(OI)(CI)RX" | Out-Null
   icacls $Out /grant "${name}:(OI)(CI)F" | Out-Null
   $cred = New-Object System.Management.Automation.PSCredential($name, (ConvertTo-SecureString $pw -AsPlainText -Force))
+  # Windows PowerShell 5.1 inherits pwsh 7's PSModulePath and then cannot find its own Get-FileHash: give it its own.
+  $env:PSModulePath = "$env:ProgramFiles\WindowsPowerShell\Modules;$env:SystemRoot\system32\WindowsPowerShell\v1.0\Modules"
   try {
     $p = Start-Process -FilePath 'powershell.exe' -Credential $cred -LoadUserProfile -Wait -PassThru -WindowStyle Hidden `
       -WorkingDirectory $in -RedirectStandardOutput (Join-Path $Out 'user-stdout.txt') -RedirectStandardError (Join-Path $Out 'user-stderr.txt') `
