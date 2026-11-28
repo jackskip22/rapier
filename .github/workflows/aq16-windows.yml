@@ -1,0 +1,38 @@
+name: Converter Archive on real Windows
+on:
+  push:
+    branches: [ci/aq16-archive-windows-20261129]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Open failure evidence before dependencies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\ci\aq16-startup | Out-Null
+          @{ stage='workflow entered'; runner=$env:RUNNER_OS; os=[Environment]::OSVersion.VersionString; workflowCommit=$env:GITHUB_SHA } | ConvertTo-Json | Set-Content -Encoding utf8 C:\ci\aq16-startup\startup.json
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.4'
+      - name: Exercise exact MSIX and real NTFS as a standard user
+        shell: pwsh
+        env:
+          AQ16_SOURCE: 11269e6f9f8c4b067175f797349db92ee7f53c47
+          AQ16_BUNDLE_SHA256: 98700a644b4dcd9e33b74f3f5f620171758e2fe0e1cd249ac6d4ddbd1b8a8199
+        run: |
+          & .\ci\aq16\run-windows.ps1 -Bundle .\ci\aq16\handoff.zip -BundleSha256 $env:AQ16_BUNDLE_SHA256 -Source $env:AQ16_SOURCE
+          if ($LASTEXITCODE -ne 0) { throw 'AQ16 Windows qualification failed' }
+      - name: Keep receipts on every exit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: aq16-windows-${{ github.run_id }}
+          path: |
+            C:\ci\aq16\out
+            C:\ci\aq16-startup
+          if-no-files-found: error
+          retention-days: 1
