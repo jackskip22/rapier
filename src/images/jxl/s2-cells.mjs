@@ -3,7 +3,7 @@ import {OPSIN} from './color-transform.mjs';
 import {fault} from './fault.mjs';
 import {SSIMULACRA2_WEIGHTS, finalCurve} from './ssimulacra2.mjs';
 import {srgbLevels} from './srgb-levels.mjs';
-import {cbrtTables, IS_BIAS, BLACK} from './int-spec.mjs';
+import {cbrtTables, IS_BIAS, BLACK} from './int-cbrt.mjs';
 import {kernelHooks} from './kernel-hooks.mjs';
 
 const R_HALF = Float64Array.from({length: 32}, (_, k) => k ? 2 ** (k - 1) : 0.5), R_INV = Float64Array.from({length: 32}, (_, k) => 2 ** -k);

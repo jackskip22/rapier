@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 function _rapierWaterProAvailable() { return globalThis.RapierPlatform?.water?.available === true; }
+function _rapierWaterProOffered() { return typeof globalThis.RapierPlatform?.water?.authorize === 'function'; }
+function _rapierWaterProLocked(feature) { return _rapierWaterProOffered() && !_rapierWaterProAvailable() && !_rapierRequireFeature(feature, {source: 'water-' + feature}); }
+function _rapierWaterProFree(key, value) {
+	if (_rapierWaterProAvailable() || !_rapierWaterProOffered()) return true;
+	const order = globalThis.RapierWatercolorOrder, engine = _rapierWaterEngine();
+	if (key === 'pigment') return typeof value !== 'string' || order.watercolorFreeColors(engine.WATER_PIGMENTS).has(value);
+	if (key === 'brush') return !engine.WATER_BRUSHES.some(row => row.id === value) || order.watercolorFreeBrushes(engine.WATER_BRUSHES).has(value);
+	return true;
+}
 function _rapierWaterProBrushAvailable(row) {
 	const water = row?.water, engine = _rapierWaterEngine();
 	return !water || _rapierWaterProAvailable() || (!engine.isWaterSpecialtyPigment(water.pigment) && !engine.waterPaperById(water.paper)?.pro);
@@ -43,6 +52,7 @@ function _rapierWaterProRefuseAgent(actions, options = {}) {
 async function _rapierWaterProChoose(key, value) {
 	const state = _rapierDrawState, session = state.session, engine = _rapierWaterEngine();
 	const choice = state.waterProChoice = (state.waterProChoice || 0) + 1;
+	if (!_rapierWaterProFree(key, value)) { _rapierWaterProLocked(key === 'pigment' ? 'watercolorColors' : 'watercolorBrushes'); return false; }
 	try {
 		if (key === 'pigment' && engine.isWaterSpecialtyPigment(value)) await _rapierWaterProAuthorize('pigments');
 		if (key === 'pigment' && state.waterMixing && _rapierWaterProAvailable()) { await _rapierWaterProAuthorize('pigments'); value = engine.mixWaterPigments(_rapierWaterState().pigment,value,.25); }
@@ -57,11 +67,11 @@ async function _rapierWaterProChoose(key, value) {
 	} catch (error) { _rapierWaterProError(error); return false; }
 }
 function _rapierWaterProPigmentsHTML() {
-	if (!_rapierWaterProAvailable()) return '';
+	if (!_rapierWaterProOffered()) return '';
 	const engine = _rapierWaterEngine(), chosen = _rapierWaterState().pigment;
-	return '<div class="rapier-draw-water-pigment-name"><span>Specialty pigments</span></div><div class="rapier-draw-palette">' +
+	return (_rapierWaterProAvailable() ? '<div class="rapier-draw-water-pigment-name"><span>Specialty pigments</span></div><div class="rapier-draw-palette">' +
 		engine.WATER_SPECIALTY_PIGMENTS.map(pigment => '<button type="button" class="rapier-draw-swatch" data-water-pigment="' + pigment.id + '" aria-label="' + _rapierDrawEscapeAttr(pigment.name) + '" data-tip="' + _rapierDrawEscapeAttr(pigment.name) + '" aria-pressed="' + (chosen === pigment.id) + '"><span style="background:' + pigment.colour + '"></span></button>').join('') +
-		'</div><div class="rapier-draw-water-palette-actions"><button type="button" class="rapier-draw-chip" data-water-act="palettes">Palettes</button><button type="button" class="rapier-draw-chip" data-water-act="mix" aria-pressed="' + !!_rapierDrawState.waterMixing + '">Mix</button><button type="button" class="rapier-draw-chip" data-water-act="find">Find mix</button></div>';
+		'</div>' : '') + '<div class="rapier-draw-water-palette-actions"><button type="button" class="rapier-draw-chip" data-water-act="palettes">Palettes</button><button type="button" class="rapier-draw-chip" data-water-act="mix" aria-pressed="' + !!_rapierDrawState.waterMixing + '">Mix</button><button type="button" class="rapier-draw-chip" data-water-act="find">Find mix</button></div>';
 }
 async function _rapierWaterProReadPalettes() {
 	const owner = globalThis.RapierPlatform?.water;
@@ -296,12 +306,13 @@ async function _rapierWaterProFind() {
 	});
 }
 function _rapierWaterProToolsHTML(chip) {
-	if (!_rapierWaterProAvailable()) return '';
+	if (!_rapierWaterProOffered()) return '';
 	const on = !!_rapierDrawState.waterValues;
 	return chip('act','video','Time-lapse',RAPIER_DRAW_ICONS.download,false) +
 		chip('act','values','Values',RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/>'),on).replace('<button ','<button aria-pressed="' + on + '" ');
 }
 async function _rapierWaterProVideo() {
+	if (_rapierWaterProLocked('video')) return;
 	const state = _rapierDrawState, session = state.session;
 	await _rapierWaterProAuthorize('video');
 	if (!state.open || state.session !== session) return;
@@ -324,6 +335,7 @@ async function _rapierWaterProVideo() {
 }
 async function _rapierWaterProAction(act,button) {
 	if (!['palettes','mix','find','values','video','paletteBack','paletteNew','paletteKeep','paletteEdit','paletteEntryEdit','palettePick','palettePigment'].includes(act)) return false;
+	if (_rapierWaterProLocked({video:'video', mix:'mixing', find:'mixing', values:'values'}[act] || 'palettes')) return true;
 	try {
 		if (act === 'video') { await _rapierWaterProVideo(); return true; }
 		if (act === 'mix') { if (!_rapierDrawState.waterMixing) await _rapierWaterProAuthorize('pigments'); _rapierDrawState.waterMixing = !_rapierDrawState.waterMixing; _rapierWaterUpdate(); return true; }
@@ -355,11 +367,12 @@ function _rapierWaterProChanged() {
 		state.waterProChoice = (state.waterProChoice || 0) + 1; state.waterPalettePanel = false; state.waterPalettes = null; state.waterValues = false;
 		const settings = state.waterSettings, engine = _rapierWaterEngine();
 		if (settings && engine) {
-			if (engine.isWaterSpecialtyPigment(settings.pigment)) settings.pigment = RAPIER_WATER_DEFAULT_PIGMENT;
+			if (engine.isWaterSpecialtyPigment(settings.pigment) || !_rapierWaterProFree('pigment', settings.pigment)) settings.pigment = RAPIER_WATER_DEFAULT_PIGMENT;
 			if (engine.waterPaperById(settings.paper)?.pro) settings.paper = 'cold-press';
 			if (settings.tool === 'trace') settings.tool = 'brush';
 			const own = _rapierWaterOwn().find(row => row.id === settings.brush);
 			if (own && !_rapierWaterProBrushAvailable(own)) { settings.tipKey = null; _rapierWaterSet('brush',RAPIER_WATER_DEFAULT_BRUSH); }
+			else if (!_rapierWaterProFree('brush', settings.brush)) _rapierWaterSet('brush',RAPIER_WATER_DEFAULT_BRUSH);
 			else _rapierWaterSave();
 		}
 	}

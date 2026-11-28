@@ -3,8 +3,7 @@
 A plug-in for Vite 6, 7, 8, and Vite+. An image import becomes a JPEG XL file at build. The original stays for browsers
 that do not show JPEG XL.
 
-Photographs come out 39% smaller than WebP and 11% smaller than AVIF at the same look, in the time WebP takes. JPEGs
-come out 17% smaller and restore exactly. rapier-jxl is the encoder inside rapier.website, the free Markdown editor
+JPEGs without resizing or a custom reader are recompressed losslessly and restore the original JPEG exactly. rapier-jxl is the encoder inside rapier.website, the free Markdown editor
 and painting app.
 
 ```sh
@@ -55,7 +54,7 @@ is encoded at `fidelity` like a PNG. A JPEG with no width stays exact.
 
 ## What each file becomes
 
-- **JPEG without a width or `read`**: kept exactly. The JPEG XL file restores the JPEG exactly, about a fifth smaller,
+- **JPEG without a width or `read`**: kept exactly. The JPEG XL file restores the original JPEG exactly,
   and needs no decoder at build time.
 - **PNG**: encoded at `fidelity` (default `{quality: 90}`), or `'exact'` for screenshots and diagrams.
 - **JPEG with a width or `read`**: encoded at `fidelity`. A width uses rapier-jxl's decoder. `read` supplies your own.
@@ -65,7 +64,7 @@ is encoded at `fidelity` like a PNG. A JPEG with no width stays exact.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `fidelity` | `{quality: 90}` | As rapier-jxl's `encode`: `'exact'` or `{quality}` from 1 to 100. JPEGs stay exact unless a width or `read` is set. |
-| `effort` | `3` | 1 (fastest) to 9 (smallest). 3 takes about as long as sharp's WebP. 7 writes photographs about 12% smaller in about 20 times the time. |
+| `effort` | `3` | 1 to 9. Higher efforts spend more time searching for smaller files. |
 | `folder` | none | Folders whose JPEG and PNG files each get a `.jxl` beside them, named as Vite names the original (`hero-B2x.jpg` gets `hero-B2x.jxl`). The public folder too. |
 | `read` | none | `(bytes, file) => ({width, height, data})`: decodes any source. JPEGs are then encoded at `fidelity`. |
 | `cache` | `true` | Keeps each file in Vite's cache folder, keyed by the source, these options and the rapier-jxl version. |

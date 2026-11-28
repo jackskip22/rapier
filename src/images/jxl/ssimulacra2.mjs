@@ -6,7 +6,7 @@ import {S2_WEIGHTS, finalCurve} from './ssimulacra2-weights.mjs';
 import {GAUSS} from './ssimulacra2-constants.mjs';
 import {S2_REFERENCE, SCALES} from './ssimulacra2-reference.mjs';
 import {s2Dimensions, s2Samples, s2Pad} from './ssimulacra2-input.mjs';
-import {gaussianCoefficients, downsample as down, scaleComplete, scaleSums, scoreBands, scoreScale0Bands, openMetricArena, referenceArena, useReferenceArena} from './ssimulacra2-arithmetic.mjs';
+import {gaussianCoefficients, downsample as down, scaleComplete, scaleSums, scoreBands, scoreDualBands, scoreScale0Bands, openMetricArena, referenceArena, useReferenceArena} from './ssimulacra2-arithmetic.mjs';
 export {ssimulacra2Reference} from './ssimulacra2-reference.mjs';
 export {recursiveGaussian, gaussianTaps} from './ssimulacra2-gaussian.mjs';
 export {finalCurve};
@@ -63,6 +63,20 @@ export function ssimulacra2(reference, distorted, width, height, options = {}) {
 
 export function ssimulacra2Score(reference, distorted, width, height, arithmetic, options = null) {
   return scoreOne(reference, distorted, width, height, false, arithmetic, true, options);
+}
+
+export function ssimulacra2Dual(reference, distorted, width, height) {
+  const pixels = s2Dimensions(width, height);
+  const a = s2Pad(s2Samples(reference, pixels), width, height);
+  const b = s2Pad(s2Samples(distorted, pixels), width, height);
+  const close = openMetricArena();
+  try {
+    const readings = scoreDualBands(a, b, Math.max(8, width), Math.max(8, height), GAUSS32).map(bands => {
+      const norms = normsFromBandResults(bands);
+      return {...scoreNorms(norms), norms, map: null};
+    });
+    return {binary64: readings[0], libjxl: readings[1]};
+  } finally { close(); }
 }
 
 function openS2(reference, width, height, arithmetic) {

@@ -13,7 +13,6 @@ import {serveRole, ownFile, roleName, inPlace} from './module-roles.mjs';
 import {moduleRuntime} from './module-runtime.mjs';
 import {requireWebGPU} from './webgpu.mjs';
 import {install, workerPort} from './worker-runtime.mjs';
-import {previewHub} from './preview-relay.mjs';
 import * as pool from '../helper-pool.mjs';
 import {serveHelper} from '../helper-runtime.mjs';
 import {WORKER_PROTOCOL} from './protocol.mjs';
@@ -32,7 +31,7 @@ export function fullEntry(name, selfUrl, ten = false) {
   serveRole(name, {
     worker: () => {
       const file = ownFile(roleName(name, 'helper'));
-      install(workerPort(), [], withVariantsHelpers(moduleRuntime(raw, {name, gpu: requireWebGPU, helpers: async () => pool, helper: file}), pool, name, file), previewHub);
+      install(workerPort(), [], withVariantsHelpers(moduleRuntime(raw, {name, gpu: requireWebGPU, helpers: async () => pool, helper: file}), pool, name, file));
     },
     helper: () => {
       const runtime = moduleRuntime(raw, {name, gpu: requireWebGPU});

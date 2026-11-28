@@ -3,7 +3,7 @@ import {s2CellSums} from './s2-cells.mjs';
 import {bandedRGBA} from './photo-reconstruct-bands.mjs';
 import {rebuildPicture} from './photo-rebuild.mjs';
 import {rebuildKernels} from './rebuild-kernels.mjs';
-import {xybKernelConstants} from './vardct-render.mjs';
+import {xybKernelConstants} from './vardct-render-base.mjs';
 import {DEFAULT_OPSIN} from './opsin.mjs';
 import {nativeTables, nativeByte} from './photo-output.mjs';
 import {trialDue, tryStage, leftDevice, phoneLumaSkip} from './device-trial.mjs';

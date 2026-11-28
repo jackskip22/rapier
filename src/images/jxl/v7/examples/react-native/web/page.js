@@ -26,18 +26,18 @@
   }
 
   let worker, workerReady;
-  const workerFor = () => workerReady ??= (async () => {
-    const [upload, jpeg] = await Promise.all([moduleUrl('upload'), moduleUrl('jpeg')]);
-    worker = new Worker(URL.createObjectURL(new Blob([WORKER_SOURCE], {type: 'text/javascript'})), {type: 'module'});
-    worker.onmessage = ({data}) => {
-      if (data.type === 'done') sendResult(data.id, new Uint8Array(data.bytes));
-      else if (data.type === 'started') post(data);
-      else if (data.type === 'error') { post(data); if (data.id) forget(data.id); }
-    };
-    worker.onerror = event => { event.preventDefault(); post({type: 'error', id: null, code: 'JXL_WORKER', message: event.message || 'The encoder worker stopped.'}); worker.terminate(); workerReady = null; };
-    await new Promise(resolve => { const listener = ({data}) => { if (data.type === 'ready') { worker.removeEventListener('message', listener); resolve(); } }; worker.addEventListener('message', listener); worker.postMessage({type: 'init', upload, jpeg}); });
-    return worker;
-  })();
+  const workerFor = () => workerReady ??= new Promise((resolve, reject) => {
+    try {
+      worker = new Worker(URL.createObjectURL(new Blob([WORKER_SOURCE], {type: 'text/javascript'})), {type: 'module'});
+      worker.onmessage = ({data}) => {
+        if (data.type === 'ready') resolve(worker);
+        else if (data.type === 'done') sendResult(data.id, new Uint8Array(data.bytes));
+        else if (data.type === 'started') post(data);
+        else if (data.type === 'error') { post(data); if (data.id) forget(data.id); }
+      };
+      worker.onerror = event => { event.preventDefault(); post({type: 'error', id: null, code: 'JXL_WORKER', message: event.message || 'The encoder worker stopped.'}); worker.terminate(); workerReady = null; reject(new Error('worker failed')); };
+    } catch (error) { workerReady = null; reject(error); }
+  });
 
   const jobs = new Map();
   const forget = id => jobs.delete(id);
@@ -67,10 +67,10 @@
   async function animate(job) {
     const controller = job.controller = new AbortController(), {signal} = controller;
     try {
-      const [worker, page] = await Promise.all([moduleUrl('animation'), moduleUrl('animation.browser')]);
+      const [workerBlob, page] = await Promise.all([moduleUrl('animation'), moduleUrl('animation.browser')]);
       post({type: 'started', id: job.id});
       const {encode, configure} = await import(page);
-      if (!animationConfigured) { configure({workerFactory: () => new Worker(worker, {type: 'module', name: 'rapier-jxl/animation worker'})}); animationConfigured = true; }
+      if (!animationConfigured) { configure({workerFactory: () => new Worker(workerBlob, {type: 'module', name: 'rapier-jxl/animation worker'})}); animationConfigured = true; }
       let shown = -1;
       const result = await encode(new Blob([job.bytes], {type: job.mime}), {effort: job.effort, fidelity: {quality: job.quality}, signal, onProgress: fraction => {
         const step = Math.floor(fraction * 100);
@@ -86,11 +86,12 @@
   async function start(job) {
     if (job.op === 'animate') return animate(job);
     try {
-      const w = await workerFor();
+      const need = job.op === 'recompress' || job.op === 'restore' ? 'jpeg' : 'animation';
+      const [w, mod] = await Promise.all([workerFor(), moduleUrl(need)]);
       if (!jobs.has(job.id)) return;
       job.running = true;
       const input = job.bytes.buffer;
-      w.postMessage({op: job.op, id: job.id, mime: job.mime, quality: job.quality, effort: job.effort, input}, [input]);
+      w.postMessage({op: job.op, id: job.id, mime: job.mime, quality: job.quality, effort: job.effort, moduleUrl: mod, input}, [input]);
     } catch (error) { post({type: 'error', id: job.id, code: codeOf(error), message: textOf(error)}); forget(job.id); }
   }
 

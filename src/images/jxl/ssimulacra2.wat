@@ -391,6 +391,8 @@
     (local $vl v128) (local $vm v128) (local $vs v128)
     (local $rl v128) (local $rm v128) (local $rs v128)
     (local $nl v128) (local $nm v128) (local $ns v128) (local $q v128)
+    (if (i32.gt_s (local.get $kind) (i32.const 2))
+      (then (call $s2_copy_xyb_row (local.get $input) (i32.sub (local.get $kind) (i32.const 3)) (local.get $y) (local.get $w) (local.get $h) (local.get $out) (local.get $at)) (return)))
     (local.set $pixels (i32.mul (local.get $w) (local.get $h)))
     (local.set $tr (i32.sub (local.get $linear) (i32.const 24576)))
     (local.set $x4 (i32.shl (local.get $at) (i32.const 2)))
@@ -1199,6 +1201,24 @@
     (f64.store offset=32 (local.get $sums) (local.get $acc_l1))
     (f64.store offset=40 (local.get $sums) (local.get $acc_l4)))
 
+  ;; Copy precomputed positive-XYB planes (kind = 3 + mask) into the 16-row ring.
+  (func $s2_copy_xyb_row
+    (param $input i32) (param $mask i32) (param $k i32) (param $w i32) (param $in_h i32) (param $out i32) (param $at i32)
+    (local $c i32) (local $wb i32) (local $pb i32) (local $src i32) (local $atb i32)
+    (local.set $wb (i32.shl (local.get $w) (i32.const 2)))
+    (local.set $pb (i32.mul (local.get $wb) (local.get $in_h)))
+    (local.set $src (i32.add (local.get $input) (i32.mul (local.get $k) (local.get $wb))))
+    (local.set $atb (i32.shl (local.get $at) (i32.const 2)))
+    (loop $Lc
+      (if (i32.and (i32.shr_u (local.get $mask) (local.get $c)) (i32.const 1))
+        (then
+          (memory.copy
+            (i32.add (i32.load (i32.add (local.get $out) (i32.shl (local.get $c) (i32.const 2)))) (local.get $atb))
+            (local.get $src)
+            (local.get $wb))
+          (local.set $src (i32.add (local.get $src) (local.get $pb)))))
+      (br_if $Lc (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.const 3)))))
+
   ;; Streaming SIMD128 meter driver over row bands with 24-slot mirrored rings (1 or 2 distorted outputs).
   (func $s2_fast_scale_rows
     (param $w i32) (param $h i32) (param $mask i32)
@@ -1734,6 +1754,8 @@
     (local $vr v128) (local $vg v128) (local $vb v128)
     (local $rl v128) (local $rh v128) (local $gl v128) (local $gh v128) (local $bl v128) (local $bh v128)
     (local $b078 v128) (local $vl v128) (local $vm v128) (local $vs v128) (local $t0 v128) (local $rare v128)
+    (if (i32.gt_s (local.get $kind) (i32.const 2))
+      (then (call $s2_copy_xyb_row (local.get $input) (i32.sub (local.get $kind) (i32.const 3)) (local.get $y) (local.get $w) (local.get $h) (local.get $out) (local.get $at)) (return)))
     (local.set $pixels (i32.mul (local.get $w) (local.get $h)))
     (local.set $tr (i32.sub (local.get $linear) (i32.const 24576)))
     (local.set $x4 (i32.shl (local.get $at) (i32.const 2)))
@@ -1741,6 +1763,16 @@
     (local.set $out1 (i32.add (i32.load offset=4 (local.get $out)) (local.get $x4)))
     (local.set $out2 (i32.add (i32.load offset=8 (local.get $out)) (local.get $x4)))
     (local.set $i (i32.mul (local.get $y) (local.get $w)))
+
+    ;; The existing fused row writes complete four-pixel blocks after its arithmetic probe. Keep the scalar tail here,
+    ;; and start at zero when the probe refuses, so every value still follows the exact row on an unfused host.
+    (if (i32.load (i32.const 34036))
+      (then
+        (call_indirect $fused_table (param i32 i32 i32 i32 i32 i32 i32 i32)
+          (local.get $input) (local.get $kind) (local.get $y) (local.get $w) (local.get $h)
+          (local.get $out) (local.get $at) (local.get $linear) (i32.const 0))
+        (if (i32.load (i32.const 34036))
+          (then (local.set $x (i32.and (local.get $w) (i32.const -4)))))))
 
     (if (i32.eqz (local.get $kind))
       (then
@@ -2752,7 +2784,22 @@
   (func (export "s2MetricBand") (param $w i32) (param $h i32) (param $first i32) (param $end i32) (param $in_y i32) (param $in_h i32)
     (param $ref i32) (param $ref_kind i32) (param $dist i32) (param $dist_kind i32) (param $lin i32) (param $g i32)
     (param $scratch i32) (param $sums i32) (param $c0 i32) (param $c1 i32) (param $c2 i32) (param $cmask i32) (result i32)
-    (local $m i32)
+    (local $m i32) (local $y i32) (local $at i32)
+    (if (i32.eq (local.get $first) (i32.const -99))
+      (then
+        (i32.store (i32.const 2096) (local.get $c0))
+        (i32.store (i32.const 2100) (local.get $c1))
+        (i32.store (i32.const 2104) (local.get $c2))
+        (local.set $m (i32.load offset=248 (local.get $g)))
+        (block $xd (loop $xy
+          (br_if $xd (i32.ge_s (local.get $y) (local.get $h)))
+          (if (local.get $m)
+            (then (call $s2_xyb_libjxl (local.get $ref) (local.get $ref_kind) (local.get $y) (local.get $w) (local.get $h) (i32.const 2096) (local.get $at) (local.get $lin)))
+            (else (call $s2_xyb_meter (local.get $ref) (local.get $ref_kind) (local.get $y) (local.get $w) (local.get $h) (i32.const 2096) (local.get $at) (local.get $lin))))
+          (local.set $at (i32.add (local.get $at) (local.get $w)))
+          (local.set $y (i32.add (local.get $y) (i32.const 1)))
+          (br $xy)))
+        (return (i32.const 0))))
     (local.set $m (i32.and (i32.shr_u (local.get $cmask) (i32.const 10)) (i32.const 7)))
     (call $s2_scale_rows_dispatch (local.get $w) (local.get $h) (select (local.get $m) (i32.const 7) (local.get $m))
       (local.get $ref) (local.get $ref_kind) (local.get $dist) (local.get $dist_kind) (local.get $lin) (local.get $g)
@@ -2773,6 +2820,30 @@
       (i32.const 0) (i32.const 0) (local.get $sums)
       (local.get $first) (local.get $end) (local.get $in_y) (local.get $in_h) (local.get $in_y)
       (local.get $dist1) (local.get $dist1_kind) (local.get $scratch1) (local.get $sums1)))
+
+  ;; Both arithmetic readings of one input band. Keep independent XYB, Gaussian state and ordered sums: even the
+  ;; sRGB tables differ in their multiply-add rounding. The caller shares only the byte input and identical planes.
+  (func (export "s2MetricBandDual")
+    (param $w i32) (param $h i32) (param $first i32) (param $end i32) (param $in_y i32) (param $in_h i32)
+    (param $ref i32) (param $dist i32) (param $ref_lib i32) (param $dist_lib i32) (param $ref_kind i32) (param $dist_kind i32)
+    (param $lin i32) (param $lin_lib i32) (param $g i32)
+    (param $scratch i32) (param $sums i32) (param $scratch_lib i32) (param $sums_lib i32) (result i32)
+    (local $made i32)
+    (local.set $made (call $s2_fast_scale_rows
+      (local.get $w) (local.get $h) (i32.const 7) (local.get $ref) (local.get $ref_kind)
+      (local.get $dist) (local.get $dist_kind) (local.get $lin) (local.get $g)
+      (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 0) (local.get $scratch)
+      (i32.const 0) (i32.const 0) (local.get $sums)
+      (local.get $first) (local.get $end) (local.get $in_y) (local.get $in_h) (local.get $in_y)
+      (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 0)))
+    (if (i32.ne (local.get $made) (call $s2_scale_rows_libjxl
+      (local.get $w) (local.get $h) (i32.const 7) (local.get $ref_lib) (local.get $ref_kind)
+      (local.get $dist_lib) (local.get $dist_kind) (local.get $lin_lib) (local.get $g)
+      (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 0) (local.get $scratch_lib)
+      (i32.const 0) (i32.const 0) (local.get $sums_lib)
+      (local.get $first) (local.get $end) (local.get $in_y) (local.get $in_h) (local.get $in_y)
+      (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 0))) (then (return (i32.const -1))))
+    (local.get $made))
 
   ;; Meter-only band export for rapier-jxl/upload: calls $s2_fast_scale_rows directly so libjxl is pruned.
   (func (export "s2MetricScaleMeter") (param $w i32) (param $h i32) (param $first i32) (param $end i32) (param $in_y i32) (param $in_h i32)

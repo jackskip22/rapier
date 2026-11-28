@@ -22,7 +22,7 @@ export async function encodeBands({width, height, read}, encodeBand, recode, dra
     check(hooks.signal);
     float ||= pixels.data instanceof Float32Array || pixels.sampleFormat === 'float16';
     await run(async () => {
-      const bytes = await encodeBand(pixels, {...hooks, preview: undefined, onProgress: share(i)});
+      const bytes = await encodeBand(pixels, {...hooks, onProgress: share(i)});
       if (!i && pixels.icc !== undefined) {
         icc = pixels.icc; frameRead = {iccBits: prepareICC(icc).iccData.bitLength};
       }
@@ -35,13 +35,13 @@ export async function encodeBands({width, height, read}, encodeBand, recode, dra
     if (band.shape.one && band.shape.xyb === target.xyb && band.shape.alpha === target.alpha && band.shape.gray === target.gray) continue;
     const pixels = await read(band.y, band.h);
     check(hooks.signal);
-    band.bytes = await run(() => drain(recode(pixels, {...target, exact: band.shape.text}), {...hooks, preview: undefined, onProgress: undefined}));
+    band.bytes = await run(() => drain(recode(pixels, {...target, exact: band.shape.text}), {...hooks, onProgress: undefined}));
   }
   const key = bytes => compositionMetadataKey(readStill(bytes, frameRead)), apart = () => bands.some(band => key(band.bytes) !== key(bands[0].bytes));
   if (apart() && target.gray) for (const band of bands) {
     const pixels = await read(band.y, band.h);
     check(hooks.signal);
-    band.bytes = await run(() => drain(recode(pixels, {...target, gray: false, exact: band.shape.text}), {...hooks, preview: undefined, onProgress: undefined}));
+    band.bytes = await run(() => drain(recode(pixels, {...target, gray: false, exact: band.shape.text}), {...hooks, onProgress: undefined}));
   }
   if (apart()) throw fail('JXL_INTERNAL', 'bands:result');
   const layers = bands.map(({bytes, y}) => ({bytes, y}));

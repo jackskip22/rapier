@@ -13,8 +13,25 @@ const SPACE_SAVER_TASK = 'jxl-space-saver';
 const TEMP_PREFIX = '__jxl_';
 const JPEG_MIME = /^image\/jpe?g$/i;
 const RASTER_MIME = /^image\/(jpe?g|png|webp|gif|avif|tiff|bmp|heic|heif)$/i;
+const TRANSFORMER_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+  'image/tiff',
+  'image/bmp',
+  'image/heic',
+  'image/heif',
+  'image/jxl',
+];
 const ALLOWED_OPTIONS = new Set(['effort', 'fidelity', 'spaceSaver', 'collections', 'sharp']);
 const ALLOWED_COLLECTION_OPTIONS = new Set(['effort', 'fidelity', 'spaceSaver']);
+const ALLOWED_TRANSFORMER_OPTIONS = new Set(['slug', 'effort', 'fidelity', 'collections', 'sharp', 'onUpload']);
+const ALLOWED_TRANSFORMER_COLLECTION_OPTIONS = new Set(['effort', 'fidelity', 'onUpload']);
+const VARY_WRAPPED = new WeakSet();
+const TRANSFORMER_ENDPOINTS = new WeakSet();
+const BROWSER_JXL_CONSUMED = new WeakSet();
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const plain = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -1693,10 +1710,293 @@ function attachCollection(collection, settings, getRootConfig) {
   };
 }
 
+function isJxlBytes(bytes) {
+  if (!bytes || bytes.length < 2) return false;
+  if (bytes[0] === 0xff && bytes[1] === 0x0a) return true;
+  return bytes.length >= 12 && bytes[0] === 0x00 && bytes[1] === 0x00 && bytes[2] === 0x00 && bytes[3] === 0x0c &&
+    bytes[4] === 0x4a && bytes[5] === 0x58 && bytes[6] === 0x4c && bytes[7] === 0x20;
+}
+
+function browserJxlCompanion(req) {
+  const candidate = req?.files?.jxl;
+  if (!candidate || Array.isArray(candidate)) return null;
+  if (typeof candidate.arrayBuffer === 'function' || candidate.data || candidate.tempFilePath) return candidate;
+  return null;
+}
+
+async function readBrowserJxlBytes(companion) {
+  if (!companion) return null;
+  if (typeof companion.arrayBuffer === 'function') {
+    return new Uint8Array(await companion.arrayBuffer());
+  }
+  const bytes = await uploadedFileBytes(companion);
+  if (typeof companion.tempFilePath === 'string' && companion.tempFilePath) {
+    await rm(companion.tempFilePath, {force: true}).catch(() => {});
+  }
+  return bytes;
+}
+
+function jxlOutputFilename(filename) {
+  if (typeof filename !== 'string' || !filename) return 'upload.jxl';
+  const base = basename(filename);
+  if (/\.jxl$/i.test(base)) return base;
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? `${base.slice(0, dot)}.jxl` : `${base}.jxl`;
+}
+
+function wrapVaryAccept(uploadObj) {
+  const prev = uploadObj.modifyResponseHeaders;
+  if (typeof prev === 'function' && VARY_WRAPPED.has(prev)) return uploadObj;
+  const wrapped = args => {
+    const base = typeof prev === 'function' ? prev(args) || args.headers : args.headers;
+    return varyAccept(base);
+  };
+  VARY_WRAPPED.add(wrapped);
+  return {...uploadObj, modifyResponseHeaders: wrapped};
+}
+
+function validateTransformerSettings(options, allowedKeys) {
+  if (!plain(options)) throw fail('JXL_OPTIONS', 'jxlTransformer options must be an object');
+  for (const key of Object.keys(options)) {
+    if (!allowedKeys.has(key)) throw fail('JXL_OPTIONS', `Unknown jxlTransformer option: ${key}`);
+  }
+  if (options.slug !== undefined && (typeof options.slug !== 'string' || !options.slug.trim())) {
+    throw fail('JXL_OPTIONS', 'slug must be a non-empty string');
+  }
+  if (options.effort !== undefined && (!Number.isInteger(options.effort) || options.effort < 1 || options.effort > 9)) {
+    throw fail('JXL_OPTIONS', 'effort must be an integer from 1 to 9');
+  }
+  if (options.onUpload !== undefined && typeof options.onUpload !== 'boolean') {
+    throw fail('JXL_OPTIONS', 'onUpload must be a boolean');
+  }
+  if (allowedKeys === ALLOWED_TRANSFORMER_OPTIONS && options.collections !== undefined) {
+    if (Array.isArray(options.collections)) {
+      if (options.collections.some(entry => typeof entry !== 'string' || !entry)) {
+        throw fail('JXL_OPTIONS', 'collections array must contain non-empty collection slugs');
+      }
+    } else if (plain(options.collections)) {
+      for (const [colSlug, val] of Object.entries(options.collections)) {
+        if (plain(val)) validateTransformerSettings(val, ALLOWED_TRANSFORMER_COLLECTION_OPTIONS);
+        else if (typeof val !== 'boolean') throw fail('JXL_OPTIONS', `Invalid collection config for ${colSlug}`);
+      }
+    } else {
+      throw fail('JXL_OPTIONS', 'collections must be an array of slugs or an object');
+    }
+  }
+}
+
+function resolveTransformerSettings(collectionSlug, collection, rootOptions) {
+  const map = rootOptions.collections;
+  let override;
+  if (Array.isArray(map)) {
+    if (!map.includes(collectionSlug)) return null;
+  } else if (plain(map)) {
+    if (!Object.hasOwn(map, collectionSlug) || map[collectionSlug] === false) return null;
+    if (plain(map[collectionSlug])) override = map[collectionSlug];
+  } else if (collection?.upload && typeof collection.upload === 'object') {
+    const allowedMimes = collection.upload.mimeTypes;
+    if (Array.isArray(allowedMimes) && allowedMimes.length > 0) {
+      const acceptsImages = allowedMimes.some(type => typeof type === 'string' && (type.startsWith('image/') || type === '*/*'));
+      if (!acceptsImages) return null;
+    }
+  }
+  return {
+    effort: override?.effort ?? rootOptions.effort,
+    fidelity: override?.fidelity ?? rootOptions.fidelity,
+    onUpload: override?.onUpload ?? (rootOptions.onUpload ?? true),
+    sharp: rootOptions.sharp,
+  };
+}
+
+export function jxlTransformer(options = {}) {
+  validateTransformerSettings(options, ALLOWED_TRANSFORMER_OPTIONS);
+  const slug = options.slug ?? 'jxl';
+  return {
+    slug,
+    mimeTypes: TRANSFORMER_MIME_TYPES,
+    init(config) {
+      if (!plain(config)) return config;
+      const collections = (config.collections ?? []).map(collection => {
+        if (!collection?.upload) return collection;
+        const settings = resolveTransformerSettings(collection.slug, collection, options);
+        if (!settings) return collection;
+        const uploadObj = typeof collection.upload === 'object' ? {...collection.upload} : {};
+        let nextEndpoints = collection.endpoints;
+        if (collection.endpoints !== false) {
+          const existing = Array.isArray(collection.endpoints) ? collection.endpoints : [];
+          if (!existing.some(ep => TRANSFORMER_ENDPOINTS.has(ep?.handler))) {
+            const jxlFallbackEndpoint = {
+              method: 'get',
+              path: '/file/:filename',
+              handler: async req => {
+                const endpoints = req?.payload?.collections?.[collection.slug]?.config?.endpoints ?? [];
+                const builtin = [...endpoints].reverse().find(
+                  ep => ep.method === 'get' && ep.path === '/file/:filename' && ep.handler !== jxlFallbackEndpoint.handler,
+                );
+                if (!builtin) {
+                  return new Response(JSON.stringify({errors: [{message: 'Upload endpoint unavailable.'}]}), {status: 500});
+                }
+                const response = await builtin.handler(req);
+                const contentType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+                const explicitOriginal = req?.searchParams?.get?.('original') === 'true';
+                if (response.status !== 200 || contentType !== 'image/jxl' || explicitOriginal) return response;
+                const acceptHeader = req?.headers?.get?.('accept') ?? req?.headers?.get?.('Accept') ?? '';
+                if (!isPreviewRequest(req) && acceptsJxl(acceptHeader, 'image/jpeg')) return response;
+                const jxlBytes = new Uint8Array(await response.arrayBuffer());
+                if (jxlBytes.byteLength > 0) {
+                  let restored;
+                  try { restored = await restore(jxlBytes); } catch { restored = null; }
+                  if (restored?.bytes instanceof Uint8Array) {
+                    return bytesResponse(restored.bytes, 'image/jpeg', req, undefined, response.headers);
+                  }
+                }
+                return new Response((req?.method || 'GET').toUpperCase() === 'HEAD' ? null : jxlBytes, {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers,
+                });
+              },
+            };
+            TRANSFORMER_ENDPOINTS.add(jxlFallbackEndpoint.handler);
+            nextEndpoints = [...existing, jxlFallbackEndpoint];
+          }
+        }
+        return {...collection, upload: wrapVaryAccept(uploadObj), endpoints: nextEndpoints};
+      });
+      return {...config, collections};
+    },
+    canTransform(args) {
+      const colConfig = args.req?.payload?.collections?.[args.collectionSlug]?.config;
+      const settings = resolveTransformerSettings(args.collectionSlug, colConfig, options);
+      if (!settings) return false;
+      const cleanMime = typeof args.mimeType === 'string' ? args.mimeType.split(';')[0].trim().toLowerCase() : '';
+      if (args.operation === 'upload') {
+        if (cleanMime === 'image/jxl' || !RASTER_MIME.test(cleanMime)) return false;
+        const hasBrowserJxl = !settings.onUpload && Boolean(browserJxlCompanion(args.req));
+        if (!settings.onUpload && !hasBrowserJxl) return false;
+        return {canTransform: true, options: {...settings, useBrowserJxl: hasBrowserJxl}};
+      }
+      if (args.operation === 'request') {
+        if (args.purpose !== 'request-override' || cleanMime !== 'image/jxl') return false;
+        const acceptHeader = args.req?.headers?.get?.('accept') ?? args.req?.headers?.get?.('Accept') ?? '';
+        const origMime = typeof args.doc?.original?.mimeType === 'string'
+          ? args.doc.original.mimeType.split(';')[0].trim().toLowerCase()
+          : '';
+        const fallbackMime = origMime && origMime !== 'image/jxl' ? origMime : 'image/jpeg';
+        if (!isPreviewRequest(args.req) && acceptsJxl(acceptHeader, fallbackMime)) return false;
+        return {canTransform: true, options: settings};
+      }
+      return false;
+    },
+    async transformFile({file, options: stageOptions, req}) {
+      const settings = plain(stageOptions)
+        ? stageOptions
+        : {effort: options.effort, fidelity: options.fidelity, sharp: options.sharp};
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!isSupportedImage(bytes, file.type)) return {status: 'continue'};
+      if (settings.useBrowserJxl) {
+        const companion = browserJxlCompanion(req);
+        if (!companion || (req && BROWSER_JXL_CONSUMED.has(req))) return {status: 'continue'};
+        if (req) BROWSER_JXL_CONSUMED.add(req);
+        const jxlBytes = await readBrowserJxlBytes(companion);
+        if (!jxlBytes || jxlBytes.byteLength < 12 || !isJxlBytes(jxlBytes)) {
+          throw fail('JXL_INPUT', 'Uploaded jxl companion is not a valid JPEG XL file');
+        }
+        if (isJpeg(bytes, file.type)) {
+          let rebuilt;
+          try { rebuilt = await restore(jxlBytes); } catch { rebuilt = null; }
+          if (!(rebuilt?.bytes instanceof Uint8Array) ||
+              rebuilt.bytes.byteLength !== bytes.byteLength ||
+              sha256Hex(rebuilt.bytes) !== sha256Hex(bytes)) {
+            throw fail('JXL_RECONSTRUCTION', 'Uploaded jxl companion does not restore the uploaded JPEG');
+          }
+        }
+        return {
+          file: new File([jxlBytes], jxlOutputFilename(file.name), {type: 'image/jxl'}),
+          status: 'continue',
+        };
+      }
+      const encoded = await encodeImageBytes(bytes, file.type, settings, req);
+      return {
+        file: new File([encoded.bytes], jxlOutputFilename(file.name), {type: 'image/jxl'}),
+        status: 'continue',
+      };
+    },
+    async handleRequest({doc, getOriginalFile, getSourceFile, req, variantName}) {
+      const origMime = typeof doc?.original?.mimeType === 'string'
+        ? doc.original.mimeType.split(';')[0].trim().toLowerCase()
+        : '';
+      const hasNonJxlOriginal = Boolean(doc?.original?.filename && origMime && origMime !== 'image/jxl');
+      if (!variantName && hasNonJxlOriginal) {
+        return {response: await getOriginalFile(), status: 'complete'};
+      }
+      const srcResponse = await getSourceFile();
+      if (srcResponse.status !== 200) {
+        return {response: srcResponse, status: 'complete'};
+      }
+      const jxlBytes = new Uint8Array(await srcResponse.arrayBuffer());
+      let restored;
+      try {
+        restored = await restore(jxlBytes);
+      } catch {
+        restored = null;
+      }
+      if (restored?.bytes instanceof Uint8Array) {
+        return {
+          response: bytesResponse(restored.bytes, 'image/jpeg', req, undefined, srcResponse.headers),
+          status: 'complete',
+        };
+      }
+      if (hasNonJxlOriginal) {
+        return {response: await getOriginalFile(), status: 'complete'};
+      }
+      return {
+        response: new Response(jxlBytes, {
+          status: srcResponse.status,
+          statusText: srcResponse.statusText,
+          headers: srcResponse.headers,
+        }),
+        status: 'complete',
+      };
+    },
+  };
+}
+
 export function jxl(options = {}) {
   validateSettings(options, ALLOWED_OPTIONS);
   const plugin = config => {
     if (!plain(config)) throw fail('JXL_OPTIONS', 'Payload config must be an object');
+    if (Array.isArray(config.upload?.transformers)) {
+      const transformers = [...config.upload.transformers];
+      if (!transformers.some(entry => entry?.slug === 'jxl')) {
+        const transformerOptions = {};
+        if (options.effort !== undefined) transformerOptions.effort = options.effort;
+        if (options.fidelity !== undefined) transformerOptions.fidelity = options.fidelity;
+        if (options.sharp !== undefined) transformerOptions.sharp = options.sharp;
+        if (Array.isArray(options.collections)) {
+          transformerOptions.collections = options.collections;
+        } else if (plain(options.collections)) {
+          const mapped = {};
+          for (const [colSlug, val] of Object.entries(options.collections)) {
+            if (plain(val)) {
+              const {spaceSaver: _ignored, ...rest} = val;
+              mapped[colSlug] = rest;
+            } else {
+              mapped[colSlug] = val;
+            }
+          }
+          transformerOptions.collections = mapped;
+        }
+        transformers.push(jxlTransformer(transformerOptions));
+      }
+      return {
+        ...config,
+        upload: {
+          ...config.upload,
+          transformers,
+        },
+      };
+    }
     let finalConfig = config;
     const priorRegistry = config.custom?.[STATE] instanceof Map ? config.custom[STATE] : null;
     const registry = new Map(priorRegistry ?? []);

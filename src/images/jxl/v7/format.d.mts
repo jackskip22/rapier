@@ -52,14 +52,14 @@ export type FormatOptions<K extends FormatKind = FormatKind> = K extends unknown
   {[P in EncoderSet | (K extends PixelKind ? keyof SampleDescription : never)]?: never} : never;
 // FormatOptions: each kind's own options, with encode's one fidelity, 'exact' or {quality} (without it each kind keeps its
 // default), and one effort, which also sets the screen search of graphics and palette. Channels, layers, patch
-// compositions, patches, graphics and palettes take exact or quality 100; graphics presets and baseError are their
+// compositions, patches, graphics and palettes take exact or quality 100. Graphics presets and baseError are their
 // explicit loss controls. Splines require quality below 100. A picture's description
 // (colorSpace, icc, bitDepth, orientation, ...) is on the request, never in its options. fidelity 'exact' with a control
 // that allows loss (a preset other than exact, maxColorError or baseError above zero, undither) is refused.
 // A fact a kind's file cannot hold is refused JXL_UNSUPPORTED, never dropped: orientation in graphics, palette, profile
-// and an exact photo or one not eight-bit with sRGB transfer; extra channels in every pixel kind but photo, and in an exact
+// and an exact photo or one not eight-bit with sRGB transfer. Extra channels are refused in every pixel kind but photo, and in an exact
 // photo: kind 'channels' is the one way to keep every sample of a picture with extra channels.
-// A kind's own option out of its range (groupSize: 7) is refused JXL_INPUT, with the structure it shapes; an unknown
+// A kind's own option out of its range (groupSize: 7) is refused JXL_INPUT, with the structure it shapes. An unknown
 // option, effort, fidelity and JobOptions refuse JXL_OPTIONS, as in encode.
 /** The kinds of file format() authors: channels, layers, patch-composition, patches, atlas, splines, graphics, hybrid, palette, photo, profile. */
 export type FormatKind = FormatRequest['kind'];

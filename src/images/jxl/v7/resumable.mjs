@@ -11,7 +11,7 @@ import {sourceColor} from './header-intent.mjs';
 import {viewBytes} from './bytes.mjs';
 import {storedIdentity} from './identity-record.mjs';
 import {boundedVerification, BOUNDED_SETUP} from './verify-decode.mjs';
-import {configuredDecoder, DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {configuredDecoder, DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {pixelResultInSteps, restoredInSteps, outputDigest, storedVerificationSteps} from './verify-steps.mjs';
 import {journaled} from '../step-journal.mjs';
 import {WORKER_ADMISSION} from './worker-admission-table.mjs';

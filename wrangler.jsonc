@@ -3,15 +3,16 @@
   "compatibility_date": "2026-08-08",
   "workers_dev": false,
   // Dedicated pages are static files named by _redirects. Assets answer them, including
-  // trailing-slash redirects, and the worker is not invoked for those requests.
-  // The worker runs only when no asset matches.
+  // trailing-slash redirects, and the worker is not invoked for those requests. An address no asset
+  // matches gets the 404 page from the assets too, so the worker runs only for the routes it takes
+  // first: the feedback endpoint and the converter's tab addresses (/jxl/<tab> to /jxl#<tab>).
   "main": "door-worker.js",
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",
     "html_handling": "none",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/api/feedback"]
+    "run_worker_first": ["/api/feedback", "/jxl/animated", "/jxl/animated/", "/jxl/xr", "/jxl/xr/", "/jxl/glitch", "/jxl/glitch/"]
   },
   "d1_databases": [{"binding":"FEEDBACK_DB","database_name":"rapier-feedback","database_id":"e21b2e17-bd85-4b04-80a4-b5ef0aa7513e"}]
 }

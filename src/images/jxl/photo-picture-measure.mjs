@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {photoDomain, nativePhotoRGB8} from './photo-samples.mjs';
-import {cpuMeasure} from './photo-measure.mjs';
+import {cpuMeasure, worseScores} from './photo-measure.mjs';
 import {linearFromRGBA} from './linear-table.mjs';
 import {linearFromTransform} from './color-bytes.mjs';
 import {P3_TRANSFORM} from './color-transform.mjs';
@@ -22,16 +22,6 @@ const opaque = rgba => {
 function over(rgba, width, height, background) {
   const out = new Uint8Array(rgba.subarray(0, width * height * 4));
   if (!captureComposeOver(out, rgba, width, height, background)) throw fault('JXL_WASM', 'WebAssembly SIMD required');
-  return out;
-}
-
-function worse(a, b) {
-  const out = {...a, ssimulacra2: Math.min(a.ssimulacra2, b.ssimulacra2)};
-  if (a.nativeScores && b.nativeScores) {
-    const low = key => Math.min(a.nativeScores[key], b.nativeScores[key]);
-    out.nativeScores = {package: low('package'), native: low('native'), minimum: low('minimum')};
-  }
-  for (const key of ['cells', 'blocks']) if (a[key] && b[key]) out[key] = a[key].map((value, i) => Math.max(value, b[key][i]));
   return out;
 }
 
@@ -80,7 +70,7 @@ export function pictureMeasure(source, {cacheBytes = 0, signal, maxPixels} = {})
       sourceOpaque ??= opaque(source.data);
       const useAlpha = !sourceOpaque || !opaque(picture.rgba) || Boolean(picture.native && !opaque(picture.native));
       const scores = useAlpha
-        ? worse(...(alphaLooks ??= BACKGROUNDS.map(makeLook)).map(look => look(picture, want)))
+        ? worseScores(...(alphaLooks ??= BACKGROUNDS.map(makeLook)).map(look => look(picture, want)))
         : measure(picture, want);
       check(signal);
       return scores;

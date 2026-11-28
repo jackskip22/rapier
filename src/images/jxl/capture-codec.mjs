@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {unit, stage, carried, journaling, unread, PASSED, journalJoin} from './step-journal.mjs';
 import {BitWriter, packSigned} from './bits.mjs';
-import {captureHeld} from './turn.mjs';
+import {captureHeld, exclusive, turn} from './turn.mjs';
 import {admitOptions, admitPixels, admitSize, admitOutputSize, answer, fault, guard} from './admit.mjs';
 import {abortReason, hostShort} from './fault.mjs';
 import {fullFrame, groupLayout, groupRect, writeHeaderFields as generalHeader, writeModularFrameHeader as generalFrame, assembleCodestream as generalAssembly} from './frame.mjs';
@@ -2117,6 +2117,49 @@ function drain(steps, check = () => {}) {
     while (!(step = steps.next()).done) check();
     return step.value;
   } finally { steps.return(); }
+}
+
+export function capturePicture(coder, data, width, height, options, drive) {
+  return drive ? drive(coder.steps(data, width, height, options)) : coder.whole(data, width, height, options);
+}
+const EXACT_PICTURE = {whole: encodeCaptureBytes, steps: encodeCaptureSteps};
+
+export async function captureAnswer({data, width, height, colorSpace, effort, tools, sizes, floor, frame, limit, small}, signal, drive) {
+  await compileCaptureKernels();
+  const makeOptions = () => ({colorSpace, effort, small, [CAPTURE_TOOLS]: tools, [CAPTURE_SIZES]: sizes, [CAPTURE_FLOOR]: floor,
+    ...frameCapture(frame, floor), [CAPTURE_LIMIT]: limit});
+  const options = drive ? null : makeOptions();
+  return exclusive(async () => {
+    if (!drive && signal?.aborted) throw signal.reason;
+    return capturePicture(EXACT_PICTURE, data, width, height, options ?? makeOptions(),
+      drive ?? (signal ? steps => captureTurnSteps(steps, signal) : null));
+  }, signal);
+}
+async function captureTurnSteps(steps, signal) {
+  try {
+    let step, last = performance.now();
+    while (!(step = steps.next()).done) {
+      if (performance.now() - last >= 8) { await turn(); last = performance.now(); }
+      if (signal.aborted) throw signal.reason;
+    }
+    return step.value;
+  } finally { steps.return(); }
+}
+
+let warmed = false;
+export function warmCapture() {
+  if (warmed) return;
+  warmed = true;
+  const page = new Uint8Array(1100 * 24 * 4), patch = new Uint8Array(48 * 48 * 4);
+  for (let y = 0, at = 0; y < 24; y++) for (let x = 0; x < 1100; x++, at += 4) {
+    const ink = y % 24 > 6 && y % 24 < 18 && x % 12 < 5, soft = (x * 7 + y * 3) % 61;
+    page[at] = page[at + 1] = page[at + 2] = ink ? 30 + (x % 12) * 9 : 250 - (y % 24 === 20 ? soft : 0); page[at + 3] = 255;
+  }
+  for (let at = 0, seed = 1; at < patch.length; at += 4) {
+    seed = Math.imul(seed, 1103515245) + 12345 >>> 0;
+    patch[at] = seed >>> 24; patch[at + 1] = seed >>> 16 & 255; patch[at + 2] = (at >> 6) & 255; patch[at + 3] = 255;
+  }
+  try { encodeCaptureBytes(page, 1100, 24); encodeCaptureBytes(patch, 48, 48); } catch {}
 }
 
 export function captureCandidateLevels(coding) {

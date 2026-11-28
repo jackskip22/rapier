@@ -1,6 +1,5 @@
 import './engines.mjs';
 import {resultOperation, resultReference, resultFacts, RAW_OPERATION} from './result-operation.mjs';
-import {PREVIEW, previewCall} from './preview.mjs';
 import {encodeAnimationJob} from '../animation-steps.mjs';
 import {useMeasuredSearch, animationTiming} from '../animation-frames.mjs';
 import {displayedAnimationFrames} from '../animation-timeline.mjs';
@@ -8,7 +7,7 @@ import {searchV6} from '../photo-v6-search.mjs';
 import {described, isDecoded, fromDecoded} from './describe.mjs';
 import {isPlainRecord} from './records.mjs';
 import {surface, admitFrames} from './surface.mjs';
-import {check, dimensions, fail, declared, callers, progressOf, admitSignal, blobBytes, PIXELS} from './primitives.mjs';
+import {check, dimensions, fail, declared, callers, progressOf, admitSignal, blobBytes, isBlob, PIXELS} from './primitives.mjs';
 import {drain, encodeOptions, callOptions} from './common.mjs';
 import {own, withCost, RETAIN_INPUT} from './ownership.mjs';
 import {withArenaLease} from '../call-scope.mjs';
@@ -19,7 +18,6 @@ import {DRIVE} from './drive.mjs';
 import {featureless} from './first-region-option.mjs';
 import {animationPhoto} from './animation-photo.mjs';
 import {readGifTape, READ_GIFS} from './gif-source.mjs';
-import {isBlob} from './result-identity.mjs';
 import {videoHead} from './video.mjs';
 import {FRAME_SOURCES, isFrameBridge, bridgedFrames, readerSource} from './frame-source.mjs';
 import {isFrameStream, iterableReader, gifReader, decoderReader, arrayWindowable, arrayReader} from './frame-stream.mjs';
@@ -73,21 +71,25 @@ const streamed = (input, options) => {
   try { source = readerSource(iterableReader(input)); } catch (error) { return Promise.reject(declared(error)); }
   return animate(source, options).catch(error => { throw declared(error); }).finally(() => source.stop());
 };
-const encodeBytes = (input, options) => {
+const stillWith = (input, options, drive) => drive ? encodeStill[RAW_OPERATION][DRIVE](input, options, drive.helpers)
+  : encodeStill[RAW_OPERATION](input, options);
+const encodeBytes = (input, options, drive) => {
   if (isFrameBridge(input)) return bridged(input, options);
   let stream; try { stream = isFrameStream(input); } catch (error) { return Promise.reject(callers(error)); }
   if (stream) return streamed(input, options);
-  if (isBlob(input)) return gifOr(input, options, frames => encodeBytes(frames, options), picture => encodeStill[RAW_OPERATION](picture, options));
-  const {input: picture, refused} = READ.has(input) || FRAME_SOURCES.has(input) ? {input} : admitted(input); if (refused) return refused; input = picture;
+  if (isBlob(input)) return gifOr(input, options, frames => encodeBytes(frames, options), picture => stillWith(picture, options, drive));
+  const privateInput = !drive && (READ.has(input) || FRAME_SOURCES.has(input));
+  const {input: picture, refused} = privateInput ? {input} : admitted(input); if (refused) return refused; input = picture;
   let frames;
-  try { frames = READ.has(input) || FRAME_SOURCES.has(input) || animated(input); } catch (error) { return Promise.reject(error); }
+  try { frames = !drive && (READ.has(input) || FRAME_SOURCES.has(input)) || animated(input); } catch (error) { return Promise.reject(error); }
+  if (drive && frames) return encodeBytes(input, options);
   return frames ? animate(input, options).catch(error => { throw declared(error); }).finally(() => FRAME_SOURCES.has(input) && input.stop?.())
-    : encodeStill[RAW_OPERATION](input, options);
+    : stillWith(input, options, drive);
 };
-encodeBytes[DRIVE] = (input, options, helpers) => { if (isFrameBridge(input)) return bridged(input, options); let stream; try { stream = isFrameStream(input); } catch (error) { return Promise.reject(callers(error)); } if (stream) return streamed(input, options); if (isBlob(input)) return gifOr(input, options, frames => encodeBytes(frames, options), picture => encodeStill[RAW_OPERATION][DRIVE](picture, options, helpers)); const {input: picture, refused} = admitted(input); if (refused) return refused; input = picture; let frames; try { frames = animated(input); } catch (error) { return Promise.reject(error); } return frames ? encodeBytes(input, options) : encodeStill[RAW_OPERATION][DRIVE](input, options, helpers); };
+encodeBytes[DRIVE] = (input, options, helpers) => encodeBytes(input, options, {helpers});
 
-const encode = resultOperation(encodeBytes, {preview: previewCall, device: true});
-export {configureDecoder} from '../shown-picture.mjs';
+const encode = resultOperation(encodeBytes, {device: true});
+export {setDecoder as configureDecoder} from '../decoder-setting.mjs';
 async function animate(input, options = {}) {
   options = featureless(options);
   const {codec: {target, ...settings}, hooks: {webgpu, maxPixels}} = callOptions(encodeOptions(options));
@@ -108,8 +110,7 @@ async function animate(input, options = {}) {
   const windowed = !source && !READ.has(input) && overWindow(read.width, read.height, animation.frames.length, codec) && arrayWindowable(animation, read.width, read.height)
     ? readerSource(arrayReader(animation)) : null;
   const report = options.onProgress, onProgress = progressOf(report, options.signal);
-  const hooks = {signal: options.signal ?? new AbortController().signal, onProgress, maxPixels,
-    ...(options[PREVIEW] && {preview: options[PREVIEW]})};
+  const hooks = {signal: options.signal ?? new AbortController().signal, onProgress, maxPixels};
   source?.bind?.(hooks.signal);
   return withArenaLease(options.signal, async () => {
     await acceleration(webgpu, 0, 0, codec.quality < 100 ? codec.effort : 0, 'an animation');
@@ -128,7 +129,6 @@ async function animate(input, options = {}) {
 import {serveRole, ownFile, roleName} from './module-roles.mjs';
 import {moduleRuntime} from './module-runtime.mjs';
 import {install, workerPort} from './worker-runtime.mjs';
-import {previewHub} from './preview-relay.mjs';
 import * as pool from '../helper-pool.mjs';
 import {serveHelper} from '../helper-runtime.mjs';
 import {WORKER_PROTOCOL} from './protocol.mjs';
@@ -136,7 +136,7 @@ import {serveBlockSplit} from '../block-split.mjs';
 import {serveParallel} from '../parallel-serve.mjs';
 const NAME = 'rapier-jxl/animation', raw = {encode, prepare};
 serveRole(NAME, {
-  worker: () => install(workerPort(), [], moduleRuntime(raw, {name: NAME, gpu: requireWebGPU, helpers: async () => pool, helper: ownFile(roleName(NAME, 'helper'))}), previewHub),
+  worker: () => install(workerPort(), [], moduleRuntime(raw, {name: NAME, gpu: requireWebGPU, helpers: async () => pool, helper: ownFile(roleName(NAME, 'helper'))})),
   helper: () => {
     const runtime = moduleRuntime(raw, {name: NAME, gpu: requireWebGPU});
     serveHelper(() => ({name: NAME, protocol: WORKER_PROTOCOL, run: (...call) => runtime.run(...call), serveSplit: serveBlockSplit, serveParallel}));

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const RapierParts = (() => {
 	const PINS = /* RAPIER_PARTS */ null;
-	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.78/';
+	const CDN = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.81/';
 	const PART_DIRECTORY = 'parts/';
 	const pins = new Map((PINS || []).map((pin, order) => [pin.id, {...pin, order}]));
+	const carriedOnly = Array.isArray(window.__RAPIER_CARRIED_PARTS) ? new Set(window.__RAPIER_CARRIED_PARTS) : null;
+	if (carriedOnly) for (const id of [...pins.keys()]) if (!carriedOnly.has(id)) pins.delete(id);
 	const runs = new Map(), states = new Map(), kept = new Set(), updates = new Map(), noted = new Set();
 	const FORMAT = 1;
 	const local = () => ['android', 'windows', 'linux', 'native'].includes(window.RapierPlatform?.environment.id);

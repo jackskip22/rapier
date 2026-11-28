@@ -7,18 +7,44 @@ const post = (reply, transfer, answer) => {
   try { port.postMessage(reply, transfer); }
   catch (error) { port.postMessage(answer(error)); }
 };
-const kernels = import('./kernels.mjs').then(module => { module.disableEntropyKernels(); return module; }), split = import('./photo-split.mjs'), codec = import('./v7/run-codec.mjs');
-const loaded = Promise.all([kernels, split, codec, import('./v7/common.mjs'), import('./v7/input.mjs'), import('./v7/acceleration.mjs'), import('./effort-job.mjs')]);
+const kernels = import('./kernels.mjs').then(module => { module.disableEntropyKernels(); return module; }), split = import('./photo-split.mjs');
+const runtime = import('./v7/module-runtime.mjs'), admission = import('./v7/primitives.mjs'), device = import('./v7/webgpu.mjs');
+const loaded = Promise.all([kernels, split, runtime, admission, device]);
 loaded.then(() => port.postMessage({ready: true}), fatal);
 const ok = loaded.then(() => true, () => false);
 let serving;
 let order = Promise.resolve();
 const next = step => { order = order.then(async () => { if (await ok) await step(); }).catch(fatal); };
+const operations = {
+  encode: {name: 'rapier-jxl', load: () => import('./v7/still.mjs'), gpu: true},
+  animate: {name: 'rapier-jxl/animation', operation: 'encode', load: () => import('./v7/animation.mjs'), gpu: true},
+  capture: {name: 'rapier-jxl/capture', load: () => import('./v7/capture-module.mjs')},
+  recompress: {name: 'rapier-jxl/jpeg', load: () => import('./v7/jpeg.mjs')},
+  restore: {name: 'rapier-jxl/jpeg', load: () => import('./v7/jpeg.mjs')},
+  decode: {name: 'rapier-jxl/decode', load: () => import('./v7/decode.mjs'), samples: true},
+  format: {name: 'rapier-jxl/format', load: () => import('./v7/format.mjs'), gpu: true},
+};
+const runners = new Map();
+async function run(task, hooks) {
+  const operation = task.operation === 'encode' && Array.isArray(task.input?.frames) ? 'animate' : task.operation;
+  const route = Object.hasOwn(operations, operation) && operations[operation];
+  if (!route) throw (await admission).fail('JXL_OPERATION', 'operation: public function required');
+  if (!runners.has(operation)) {
+    const loading = Promise.all([route.load(), runtime, device]).then(([module, {moduleRuntime}, {requireWebGPU}]) =>
+      moduleRuntime(module, {name: route.name, gpu: route.gpu ? requireWebGPU : false}));
+    runners.set(operation, loading);
+    loading.catch(() => runners.delete(operation));
+  }
+  const {webgpu, ...shared} = hooks;
+  const result = await (await runners.get(operation)).run(route.operation ?? operation, task.input, task.options,
+    route.gpu ? {...shared, webgpu} : shared);
+  return route.samples ? result : result.bytes;
+}
 async function whole({id, task}) {
-  const [{runCodec}, {lendEntropy}, {holdEntropy, releaseEntropy}] = await Promise.all([codec, kernels, import('./kernel-hooks.mjs')]);
+  const [{lendEntropy}, {holdEntropy, releaseEntropy}] = await Promise.all([kernels, import('./kernel-hooks.mjs')]);
   holdEntropy(lendEntropy);
   try {
-    const result = await runCodec(task.operation, task.input, task.options, {maxPixels: task.maxPixels, webgpu: task.webgpu, onProgress: progress => port.postMessage({id, progress})});
+    const result = await run(task, {maxPixels: task.maxPixels, webgpu: task.webgpu, onProgress: progress => port.postMessage({id, progress})});
     post({id, result}, ArrayBuffer.isView(result) ? [result.buffer] : [], error => ({id, error: described(error)}));
   } catch (error) { port.postMessage({id, error: described(error)}); }
   finally { releaseEntropy(); }

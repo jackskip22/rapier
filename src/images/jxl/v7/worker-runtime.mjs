@@ -12,7 +12,7 @@ function transferable(value, buffers = new Set(), seen = new Set()) {
   return buffers;
 }
 
-const INSTALLED = Symbol.for('rapier-jxl.worker-runtime');
+const INSTALLED = /* @__PURE__ */ Symbol.for('rapier-jxl.worker-runtime');
 const FRAME_WINDOW = 3;
 
 export function failure(reason, named = false) {
@@ -37,13 +37,12 @@ export function workerPort() {
   return typeof own.postMessage === 'function' && typeof own.addEventListener === 'function' && typeof own.document === 'undefined' ? own : null;
 }
 
-export function install(port, pending = [], runtime, previewHub) {
+export function install(port, pending = [], runtime) {
   const {run, prepare} = runtime;
   if (!port || typeof port.postMessage !== 'function' || typeof port.on !== 'function' && typeof port.addEventListener !== 'function') return;
   if (port[INSTALLED]) return;
   try { Object.defineProperty(port, INSTALLED, {value: true}); } catch {}
   let here = false, configurationError;
-  const previews = previewHub?.(port);
   const owner = {}, running = new Map();
   const reply = (id, reason) => port.postMessage({id, ok: false, error: failure(reason, true), ...(deviceHeld() && {device: true})});
   const receive = message => {
@@ -52,7 +51,6 @@ export function install(port, pending = [], runtime, previewHub) {
     const arrived = typeof ImageBitmap === 'function' && input instanceof ImageBitmap || typeof VideoFrame === 'function' && input instanceof VideoFrame;
     let handed = false;
     try {
-    if (previews?.ack(message)) return;
     if (message.wasmModules) {
       try { configureModules(message.wasmModules); }
       catch (error) { configurationError = {code: error?.code || 'JXL_WASM', message: error?.message || 'WebAssembly: prepare modules again'}; port.postMessage({configurationError}); }
@@ -84,7 +82,6 @@ export function install(port, pending = [], runtime, previewHub) {
     const beside = lane === 1 && helpers && running.size - here < helpers.count;
     if (running.has(id) || (here && !beside)) { reply(id, Object.assign(new Error("worker: active operation"), {code: 'JXL_BUSY'})); return; }
     const controller = new AbortController();
-    const preview = message.preview === true ? previews?.start(id, controller.signal) : undefined;
     const job = {controller, sequence: 0, waiting: null, undelivered: 0, frameWake: null, frameSequence: 0};
     const frames = message.frames === true ? async (frame, index) => {
       controller.signal.throwIfAborted();
@@ -105,9 +102,9 @@ export function install(port, pending = [], runtime, previewHub) {
       catch (error) { job.waiting = null; reject(error); }
     });
     if (!beside) here = true;
-    const done = () => { preview?.close(); stopInput(); controller.signal.removeEventListener('abort', stopInput); running.delete(id); if (!beside) here = false; };
+    const done = () => { stopInput(); controller.signal.removeEventListener('abort', stopInput); running.delete(id); if (!beside) here = false; };
     handed = true;
-    Promise.resolve().then(() => run(operation, input, options, {maxPixels, retainInput, helpers, webgpu, owner, owned: true, lane: beside ? 1 : 0, alone, signal: controller.signal, ...(frames && {onFrame: frames}), onProgress: progress => port.postMessage({id, progress}), ...(preview && {onPreview: preview.send})})).then(value => {
+    Promise.resolve().then(() => run(operation, input, options, {maxPixels, retainInput, helpers, webgpu, owner, owned: true, lane: beside ? 1 : 0, alone, signal: controller.signal, ...(frames && {onFrame: frames}), onProgress: progress => port.postMessage({id, progress})})).then(value => {
       done();
       try { port.postMessage({id, ok: true, value, ...(deviceHeld() && {device: true})}, [...transferable(value)]); } catch (reason) { reply(id, reason); }
     }, reason => { done(); reply(id, reason); });

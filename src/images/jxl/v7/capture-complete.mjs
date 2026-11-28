@@ -2,19 +2,18 @@
 import './engines.mjs';
 import {capture, prepare} from './capture-complete-module.mjs';
 export {supported} from './capture-complete-module.mjs';
-export {configureDecoder} from '../shown-picture.mjs';
+export {setDecoder as configureDecoder} from '../decoder-setting.mjs';
 
 
 import {serveRole, ownFile, roleName} from './module-roles.mjs';
 import {moduleRuntime} from './module-runtime.mjs';
 import {install, workerPort} from './worker-runtime.mjs';
-import {previewHub} from './preview-relay.mjs';
 import {withGroups} from './capture-groups.mjs';
 import {serveGroups} from './capture-group-helper.mjs';
 const NAME = 'rapier-jxl/capture-complete', raw = {capture, prepare};
 serveRole(NAME, {
-  worker: () => install(workerPort(), [], moduleRuntime(raw, {name: NAME}), previewHub),
-  groups: () => install(workerPort(), [], withGroups(moduleRuntime(raw, {name: NAME}), raw, NAME, ownFile(roleName(NAME, 'group helper'))), previewHub),
+  worker: () => install(workerPort(), [], moduleRuntime(raw, {name: NAME})),
+  groups: () => install(workerPort(), [], withGroups(moduleRuntime(raw, {name: NAME}), raw, NAME, ownFile(roleName(NAME, 'group helper')))),
   'group helper': serveGroups});
 
 import {inPlace} from './module-roles.mjs';

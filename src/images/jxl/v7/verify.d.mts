@@ -19,9 +19,11 @@ export interface VerifyProtection {
   /** One binary byte per output pixel, 1 = exact. The selection unions with exactRects. */
   readonly mask?: Uint8Array;
 }
+/** Options for independent verification. */
 export type VerifyOptions = Pick<JobOptions, 'signal' | 'onProgress' | 'maxPixels'> & {
   /** Pixels that must decode exactly, whatever the output's fidelity. */
   protection?: VerifyProtection};
+/** Evidence for the exact-pixel selection supplied to verification. */
 export interface ProtectionEvidence {
   /** SHA-256 of the canonical output dimensions and selected pixel set. */
   readonly digest: Digest;
@@ -29,6 +31,7 @@ export interface ProtectionEvidence {
   /** Every selected decoded RGBA sample equals its reference. */
   readonly exact: boolean;
 }
+/** The digests, measurements and limits recorded by verification. */
 interface VerificationDetails {
   readonly source: ResultSource | null;
   readonly outputDigest: Digest;
@@ -64,7 +67,7 @@ interface VerificationDetails {
   readonly notChecked?: 'noise';
   readonly floor?: number;
   readonly limit?: number;
-  /** 'opaque': colour was compared only where alpha is 255 (alpha everywhere). This browser hands its decode back
+  /** 'opaque': color was compared only where alpha is 255 (alpha everywhere). This browser hands its decode back
    * premultiplied and no decoder was configured. configureDecoder(decode, restore) compares every sample. */
   readonly colorScope?: 'opaque';
   readonly domain?: 'decoded-output';

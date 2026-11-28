@@ -6,6 +6,11 @@ import {fault, outOfMemory, hostWords} from './fault.mjs';
 
 export {fault};
 
+export const checkInteger = (value, min, max, name) => {
+  if (!Number.isInteger(value) || value < min || value > max) throw fault('JXL_INPUT', name + ': integer ' + min + '-' + max);
+  return value;
+};
+
 export function admitOptions(options = {}, quality = 100) {
   if (options === null || typeof options !== 'object') throw fault('JXL_INPUT', 'options: object');
   if (options.quality !== undefined) quality = options.quality;

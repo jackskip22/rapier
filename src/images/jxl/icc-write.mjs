@@ -311,3 +311,19 @@ export function writeImageHeader(w, width, height, colour, alpha, options = {}) 
   return writeHeaderFields(w, width, height, colour, alpha, options,
     (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? noProfile : headerOf);
 }
+
+export function withProfileHeader(bytes, width, height, space) {
+  const colour = space.colorChannels ?? 3;
+  for (const alpha of [false, true]) {
+    const plain = new BitWriter(64);
+    writeImageHeader(plain, width, height, colour, alpha, {colorSpace: 'srgb'});
+    const head = plain.finish();
+    if (head.length >= bytes.length || head.some((byte, i) => byte !== bytes[i])) continue;
+    const profiled = new BitWriter(1024);
+    writeImageHeader(profiled, width, height, colour, alpha, {colorSpace: space});
+    const out = profiled.finish(), file = new Uint8Array(out.length + bytes.length - head.length);
+    file.set(out); file.set(bytes.subarray(head.length), out.length);
+    return file;
+  }
+  return null;
+}

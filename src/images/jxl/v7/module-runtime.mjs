@@ -55,12 +55,11 @@ export function moduleRuntime(module, {name, gpu = false, helpers, helper: file,
       }
       const maxPixels = Math.min(options.maxPixels === undefined ? Infinity : pixelLimit(options.maxPixels), hooks.maxPixels ?? PIXELS);
       const execution = {maxPixels, ...(!(typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) && gpu && encodes(operation) && {webgpu: options.webgpu ?? hooks.webgpu})};
-      const {webgpu: _webgpu, ...rest} = options;
-      const call = {...(gpu || operation === 'capture' ? options : rest), ...execution,
+      const call = {...options, ...execution,
         ...(!((typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) && originalJpeg !== undefined && {[JPEG_SOURCE]: originalJpeg}),
         ...(operation === 'capture' && options.webgpu === undefined && hooks.webgpu !== undefined && {webgpu: hooks.webgpu}),
         ...(!(typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) && operation === 'format' && hooks.webgpu !== undefined && {[CONFIGURED_WEBGPU]: hooks.webgpu}), signal: hooks.signal, onProgress: hooks.onProgress,
-        ...(hooks.onPreview && {onPreview: hooks.onPreview}), ...(hooks.onFrame && {onFrame: hooks.onFrame}), ...(!((typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) && name === 'rapier-jxl/animation' && hooks.retainInput && {[RETAIN_INPUT]: hooks.retainInput})};
+        ...(hooks.onFrame && {onFrame: hooks.onFrame}), ...(!((typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) && name === 'rapier-jxl/animation' && hooks.retainInput && {[RETAIN_INPUT]: hooks.retainInput})};
       if (!(typeof __RAPIER_JXL_JPEG__ !== "undefined" && __RAPIER_JXL_JPEG__ === true) && isRowBridge(input)) {
         const port = input.rowsPort;
         try { return await module[operation](bridgedRows(input), call); } finally { port.close(); }

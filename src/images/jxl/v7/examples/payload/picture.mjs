@@ -2,6 +2,20 @@
 import {createElement} from 'react';
 
 const plain = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+const finite = v => (Number.isFinite(v) ? v : undefined);
+
+function isJxlEntry(entry) {
+  if (!plain(entry)) return false;
+  if (typeof entry.mimeType === 'string' && entry.mimeType.split(';')[0].trim().toLowerCase() === 'image/jxl') return true;
+  if (typeof entry.url === 'string' && /\.jxl(?=\?|$)/i.test(entry.url)) return true;
+  return typeof entry.filename === 'string' && /\.jxl$/i.test(entry.filename);
+}
+
+function nonJxlOriginal(item) {
+  return plain(item?.original) && typeof item.original.url === 'string' && item.original.url && !isJxlEntry(item.original)
+    ? item.original
+    : null;
+}
 
 function escapeAttr(value) {
   return String(value)
@@ -30,8 +44,49 @@ export function pictureProps(input, options = {}) {
 
   const resolvedAlt = alt ?? (typeof item.alt === 'string' ? item.alt : '');
   const sources = [];
+  const orig = nonJxlOriginal(item);
+  const mainWidth = finite(item.width) ?? finite(orig?.width);
+  const mainHeight = finite(item.height) ?? finite(orig?.height);
+  const isV4Jxl = !plain(item.jxl) && (isJxlEntry(item) || plain(item.variants));
 
   if (typeof size === 'string' && size) {
+    if (isV4Jxl && !plain(item.sizes?.[size])) {
+      const variant = plain(item.variants?.[size]) ? item.variants[size] : null;
+      const target = variant?.url ? variant : (isJxlEntry(item) ? item : null);
+      if (target?.url && isJxlEntry(target)) {
+        const w = finite(target.width) ?? (target === item ? mainWidth : undefined);
+        const h = finite(target.height) ?? (target === item ? mainHeight : undefined);
+        sources.push({
+          key: size,
+          type: 'image/jxl',
+          srcSet: target.url,
+          ...(w !== undefined ? {width: w} : {}),
+          ...(h !== undefined ? {height: h} : {}),
+        });
+      }
+      const imgSrc = (variant?.url && !isJxlEntry(variant))
+        ? variant.url
+        : (orig?.url || variant?.url || item.url);
+      if (!imgSrc) return null;
+      const width = finite(variant?.width) ?? mainWidth;
+      const height = finite(variant?.height) ?? mainHeight;
+      return {
+        picture: {...(pictureClassName ? {className: pictureClassName} : {})},
+        sources,
+        img: {
+          src: imgSrc,
+          alt: resolvedAlt,
+          ...(width !== undefined ? {width} : {}),
+          ...(height !== undefined ? {height} : {}),
+          ...(className ? {className} : {}),
+          ...(loading ? {loading} : {}),
+          ...(decoding ? {decoding} : {}),
+          ...(fetchPriority ? {fetchPriority} : {}),
+          ...(style ? {style} : {}),
+        },
+      };
+    }
+
     const fallbackSize = plain(item.sizes?.[size]) ? item.sizes[size] : null;
     const jxlSize = plain(item.jxl?.sizes?.[size]) ? item.jxl.sizes[size] : (!fallbackSize && plain(item.jxl) ? item.jxl : null);
     if (jxlSize?.url) {
@@ -55,6 +110,68 @@ export function pictureProps(input, options = {}) {
         alt: resolvedAlt,
         ...(Number.isFinite(width) ? {width} : {}),
         ...(Number.isFinite(height) ? {height} : {}),
+        ...(className ? {className} : {}),
+        ...(loading ? {loading} : {}),
+        ...(decoding ? {decoding} : {}),
+        ...(fetchPriority ? {fetchPriority} : {}),
+        ...(style ? {style} : {}),
+      },
+    };
+  }
+
+  if (isV4Jxl) {
+    if (plain(item.variants)) {
+      const entries = Object.entries(item.variants)
+        .filter(([, v]) => plain(v) && typeof v.url === 'string' && v.url && isJxlEntry(v))
+        .map(([name, v]) => [name, v, finite(v.width), finite(v.height)])
+        .sort(([, , aw], [, , bw]) => (aw ?? Infinity) - (bw ?? Infinity));
+      for (const [name, v, w, h] of entries) {
+        const customMedia = plain(mediaQueries) && typeof mediaQueries[name] === 'string' ? mediaQueries[name] : undefined;
+        const media = customMedia ?? (w !== undefined ? `(max-width: ${w}px)` : undefined);
+        sources.push({
+          key: name,
+          type: 'image/jxl',
+          srcSet: v.url,
+          ...(media ? {media} : {}),
+          ...(w !== undefined ? {width: w} : {}),
+          ...(h !== undefined ? {height: h} : {}),
+        });
+      }
+    }
+    if (typeof item.url === 'string' && item.url && isJxlEntry(item)) {
+      sources.push({
+        key: 'original',
+        type: 'image/jxl',
+        srcSet: item.url,
+        ...(mainWidth !== undefined ? {width: mainWidth} : {}),
+        ...(mainHeight !== undefined ? {height: mainHeight} : {}),
+      });
+    }
+    const fallbackUrl = orig?.url || (typeof item.url === 'string' ? item.url : '');
+    if (!fallbackUrl) return null;
+
+    let fallbackSrcSet;
+    if (sizes && plain(item.variants)) {
+      const candidates = Object.values(item.variants)
+        .filter(v => plain(v) && typeof v.url === 'string' && v.url && !isJxlEntry(v) && Number.isFinite(v.width))
+        .sort((a, b) => a.width - b.width)
+        .map(v => `${v.url} ${v.width}w`);
+      if (candidates.length > 0) {
+        if (mainWidth !== undefined) candidates.push(`${fallbackUrl} ${mainWidth}w`);
+        fallbackSrcSet = [...new Set(candidates)].join(', ');
+      }
+    }
+
+    return {
+      picture: {...(pictureClassName ? {className: pictureClassName} : {})},
+      sources,
+      img: {
+        src: fallbackUrl,
+        ...(fallbackSrcSet ? {srcSet: fallbackSrcSet} : {}),
+        ...(sizes ? {sizes} : {}),
+        alt: resolvedAlt,
+        ...(mainWidth !== undefined ? {width: mainWidth} : {}),
+        ...(mainHeight !== undefined ? {height: mainHeight} : {}),
         ...(className ? {className} : {}),
         ...(loading ? {loading} : {}),
         ...(decoding ? {decoding} : {}),

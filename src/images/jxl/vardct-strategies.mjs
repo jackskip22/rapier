@@ -10,10 +10,10 @@ import {prepareQuantParams, quantParamSteps} from './quantization-params.mjs';
 import {opaquePixels} from './lossless.mjs';
 
 import {NAMES, WIDTHS, HEIGHTS, TABLES, TRANSFORMS, cosine, basis, basisT, fillScaledDCTBasis, transposeScaledDCTBasis, inverseScaledDCT, inverseScaledDCTInto} from './vardct-bases.mjs';
-const AFV = (typeof __RAPIER_JXL_STILL__ !== 'undefined' && __RAPIER_JXL_STILL__ === true) ? null : AFV_BASIS;
+const AFV = ((typeof __RAPIER_JXL_STILL__ !== 'undefined' && __RAPIER_JXL_STILL__ === true) || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)) ? null : AFV_BASIS;
 export {TRANSFORMS, fillScaledDCTBasis, transposeScaledDCTBasis, inverseScaledDCT};
 
-const dctRows = new Map();
+const dctRows = /* @__PURE__ */ new Map();
 export const scaledDCTBases = size => ({basis: basis(size), basisT: basisT(size)});
 function scaledDCTRows(pixels, width, bt, tmp, from, to) {
   for (let y = from; y < to; y += 2) for (let u = 0; u < width; u += 8) {

@@ -49,9 +49,12 @@ export function decodedFields(decoded) {
 const RETAGGABLE = ['colorSpace', 'transferFunction', 'bitDepth', 'sampleFormat', 'intensityTarget'];
 const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
 export function decodedDescription(decoded) {
+  if (decoded.components !== undefined) throw fail('JXL_INPUT', 'components: encode takes RGBA, decode without components: true');
   if (!Object.hasOwn(FORMATS, formatOf(decoded))) throw fail('JXL_INPUT', "decoded format: uint8, uint16, float32");
   const out = decodedFields(decoded), header = decoded.header;
-  const intensity = header?.toneMapping?.intensityTarget;
+  const srcTf = header?.colorEncoding?.transferFunction, dstTf = decoded.rgbaColorEncoding?.transferFunction;
+  const toneMapped = (srcTf === 'pq' || srcTf === 'hlg') && dstTf !== 'pq' && dstTf !== 'hlg';
+  const intensity = toneMapped ? 255 : header?.toneMapping?.intensityTarget;
   if (typeof intensity === 'number') out.intensityTarget = intensity;
   for (const key of RETAGGABLE) if (decoded[key] !== undefined && decoded[key] !== out[key])
     throw fail('JXL_INPUT', `${key}: ${String(decoded[key])} vs ${String(out[key] ?? 'unnamed')}, use {data, width, height, ${key}}`);

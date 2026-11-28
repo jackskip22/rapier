@@ -16,12 +16,13 @@ await result.download({format: 'jxl', filename: 'card'});
 `quality: 1`, or ship the smaller exact-only module:
 
 ```js
-import * as capture from 'rapier-jxl/capture';
-jxl({module: 'rapier-jxl/capture', codec: capture});
+import * as capture from 'jpegxl/capture';
+jxl({module: 'jpegxl/capture', codec: capture});
 ```
 
-A build holds only the module you choose. The plug-in imports `capture-complete` itself. `capture` and `upload` come
-only as the `codec` you import. Transparent samples (a card's rounded corners) stay transparent, as in SnapDOM's PNG,
+Creating the default plug-in starts loading `jpegxl/capture-complete`. Export waits for it if it is still loading.
+Passing your own `codec` skips that default encoder load. The plug-in still uses the shared `jpegxl/page-rects` helper.
+`jpegxl/capture` and `jpegxl/upload` come only as the `codec` you import. Transparent samples (a card's rounded corners) stay transparent, as in SnapDOM's PNG,
 unless you set `backgroundColor`. Crop a capture with SnapDOM's `clip`.
 
 ## Options and defaults
@@ -30,12 +31,12 @@ The port uses these names throughout 8.x. The runtime and TypeScript checks besi
 
 | `jxl()` option | Default | Meaning |
 | --- | --- | --- |
-| `module` | `'rapier-jxl/capture-complete'` | Capture-complete carries efforts 1–9. `'rapier-jxl/capture'` carries exact capture at 1–5. `'rapier-jxl/upload'` carries photographic capture at 1–3. The last two need their `codec`. |
-| `codec` | `rapier-jxl/capture-complete`, imported on the first export | The capture module you imported, or any object with its `prepare` and `capture`. |
+| `module` | `'jpegxl/capture-complete'` | Capture-complete carries efforts 1–9. `'jpegxl/capture'` carries exact capture at 1–5. `'jpegxl/upload'` carries photographic capture at 1–3. The last two need their `codec`. |
+| `codec` | `jpegxl/capture-complete`, loaded when the plug-in is created | The capture module you imported, or any object with its `prepare` and `capture`. |
 | `effort` | The module's default, 3 | Default for each export. That export's `effort` overrides it. |
-| `webgpu` | Omitted | `rapier-jxl/capture-complete` only: left out, it uses a device where it helps. `false` turns it off. `'required'` refuses without one. `rapier-jxl/capture` and `rapier-jxl/upload` run on WebAssembly and refuse it. |
+| `webgpu` | Omitted | `jpegxl/capture-complete` only: left out, it uses a device where it helps. `false` turns it off. `'required'` refuses without one. `jpegxl/capture` and `jpegxl/upload` run on WebAssembly and refuse it. |
 
-Helpers are the module's own setting: `import {configure} from 'rapier-jxl/capture-complete'; configure({helpers: true});`.
+Helpers are the module's own setting: `import {configure} from 'jpegxl/capture-complete'; configure({helpers: true});`.
 
 | Export option | Default or handling |
 | --- | --- |
@@ -55,11 +56,11 @@ Helpers are the module's own setting: `import {configure} from 'rapier-jxl/captu
 
 | Module and name | Arguments | Return fields used |
 | --- | --- | --- |
-| `rapier-jxl/capture-complete` | The only module the plug-in imports, on the first export. With your own `codec` it imports none. In a browser it runs in its own worker. | `prepare(): Promise<void>` and `capture(input, options): Promise<ImageResult>`. Preparation is a warm-up. Its failure is handled by the capture. |
+| `jpegxl/capture-complete` | The default capture module. It starts loading when the plug-in is created. Your own `codec` skips that load. In a browser it runs in its own worker. | `prepare(): Promise<void>` and `capture(input, options): Promise<ImageResult>`. Preparation is a warm-up. Its failure is handled by the capture. |
 | Encoder: `capture` | The drawn canvas. `{fidelity, effort?, webgpu?, signal?, onProgress?, exactRects?, photoRects?, textComplete?}` | `meetsTarget: boolean`, `bytes: Uint8Array` and `kept` on success. `reason: {code, message}` on a miss. A miss rejects the export with that code and message. The Blob contains only the returned byte view. |
-| `rapier-jxl/page-rects`: `measure` | The captured element. `{edges, keep}`: edges except for the upload module, and `keep`, the nodes SnapDOM cloned. | A measurement with `box: {left, top, width, height}`, `text`, `photos`, `textComplete: true`, and optional `edges`. The example reads `box.width` and `box.height` and passes the measurement to `pageRects`. |
-| `rapier-jxl/page-rects`: `pageRects` | The measurement, `{width, height}` canvas, and `{area: {x?, y?, width?, height?}, edges}`. Area is in CSS pixels. Defaults cover the measured element. | `{exactRects, photoRects}` arrays in whole canvas pixels, plus `textComplete: true` when carried by the measurement. Rectangles have `{x, y, width, height}`. Exact rectangles may also have `solidText` or `edge`. |
-| Display decoder: `rapier-jxl/decode` | Imported only if a lossy file cannot display natively. In a browser it runs in its own worker. | `decode(blob, options): Promise<DecodedImage>`. |
+| `jpegxl/page-rects`: `measure` | The captured element. `{edges, keep}`: edges except for the upload module, and `keep`, the nodes SnapDOM cloned. | A measurement with `box: {left, top, width, height}`, `text`, `photos`, `textComplete: true`, and optional `edges`. The example reads `box.width` and `box.height` and passes the measurement to `pageRects`. |
+| `jpegxl/page-rects`: `pageRects` | The measurement, `{width, height}` canvas, and `{area: {x?, y?, width?, height?}, edges}`. Area is in CSS pixels. Defaults cover the measured element. | `{exactRects, photoRects}` arrays in whole canvas pixels, plus `textComplete: true` when carried by the measurement. Rectangles have `{x, y, width, height}`. Exact rectangles may also have `solidText` or `edge`. |
+| Display decoder: `jpegxl/decode` | Imported only if a lossy file cannot display natively. In a browser it runs in its own worker. | `decode(blob, options): Promise<DecodedImage>`. |
 | Decoder: `decode` | The JXL Blob. `{format: 'uint8', colorSpace: 'srgb', maxPixels: 268435456, signal?}` | `{data, width, height}`. Build the RGBA view with `new Uint8ClampedArray(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength)`. |
 
 Measurements are taken in `afterClone`, before the page can change. The export maps them through the capture's viewBox,

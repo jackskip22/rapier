@@ -3,7 +3,7 @@
 A Netlify build plug-in. After the site's build, every JPEG and PNG it publishes gets a JPEG XL copy beside it, and
 browsers that show JPEG XL get that copy at the same address. Everyone else gets the original.
 
-JPEGs come out about a fifth smaller and restore exactly. rapier-jxl is the encoder inside rapier.website, the free
+Supported JPEGs are recompressed losslessly and restore the original JPEG exactly. rapier-jxl is the encoder inside rapier.website, the free
 Markdown editor and painting app.
 
 ```sh

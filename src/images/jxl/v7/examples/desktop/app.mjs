@@ -1,6 +1,6 @@
-import {encode} from './jpegxl/upload.browser.mjs';
-import {recompress, restore} from './jpegxl/jpeg.browser.mjs';
-import {encode as animate} from './jpegxl/animation.browser.mjs';
+let animationMod, jpegMod;
+const loadAnimation = () => (animationMod ??= import('./jpegxl/animation.browser.mjs'));
+const loadJpeg = () => (jpegMod ??= import('./jpegxl/jpeg.browser.mjs'));
 
 const $ = id => document.getElementById(id);
 const buttons = ['photo', 'jpeg', 'video'].map($), [cancel, save, status, progress] = ['cancel', 'save', 'status', 'progress'].map($);
@@ -24,14 +24,17 @@ async function run(kind, file) {
   try {
     let out, note = '';
     if (kind === 'jpeg') {
+      const {recompress, restore} = await loadJpeg();
       const original = new Uint8Array(await file.arrayBuffer());
       out = bytes(await recompress(original, {signal, onProgress: report('Recompressing…')}));
       const back = bytes(await restore(out, {signal, onProgress: report('Restoring…')}));
       if (await sha256(back) !== await sha256(original)) throw Object.assign(new Error('The restored JPEG differs from the original.'), {code: 'JXL_VERIFY'});
       note = `\nThe restored JPEG is the same file: ${await sha256(back)}`;
     } else if (kind === 'video') {
-      out = bytes(await animate(file, {effort: 3, fidelity: {quality: 80}, signal, onProgress: report('Encoding video…')}));
+      const {encode} = await loadAnimation();
+      out = bytes(await encode(file, {effort: 3, fidelity: {quality: 80}, signal, onProgress: report('Encoding video…')}));
     } else {
+      const {encode} = await loadAnimation();
       out = bytes(await encode(file, {effort: 3, fidelity: {quality: 80}, signal, onProgress: report('Encoding…')}));
     }
     result = {data: out, name: `${file.name.replace(/\.[^.]*$/, '') || 'image'}.jxl`};

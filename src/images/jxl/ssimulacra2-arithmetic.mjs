@@ -105,15 +105,15 @@ export function openMetricArena() {
   };
 }
 
-export function referenceArena(scales, pairs = []) {
+export function referenceArena(scales, pairs = [], channelMask = 7) {
   let cursor = S2_MEMORY.base;
   const take = bytes => { const at = cursor; cursor += Math.ceil(bytes / 16) * 16; return at; };
   const planes = scales.map(({width, height, keep}) => {
     if (!keep) return null;
-    return [0,1,2].map(c => take(width * height * (keep === 'p1' ? 4 : keep === 'y-ms' ? (c === 1 ? 12 : 4) : 12)));
+    return [0,1,2].map(c => channelMask & (1 << c) ? take(width * height * (keep === 'p1' ? 4 : keep === 'y-ms' ? (c === 1 ? 12 : 4) : 12)) : 0);
   });
   const planesEnd = cursor;
-  const places = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? [] : pairs.map(width => { const rowBytes = ssimulacra2Layout(Math.abs(width),1).rowBytes, p = {rowBytes, scratch0:take(rowBytes), sums0:take(144)}; return width < 0 ? p : {...p, scratch1:take(rowBytes), sums1:take(144)}; });
+  const places = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? [] : pairs.map(width => { if (!width) return null; const rowBytes = ssimulacra2Layout(Math.abs(width),1,{channels:channelMask}).rowBytes, p = {rowBytes, scratch0:take(rowBytes), sums0:take(144)}; return width < 0 ? p : {...p, scratch1:take(rowBytes), sums1:take(144)}; });
   const arena = {memory:null,kernel:null,lastGauss:null,lastTransform:null,views:null,planes,planesEnd,places,base:cursor,dirtyEnd:cursor};
   const free = largestFree();
   if (free) Object.assign(arena, free);
@@ -130,6 +130,7 @@ let dropTimer = null;
 const dropPool = () => { dropTimer = null; while (pooled.length) weak.push(new WeakRef(pooled.pop())); weak.splice(0, weak.length - 2); };
 onCallEnd(() => {}, () => { if (dropTimer) clearTimeout(dropTimer); dropPool(); });
 export function dropMetricPool() { if (dropTimer) clearTimeout(dropTimer); dropPool(); }
+export function releaseMetricPool() { if (dropTimer) clearTimeout(dropTimer); dropTimer = null; pooled.length = 0; weak.length = 0; }
 function recycle(arena) {
   pooled.push(arena);
   if (pooled.length > 2) weak.push(new WeakRef(pooled.shift()));
@@ -204,6 +205,7 @@ function ready() {
     if (exports.s2Fused && fast) {
       new Float32Array(owned.buffer,PROBE,16).set(FUSED_PROBE);
       const leaf = new WebAssembly.Instance(fast,{env:{memory:owned}}).exports;
+      exports.s2Fused.set(0, leaf.s2FusedRow);
       exports.s2Fused.set(1, leaf.s2FusedBlur4); exports.s2Fused.set(2, leaf.s2FusedVertRow);
       FUSED_OF.set(exports, leaf);
     }
@@ -248,8 +250,8 @@ function reserve(plan) {
   refreshViews();
   dirtyEnd = Math.max(dirtyEnd,plan.arenaBytes);
 }
-const inputBytes = (input,n) => input.rgba ? n * 4 : n * 12;
-const inputKind = input => input?.transform ? 2 : input?.rgba ? 0 : 1;
+const inputBytes = (input,n) => input.xyb ? n * 4 * input.xyb.length : input.rgba ? n * 4 : n * 12;
+const inputKind = (input,m = 7) => input?.xyb ? 3 + m : input?.transform ? 2 : input?.rgba ? 0 : 1;
 function syncTransform(tr = null) {
   if (tr === lastTransform) return;
   if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && tr) views.f64.set(transformTable(tr).table, TRANSFORM_AT >> 3);
@@ -258,6 +260,7 @@ function syncTransform(tr = null) {
 function writeInput(input,at,n) {
   if (!at || !input) return;
   if (input.rgba) views.u8.set(input.rgba.subarray(0,n * 4),at);
+  else if (input.xyb) for (let i = 0; i < input.xyb.length; i++) views.f32.set(input.xyb[i].subarray(0,n),(at >> 2) + i * n);
   else for (let c = 0; c < 3; c++) views.f32.set(input[c].subarray(0,n),(at >> 2) + c * n);
 }
 function writeInputRows(input,at,w,y0,rows) {
@@ -316,7 +319,57 @@ export function downsample(input,width,height,into = null,libjxl = false) {
   return {planes,width:w,height:h};
 }
 
+const onePlane = x => !!x?.rgba || x?.xyb?.length === 1;
+export const xybPlanes = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true)) ? null : function xybPlanes(input,width,height,into,libjxl = false) {
+  const n = width * height, plan = s2ArenaPlan({base}), src = plan.take(inputBytes(input,n)), o = [0,1,2].map(() => plan.take(n * 4));
+  reserve(plan); arithmeticFlag(libjxl); syncTransform(input.transform ?? null); writeInput(input,src,n);
+  metricBand(width,height,-99,0,0,height,src,inputKind(input),0,0,LUT,GAUSS,0,0,o[0],o[1],o[2],0);
+  for (let c = 0; c < 3; c++) into[c].set(new Float32Array(memory.buffer,o[c],n));
+};
+
 const bandCacheMask = mode => mode === true ? 7 : mode === 'y-ms' ? 42 : mode === 'p1' ? 56 : mode === 'fill-p1' ? 64 : mode === 'fill-y-ms' ? 704 : 0;
+const runBand = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true)) ? null : function runBand(a,b0,b1,w,h,g,first,end,p0,p1,from,libjxl,place,planes,cached,boundMask,channelMask) {
+  const pair = !!b1;
+  if (pair) { ready(); if (!kernel.s2MetricBand2) return null; }
+  const inputY = from ?? Math.min(h,Math.ceil((first + 4) / 4) * 4);
+  const inputEnd = Math.min(h,Math.ceil((end + 4) / 4) * 4), inputH = inputEnd - inputY, heldRef = cached === true || cached === 'y-ms' || cached === 'p1';
+  const plan = ssimulacra2Layout(w,Math.max(1,inputH),{channels:channelMask,cached:cached === true ? 7 : cached === 'y-ms' ? 2 : 0,cachedP1:cached === 'p1' || cached === 'y-ms' ? 7 : 0,resident:!!planes,place:!!place,referenceRgba:!heldRef && onePlane(a),distortedRgba:onePlane(b0),base});
+  if (place && place.rowBytes < plan.rowBytes || !place && (p0?.resident || p1?.resident))
+    throw fault('JXL_INTERNAL','ssimulacra2-arithmetic:scale');
+  let distorted1 = 0, scratch1 = 0, sums1 = 0, arenaBytes = plan.arenaBytes;
+  if (pair) {
+    const more = s2ArenaPlan({base:arenaBytes});
+    distorted1 = more.take(inputBytes(b1,w * inputH));
+    scratch1 = place ? place.scratch1 : more.take(plan.rowBytes);
+    sums1 = place ? place.sums1 : more.take(144);
+    arenaBytes = more.arenaBytes;
+  }
+  if (place) { plan.scratch = place.scratch0; plan.sums = place.sums0; }
+  const tr = (!heldRef && a?.transform) || b0.transform || b1?.transform || null;
+  reserve({arenaBytes}); copyGauss(g); syncTransform(tr);
+  writeInput(a,plan.reference,w * inputH); writeInput(b0,plan.distorted,w * inputH);
+  if (pair) writeInput(b1,distorted1,w * inputH);
+  const slots = pair ? [[p0,plan.scratch,plan.sums],[p1,scratch1,sums1]] : [[p0,plan.scratch,plan.sums]];
+  for (const [previous,scratch,sums] of slots) if (previous && !previous.resident) {
+    if (previous.states) {
+      const rows = new Float32Array(memory.buffer,scratch,plan.rowBytes >> 2);
+      for (let i = 0; i < 15; i++) rows.set(previous.states.subarray(i * 6 * w,(i + 1) * 6 * w),stateAt(i,w));
+    } else new Uint8Array(memory.buffer,scratch,plan.rowBytes).set(previous.scratch);
+    new Float64Array(memory.buffer,sums,18).set(previous.sums);
+  }
+  arithmeticFlag(libjxl);
+  const [c0,c1,c2] = planes ?? [0,0,0], cm = bandCacheMask(cached) | (boundMask & 1 ? 10240 : channelMask << 10) | (boundMask & 2 ? 16384 : 0);
+  const made = pair
+    ? metricBand2(w,h,first,end,inputY,inputH,plan.reference,inputKind(a,channelMask),plan.distorted,inputKind(b0,channelMask),distorted1,inputKind(b1,channelMask),LUT,GAUSS,plan.scratch,plan.sums,scratch1,sums1,c0,c1,c2,cm)
+    : metricBand(w,h,first,end,inputY,inputH,plan.reference,inputKind(a,channelMask),plan.distorted,inputKind(b0,channelMask),LUT,GAUSS,plan.scratch,plan.sums,c0,c1,c2,cm);
+  if (pair && made === null) return null;
+  if (made !== inputEnd) throw fault('JXL_INTERNAL','ssimulacra2-arithmetic:rows-' + (pair ? 2 : 1));
+  const out = slots.map(([,scratch,sums],k) => {
+    const s = new Float64Array(memory.buffer,sums,18).slice();
+    return place ? {resident:true,output:k,sums:s,...(pair && {pair:true})} : {scratch:new Uint8Array(memory.buffer,scratch,plan.rowBytes).slice(),sums:s,...(pair && {pair:true})};
+  });
+  return pair ? out : out[0];
+};
 export const scaleBand = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null
   : (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) ? function scaleBand(a,b,w,h,g,first,end,place,sparse) {
     const inputY = Math.min(h,Math.ceil((first + 4) / 4) * 4), inputEnd = Math.min(h,Math.ceil((end + 4) / 4) * 4), inputH = inputEnd - inputY;
@@ -327,60 +380,12 @@ export const scaleBand = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' &&
       throw fault('JXL_INTERNAL','ssimulacra2-arithmetic:rows-1');
     return new Float64Array(memory.buffer,place.sums0,18).slice();
   }
-  : function scaleBand(a,b,w,h,g,first,end,previous = null,from = null,libjxl = false,place = null,planes = null,cached = false,boundMask = 0) {
-  const inputY = from ?? Math.min(h,Math.ceil((first + 4) / 4) * 4);
-  const inputEnd = Math.min(h,Math.ceil((end + 4) / 4) * 4), inputH = inputEnd - inputY, heldRef = cached === true || cached === 'y-ms' || cached === 'p1';
-  const plan = ssimulacra2Layout(w,Math.max(1,inputH),{cached:cached === true ? 7 : cached === 'y-ms' ? 2 : 0,cachedP1:cached === 'p1' || cached === 'y-ms' ? 7 : 0,resident:!!planes,place:!!place,referenceRgba:!heldRef && !!a?.rgba,distortedRgba:!!b.rgba,base});
-  if (place) { plan.scratch = place.scratch0; plan.sums = place.sums0; }
-  const tr = (!heldRef && a?.transform) || b.transform || null;
-  reserve(plan); copyGauss(g); syncTransform(tr);
-  writeInput(a,plan.reference,w * inputH); writeInput(b,plan.distorted,w * inputH);
-  if (previous && !previous.resident) {
-    if (previous.states) {
-      const scratch = new Float32Array(memory.buffer,plan.scratch,plan.rowBytes >> 2);
-      for (let i = 0; i < 15; i++) scratch.set(previous.states.subarray(i * 6 * w,(i + 1) * 6 * w),stateAt(i,w));
-    } else new Uint8Array(memory.buffer,plan.scratch,plan.rowBytes).set(previous.scratch);
-    new Float64Array(memory.buffer,plan.sums,18).set(previous.sums);
-  }
-  arithmeticFlag(libjxl);
-  const [c0,c1,c2] = planes ?? [0,0,0];
-  const made = metricBand(w,h,first,end,inputY,inputH,plan.reference,inputKind(a),
-    plan.distorted,inputKind(b),LUT,GAUSS,plan.scratch,plan.sums,c0,c1,c2,bandCacheMask(cached) | (boundMask & 1 ? 10240 : 0) | (boundMask & 2 ? 16384 : 0));
-  if (made !== inputEnd) throw fault('JXL_INTERNAL','ssimulacra2-arithmetic:rows-1');
-  const sums = new Float64Array(memory.buffer,plan.sums,18).slice();
-  return place ? {resident:true,output:0,sums} : {scratch:new Uint8Array(memory.buffer,plan.scratch,plan.rowBytes).slice(),sums};
-};
+  : (a,b,w,h,g,first,end,previous = null,from = null,libjxl = false,place = null,planes = null,cached = false,boundMask = 0,channelMask = 7) =>
+    runBand(a,b,null,w,h,g,first,end,previous,null,from,libjxl,place,planes,cached,boundMask,channelMask);
 
-export const scaleBandPair = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true)) ? null : function scaleBandPair(a,b0,b1,w,h,g,first,end,previous0 = null,previous1 = null,from = null,place = null,libjxl = false,planes = null,cached = false,boundMask = 0) {
-  ready();
-  if (!kernel.s2MetricBand2) return null;
-  const inputY = from ?? Math.min(h,Math.ceil((first + 4) / 4) * 4);
-  const inputEnd = Math.min(h,Math.ceil((end + 4) / 4) * 4), inputH = inputEnd - inputY, heldRef = cached === true || cached === 'y-ms' || cached === 'p1';
-  const plan = ssimulacra2Layout(w,Math.max(1,inputH),{cached:cached === true ? 7 : cached === 'y-ms' ? 2 : 0,cachedP1:cached === 'p1' || cached === 'y-ms' ? 7 : 0,resident:!!planes,place:!!place,referenceRgba:!heldRef && !!a?.rgba,distortedRgba:!!b0.rgba,base});
-  if (place && place.rowBytes < plan.rowBytes || !place && (previous0?.resident || previous1?.resident))
-    throw fault('JXL_INTERNAL','ssimulacra2-arithmetic:scale');
-  const more = s2ArenaPlan({base:plan.arenaBytes}), distorted1 = more.take(inputBytes(b1,w * inputH)), scratch1 = place ? place.scratch1 : more.take(plan.rowBytes), sums1 = place ? place.sums1 : more.take(18 * 8);
-  if (place) { plan.scratch = place.scratch0; plan.sums = place.sums0; }
-  const tr = (!heldRef && a?.transform) || b0.transform || b1.transform || null;
-  reserve({arenaBytes:more.arenaBytes}); copyGauss(g); syncTransform(tr);
-  writeInput(a,plan.reference,w * inputH); writeInput(b0,plan.distorted,w * inputH); writeInput(b1,distorted1,w * inputH);
-  for (const [previous,scratch,sums] of [[previous0,plan.scratch,plan.sums],[previous1,scratch1,sums1]]) if (previous && !previous.resident) {
-    if (previous.states) {
-      const rows = new Float32Array(memory.buffer,scratch,plan.rowBytes >> 2);
-      for (let i = 0; i < 15; i++) rows.set(previous.states.subarray(i * 6 * w,(i + 1) * 6 * w),stateAt(i,w));
-    } else new Uint8Array(memory.buffer,scratch,plan.rowBytes).set(previous.scratch);
-    new Float64Array(memory.buffer,sums,18).set(previous.sums);
-  }
-  arithmeticFlag(libjxl);
-  const [c0,c1,c2] = planes ?? [0,0,0];
-  const made = metricBand2(w,h,first,end,inputY,inputH,plan.reference,inputKind(a),plan.distorted,inputKind(b0),
-    distorted1,inputKind(b1),LUT,GAUSS,plan.scratch,plan.sums,scratch1,sums1,c0,c1,c2,bandCacheMask(cached) | (boundMask & 1 ? 10240 : 0) | (boundMask & 2 ? 16384 : 0));
-  if (made === null) return null;
-  if (made !== inputEnd) throw fault('JXL_INTERNAL','ssimulacra2-arithmetic:rows-2');
-  if (place) return [plan.sums,sums1].map((sums,k) => ({resident:true,output:k,sums:new Float64Array(memory.buffer,sums,18).slice(),pair:true}));
-  return [[plan.scratch,plan.sums],[scratch1,sums1]].map(([scratch,sums]) => ({scratch:new Uint8Array(memory.buffer,scratch,plan.rowBytes).slice(),
-    sums:new Float64Array(memory.buffer,sums,18).slice(),pair:true}));
-};
+export const scaleBandPair = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true)) ? null
+  : (a,b0,b1,w,h,g,first,end,previous0 = null,previous1 = null,from = null,place = null,libjxl = false,planes = null,cached = false,boundMask = 0,channelMask = 7) =>
+    runBand(a,b0,b1,w,h,g,first,end,previous0,previous1,from,libjxl,place,planes,cached,boundMask,channelMask);
 
 export const residentScratch = ((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true)) ? null : function residentScratch(arena,place,k) {
   return new Uint8Array(arena.memory.buffer,k ? place.scratch1 : place.scratch0,place.rowBytes).slice();
@@ -428,32 +433,34 @@ function recordResidentCache(fixed, channels, keep, fullMask, n, boundD = false)
   }
 }
 
-export function scoreBands(a, b0, b1, width, height, g, fixed, libjxl = false, sparse0 = false, startScale = 0) {
+export function scoreBands(a, b0, b1, width, height, g, fixed, libjxl = false, sparse0 = false, startScale = 0, only0 = false, boundD = false, channelMask = 7) {
   ready();
   if (b1 && !kernel.s2MetricBand2) {
-    const out0 = scoreBands(a, b0, null, width, height, g, fixed, libjxl, sparse0, startScale);
+    const out0 = scoreBands(a, b0, null, width, height, g, fixed, libjxl, sparse0, startScale, only0, boundD, channelMask);
     let needRef2 = !fixed;
-    if (fixed) for (let s = startScale; s < fixed.scales.length; s++) if (!scaleComplete(fixed.scales[s])) { needRef2 = true; break; }
-    const out1 = scoreBands(needRef2 ? a : null, b1, null, width, height, g, fixed, libjxl, sparse0, startScale);
+    if (fixed) for (let s = startScale; s < (only0 ? 1 : fixed.scales.length); s++) if (!scaleComplete(fixed.scales[s])) { needRef2 = true; break; }
+    const out1 = scoreBands(needRef2 ? a : null, b1, null, width, height, g, fixed, libjxl, sparse0, startScale, only0, boundD, channelMask);
     return [out0, out1];
   }
+  const mask = only0 ? (boundD ? 2 : channelMask) : 7, fullMask = only0 && boundD ? 7 : mask;
+  const boundBit = only0 ? (boundD ? 10240 : mask !== 7 ? mask << 10 : 0) : 0;
   const dims = [];
-  for (let s = 0, sw = width, sh = height; s < 6; s++) {
-    if (sw < 8 || sh < 8) break;
+  for (let s = 0, sw = width, sh = height; s < (only0 ? 1 : 6); s++) {
+    if (!only0 && (sw < 8 || sh < 8)) break;
     if (s) { sw = (sw + 1) >> 1; sh = (sh + 1) >> 1; }
     const ch = fixed?.scales[s] ?? null, keep = fixed ? fixed.sizes[s].keep : false;
     let heldBits = 0;
     for (let c = 0; c < 3; c++) if (ch?.[c]) heldBits |= 1 << c;
     const res = resident?.planes[s] ?? null;
-    const {cachedMs, cachedP1, cMask} = res ? residentMaskFor(keep, heldBits, 7) : {cachedMs: 0, cachedP1: 0, cMask: 0};
+    const {cachedMs, cachedP1, cMask} = res ? residentMaskFor(keep, heldBits, fullMask) : {cachedMs: 0, cachedP1: 0, cMask: 0};
     const activeScale = s >= startScale;
-    const needRef = activeScale && ((7 & ~cachedP1) !== 0);
-    const useSparse = s === 0 && sparse0 && (scaleComplete(ch) || keep !== true);
+    const needRef = activeScale && ((fullMask & ~cachedP1) !== 0);
+    const useSparse = s === 0 && sparse0 && (only0 || scaleComplete(ch) || keep !== true);
     let active = 0;
-    for (let c = 0; c < 3; c++) active += (cachedMs & (1 << c)) ? 3 : 5;
+    for (let c = 0; c < 3; c++) if (fullMask & (1 << c)) active += (cachedMs & (1 << c)) ? 3 : 5;
     const rowBytes = activeScale ? ((needRef ? 48 : 0) + 80 + 24 * active) * sw * 4 : 0;
-    dims.push({s, w: sw, h: sh, n: sw * sh, ch, keep, res, cMask: cMask | (useSparse ? 16384 : 0), needRef, rowBytes,
-      at: res ? [0, 1, 2].map(c => (keep || (heldBits & (1 << c))) ? res[c] : 0) : [0, 0, 0],
+    dims.push({s, w: sw, h: sh, n: sw * sh, ch, keep, res, cMask: cMask | (useSparse ? 16384 : 0) | boundBit, needRef, rowBytes,
+      at: res ? [0, 1, 2].map(c => (fullMask & (1 << c)) && (keep || (heldBits & (1 << c))) ? res[c] : 0) : [0, 0, 0],
       scratch0: 0, sums0: 0, scratch1: 0, sums1: 0});
   }
   let lastRefScale = -1;
@@ -518,62 +525,62 @@ export function scoreBands(a, b0, b1, width, height, g, fixed, libjxl = false, s
   const out0 = [], out1 = b1 ? [] : null;
   for (let s = startScale; s < dims.length; s++) {
     const d = dims[s];
-    if (d.res) recordResidentCache(fixed, d.ch, d.keep, 7, d.n, false);
+    if (d.res) recordResidentCache(fixed, d.ch, d.keep, fullMask, d.n, boundD);
     out0.push({w: d.w, h: d.h, n: d.n, sums: views.f64.slice(d.sums0 >> 3, (d.sums0 >> 3) + 18)});
     if (b1) out1.push({w: d.w, h: d.h, n: d.n, sums: views.f64.slice(d.sums1 >> 3, (d.sums1 >> 3) + 18)});
   }
   return b1 ? [out0, out1] : out0;
 }
 
-export function scoreScale0Bands(a, b0, b1, w, h, g, fixed, libjxl = false, sparse0 = false, boundD = false, channelMask = 7) {
-  ready();
-  if (b1 && !kernel.s2MetricBand2) {
-    const r0 = scoreScale0Bands(a, b0, null, w, h, g, fixed, libjxl, sparse0, boundD, channelMask);
-    const ch0 = fixed?.scales[0];
-    const r1 = scoreScale0Bands(scaleComplete(ch0) ? null : a, b1, null, w, h, g, fixed, libjxl, sparse0, boundD, channelMask);
-    return [r0, r1];
+export function scoreDualBands(a, b, width, height, g) {
+  const plan = s2ArenaPlan({base}), dims = [];
+  for (let w = width, h = height; dims.length < 6 && w >= 8 && h >= 8;) {
+    if (dims.length) { w = (w + 1) >> 1; h = (h + 1) >> 1; }
+    const rowBytes = (48 + 80 + 24 * 15) * w * 4;
+    dims.push({w, h, n: w * h, scratch: [plan.take(rowBytes), plan.take(rowBytes)], sums: [plan.take(144), plan.take(144)]});
   }
-  const ch = fixed?.scales[0] ?? null, keep = fixed ? fixed.sizes[0].keep : false, n = w * h;
-  const mask = boundD ? 2 : channelMask, fullMask = boundD ? 7 : mask;
-  const sparseBit = sparse0 ? 16384 : 0, boundBit = boundD ? 10240 : (mask !== 7 ? (mask << 10) : 0);
-  let heldBits = 0;
-  for (let c = 0; c < 3; c++) if (ch?.[c]) heldBits |= 1 << c;
-  const res = resident?.planes[0] ?? null;
-  const {cachedMs, cachedP1, cMask} = res ? residentMaskFor(keep, heldBits, fullMask) : {cachedMs: 0, cachedP1: 0, cMask: 0};
-  const needRef = (fullMask & ~cachedP1) !== 0;
-  let active = 0;
-  for (let c = 0; c < 3; c++) if (fullMask & (1 << c)) active += (cachedMs & (1 << c)) ? 3 : 5;
-  const rowBytes = ((needRef ? 48 : 0) + 80 + 24 * active) * w * 4;
-  const maxBand = Math.min(h, BAND_ROWS), maxN = w * maxBand;
-  const plan = s2ArenaPlan({base});
-  const scratch0 = plan.take(rowBytes), sums0 = plan.take(144);
-  const scratch1 = b1 ? plan.take(rowBytes) : 0, sums1 = b1 ? plan.take(144) : 0;
-  const refIn = needRef ? plan.take(inputBytes(a, maxN)) : 0;
-  const dist0In = plan.take(inputBytes(b0, maxN));
-  const dist1In = b1 ? plan.take(inputBytes(b1, maxN)) : 0;
-  reserve(plan); copyGauss(g);
-  syncTransform((needRef && a?.transform) || b0.transform || b1?.transform || null);
-  arithmeticFlag(libjxl);
-  const at = res ? [0, 1, 2].map(c => (fullMask & (1 << c)) && (keep || (heldBits & (1 << c))) ? res[c] : 0) : [0, 0, 0];
-  const finalMask = cMask | sparseBit | boundBit;
-  const aKind = inputKind(a), b0Kind = inputKind(b0), b1Kind = b1 ? inputKind(b1) : 0;
+  const rows = Math.min(height, BAND_ROWS), inputN = rows * width;
+  const inputs = [a, b], kinds = inputs.map(inputKind), source = inputs.map(input => plan.take(inputBytes(input, inputN)));
+  const ping = inputs.map((input, i) => {
+    const sizes = [1, 2].map(s => dims[s] ? dims[s].w * Math.ceil(rows / (1 << s)) * 12 : 0);
+    const first = sizes.map(bytes => bytes ? plan.take(bytes) : 0);
+    return [first, kinds[i] === 0 ? sizes.map(bytes => bytes ? plan.take(bytes) : 0) : first];
+  });
+  const libLut = plan.take(1024);
+  reserve(plan); copyGauss(g); syncTransform(null); syncArithmetic(false);
+  kernel.s2LibjxlInit(libLut);
+  const lut = [LUT, libLut];
+  for (let y = 0; y < height; y += BAND_ROWS) {
+    const until = Math.min(height, y + BAND_ROWS), last = until === height;
+    for (let i = 0; i < 2; i++) writeInputRows(inputs[i], source[i], width, y, until - y);
+    const current = source.map(at => [at, at]);
+    let prevW = width, prevH = until - y;
+    for (let s = 0; s < dims.length; s++) {
+      const d = dims[s], inY = y >> s, inEnd = last ? d.h : until >> s, inH = inEnd - inY;
+      if (s) {
+        const slot = (s - 1) & 1;
+        for (let i = 0; i < 2; i++) {
+          const kind = s === 1 ? kinds[i] : 1;
+          kernel.s2MetricDown(prevW, prevH, current[i][0], kind, LUT, ping[i][0][slot]);
+          if (ping[i][1] !== ping[i][0]) kernel.s2MetricDown(prevW, prevH, current[i][1], kind, libLut, ping[i][1][slot]);
+          for (let k = 0; k < 2; k++) current[i][k] = ping[i][k][slot];
+        }
+      }
+      const first = y === 0 ? -4 : inY - 4, end = last ? d.h : inEnd - 4;
+      const made = runWithFused(kernel.s2MetricBandDual, [d.w, d.h, first, end, inY, inH,
+        current[0][0], current[1][0], current[0][1], current[1][1], s ? 1 : kinds[0], s ? 1 : kinds[1],
+        ...lut, GAUSS, d.scratch[0], d.sums[0], d.scratch[1], d.sums[1]]);
+      if (made !== inEnd) throw fault('JXL_INTERNAL', 'ssimulacra2-arithmetic:dual-band');
+      prevW = d.w; prevH = inH;
+    }
+  }
+  return [0, 1].map(k => dims.map(d => ({w: d.w, h: d.h, n: d.n,
+    sums: views.f64.slice(d.sums[k] >> 3, (d.sums[k] >> 3) + 18)})));
+}
 
-  for (let y0 = 0; y0 < h; y0 += BAND_ROWS) {
-    const y1 = Math.min(h, y0 + BAND_ROWS), last = y1 === h, inH = y1 - y0;
-    if (needRef) writeInputRows(a, refIn, w, y0, inH);
-    writeInputRows(b0, dist0In, w, y0, inH);
-    if (b1) writeInputRows(b1, dist1In, w, y0, inH);
-    const first = y0 === 0 ? -4 : y0 - 4, end = last ? h : y1 - 4;
-    const made = b1
-      ? metricBand2(w, h, first, end, y0, inH, refIn, aKind, dist0In, b0Kind, dist1In, b1Kind,
-          LUT, GAUSS, scratch0, sums0, scratch1, sums1, at[0], at[1], at[2], finalMask)
-      : metricBand(w, h, first, end, y0, inH, refIn, aKind, dist0In, b0Kind,
-          LUT, GAUSS, scratch0, sums0, at[0], at[1], at[2], finalMask);
-    if (made !== y1) throw fault('JXL_INTERNAL', 'ssimulacra2-arithmetic:scale0-band');
-  }
-  if (res) recordResidentCache(fixed, ch, keep, fullMask, n, boundD);
-  const s0 = views.f64.slice(sums0 >> 3, (sums0 >> 3) + 18);
-  return b1 ? [s0, views.f64.slice(sums1 >> 3, (sums1 >> 3) + 18)] : s0;
+export function scoreScale0Bands(a, b0, b1, w, h, g, fixed, libjxl = false, sparse0 = false, boundD = false, channelMask = 7) {
+  const r = scoreBands(a, b0, b1, w, h, g, fixed, libjxl, sparse0, 0, true, boundD, channelMask);
+  return b1 ? [r[0][0].sums, r[1][0].sums] : r[0].sums;
 }
 
 export function scaleSums(a,b,w,h,g,channels,keep,_colors,channel = null,terms = null,scale = 0,libjxl = false,sparse0 = false,boundD = false) {

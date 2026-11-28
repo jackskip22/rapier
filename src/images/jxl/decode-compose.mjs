@@ -217,6 +217,24 @@ export function rgbaPixels(frame,format,unpremultiplyAlpha=false,renderSpotColor
   return data;
 }
 
+export function packComponents(frame,format) {
+  const count=frame.width*frame.height,cmyk=frame.colorEncoding?.space==='cmyk'||frame.colorEncoding?.iccSpace==='CMYK';
+  const black=cmyk?frame.extraChannels.find(e=>e.type===4):null;
+  requireDecode(!cmyk||black,'CMYK JPEG XL image is missing its black channel.');
+  const planes=cmyk?[frame.planes[0],frame.planes[1],frame.planes[2],black.data]:frame.planes.length===1?[frame.planes[0]]:frame.planes.slice(0,3);
+  const ch=planes.length,data=format==='float32'?new Float32Array(count*ch):format==='uint16'?new Uint16Array(count*ch):new Uint8Array(count*ch);
+  if(format==='float32') {
+    for(let i=0,o=0;i<count;i++)for(let c=0;c<ch;c++)data[o++]=planes[c][i];
+    return {data,components:ch};
+  }
+  const scale=format==='uint16'?65535:255;
+  for(let i=0,o=0;i<count;i++)for(let c=0;c<ch;c++){
+    const v=planes[c][i];
+    data[o++]=v<=0?0:v>=1?scale:(v*scale+0.5)|0;
+  }
+  return {data,components:ch};
+}
+
 export function rgbaPixelsRects(frame,rects,dst) {
   if(!rects.length)return dst;
   const fw=frame.width,fh=frame.height;

@@ -3,7 +3,7 @@ import {BitWriter} from './bits.mjs';
 import {admitOptions, admitOutputSize} from './admit.mjs';
 import {admitSampleFormat} from './admit-samples.mjs';
 import {exactSignal, signalSpace} from './color-signal.mjs';
-import {writeImageHeader} from './icc-write.mjs';
+import {writeImageHeader, withProfileHeader} from './icc-write.mjs';
 import {groupLayout, groupRect, writeModularFrameHeader, assembleCodestream} from './frame.mjs';
 import {intervals, writeModularHeader} from './modular.mjs';
 import {inspectPixelsSteps, iccShape, shapeFloors} from './lossless.mjs';
@@ -108,22 +108,6 @@ function slicePixels(data, stride, x, y, w, h) {
   const out = new Uint8Array(w * h * 4);
   for (let r = 0; r < h; r++) out.set(data.subarray(((y + r) * stride + x) * 4, ((y + r) * stride + x + w) * 4), r * w * 4);
   return out;
-}
-
-function withProfileHeader(bytes, width, height, space) {
-  const colour = space.colorChannels ?? 3;
-  for (const alpha of [false, true]) {
-    const plain = new BitWriter(64);
-    writeImageHeader(plain, width, height, colour, alpha, {colorSpace: 'srgb'});
-    const head = plain.finish();
-    if (head.length >= bytes.length || head.some((byte, i) => byte !== bytes[i])) continue;
-    const profiled = new BitWriter(1024);
-    writeImageHeader(profiled, width, height, colour, alpha, {colorSpace: space});
-    const out = profiled.finish(), file = new Uint8Array(out.length + bytes.length - head.length);
-    file.set(out); file.set(bytes.subarray(head.length), out.length);
-    return file;
-  }
-  return null;
 }
 
 function regionOptionsFor(shape, fallbackLevel = null) {

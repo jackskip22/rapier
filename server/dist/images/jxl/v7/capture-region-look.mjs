@@ -3,7 +3,7 @@ import {complete} from '../bits.mjs';
 import {call, captureWindowVulnerability as windowVulnerability} from '../capture-kernels.mjs';
 import {into, out} from '../kernel-call.mjs';
 import {AREA_FIELD, areaFieldQuality, areaFieldValue, photoCoefficientSteps, photoQualityStep, rgbCoefficientSteps, strengthOf} from '../photo-dct.mjs';
-import {gammaPicture, padPhotoCrop, photoRegionTarget, clipPhotoRect, cutPhotoRGBA} from '../photo-region-score.mjs';
+import {gammaPicture, padPhotoCrop, photoRegionTarget, clipPhotoRect, cutPhotoRGBA} from '../photo-region-helpers.mjs';
 import {colorPixels} from '../color-band.mjs';
 import {ssimulacra2} from '../ssimulacra2.mjs';
 import {MEASURED_EFFORT} from '../effort-level.mjs';

@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: MIT
-import {landsAtEffort, keepsRoute} from './photo-quality-table.mjs';
+import {landsAtEffort, keepsRoute, e13HighQ, e13FastSettle} from './photo-quality-table.mjs';
 import {MEASURED_EFFORT} from './effort-level.mjs';
 import {complete, part} from './bits.mjs';
 import {photoProducer} from './photo-job.mjs';
 import {photoXYBSteps, preferXYB, FAST_RANGE} from './photo-xyb.mjs';
 import {P3_TRANSFORM} from './color-transform.mjs';
-import {photoXYBBands, photoXYBBand, PHOTO_BAND_MARGIN} from './photo-bands.mjs';
-import {v6For, smallPicture, uploadPicture, uploadBandPicture, GABORISH} from './photo-v6-settings.mjs';
-import {coefficientAnsSteps, BUDGETS} from './coefficient-ans.mjs';
+import {photoXYBBands, photoXYBBand, photoFastImage, PHOTO_BAND_MARGIN} from './photo-bands.mjs';
+import {v6For, smallPicture, uploadPicture, uploadBandPicture, profiledUploadPicture} from './photo-v6-settings.mjs';
+import {coefficientAnsSteps, BUDGETS, SMALL_BUDGET, fastBudgets, plannedEffort, choose, sizeFailure, retainedSteps, fastSmallSteps} from './coefficient-ans.mjs';
 import {candidateSteps} from './coefficient-effort.mjs';
 import {photoSplitCandidates, photoSplitBands, splitCandidates, splitHasAlpha, splitEnd,
   splitRoute, encodeSplitCandidates, plainSampleSmaller} from './photo-split.mjs';
-import {largePhoto} from './photo-low-settings.mjs';
-import {SMALL_BUDGET, fastBudgets, plannedEffort, choose, sizeFailure, retainedSteps, fastSmallSteps} from './photo-low-ladder.mjs';
+import {largePhoto} from './memory-device.mjs';
 
 export function lowWholePhoto(data, width, height, {colorSpace = 'srgb', signal, smooth, v6 = false} = {}) {
   const color = {space: colorSpace, ...(colorSpace === 'display-p3' ? {transform: P3_TRANSFORM} : typeof colorSpace === 'object' && colorSpace.transform && {transform: colorSpace.transform})};
@@ -42,13 +41,13 @@ export function lowWholePhotoSteps(data, width, height, options) {
   return lowWholePhoto(data, width, height, options).steps(options);
 }
 
-const LF3_BUDGET = [{...SMALL_BUDGET[0], lf: 3}], FAST_E5_BUDGETS = [LF3_BUDGET[0], {...BUDGETS[1], passes: 1, mapLz: true, lf: 3}];
+const LF3_BUDGET = [{...SMALL_BUDGET[0], lf: 3}];
 const useFilter = (quality, width, height, nativeOpaque = true, largeFiltered = false, landing = false) =>
   (landing && largeFiltered ? quality < 99.5 : quality < 95 && !(nativeOpaque && !largeFiltered && largePhoto(width, height))) && !smallPicture(width, height);
-const landedPicture = (effort, coded = effort) => keepsRoute(coded) ? landsAtEffort(effort) : true;
+const landedPicture = (effort, coded = effort) => keepsRoute(coded) ? landsAtEffort(effort) || (e13HighQ() || e13FastSettle()) && effort >= 1 && effort <= 3 && coded >= 1 && coded <= 3 : true;
 const calibratedPicture = (effort, coded = effort) => keepsRoute(coded) ? landsAtEffort(effort) : effort >= 1 && effort < MEASURED_EFFORT;
 const alone = (quality, effort, filter, smooth, both, calibrated = false) => filter && !both && (calibrated || effort < 3 || quality >= 80 || smooth === false);
-const filteredBudgets = (effort, pixels) => (effort = plannedEffort(effort, pixels)) >= 5 ? FAST_E5_BUDGETS : effort >= 4 ? LF3_BUDGET : [];
+const filteredBudgets = (effort, pixels) => plannedEffort(effort, pixels) >= 4 ? LF3_BUDGET : [];
 const splitBudgets = (effort, filter, quality, width, height) => {
   const budgets = fastBudgets(effort, filter, width * height);
   return !filter && quality < 95 && largePhoto(width, height) ? budgets.slice(0, 1) : budgets;
@@ -81,7 +80,7 @@ export function lowPhotoWindow(data, width, height, {quality, effort, coded = ef
   const picFor = q => flat !== undefined && grain !== undefined ? uploadBandPicture(flat, grain, q) : uploadPicture(data, width, height, q);
   if (p3) {
     const picture = picFor(quality);
-    const opts = {...v6For(width, height), ...GABORISH, tune: picture.tune, calibrationRow: picture.calibrationRow, ...color};
+    const opts = profiledUploadPicture(width, height, picture, color);
     return {quality, filtered: false, image({pixels, width: w, height: h}) {
       return complete(photoXYBBands(pixels, w, h, quality, opts));
     }};
@@ -136,7 +135,7 @@ function* remembered(steps, image, images, incumbent = null) {
 function* pictureSteps(data, width, height, quality, effort, images, color, split, screen, smooth, lowFilteredQuality, v6 = false, other = undefined, lowBoth = false, chooseLfGroup) {
   if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && v6 && color.transform && !color.transform.gray && effort >= 4 && quality < 100 && !smallPicture(width, height)) {
     const picture = uploadPicture(data, width, height, quality);
-    const image = yield* part(photoXYBBands(data, width, height, quality, {...v6For(width, height), ...GABORISH, tune: picture.tune, calibrationRow: picture.calibrationRow, ...color}), 0, 2);
+    const image = yield* part(photoXYBBands(data, width, height, quality, profiledUploadPicture(width, height, picture, color)), 0, 2);
     return yield* part(remembered(coefficientAnsSteps(image, effort), image, images), 1, 2);
   }
   const control = {hurried: false}, filter = useFilter(quality, width, height, split && !color.transform, lowFilteredQuality !== undefined, landedPicture(effort));
@@ -186,12 +185,7 @@ function* pictureSteps(data, width, height, quality, effort, images, color, spli
     }
     catch (error) { if (!sizeFailure(error)) throw error; }
   }
-  let image;
-  try { image = complete(photoXYBSteps(data, width, height, quality, {...v6For(width, height), fast: true, fastBand: !color.transform, ...color})); }
-  catch (error) {
-    if (error !== FAST_RANGE) throw error;
-    image = complete(photoXYBSteps(data, width, height, quality, {...v6For(width, height), ...color}));
-  }
+  const image = photoFastImage(data, width, height, quality, v6For(width, height), {color, fastBand: !color.transform});
   const stages = mode === 2 ? 2 : 1;
   const best = yield* retainedSteps(part(remembered(fastSmallSteps(image, effort, control, !filter), image, images), 0, stages), null, control);
   if (stages === 1 || control.hurried || mode === 1) return best;

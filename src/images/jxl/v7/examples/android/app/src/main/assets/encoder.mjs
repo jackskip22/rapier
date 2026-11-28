@@ -1,5 +1,6 @@
-import {encode} from './jpegxl/upload.mjs';
-import {recompress, restore} from './jpegxl/jpeg.mjs';
+let animationMod, jpegMod;
+const loadAnimation = () => (animationMod ??= import('./jpegxl/animation.mjs'));
+const loadJpeg = () => (jpegMod ??= import('./jpegxl/jpeg.mjs'));
 
 const say = value => postMessage(JSON.stringify(value));
 const refusal = (code, message) => Object.assign(new Error(message), {code});
@@ -31,13 +32,16 @@ onmessage = async ({data}) => {
     }
     job = waiting; waiting = null; active = job;
     const progress = stage => value => say({type: 'progress', id: job.id, stage, progress: value});
-    const result = job.type === 'encode'
-      ? await encode(new Blob([data], {type: job.mime}), {effort: 3, fidelity: {quality: 80}, onProgress: progress('encode')})
-      : await recompress(new Uint8Array(data), {effort: 3, onProgress: progress('recompress')});
-    const bytes = bytesOf(result);
-    const restored = job.type === 'jpeg' ? bytesOf(await restore(bytes, {onProgress: progress('restore')})) : null;
-    send('result', job.id, bytes);
-    if (restored) send('restored', job.id, restored);
+    if (job.type === 'encode') {
+      const {encode} = await loadAnimation();
+      send('result', job.id, bytesOf(await encode(new Blob([data], {type: job.mime}), {effort: 3, fidelity: {quality: 80}, onProgress: progress('encode')})));
+    } else {
+      const {recompress, restore} = await loadJpeg();
+      const bytes = bytesOf(await recompress(new Uint8Array(data), {effort: 3, onProgress: progress('recompress')}));
+      const restored = bytesOf(await restore(bytes, {onProgress: progress('restore')}));
+      send('result', job.id, bytes);
+      send('restored', job.id, restored);
+    }
   } catch (error) {
     say({type: 'error', id: job?.id ?? waiting?.id ?? null,
       code: /^JXL_[A-Z0-9_]+$/.test(error.code) ? error.code : 'JXL_MESSAGE', message: error.message || String(error)});

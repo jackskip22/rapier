@@ -62,3 +62,8 @@
 !/watercolor-painting.png
 !/embed/
 !/embed/**
+# Watercolor for Meta Quest and the Water modules it imports (tools/quest-site.mjs), when the site stages them.
+!/quest/
+!/quest/**
+!/draw/
+!/draw/**

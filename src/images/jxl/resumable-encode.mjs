@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {DECODER_SNAPSHOT} from './shown-picture.mjs';
+import {DECODER_SNAPSHOT} from './decoder-setting.mjs';
 import {fault, abortReason} from './fault.mjs';
 import {encodeData, decodeData, digest} from './resumable-data.mjs';
 import {sha256Start, sha256Update, sha256Finish} from './sha256.mjs';

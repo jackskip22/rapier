@@ -24,7 +24,7 @@ function pageScene(frames, {width, height, colorSpace}, codec) {
     pageWithoutPhotograph(data, width, height)) && pagePicture(data, width, height, settings) && !screenPhotoRegions(data, width, height).length);
 }
 
-export async function animationPhoto(animation, settings, encodeAt, {signal, maxPixels, onProgress, preview} = {}) {
+export async function animationPhoto(animation, settings, encodeAt, {signal, maxPixels, onProgress} = {}) {
   const {qualityIntent, ...codec} = settings;
   const diffs = new WeakMap();
   if (!codec[ANIMATION_PLAIN] && codec.effort >= 8 && codec.quality < 100) {
@@ -45,7 +45,7 @@ export async function animationPhoto(animation, settings, encodeAt, {signal, max
   const look = measuredTarget(askedLook(qualityIntent)), target = look + djxlResidual(look, animation.width * animation.height);
   const keep = frameFloor(animation, target, {signal, maxPixels});
   if (codec.effort >= MEASURED_EFFORT && animation.width >= 8 && animation.height >= 8) {
-    const search = coder => measuredAnimation(animation, {ssimulacra2: target}, coder, {start: codec.quality, signal, onProgress, maxPixels, preview});
+    const search = coder => measuredAnimation(animation, {ssimulacra2: target}, coder, {start: codec.quality, signal, onProgress, maxPixels});
     let answer = await search(encode);
     if (answer && additiveFiles.has(answer.bytes)) {
       const plain = await search((quality, progress, probe, prepare) => encode(quality, progress, probe, prepare, undefined, true));

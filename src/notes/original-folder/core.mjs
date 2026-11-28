@@ -1,4 +1,5 @@
 import {wikiTarget} from '../../kit/wiki.mjs';
+import {PICTURE_BYTES} from '../../images/limits.mjs';
 const MAX_BYTES = 64 * 1024 * 1024;
 const encoder = new TextEncoder();
 export const fail = code => Object.assign(new Error(code), {code});
@@ -447,9 +448,9 @@ export class Folder {
     try { return await this.open(entry, {signal}); }
     finally { await this.release(entry); }
   }
-  async resource(snapshot, authoredURL, {signal, maxBytes = 16 * 1024 * 1024} = {}) {
+  async resource(snapshot, authoredURL, {signal, maxBytes = PICTURE_BYTES} = {}) {
     this.#current(signal);
-    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > 16 * 1024 * 1024) throw fail('too_large');
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > PICTURE_BYTES) throw fail('too_large');
     const sourceState = this.#state(snapshot);
     const projection = await this.#projection(snapshot, authoredURL, signal);
     if (this.#urls.size >= 32 || this.#resources + this.#resourceReserved + maxBytes > 32 * 1024 * 1024)

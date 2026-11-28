@@ -97,7 +97,7 @@
         "toolReferenceName": "rapier-read",
         "displayName": "Read Rapier",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. query finds lines here. search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs. Acts on the Markdown file open in Rapier in VS Code.",
+        "modelDescription": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. Hosted reads need document from a successful open in this chat. Page tools read their bound page. query finds lines here. search lists Notes and follows the same document rule. Continue next_cursor from the last read with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs. Acts on the Markdown file open in Rapier in VS Code.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -144,7 +144,7 @@
             "search": {
               "type": "string",
               "maxLength": 2048,
-              "description": "Search the Notes store. \"\" lists all."
+              "description": "Search the Notes store. \"\" lists all. Hosted calls also need document from open."
             },
             "as": {
               "type": "string",
@@ -164,7 +164,8 @@
             },
             "cursor": {
               "type": "string",
-              "maxLength": 256
+              "maxLength": 256,
+              "description": "The next_cursor from the last read. Continue with cursor alone."
             },
             "limit": {
               "type": "integer",

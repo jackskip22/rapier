@@ -14,22 +14,21 @@ import {ensureKernels, disableEntropyKernels, lendEntropy} from './kernels.mjs';
 import {holdEntropy, releaseEntropy} from './kernel-hooks.mjs';
 import {scoreBandOutputs, scoreBandWorkspace, shapeBandChoices, maskBandEnergy, packBandRow} from './photo-band-score.mjs';
 import {zoneCellsOf} from './photo-zone-cells.mjs';
+import {s2Stream} from './photo-s2-stream.mjs';
+import {xybPlanes, releaseReferenceArena, releaseMetricPool} from './ssimulacra2-arithmetic.mjs';
 import {captureGroupBytes, captureSingleCandidateBytes} from './capture-codec.mjs';
 import {CAPTURE_TOOLS_COMPLETE} from './capture-ans.mjs';
 import {effortTenGroup, effortTenTree} from './effort-ten.mjs';
 import {acceleration} from './v7/acceleration.mjs';
 import {hostGPU} from './gpu-gate.mjs';
 import {EXACT_GPU_EFFORT} from './v7/webgpu.mjs';
-const scoreBand = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ||
-  (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) ? null : scoreBandOutputs;
-const zoneCells = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ||
-  (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) ? null : zoneCellsOf;
-const shapeBand = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ||
-  (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) ? null : shapeBandChoices;
-const maskBand = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ||
-  (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) ? null : maskBandEnergy;
-const packBand = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ||
-  (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) ? null : packBandRow;
+const METER_SPLIT = !((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ||
+  (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true));
+const scoreBand = !METER_SPLIT ? null : scoreBandOutputs;
+const zoneCells = !METER_SPLIT ? null : zoneCellsOf;
+const shapeBand = !METER_SPLIT ? null : shapeBandChoices;
+const maskBand = !METER_SPLIT ? null : maskBandEnergy;
+const packBand = !METER_SPLIT ? null : packBandRow;
 
 const LF_CODERS = [...Array.from({length: 10}, (_, e) => e ? lfCoderFor(e) : null), fixedLfCoder, quickOrFixedLfCoder, lfCoder('jpegBroad'), monotonicLfCoderFor(8), jpegBroadOrFastLfCoder, richLfCoder];
 const PLAN_KEYS = new Set(['fast', 'clusters', 'orders', 'coding', 'modularAns', 'lfCoder', 'cflGroups']);
@@ -59,14 +58,40 @@ function cacheOf(image, plan, counts) {
 }
 
 const inputs = new Map();
-let scoreWorkspace = null;
+let scoreWorkspace = null, mStream = null, mCache = null;
+const dropMeter = () => { mStream?.release(); mStream = null; };
+const setCache = next => { if (mCache?.arena) releaseReferenceArena(mCache.arena); mCache = next; };
 export function serveParallel(message, relay) {
   disableEntropyKernels();
   if (message.kernels !== undefined) { ensureKernels(); return null; }
   if (message.input !== undefined) { inputs.set(message.input, message.value); return null; }
-  if (message.drop !== undefined) { inputs.delete(message.drop); return null; }
-  const {id, task} = message;
+  if (message.drop !== undefined) {
+    inputs.delete(message.drop);
+    if (METER_SPLIT) {
+      dropMeter(); setCache(null);
+      if (message.drop === null) releaseMetricPool();
+    }
+    return message.drop === null ? [{dropped: true}, []] : null;
+  }
+  const {id, task, ticket} = message;
   try {
+    if (METER_SPLIT && task.kind === 'm') {
+      const d = task.d;
+      if (d.length === 5) return xybPlanes(d[2], d[0], d[1], d[3], d[4]), [{ticket, r: 1}, []];
+      const [y, r, a, b, w, f, o, k] = d;
+      if (o) {
+        dropMeter();
+        if (k && mCache?.id !== k) setCache({id: k, keepP1: true});
+        const rc = k ? mCache : null;
+        if (!a && !rc?.ready) return [{ticket, r: null}, []];
+        mStream = s2Stream({}, o[0], o[1], o[2], false, o[3], rc, false, undefined, o[4]);
+      }
+      if (!mStream) return [{ticket, r: r ? null : 1}, []];
+      try {
+        if (r) mStream.push(y, r, b, a);
+        return [{ticket, r: w ? mStream.readSums(!f) : 1}, []];
+      } finally { if (f) dropMeter(); }
+    }
     if (task.kind === 'score-band' && scoreBand) {
       if (!scoreWorkspace?.fits(task.width, task.height)) scoreWorkspace = scoreBandWorkspace(task.width, task.height);
       const {pack, own, rates} = scoreBand(task.recipe, task.rows, task.top, task.width, task.height, task.y0, task.y1, scoreWorkspace, task.into, !!task.rated);
@@ -135,7 +160,7 @@ export function serveParallel(message, relay) {
     if (task.kind === 'orders') return [{id, result: coefficientOrders(inputs.get(task.image).components)}, []];
     if (VARDCT_TASKS.has(task.kind)) { holdEntropy(lendEntropy); try { return vardctTask(id, task); } finally { releaseEntropy(); } }
     throw fault('JXL_INTERNAL', 'parallel-serve:task');
-  } catch (error) { return [{id, error: {name: error?.name, code: error?.code, message: error?.message}}, []]; }
+  } catch (error) { return [{id, ...(ticket && {ticket}), error: {name: error?.name, code: error?.code, message: error?.message}}, []]; }
 }
 
 const sent = new WeakMap();

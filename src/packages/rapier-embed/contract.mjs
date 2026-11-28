@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
+const PICTURE_BYTES = 16777216;
 export const FEATURES = Object.freeze(['draw', 'paint', 'notes', 'readAloud', 'share', 'find']);
-export const LIMITS = Object.freeze({documentBytes: 64 * 1024 * 1024, pictureBytes: 16 * 1024 * 1024});
+export const LIMITS = Object.freeze({documentBytes: 64 * 1024 * 1024, pictureBytes: PICTURE_BYTES});
 export const ASSET_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/jxl', 'image/svg+xml']);
 const ACCENTS = Object.freeze(['Teal', 'Blue', 'Amber', 'Green', 'Red', 'Purple', 'Pink', 'Gray']);
 export const refusal = (code, reason = code) => Object.assign(new Error(reason), {code});

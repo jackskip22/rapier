@@ -22,7 +22,7 @@ export async function selfTest(codec: JXLCodec, log: (line: string) => void) {
   const small = await codec.recompress(photo);
   const back = await codec.restore(small);
   check(small.length < photo.length && back.length === photo.length && back.every((b, i) => b === photo[i]), 'restore');
-  log(`JPEG ${photo.length} to ${small.length}, restored the same bytes`);
+  log(`JPEG ${photo.length} to ${small.length}, restored the original JPEG`);
   check(isJxl(await codec.animate(gif)), 'gif');
   const seen: number[] = [];
   const clip = await codec.animate(video, {effort: 1, onProgress: f => seen.push(f)});

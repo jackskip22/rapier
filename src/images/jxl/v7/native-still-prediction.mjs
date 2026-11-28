@@ -2,7 +2,7 @@
 import {qualityFor, ceilingFor, smallReading, measuredNeed} from './intent-quality.mjs';
 import {MEASURED_EFFORT} from '../effort-level.mjs';
 import {LOW_INTENT_CALIBRATION} from './low-intent-quality.mjs';
-import {largePhoto} from '../photo-low-settings.mjs';
+import {largePhoto} from '../memory-device.mjs';
 
 export const NATIVE_STILL_CALIBRATION = Object.freeze({
   intent: Object.freeze([0.5, 0.8, 0.92]),

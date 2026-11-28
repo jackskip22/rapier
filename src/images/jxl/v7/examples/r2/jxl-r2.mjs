@@ -369,7 +369,7 @@ async function read(request, env) {
         catch {  }
       } else {
         const etag = formatJxlEtag(beside.httpEtag);
-        const served = new Headers({'content-type': 'image/jxl', vary: 'Accept', 'cache-control': cacheControl, ...(etag && {etag})});
+        const served = new Headers({'content-type': 'image/jxl', vary: 'Accept, Range', 'cache-control': cacheControl, ...(etag && {etag})});
         if (matchesWeakIfNoneMatch(request.headers.get('if-none-match'), etag)) return new Response(null, {status: 304, headers: served});
         served.set('content-length', String(bytes.byteLength));
         return new Response(request.method === 'HEAD' ? null : bytes, {headers: served});
@@ -392,7 +392,7 @@ async function read(request, env) {
   const headers = new Headers();
   original.writeHttpMetadata(headers);
   headers.set('etag', original.httpEtag);
-  if (type) headers.set('vary', type === 'image/jpeg' ? JPEG_VARY : 'Accept');
+  if (type) headers.set('vary', type === 'image/jpeg' ? JPEG_VARY : 'Accept, Range');
   if (original.body === undefined) return new Response(null, {status: 304, headers});
   if (request.method === 'HEAD') await original.body.cancel();
   return new Response(request.method === 'HEAD' ? null : original.body, {headers, status: ranged ? 206 : 200});

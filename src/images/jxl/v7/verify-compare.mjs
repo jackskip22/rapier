@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {check} from './primitives.mjs';
 import {sampleDescription} from './result-identity.mjs';
-import {ssimulacra2} from '../ssimulacra2.mjs';
+import {ssimulacra2, ssimulacra2Dual} from '../ssimulacra2.mjs';
 import {captureComposeOver} from '../capture-kernels.mjs';
 import {compileKernels} from '../kernel-runtime.mjs';
 import {linearFromTransform} from '../color-bytes.mjs';
@@ -169,9 +169,17 @@ export function composedOver(picture, background) {
 async function scorePixels(reference,decoded,profile,sourceEncoding,options,arithmetic = 'binary64') {
   await compileKernels(); check(options.signal);
   const {width,height} = reference;
-  const score = (a,b) => ssimulacra2(...metricSamples(a,b,profile,sourceEncoding),width,height,{wantMap:false,arithmetic}).score;
+  const both = arithmetic === 'both';
+  const score = (a,b) => {
+    const samples = metricSamples(a,b,profile,sourceEncoding);
+    if (!both) return ssimulacra2(...samples,width,height,{wantMap:false,arithmetic}).score;
+    const measured = ssimulacra2Dual(...samples,width,height);
+    return {score:measured.binary64.score,libjxlScore:measured.libjxl.score};
+  };
   if (opaque(reference.data) && opaque(decoded.data)) return score(reference,decoded);
-  return Math.min(...[255,0].map(background => score(composedOver(reference,background),composedOver(decoded,background))));
+  const over = [255,0].map(background => score(composedOver(reference,background),composedOver(decoded,background)));
+  return both ? {score:Math.min(...over.map(value => value.score)),libjxlScore:Math.min(...over.map(value => value.libjxlScore))}
+    : Math.min(...over);
 }
 export async function pixelEvidence(reference, decoded, fidelity, options = {}, compared = comparison(reference, decoded), measure = scorePixels) {
   check(options.signal);
@@ -207,11 +215,12 @@ export async function pixelEvidence(reference, decoded, fidelity, options = {}, 
     }
     return {kept, proof: {...target, verified: false}, reason: unavailable('SDR scorer: straight 8-bit sRGB/Display P3/Rec. 2020 or exact')};
   }
-  let score = await measure(reference,decoded,compared.profile,sourceEncoding,options);
+  const both = measure === scorePixels ? await scorePixels(reference,decoded,compared.profile,sourceEncoding,options,'both') : null;
+  let score = both ? both.score : await measure(reference,decoded,compared.profile,sourceEncoding,options);
   if (decoded.native && Number.isFinite(score)) score = Math.min(score, await measure(reference,{...decoded,data: decoded.native},compared.profile,sourceEncoding,options));
   check(options.signal);
   if (!Number.isFinite(score)) return {kept, proof: {...target, verified: false}, reason: unavailable("fidelity measurement: failed")};
-  const libjxlScore = await measure(reference,decoded,compared.profile,sourceEncoding,options,'libjxl');
+  const libjxlScore = both ? both.libjxlScore : await measure(reference,decoded,compared.profile,sourceEncoding,options,'libjxl');
   check(options.signal);
   const hasBound = Number.isFinite(target.floor), verified = hasBound && score >= target.floor && compared.alphaExact;
   return {kept, proof: {...target, score, ...(Number.isFinite(libjxlScore) && {libjxlScore}), verified}, ...(!verified && {reason: hasBound

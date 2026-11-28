@@ -35,8 +35,6 @@ Everything is plain Markdown. Pictures, drawings and paintings are embedded insi
 - **Web:** [rapier.website](https://rapier.website). Add it to your home screen and it works offline.
 - **One HTML file:** [rapier.html](https://github.com/jackskip22/rapier/raw/main/rapier.html) is the whole editor, and
   [rapier-reader.html](https://github.com/jackskip22/rapier/raw/main/rapier-reader.html) just reads. Open either in a browser.
-- **Windows (beta):** [Rapier.exe](https://github.com/jackskip22/rapier/raw/main/Rapier.exe) (version 1.2.66). If SmartScreen warns,
-  choose **More info**, then **Run anyway**.
 - **Linux (beta, x86_64):** [rapier-linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux) (version 1.2.73). Run
   `chmod +x rapier-linux && ./rapier-linux --install` once. [Requirements](src/linux/README.md).
 
@@ -2969,7 +2967,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.38 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.78.
+Totals: the reader, 9.38 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.81.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -4434,7 +4432,7 @@ length and SHA-384 before it runs it, and keeps on the device. A file that fails
 | `elements` | The Elements sheet's traced ornaments: 3,155 pieces from the ornament book. | 16.2 MB (51 files) | `rapier.html` |
 | `lettersets` | The Gallery's letter sets: 31 sets of ornamental capitals. | 2.82 MB (31 files) | `rapier.html` |
 
-Totals: the reader, 9.38 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.78.
+Totals: the reader, 9.38 MB (30.0 MB with `ocr`). `rapier.html`, 56.2 MB. Release 1.2.81.
 <!-- PLUGIN_TABLE_END -->
 
 The manifest lists every plug-in file and, in `builds`, the pages that use it. `rapier.html` has flowcharts and Word import
@@ -4843,7 +4841,7 @@ document as one offline file.
 [![license](https://img.shields.io/npm/l/jpegxl)](https://github.com/jackskip22/rapier-jxl/blob/main/LICENSE)
 [![types](https://img.shields.io/npm/types/jpegxl)](https://www.npmjs.com/package/jpegxl)
 
-JPEG XL in WebAssembly + JS with optional WebGPU & parallel workers. Brotli: ~64 KB exact capture, ~318 KB complete capture, ~353 KB upload, ~548 KB full encoder. HDR, metadata, lossless JPEG, video/GIF to animation, resumable edge encoding, serve, polyfill, decode. Auto quality, exact text. CLI & npx jpegxl add: 22 platforms. No dependencies. MIT.
+JPEG XL in WebAssembly + JS with optional WebGPU & parallel workers. Brotli: ~63 KB exact capture, ~317 KB complete capture, ~352 KB upload, ~551 KB full encoder. HDR, metadata, lossless JPEG, video/GIF to animation, resumable edge encoding, serve, polyfill, decode. Auto quality, exact text. CLI & npx jpegxl add: 22 platforms. No dependencies. MIT.
 
 rapier-jxl is the encoder inside [rapier.website](https://rapier.website), the free Markdown editor, drawing and painting app. Rapier is also a free [Android app](https://play.google.com/store/apps/details?id=app.rapier&referrer=utm_source%3Djxl-readme) that opens and converts JPEG XL pictures.
 
@@ -4859,20 +4857,20 @@ ESM, Node 22.3+. From CommonJS: `await import('jpegxl')`.
 
 | Module | For | Brotli |
 | --- | --- | --- |
-| `jpegxl` | Still image encoder, efforts 1–9 | about 548 KB |
-| `jpegxl/max` | Effort 10, very slow for smallest files | 583 KB |
-| `jpegxl/upload` | Fast uploads in the browser, efforts 1–3 | 353 KB |
-| `jpegxl/capture` | Exact screenshots | 64 KB |
-| `jpegxl/capture-complete` | Screenshots with lossy photos and automatically exact text | 318 KB |
-| `jpegxl/animation` | Videos, GIFs and frames to animated JPEG XL | 572 KB |
-| `jpegxl/format` | Codestream features | 587 KB |
-| `jpegxl/jpeg` | JPEG recompression that restores exactly | 186 KB |
-| `jpegxl/decode` | Pixels and animation frames | 122 KB |
-| `jpegxl/verify` | A file checked against its source | 77 KB |
+| `jpegxl` | Still image encoder, efforts 1–9 | about 551 KB |
+| `jpegxl/max` | Effort 10, very slow for smallest files | 586 KB |
+| `jpegxl/upload` | Fast uploads in the browser, efforts 1–3 | 352 KB |
+| `jpegxl/capture` | Exact screenshots | 63 KB |
+| `jpegxl/capture-complete` | Screenshots with lossy photos and automatically exact text | 317 KB |
+| `jpegxl/animation` | Videos, GIFs and frames to animated JPEG XL | 575 KB |
+| `jpegxl/format` | Codestream features | 590 KB |
+| `jpegxl/jpeg` | JPEG recompression that restores exactly | 184 KB |
+| `jpegxl/decode` | Pixels and animation frames | 121 KB |
+| `jpegxl/verify` | A file checked against its source | 78 KB |
 | `jpegxl/serve` | JPEG XL served by `Accept` | 75 KB |
 | `jpegxl/resumable` | Encodes across short edge requests | 63 KB |
 | `jpegxl/metadata` | Headers, Exif, XMP and smaller sizes from a progressive file | 41 KB |
-| `jpegxl/polyfill` | JPEG XL and animated JPEG XL in every browser | 28 KB |
+| `jpegxl/polyfill` | JPEG XL and animated JPEG XL in every browser | 25 KB |
 | `jpegxl/hdr` | OpenEXR and Radiance files | 14 KB |
 
 ## Efforts
@@ -4993,7 +4991,6 @@ Takes RGBA `{data, width, height}`, `ImageData`, a canvas, an `ImageBitmap`, a `
 - `effort`: 1–9, default 7 (`jpegxl/max` adds effort 10, its default, for a longer search on still pictures). Efforts 4 and up measure the look.
 - `webgpu`: lossy efforts 7–9 (`jpegxl/max` also lossy and 8-bit lossless effort 10) use WebGPU where it can. Phones use the CPU unless `'required'`. `'required'` refuses without a supported device path. `false` turns it off.
 - `progressive: true`: the first bytes show the whole picture, which sharpens as more of the file arrives (about 2 to 5% larger files).
-- `onPreview` receives better files while efforts 6–9 (`6–10` in `jpegxl/max`) search.
 - The host's memory is the limit.
 - A JPEG stays JPEG and restores exactly with `fidelity: 'exact'` or at a quality level when that can be smaller (efforts 6–9, and 10 in `jpegxl/max`). `jpeg: 'pixels'` encodes its pixels.
 - `jpegxl/animation` takes frames, an animated GIF or browser video, `jpegxl/hdr` reads OpenEXR and Radiance files, and `jpegxl/verify` checks a file against its source.

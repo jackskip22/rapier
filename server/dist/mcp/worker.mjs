@@ -38,6 +38,7 @@ import {editorResult, editorFailure, editorPreferences, EDITOR_LIMITS, EDITOR_TO
 import { createRequestWait, createRequestLifetime, responsiveJson, REQUEST_CANCELLED } from './request-lifetime.mjs';
 import {TaskLifetime, TASK_EXTENSION, TASK_TTL_MS} from './task-lifetime.mjs';
 import { exportRenderer } from './export-port.mjs';
+import {verifyWordExport, unavailableExport} from './export-artifact.mjs';
 import {handleOAuth, oauthChallenge, oauthForbidden, oauthOrigin, HOUSE_STYLE, validGrantReference, oauthGrantCurrent} from './oauth.mjs';
 import {changeSignal, validWait, waitInObject} from './waited-read.mjs';
 import {oauthStoreRequest} from './oauth-store.mjs';
@@ -200,6 +201,8 @@ const REQUEST_LEASE_MS = 300000;
 const MATERIAL_RETRY_WAIT_MS = 15000;
 const FIRST_REPORT_WAIT_MS = 8000;
 const FIRST_REPORT_WINDOW_MS = 30000;
+const APPS_FIRST_REPORT_WAIT_MS = 2500;
+const APPS_FIRST_REPORT_WINDOW_MS = 12000;
 const CLOCK_SKEW_MS = 60000;
 const REQUEST_SESSION = CLIENT_SESSION_PATTERN;
 const TASK_HANDLE = /^rptask_[A-Za-z0-9_-]{43}$/;
@@ -584,6 +587,11 @@ function envelope(value, head, meta = {}, { modelFacing = false, fallbackCollabo
 }
 
 function operationEnvelope(operation, recorded, head, {notesVersions = false} = {}) {
+  if (operation === 'export' && recorded.hostedDownload) {
+    const grant = head?.exports?.find(row => row.id === recorded.exportId);
+    if (recorded.outcome !== 'ok' || !grant || grant.expiresAt <= Date.now())
+      recorded = unavailableExport(recorded, recorded.outcome !== 'ok' ? recorded.reason || 'export_unavailable' : 'export_expired');
+  }
   const {hostedDownload, drawingPatch, ...value} = recorded;
   if (['document.save', 'export'].includes(operation) && value.saved) Object.assign(value, {verified: true, destination: 'workspace', durable: true});
   const result = envelope(value, hostedDownload ? {...head, filename: hostedDownload.name} : head, drawingPatch ? {drawingPatch} : {}, {modelFacing: true, fallbackCollaboration: operation !== 'document.observe'});
@@ -596,28 +604,33 @@ function operationEnvelope(operation, recorded, head, {notesVersions = false} = 
 }
 
 function documentValueRecovery(name, value) {
-  if (value === undefined || value === '') return `${name} needs document, the private value open returned earlier (rpr_ and 43 more characters). ` +
-    'Pass that same value again. Where Rapier\'s view shows, it is also in the view\'s context as rapier.document. ' +
-    'If that is null, the person disconnected agents: ask them to choose SHARE WITH AN AGENT in the editor. ' +
-    'A new document starts with open {text, filename}, never with a copy of theirs.';
-  return 'This is not a Rapier document value. Pass document exactly as open returned it: rpr_ and 43 more characters, unchanged. ' +
-    'documentId, editor_url and guide URIs are not document values.';
+  return `The ${name} did not happen. ` + (value === undefined || value === ''
+    ? 'Pass document from a successful open in this chat.'
+    : 'Pass the private document value exactly as a successful open in this chat returned it.');
 }
+
+const DOCUMENT_UNAVAILABLE_RECOVERY = 'This document is unavailable to this connection. Return to the chat or connection that opened the original and use its current document value.';
 
 function viewRecovery(name, result) {
   const value = result?.structuredContent;
-  if (!['show', 'export', 'read'].includes(name) || !plain(value) || value.reason !== 'editor_unavailable' || typeof value.editor_url !== 'string') return result;
+  if (!['show', 'export', 'read'].includes(name) || !plain(value) || !['editor_unavailable', 'editor_not_present'].includes(value.reason)) return result;
   const pairing = value.pairing?.status && value.pairing.status !== 'none' && value.pairing.status !== 'paired' ? value.pairing.next : null;
-  const hint = 'Rapier\'s view is not open on this document now. Call open {document} with the same value to show it in this chat again, then retry once it shows. ' +
-    (typeof pairing === 'string' && pairing ? pairing + ' ' : '') + 'Share editor_url only when the person asks for a browser. ' +
-    (name === 'read' ? 'Without the view, read the text.' : 'Without the view, export markdown, html or txt.');
-  return {...result, structuredContent: {...value, hint}};
+  const delivery = name === 'read' ? 'No picture was delivered.' : name === 'export' ? 'No file was delivered.' : 'The presentation did not happen.';
+  const next = typeof pairing === 'string' && pairing ? pairing
+    : 'Call open {document} once with the same value to show this draft in the current chat again.';
+  const hint = delivery + ' ' + next + ' Wait for the editor\'s ready report, then retry this call once. ' +
+    'If it is still unavailable, say so and stop.' +
+    (typeof value.editor_url === 'string' ? ' Share editor_url only when the person asks for a browser.' : '');
+  return {...result, structuredContent: {...value, recovery: 'editor_not_ready', hint}};
 }
 
 function toolError(error, head, meta) {
   if (!error?.[PUBLIC_FAILURE]) error = failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry with the same operation identity.');
   const uncertain = ['WORKSPACE_UNAVAILABLE', 'WORKSPACE_UNACKNOWLEDGED'].includes(error.code);
-  return envelope({ outcome: uncertain ? 'uncertain' : 'refused', isError: true, code: typeof error.code === 'string' ? error.code : 'WORKSPACE_ERROR', message: error.message || 'The workspace operation failed.', ...(error.details || {}) }, head, meta);
+  const unavailable = error.code === 'DOCUMENT_UNAVAILABLE';
+  return envelope({ outcome: uncertain ? 'uncertain' : 'refused', isError: true, code: typeof error.code === 'string' ? error.code : 'WORKSPACE_ERROR',
+    message: (unavailable ? 'This call did not read or change the document. ' : '') + (error.message || 'The workspace operation failed.'),
+    ...(unavailable ? {recovery: 'document_unavailable'} : {}), ...(error.details || {}) }, head, meta);
 }
 
 async function readTextBody(request, limit = MAX_RPC_BODY_BYTES, label = 'JSON request', code = 'REQUEST_TOO_LARGE', preserveBOM = false, activeSignal, received) {
@@ -1003,12 +1016,13 @@ function observeToolOutcome(observation, result) {
 const FEEDBACK_HINT = 'If Rapier failed the request, tell us with feedback.';
 const feedbackHint = receipt => ({...receipt, hint: typeof receipt.hint === 'string' ? receipt.hint + ' ' + FEEDBACK_HINT : FEEDBACK_HINT});
 
-async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null, toolAdmission = null, observation = null) {
+async function callTool(name, args, env, request, authority, hostAgent = null, door = '/mcp', editorProof = null, editorActivity = false, task = null, peek = false, wait = null, visualObservation = null, toolAdmission = null, observation = null, appsCall = false) {
   const invalidInput = error => {
     observation?.outcome('tool_error', 'validation'); observation?.errorCode?.(error?.code);
     const message = typeof error?.message === 'string' ? error.message : '';
     if (authority?.source === 'page' || !/(?:^|; )arguments: missing document(?:;|$)/.test(message)) return inputErrorResult(error);
-    return inputErrorResult({message: message + (message.endsWith('.') ? ' ' : '. ') + documentValueRecovery(name), path: error.path, omitted: error.omitted});
+    return toolError(failure('invalid_arguments', documentValueRecovery(name),
+      {recovery: 'document_required', path: error.path, ...(error.omitted ? {omitted: error.omitted} : {})}));
   };
   if (authority?.source !== 'page') args = withoutNulls(args, TOOL_BY_NAME.get(name)?.inputSchema);
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
@@ -1018,9 +1032,9 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     const {wait_ms: asked = 0, after_revision: after, ...plainArgs} = args;
     if (after === undefined) return toolError(failure('INVALID_DOCUMENT_INPUT', 'wait_ms needs after_revision, the revision you last read.'));
     if (args.search !== undefined) return toolError(failure('READ_WAIT_SELECTOR_CONFLICT',
-      'after_revision and wait_ms watch this document. Read Notes with search alone.'));
+      'after_revision and wait_ms watch this document. Read Notes with the same document and search, without after_revision or wait_ms.'));
     const result = await callTool(name, plainArgs, env, request, authority, hostAgent, door, editorProof, editorActivity, task, false,
-      {after, waitMs: door === '/muse' ? Math.min(asked, MUSE_WAIT_MS) : asked}, null, toolAdmission, observation);
+      {after, waitMs: door === '/muse' ? Math.min(asked, MUSE_WAIT_MS) : asked}, null, toolAdmission, observation, appsCall);
     if (!result.isError && plain(result.structuredContent) && Object.hasOwn(result.structuredContent, 'waited_ms')) {
       const {waited_ms, changed, ...value} = result.structuredContent;
       result.structuredContent = {...value, waited_ms, changed};
@@ -1102,12 +1116,14 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   }
   if (!page && name === 'read' && typeof args.cursor === 'string' && args.cursor.startsWith(CURSOR_PREFIX)) {
     const opened = await openCursor(env, args.cursor);
-    if (!opened) return toolError(failure('INVALID_DOCUMENT_INPUT', 'This page cursor is unknown here. Repeat the original read without a cursor.'));
-    if (args.document !== undefined && args.document !== opened.document) return toolError(failure('INVALID_DOCUMENT', 'This page cursor belongs to another document.'));
+    if (!opened) return toolError(failure('INVALID_DOCUMENT_INPUT', 'The read did not happen. Repeat the original read with its document value and no cursor.', {recovery: 'cursor_invalid'}));
+    if (args.document !== undefined && args.document !== opened.document) return toolError(failure('INVALID_DOCUMENT', 'The read did not happen. Continue with cursor alone from the last read.', {recovery: 'cursor_invalid'}));
     args = {...args, document: opened.document, cursor: opened.cursor};
     rawArgs = {...rawArgs, document: opened.document, cursor: opened.cursor};
   }
-  if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', page ? 'Use the document value returned by open.' : documentValueRecovery(name, args.document)));
+  if (!page && name === 'read' && args.document === undefined && args.cursor === undefined && args.guide === undefined)
+    return toolError(failure('INVALID_DOCUMENT', documentValueRecovery(name), {recovery: 'document_required'}));
+  if (page ? args.document !== page.id : !create && !WORKSPACE_HANDLE.test(args.document || '')) return toolError(failure('INVALID_DOCUMENT', page ? 'Use the document value returned by open.' : documentValueRecovery(name, args.document), page ? undefined : {recovery: 'document_required'}));
   const connectedOwner = page || anonymous ? null : await digest(authority.ownerId);
   const createToken = typeof args.createToken === 'string' ? args.createToken : null;
   if (create && createToken !== null) {
@@ -1163,6 +1179,10 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   const payload = { operation: name === 'show' && args.target === 'pair' ? PAIR_BROWSER : name, args: name === 'show' && args.target === 'pair' ? {code: input.code} : input, create, ...(name === 'show' && args.target === 'ask' ? {waitBound: door === '/muse' ? MUSE_WAIT_MS : 120000} : {}), ...(door === '/muse' && ['edit', 'undo'].includes(name) ? {holdBound: MUSE_WAIT_MS} : {}), ...(file ? {hostFileBinding: await digest(JSON.stringify(file))} : {}), ...(page ? {page: {...page.authority, ...(pageRotation ? {rotationEpoch: pageRotation.epoch, rotationRetry: pageRotation.retry} : {})}} : {ownerKey, capabilityHash, ...(connectionKey ? {connectionKey, oauthGrant: authority.grant} : {})}), ...(create ? {prefix: document.slice(0, ADDRESS_CHARS), ...(anonymous ? {bearer: true} : {})} : {}), ...(hostAgent ? {hostAgent} : {}), ...(humanTool ? {humanTool: true} : {}), ...(EDITOR_ONLY_TOOLS.has(name) || humanTool ? {editorAuthorized: true} : {}), ...(editorSource === 'page' && editorActivity === true && ['document.commit', 'document.human_context'].includes(name) ? {editorActivity: true} : {}), ...(name === 'show' && args.target === 'return' ? { returnAddress: documentAddress } : {}), ...(name === 'export' ? { exportAddress: documentAddress, exportOrigin: new URL(request.url).origin } : {}), ...(createBudget ? { createBudget } : {}), ...(successor ? { rotateToHash: await digest(successor) } : {}), ...(operationName !== undefined ? { operationId: operationName } : {}), requestKey, requestExpiresAt, ...(task ? {task} : {}), ...(peek ? {peek: true} : {}), ...(wait ? {waitFor: wait} : {}), ...(ownerLink ? {ownerLink: true} : {}), ...(connectionKey ? {workspaceAddress: documentAddress} : {}) };
   if (page && ![PAIR_STATUS, ROTATE].includes(name))
     payload.pageBudgetAddress = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (appsCall && !page && !payload.editorAuthorized && env.ACCESS_PROFILE !== true) {
+    payload.appsCall = true;
+    if (create) payload.appsOpen = true;
+  }
   if (toolAdmission?.deferred) payload.oauthBudget = true;
   if (exportEditor) payload.exportEditor = exportEditor;
   if (name === 'document.visual_ack' && editorSource === 'page' && visualObservation !== null)
@@ -1203,7 +1223,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
   if (result.toolAdmission) throw failure('TOOL_INVOCATION_ADMISSION', 'Tool invocation admission refused.', result.toolAdmission);
   if (!page && authority.source !== 'server' && ['show', 'export', 'read'].includes(name) && ['editor_unavailable', 'editor_not_present'].includes(result.structuredContent?.reason)) {
     const editor_url = new URL('/d/' + pageId(documentAddress), request.url).href, pairing = result.structuredContent.pairing;
-    result.structuredContent = {...result.structuredContent, reason: 'editor_unavailable', editor_url,
+    result.structuredContent = {...result.structuredContent, reason: 'editor_unavailable', recovery: 'editor_not_ready', editor_url,
       hint: 'No editor is open for this document. ' + (pairing?.status && pairing.status !== 'none' && pairing.next ? pairing.next + ' '
         : 'If the host shows the Rapier view, ask the person to open it fullscreen. Otherwise share editor_url. If they read you a code, send show {target:"pair", code}. ') +
         (name === 'read' ? 'Without an editor, read the text.' : 'Without an editor, export markdown, html or txt.')};
@@ -1229,6 +1249,7 @@ async function callTool(name, args, env, request, authority, hostAgent = null, d
     return result;
   }
   if (name === 'open' && result.structuredContent) result.structuredContent = {...result.structuredContent,
+    message: result.structuredContent.message || 'The document is open. Check a current editor report before relying on its pixels or selection.',
     editor_open: result.structuredContent.human?.active === true,
     ...(file ? {hydration: {status: result._meta?.rapier?.fileHydration?.status || 'unavailable', destination: 'host_file'}} : {}),
     presentation: {status: door === '/muse' ? 'link_available' : 'requested', acknowledged: false}};
@@ -1383,12 +1404,12 @@ async function taskRoute(method, taskId, input, authority, env) {
   return value.result;
 }
 
-async function createTask(name, args, request, authority, env, hostAgent, door, observation = null) {
+async function createTask(name, args, request, authority, env, hostAgent, door, observation = null, appsCall = false) {
   request.signal.throwIfAborted();
   if (name === 'show' && plain(args) && args.target === undefined) args = {...args, target: showTarget(args)};
   const descriptor = TOOL_BY_NAME.get(name);
   try { validateInput(descriptor.inputSchema, args, 'arguments', true); }
-  catch { return callTool(name, args, env, request, authority, hostAgent, door, null, false, null, false, null, null, null, observation); }
+  catch { return callTool(name, args, env, request, authority, hostAgent, door, null, false, null, false, null, null, null, observation, appsCall); }
   const operationId = args.operation_id || crypto.randomUUID();
   args = {...args, operation_id: operationId};
   const identity = sha256(canonicalJson({name, args}));
@@ -1400,7 +1421,7 @@ async function createTask(name, args, request, authority, env, hostAgent, door, 
     : name === 'export' ? REQUEST_LEASE_MS : VIEW_LEASE_MS;
   const now = Date.now();
   const task = {key: sha256(taskId), expiresAt: now + TASK_TTL_MS, deadline: now + duration};
-  const input = {identity, name, args, authority, hostAgent, door, url: request.url, task,
+  const input = {identity, name, args, authority, hostAgent, door, url: request.url, task, ...(appsCall ? {appsCall: true} : {}),
     scopes: descriptor.annotations.readOnlyHint ? ['rapier:read'] : ['rapier:read', 'rapier:write'],
     deadline: task.deadline + 1000};
   request.signal.throwIfAborted();
@@ -1417,8 +1438,8 @@ function requestScope(request, authority, door, modern) {
 }
 
 export const REQUEST_OWNER_AFTER_MS = 1000;
-async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id, visualObservation = null, toolAdmission = null, observation = null) {
-  if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission, observation);
+async function requestTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, scope, id, visualObservation = null, toolAdmission = null, observation = null, appsCall = false) {
+  if (!scope) return callTool(name, args, env, request, authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission, observation, appsCall);
   const key = sha256(JSON.stringify(id)), occurrence = 'request_' + crypto.randomUUID().replaceAll('-', ''), startedAt = Date.now();
   const lifetime = createRequestLifetime(request.signal), held = new AbortController();
   let refused = null, cancelledByOwner = false, owner = null;
@@ -1437,7 +1458,7 @@ async function requestTool(name, args, env, request, authority, hostAgent, door,
   try {
     const result = await callTool(name, args, env, new Request(request.url, {method: 'POST',
       headers: {'CF-Connecting-IP': request.headers.get('CF-Connecting-IP') || 'unknown'}, signal: lifetime.signal}),
-      authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission, observation);
+      authority, hostAgent, door, editorProof, editorActivity, null, false, null, visualObservation, toolAdmission, observation, appsCall);
     if (refused) throw refused;
     if (lifetime.signal.aborted) throw new DOMException('Request canceled', 'AbortError');
     return result;
@@ -1996,8 +2017,8 @@ async function handleRequest(request, env, authority, observation = null) {
         }
         if (door === 'page' && params.name === PAIR_STATUS) { result = await pairStatus(request, env, authority, params.arguments, cookies); break; }
         result = hostedTask
-          ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door, observation)
-          : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id, meta['rapier/visual'] ?? null, admission, observation);
+          ? await createTask(params.name, params.arguments || {}, request, authority, env, hostAgent, door, observation, appsClient && door === '/mcp')
+          : await requestTool(params.name, params.arguments || {}, env, request, authority, hostAgent, door, meta['rapier/editorKey'], meta['rapier/editorActivity'], scope, id, meta['rapier/visual'] ?? null, admission, observation, appsClient && door === '/mcp');
         if (appsClient && door !== 'page') result = viewRecovery(params.name, result);
         if (authority?.grant && !await oauthGrantCurrent(authority.grant, env)) return challenged(oauthChallenge(authorityRequest, env));
         if (admission?.deferred && !admission.sent) {
@@ -2476,6 +2497,7 @@ export class RapierDocument {
 
   tasks() {
     const complete = (input, result) => {
+      if (input.appsCall === true) result = viewRecovery(input.name, result);
       const projected = publicToolResult(input.name, result, input.door, {workspaceNotes: this.env.ACCESS_PROFILE === true});
       return {result: {...projected, resultType: 'complete', _meta: {...projected._meta, [META_SERVER]: serverInfo(this.env)}}};
     };
@@ -2494,7 +2516,7 @@ export class RapierDocument {
       execute: async (input, signal) => {
         try {
           const result = await callTool(input.name, input.args, this.env, new Request(input.url, {method: 'POST', signal}),
-            input.authority, input.hostAgent, input.door, null, false, input.task);
+            input.authority, input.hostAgent, input.door, null, false, input.task, false, null, null, null, null, input.appsCall === true);
           return complete(input, result);
         } catch (error) {
           if (error?.code === 'CANCELLATION_UNACKNOWLEDGED') throw error;
@@ -2981,6 +3003,9 @@ export class RapierDocument {
       }
       if (!plain(input) || !/^[a-f0-9]{64}$/.test(input.ownerKey || '') || !/^[a-f0-9]{64}$/.test(input.capabilityHash || '') || (input.connectionKey !== undefined && (!/^[a-f0-9]{64}$/.test(input.connectionKey) || !validGrantReference(input.oauthGrant))) || typeof input.operation !== 'string' || !plain(input.args) || (input.prefix !== undefined && !/^rpr_[A-Za-z0-9_-]{22}$/.test(input.prefix)) || (input.rotateToHash !== undefined && !/^[a-f0-9]{64}$/.test(input.rotateToHash)) || (input.operationId !== undefined && (typeof input.operationId !== 'string' || !input.operationId.length || input.operationId.length > 256 || [...input.operationId].length > 128)) || (input.returnAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.returnAddress)) || (input.exportAddress !== undefined && !/^[a-f0-9]{64}$/.test(input.exportAddress))) return new Response(null, { status: 400 });
       if (input.create === true && (!plain(input.createBudget) || !/^take_[a-f0-9]{32}$/.test(input.createBudget.takeId || '') || !/^[a-f0-9]{64}$/.test(input.createBudget.principalKey || '') || typeof input.createBudget.retryable !== 'boolean' || ![undefined, true].includes(input.createBudget.anonymous))) return new Response(null, { status: 400 });
+      if (input.appsCall !== undefined && (input.appsCall !== true || input.page || input.editorAuthorized)) return new Response(null, {status: 400});
+      if (input.appsOpen !== undefined && (input.appsOpen !== true || input.appsCall !== true || input.create !== true || input.operation !== 'open' || input.page))
+        return new Response(null, {status: 400});
       if (input.waitBound !== undefined && (!(input.operation === 'show' && input.args.target === 'ask') || ![MUSE_WAIT_MS, 120000].includes(input.waitBound))) return new Response(null, {status: 400});
       if (input.holdBound !== undefined && (!['edit', 'undo'].includes(input.operation) || input.holdBound !== MUSE_WAIT_MS)) return new Response(null, {status: 400});
       if (input.peek !== undefined && (input.peek !== true || input.operation !== 'read')) return new Response(null, {status: 400});
@@ -3079,7 +3104,7 @@ export class RapierDocument {
       if (input.operation === 'show' && input.args.target === 'ask') return await this.waitForReturn(input, lifetime.signal);
       if (input.operation === 'read' && input.args.as === 'image') return await this.inspectVisual(input, lifetime.signal);
       if (input.operation === 'export' && ['docx', 'pdf', 'page'].includes(input.args.format)) return await this.exportDocument(input, lifetime.signal);
-      if (input.operation === 'show' && ['view', 'preferences', 'file', 'record', 'attachment', 'read_aloud', 'plugin', 'playback'].includes(input.args.target) || input.operation === 'export' && input.args.to === 'clipboard') return await this.requestEditor(input, lifetime.signal);
+      if (input.operation === 'show' && ['view', 'passage', 'block', 'preferences', 'file', 'record', 'attachment', 'read_aloud', 'plugin', 'playback'].includes(input.args.target) || input.operation === 'export' && input.args.to === 'clipboard') return await this.requestEditor(input, lifetime.signal);
       if (['edit', 'undo'].includes(input.operation) ||
           input.operation === 'document.read' && input.args.paintSample) return await this.requestMaterials(input, lifetime.signal);
       return await this.exclusive(operate, input.operation === 'read');
@@ -3368,15 +3393,21 @@ export class RapierDocument {
   inspectVisual(input, signal) { return this.requestSurface(input, signal, 'visual'); }
   exportDocument(input, signal) { return this.requestSurface(input, signal, 'export'); }
 
-  async firstReport(signal) {
+  async firstReport(input, signal) {
     const started = Date.now();
     for (;;) {
       const head = this.ctx.storage.kv.get('head'), now = Date.now();
-      if (!head?.pairedAt || signal?.aborted || head.expiresAt <= now) return;
+      if (!head || signal?.aborted || head.expiresAt <= now) return;
       const held = this.leased, presence = (held && this.cachedState === held.state && JSON.stringify(head) === held.stored
         ? held.collaboration : head.collaboration)?.presence;
       if (presence?.active && presence.expiresAt > now) return;
-      const left = Math.min(started + FIRST_REPORT_WAIT_MS, head.pairedAt + FIRST_REPORT_WINDOW_MS) - now;
+      const firstAppsOpen = input.appsCall === true && head.appsOpen === true && !input.page && !input.editorAuthorized && head.agentAccess !== false &&
+        head.ownerKey === input.ownerKey && head.capabilityHash === input.capabilityHash && Number.isSafeInteger(head.createdAt) && head.createdAt <= now;
+      const deadline = head.pairedAt
+        ? Math.min(started + FIRST_REPORT_WAIT_MS, head.pairedAt + FIRST_REPORT_WINDOW_MS)
+        : firstAppsOpen ? Math.min(started + APPS_FIRST_REPORT_WAIT_MS, head.createdAt + APPS_FIRST_REPORT_WINDOW_MS)
+          : 0;
+      const left = Math.min(deadline, input.requestExpiresAt ?? Infinity, input.task?.deadline ?? Infinity) - now;
       if (left <= 0) return;
       try { await this.changes.next(left, signal); } catch { return; }
     }
@@ -3530,7 +3561,7 @@ export class RapierDocument {
     const exporting = kind === 'export', slot = exporting ? 'exportWaiter' : 'visualWaiter', intentKey = kind + 'Intent';
     const expired = exporting ? 'export_expired' : 'visual_capture_expired';
     if (signal?.aborted) return new Response(null, {status: 499});
-    if (!(exporting && typeof this.env.EXPORT_RENDERER?.renderArtifact === 'function')) await this.firstReport(signal);
+    if (!(exporting && typeof this.env.EXPORT_RENDERER?.renderArtifact === 'function')) await this.firstReport(input, signal);
     const started = await this.exclusive(async () => {
       if (signal?.aborted) return {abandoned: true};
       const result = await this.operate(input);
@@ -3539,7 +3570,7 @@ export class RapierDocument {
       if (result.structuredContent?.outcome !== 'pending' || pending?.kind !== 'surface-fact' || pending.requirements?.kind !== kind) return {result};
       if (this[slot]?.id === pending.requestId && this[slot].capabilityHash === input.capabilityHash) return {result};
       const request = pending.requirements;
-      const refuse = reason => ({...request, outcome: 'refused', reason});
+      const refuse = (reason, exportStage = 'render') => ({...request, outcome: 'refused', reason, ...(exporting ? {exportStage} : {})});
       const resume = fact => this.operate(input, undefined, {requestId: pending.requestId, fact});
       if (result.structuredContent.replayed && (exporting || !input.task)) {
         if (exporting) await this.retireSurfaceIntent(kind, pending.requestId);
@@ -3548,7 +3579,7 @@ export class RapierDocument {
       if (signal?.aborted) return {result: await resume(refuse('cancelled'))};
       if (this[slot]) return {result: await resume(refuse(exporting ? 'export_busy' : 'visual_capture_busy'))};
       const hosted = exporting && typeof this.env.EXPORT_RENDERER?.renderArtifact === 'function';
-      if (!hosted && !result.structuredContent.collaboration?.presence?.active) return {result: await resume(refuse(exporting ? 'editor_unavailable' : 'editor_not_present'))};
+      if (!hosted && !result.structuredContent.collaboration?.presence?.active) return {result: await resume(refuse(exporting ? 'editor_unavailable' : 'editor_not_present', 'editor'))};
       const now = Date.now(), deadline = Math.min(input.requestExpiresAt || now + REQUEST_LEASE_MS, input.task?.deadline || Infinity);
       const timeoutMs = exporting ? Math.max(0, Math.min(EXPORT_LEASE_MS, deadline - now))
         : input.task ? Math.max(0, input.task.deadline - now) : VIEW_LEASE_MS;
@@ -3587,9 +3618,9 @@ export class RapierDocument {
     const {capture} = started;
     if (started.hosted) {
       Promise.resolve().then(() => this.env.EXPORT_RENDERER.renderArtifact(started.hosted)).then(
-        artifact => capture.wait.finish({...capture.request, outcome: 'ok', artifact}),
+        artifact => capture.wait.finish({...capture.request, outcome: 'ok', artifact, exportStage: 'file'}),
         error => capture.wait.finish({...capture.request, outcome: 'refused', reason: signal?.aborted ? 'cancelled'
-          : /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(error?.code || '') ? error.code : 'export_unavailable'}));
+          : /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(error?.code || '') ? error.code : 'export_unavailable', exportStage: 'render'}));
     }
     const settled = await capture.wait.promise;
     const fact = settled.kind === 'value' ? settled.value : {...capture.request, outcome: 'refused', reason: settled.kind === 'aborted' ? 'cancelled' : expired};
@@ -3689,7 +3720,7 @@ export class RapierDocument {
 
   async requestEditor(input, signal) {
     if (signal?.aborted) return new Response(null, {status: 499});
-    await this.firstReport(signal);
+    await this.firstReport(input, signal);
     const started = await this.exclusive(async () => {
       if (signal?.aborted) return {abandoned: true};
       const result = await this.operate(input, undefined, undefined, undefined, signal), pending = result.structuredContent?.pending;
@@ -3783,7 +3814,7 @@ export class RapierDocument {
           operation === ROTATE && input.page.rotationEpoch !== (replaying ? head.rotation.pageEpoch : head.pairEpoch || 0))
         return toolError(failure('PAIRING_REQUIRED', 'This browser is not paired with this workspace. Open its editor link and give the assistant the code the page shows.'));
     }
-    if (head && head.ownerKey !== ownerKey) return toolError(failure('DOCUMENT_UNAVAILABLE', 'This workspace is unavailable to the connected identity.'));
+    if (head && head.ownerKey !== ownerKey) return toolError(failure('DOCUMENT_UNAVAILABLE', DOCUMENT_UNAVAILABLE_RECOVERY));
     if (head && head.expiresAt <= Date.now()) {
       this.cachedState = null;
       this.cachedJournal = null;
@@ -3820,7 +3851,7 @@ export class RapierDocument {
       const observation = await initialObservation(kernel, input);
       const collaboration = kernel.collaboration(), state = kernel.snapshot();
       if (input.connectionKey) this.grantVerdicts.learn(await workspaceAddress(input.prefix, ownerKey));
-      head = this.describe(state, { stateFormat: WORKSPACE_STATE_FORMAT, ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), receipts: [], parts: 0, viewIntent: null,
+      head = this.describe(state, { stateFormat: WORKSPACE_STATE_FORMAT, ownerKey, capabilityHash, ...(input.bearer === true ? { bearer: true } : {}), prefix: input.prefix, pairEpoch: 0, createdAt: Date.now(), ...(input.appsOpen === true ? {appsOpen: true} : {}), receipts: [], parts: 0, viewIntent: null,
         ...(input.hostFileBinding ? {fileHydration: {id: mintId('hydrate_'), binding: input.hostFileBinding, status: 'pending', baseRevision: state.revision}} : {}) }, 1, collaboration);
       if (fenced && typeof this.ctx.storage.hold === 'function') this.ctx.storage.hold();
       await this.persist(head, state, kernel.invocationJournal({readonly: true}), false, null, undefined, input);
@@ -3856,7 +3887,7 @@ export class RapierDocument {
       if (head && operation === ROTATE && head.rotation && head.rotation.predecessorHash === capabilityHash && input.rotateToHash === head.capabilityHash && (!input.page || this.replaysPageRotation(head, input.page, input.page.rotationRetry))) {
         return envelope({ outcome: 'rotated', rotated: true, replayed: true, rotations: head.rotations, rotatedAt: new Date(head.rotatedAt).toISOString() }, head);
       }
-      return toolError(failure('DOCUMENT_UNAVAILABLE', 'This document capability is unknown, deleted or expired. Open a new workspace from an exported copy.'));
+      return toolError(failure('DOCUMENT_UNAVAILABLE', DOCUMENT_UNAVAILABLE_RECOVERY));
     }
     if (head.agentAccess === false && input.editorAuthorized !== true) return toolError(failure('DOCUMENT_UNAVAILABLE', 'Agent access to this workspace is disconnected. The person can share it again from the editor.'));
     if (input.editorAuthorized === true && !input.page && typeof input.requestKey === 'string') this.viewReportedAt = Date.now();
@@ -4005,7 +4036,8 @@ export class RapierDocument {
         ...(kind === 'mode' ? {view: request.view, fromView: presence.view} : kind === 'document' ? { start: request.start, end: request.end } : { compareId: request.compareId, changeId: request.changeId }) };
       return { pending: true, viewId: head.viewIntent.id, ...(!presence?.active ? {reason: 'editor_not_present'} : presence.editing ? {reason: 'human_edit_in_progress'} : {}) };
     };
-    let exported = null;
+    let exported = null, exportStage = operation === 'export' && observation
+      ? observation.fact.exportStage || (observation.fact.outcome === 'ok' ? 'file' : 'render') : null;
     const presentationBinding = () => {
       if (material?.presentationBinding !== undefined) return material.presentationBinding;
       const row = Object.values(state.humanContexts).filter(row => row.visible && row.expiresAt > Date.now() && row.revision === state.revision)
@@ -4024,11 +4056,18 @@ export class RapierDocument {
         return liveSessions.sockets().some(socket => !!liveSessions.valid(socket, currentHead)?.client);
       },
       liveComposition: splices => this.live.collision(kernel.snapshot(), splices), exportScope: true, exportFile: async request => {
+      exportStage = 'publication';
       if (this.env.ACCESS_PROFILE !== true && !editorSecret(this.env) || !input.exportAddress) return {reason: 'export_unavailable'};
       if (request.guard?.() === false) return {reason: 'document_changed'};
+      exportStage = request.file ? 'file' : 'render';
       const file = request.file || await exportFile(this.env, {...request, signal});
+      if (request.format === 'docx' && file.bytes) {
+        try { await verifyWordExport(file.bytes, {signal}); }
+        catch { return {reason: signal?.aborted ? 'cancelled' : 'export_artifact_invalid'}; }
+      }
       if (request.guard?.() === false) return {reason: 'document_changed'};
       exported = file.bytes && file.bytes.byteLength <= MAX_EXPORT_BYTES ? {...file, id: mintId('export_')} : file;
+      if (exported.id) exportStage = 'publication';
       return exported;
     }, markdown: analyzeMarkdown, referenceCheck: checkMarkdownReferences, commitFence, drawingPresentationBinding: presentationBinding,
       paint: (strokes, options = {}) => paintAgentStrokes(strokes, options.seed, options.target, options),
@@ -4195,14 +4234,16 @@ export class RapierDocument {
           Math.min(capture.input.requestExpiresAt || Infinity, capture.input.task?.deadline || Infinity) <= Date.now())
         return toolError(failure('EXPORT_UNAVAILABLE', 'This export is no longer pending.'), head);
       const file = admitExportArtifact(capture.request, args.fact);
-      if (args.fact.outcome === 'ok' && !file.bytes) return envelope({outcome: 'refused', reason: file.reason,
-        ...(file.limitBytes ? {limitBytes: file.limitBytes} : {}), ...(file.byteLength ? {bytes: file.byteLength} : {})}, head);
+      const fact = {...args.fact, exportStage: args.fact.outcome === 'ok' ? 'file' : 'render'};
+      const invalid = args.fact.outcome === 'ok' && !file.bytes;
       if (capture.input.task) {
-        const result = await this.operate(capture.input, undefined, {requestId: capture.id, fact: args.fact});
-        if (result.isError) { capture.wait.finish(args.fact); return result; }
+        const result = await this.operate(capture.input, undefined, {requestId: capture.id, fact});
         await this.retireSurfaceIntent('export', capture.id);
+        if (result.isError) { capture.wait.finish(fact); return result; }
       }
-      if (!capture.wait.finish(args.fact)) return toolError(failure('EXPORT_UNAVAILABLE', 'This export is no longer pending.'), head);
+      if (!capture.wait.finish(fact)) return toolError(failure('EXPORT_UNAVAILABLE', 'This export is no longer pending.'), head);
+      if (invalid) return envelope({outcome: 'refused', reason: file.reason, exportStage: 'file',
+        ...(file.limitBytes ? {limitBytes: file.limitBytes} : {}), ...(file.byteLength ? {bytes: file.byteLength} : {})}, head);
       return envelope({outcome: 'ok', exportId: args.exportId}, head);
     }
     if (operation === 'document.editor_ack') {
@@ -4580,6 +4621,7 @@ export class RapierDocument {
     if (actor === 'agent' && !value.replayed) head.agentCall = { id: input.operationId, at: Date.now(), operation, ...(operation === 'document.find' && typeof args.kind === 'string' ? { kind: args.kind.slice(0, 24) } : {}), ...(calledBy ? { name: calledBy } : {}) };
     let download = null, publication = null;
     const exportId = value.exportId;
+    if (operation === 'export' && exportStage && value.outcome !== 'pending' && !value.replayed) value = {...value, exportStage};
     if (operation === 'export' && value.exportId) {
       let grant = head.exports?.find(row => row.id === value.exportId);
       if (exported?.id) {
@@ -4587,11 +4629,11 @@ export class RapierDocument {
         head.exports = [...head.exports || [], grant];
         publication = {grant, bytes: exported.bytes};
       }
-      if (!grant || grant.owner !== capabilityHash || grant.expiresAt <= Date.now()) value = {...value, outcome: 'refused', reason: 'export_expired'};
+      if (!grant || grant.owner !== capabilityHash || grant.expiresAt <= Date.now()) value = unavailableExport(value, 'export_expired');
       else {
         const token = !input.exportAddress ? null : grant.hash && editorSecret(this.env) ? await exportToken(input.exportAddress, grant, this.env)
           : !head.bearer ? exportHandle(input.exportAddress, grant) : null;
-        if (!token || grant.hash && await digest(token) !== grant.hash) value = {...value, outcome: 'refused', reason: 'export_unavailable'};
+        if (!token || grant.hash && await digest(token) !== grant.hash) value = unavailableExport(value, 'export_unavailable');
         else {
           download = {type: 'resource_link', uri: input.exportOrigin + '/export/' + token, name: grant.name, mimeType: grant.mimeType, size: grant.bytes};
           value = {...value, filename: grant.name, mimeType: grant.mimeType, bytes: grant.bytes, downloadUrl: download.uri,
@@ -4605,7 +4647,7 @@ export class RapierDocument {
     if (!value.replayed) {
       const journal = kernel.invocationJournal({readonly: true});
       this.live.observe(state, journal, {...agentCaller(), ...(args.agent ? {agent: args.agent} : {})}, value);
-      if (exportId || operation === 'read' && value.messages) {
+      if (operation === 'export' && value.outcome !== 'pending' || operation === 'read' && value.messages) {
         const caller = agentCaller(), owner = JSON.stringify([caller.transport, caller.actor, caller.principal]);
         const record = journal.find(row => row.key === caller.invocationKey && row.owner === owner && row.documentId === documentId && row.operation === operation && (!exportId || row.output?.exportId === exportId));
         if (exportId && !record) throw failure('WORKSPACE_UNAVAILABLE', 'The exported result was not retained. Retry with the same operation identity.');
@@ -4644,8 +4686,15 @@ export class RapierDocument {
         taskResult.content.push({type: 'image', mimeType: 'image/png', data: observation.fact.image.data});
       const unchanged = ['edit', 'undo'].includes(operation) && ['conflict', 'refused'].includes(value.outcome) &&
         !publication && !taskResult && retainedMaterial === undefined && head.version === initialVersion;
-      if (!unchanged) await this.persist(head, state, journal, false, publication, retainedMaterial, input,
-        taskResult ? {task: input.task, result: taskResult} : null);
+      if (!unchanged) {
+        try { await this.persist(head, state, journal, false, publication, retainedMaterial, input,
+          taskResult ? {task: input.task, result: taskResult} : null); }
+        catch (error) {
+          if (operation !== 'export' || !publication) throw error;
+          throw error?.[PUBLIC_FAILURE] ? failure(error.code, error.message, {...error.details, exportStage: 'publication'})
+            : failure('WORKSPACE_UNAVAILABLE', 'The workspace operation was not acknowledged. Retry with the same operation identity.', {exportStage: 'publication'});
+        }
+      }
       retainedResult = taskResult;
     }
     await this.assertAuthority(input, {remembered: true});

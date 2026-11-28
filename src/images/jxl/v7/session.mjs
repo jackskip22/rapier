@@ -9,7 +9,8 @@ import {uploadOptions} from './upload-options.mjs';
 import {fitOptions, variantsOptions} from './preparation-options.mjs';
 import {outputSides} from './preparation-sides.mjs';
 import {admitCapture} from './capture-options.mjs';
-import {fail, object, pixelLimit, dimensions, PIXELS, lostBlank, proveRead, LOST, isBlob} from './primitives.mjs';
+import {fail, object, pixelLimit, dimensions, PIXELS, lostBlank, proveRead, LOST, isBlob, bounded} from './primitives.mjs';
+export {bounded};
 import {WHOLE} from '../memory-device.mjs';
 import {JPEG_SOURCE, JPEG_SOURCE_WIRE} from './jpeg-choice-policy.mjs';
 
@@ -63,11 +64,11 @@ export function encoder(client, config = {}, operations, spec = {}) {
         if (limit !== undefined) maxPixels = Math.min(maxPixels, limit);
         if (name === 'variants') for (const request of read.requests) outputSides(request.width, request.height, maxPixels);
       } else if (name === 'encode') {
-        const {signal: _signal, onProgress: _onProgress, onPreview: _onPreview, ...rest} = words ?? {};
+        const {signal: _signal, onProgress: _onProgress, ...rest} = words ?? {};
         const read = upload ? uploadOptions(rest) : encodeOptions(rest, spec.module === 'rapier-jxl/max', spec.module === 'rapier-jxl' || spec.module === 'rapier-jxl/max');
         if (read.maxPixels !== undefined) maxPixels = Math.min(maxPixels, read.maxPixels);
       } else {
-        const {signal: _signal, onProgress: _onProgress, onPreview: _onPreview, ...rest} = words ?? {};
+        const {signal: _signal, onProgress: _onProgress, ...rest} = words ?? {};
         const levels = spec.captureLevels && {module: spec.module, ...spec.captureLevels};
         if (richCapture) spec.captureAdmission(rest, levels);
         else admitCapture(rest, levels);
@@ -169,12 +170,6 @@ function snapshot(input, maxPixels, {maxPendingBytes = DEFAULT_INPUT_BYTES}, opt
 
 function fix(options) {
   if (options === undefined || options === null || typeof options !== 'object') return options;
-  const {signal, onProgress, onPreview, ...data} = options;
-  return {...structuredClone(data), ...(signal !== undefined && {signal}), ...(onProgress !== undefined && {onProgress}), ...(onPreview !== undefined && {onPreview})};
+  const {signal, onProgress, ...data} = options;
+  return {...structuredClone(data), ...(signal !== undefined && {signal}), ...(onProgress !== undefined && {onProgress})};
 }
-
-export const bounded = (client, name) => (input, options) => {
-  try { if (options && typeof options === 'object' && options.maxPixels !== undefined) pixelLimit(options.maxPixels); }
-  catch (error) { return Promise.reject(error); }
-  return client[name](input, options);
-};

@@ -3,15 +3,14 @@
 For Next.js 15 and 16. `<Image>` serves JPEG XL to browsers that show it and Next's own image to the rest. No
 component changes.
 
-At the look of Next's default WebP, photographs come out 24% smaller (21% at 640 px to 30% at full size). rapier-jxl
-is the encoder inside rapier.website, the free Markdown editor and painting app.
+rapier-jxl is the encoder inside rapier.website, the free Markdown editor and painting app.
 
 ```sh
 npm install --save-dev rapier-jxl
 npx rapier-jxl add next
 ```
 
-`add next` copies four files into the project and changes two:
+`add next` copies the image builder, proxy, loader, and shared helpers into the project. It adds `public/_jxl/` to `.gitignore` and updates:
 
 - `package.json`: `"postbuild": "node rapier-jxl-next.mjs"`. After `npm run build`, it writes one JPEG XL file per width
   next/image asks for, for every JPEG and PNG in `public/` and every image the app imports, under `public/_jxl/`.
@@ -25,9 +24,7 @@ export {jxlProxy as proxy} from './rapier-jxl-next-proxy.mjs';
 export const config = {matcher: '/_next/image'};
 ```
 
-Options go on the postbuild line: `node rapier-jxl-next.mjs --quality 80 --effort 5`. The default, quality 64
-at effort 3, gives the look of Next's default WebP on the median photograph. At the look of Next's AVIF
-(`images.formats`), JPEG XL files are about 11% larger.
+Options go on the postbuild line: `node rapier-jxl-next.mjs --quality 80 --effort 5`. The default is quality 64 at effort 3.
 
 ## Where it runs
 
@@ -54,6 +51,5 @@ Do not set `images.unoptimized` in `next.config` for this: it makes `getImagePro
 
 - Remote pictures (`images.remotePatterns`) are not converted. They go to Next as before.
 - A picture added to `public/` after the build has no JPEG XL file until the next build.
-- Each build writes every width up to the picture's own: about 4 seconds per 5-megapixel photograph at effort 3.
-  Next's optimizer instead spends 0.3 to 0.7 seconds on a WebP, 0.7 to 3.7 on an AVIF, at each width's first request.
+- Each build writes every width up to the picture's own. Build time depends on the source images and effort.
   The files are kept in `.next/cache/rapier-jxl`, so a rebuild encodes only new or changed pictures.

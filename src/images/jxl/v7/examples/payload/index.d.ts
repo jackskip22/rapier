@@ -94,6 +94,34 @@ export interface RestoreLocalOriginalsResult {
   skipped: number;
 }
 
+export interface JxlTransformerCollectionOptions {
+  /** Encoding effort from 1 (fastest) to 9 (smallest). */
+  effort?: number;
+  /** Encoder fidelity for non-JPEG formats. When omitted, uses the encoder's default. */
+  fidelity?: 'exact' | {quality: number};
+  /** Set to false on Cloudflare Workers when the editor's browser encodes before upload. Defaults to true. */
+  onUpload?: boolean;
+}
+
+export interface JxlTransformerOptions extends JxlTransformerCollectionOptions {
+  /** Unique transformer slug in Payload 4.0 upload.transformers. Defaults to 'jxl'. */
+  slug?: string;
+  /** Restrict or configure specific upload collection slugs. Defaults to all image upload collections. */
+  collections?: string[] | Record<string, boolean | JxlTransformerCollectionOptions>;
+  /** Optional sharp instance for decoding non-PNG/non-JPEG formats on Node. */
+  sharp?: unknown;
+}
+
+export interface PayloadUploadTransformer {
+  slug: string;
+  mimeTypes: string[];
+  init?: (config: Config) => Config | Promise<Config>;
+  canTransform?: (args: Record<string, unknown>) => boolean | {canTransform: true; options?: unknown};
+  transformFile?: (args: Record<string, unknown>) => Promise<{file?: File; status: 'continue' | 'complete'}>;
+  handleRequest?: (args: Record<string, unknown>) => Promise<{response?: Response; status: 'continue' | 'complete'}>;
+}
+
+export declare function jxlTransformer(options?: JxlTransformerOptions): PayloadUploadTransformer;
 export declare function jxl(options?: JxlPayloadOptions): ((config: Config) => Config) & {order: number};
 export default jxl;
 

@@ -9,10 +9,9 @@ export type {JPEGOptions, JobOptions, EncodedInput};
  * reconstruction payload above 64 MiB refuses JXL_JPEG. Caller bytes use an ArrayBuffer or any view of one.
  * SharedArrayBuffer backing is refused at runtime with JXL_INPUT. Invalid options refuse JXL_OPTIONS, oversize pictures JXL_DIMENSIONS, and unavailable SIMD JXL_WASM. */
 export interface RecompressOptions extends JPEGOptions {
-  /** True unless false is passed: a phone's HDR photo (Ultra HDR, ISO 21496-1) keeps its gain map where every decoder
-   * that shows HDR reads it: the jhgm box, its metadata in ISO 21496-1 form. restore still returns the exact JPEG,
-   * gain map included. djxl and other decoders restore the primary JPEG alone; otherDecoders counts the bytes they
-   * leave out. With false, the gain map stays inside jbrd, so every decoder restores the whole JPEG. A photo without
+  /** True unless false is passed: an Ultra HDR photo keeps its gain map in jhgm with ISO 21496-1 metadata, for
+   * viewers that support JPEG XL gain maps. restore still returns the exact JPEG, gain map included.
+   * djxl restores the primary JPEG alone. otherDecoders counts the bytes it leaves out. With false, the gain map stays inside jbrd, so every decoder with JPEG reconstruction restores the whole JPEG. A photo without
    * one is unchanged. jpegxl/max takes the same option. */
   gainMap?: boolean; }
 /** @example const {bytes} = await recompress(jpeg); // restores the original JPEG exactly */

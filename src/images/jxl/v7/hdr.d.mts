@@ -23,6 +23,7 @@ export interface HdrPicture {
   /** Number of parts in a multi-part OpenEXR file. The first image part supplies the picture. */
   parts?: number | undefined;
 }
+/** Options for reading an OpenEXR or Radiance file. */
 export interface HdrOptions {
   /** OpenEXR only. 'data' (default) is the pixels the file stores. 'display' is its display window, transparent black
    * where the data window does not reach. */

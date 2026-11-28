@@ -4,7 +4,6 @@ import type {CaptureInput, Effort, CapturePhotoOptions, CaptureDecoder, PackageD
 import type {ResumableFunction} from './resumable.mjs';
 import type {CodecConfig} from './types.mjs';
 export type {ImageInput, CaptureInput, CapturePixels, Bytes, MaxError, Effort} from './types.mjs';
-export type {ImagePreview, PreviewOptions} from './types.mjs';
 export type {CapturePhotoFidelity, CapturePhotoOptions, CaptureRect, ExactRect, CaptureDecoder} from './types.mjs';
 /** Photographic capture's options with efforts 8 and 9 too. */
 export type CaptureCompleteOptions = Omit<CapturePhotoOptions, 'effort'> & {

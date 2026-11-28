@@ -3,7 +3,7 @@ import {BitWriter} from './bits.mjs';
 import {writeModularFrameHeader, groupLayout, groupRect, assembleCodestream} from './frame.mjs';
 import {writeImageHeader} from './icc-write.mjs';
 import {ALPHABET, leaf, writeTree, writeModularHeader, writeChannelHistograms} from './modular.mjs';
-import {colourTransform} from './rct-search.mjs';
+import {colourTransform} from './rct-fill.mjs';
 import {transformRanking} from './capture-trees.mjs';
 import {screenPlan, lookupPalette} from './screen.mjs';
 import {screenModel} from './screen-lz77.mjs';

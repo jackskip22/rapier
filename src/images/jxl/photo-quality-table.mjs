@@ -60,8 +60,18 @@ export function measuredLook(q) {
 
 export const worstRegionFloor = floor => floor >= 100 ? 100 : floor - (0.8 + 0.20 * Math.max(0, 100 - floor));
 
-const LEVELS = Object.freeze({1: {landing: 'none'}, 2: {landing: 'none'}, 3: {landing: 'none'}, 4: {landing: 'checked'}, 5: {landing: 'window'}});
-const landingOf = effort => LEVELS[effort]?.landing;
+export const PHOTO_LEVELS = /* @__PURE__ */ Object.freeze([null,
+  {landing: 'none', plan: [1, 1], level: 4},
+  {landing: 'none', plan: [2, 2], level: 4, same: {effort: 1, qualities: [60, 90]}},
+  {landing: 'none', plan: [3, 3], level: 4, same: {effort: 2, qualities: [75, 85]}},
+  {landing: 'checked', plan: [4, 3], level: 4},
+  {landing: 'window', plan: [4, 3], level: 4, same: {effort: 4, qualities: [60, 80]}},
+  {landing: 'search', plan: [4, 3], level: 4},
+  {landing: 'search', plan: [4, 3], level: 6, smallHolds: 6},
+  {landing: 'search', plan: [4, 3], level: 7, smallHolds: 6},
+  {landing: 'search', plan: [4, 3], level: 9, smallHolds: 6},
+  {landing: 'search', plan: [4, 3], level: 9}].map(row => row && Object.freeze(row)));
+const landingOf = effort => PHOTO_LEVELS[effort]?.landing;
 export const landsAtEffort = effort => landingOf(effort) === 'window' || landingOf(effort) === 'checked';
 export const settlesOnCoefficients = effort => landingOf(effort) === 'checked';
 export const keepsRoute = effort => landingOf(effort) === 'none' || landingOf(effort) === 'window';
@@ -71,3 +81,6 @@ export const usesRegionalCalibration = (intent, effort) => intent >= 0.7 - 1e-9 
 
 export const SMALL_SIDE = 128;
 export const smallPicture = (width, height) => Math.min(width, height) < SMALL_SIDE;
+
+export const e13HighQ = () => (typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && globalThis.__RAPIER_JXL_E13_HIGH_Q === true;
+export const e13FastSettle = () => (typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && globalThis.__RAPIER_JXL_E13_FAST_SETTLE === true;

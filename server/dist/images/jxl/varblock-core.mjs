@@ -688,26 +688,30 @@ export function createStrategyBuilder(base, width, height, options = {}, storage
     return block;
   };
   const runParams = [];
-  const run8 = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? () => null : (by, bx0, n) => {
-    if (!vk?.row8 || priced || rateBlock && by + 1 > rateFrom) return null;
+  const run8Raw = (by, bx0, n, withRates) => {
     const table = tableFor(0, comps, sizeScale, tables), order = naturalOrder(1, 1);
     const packedAt = dctPack ? dctPack.at[by * stride + bx0] : 0xffffffff;
     const fromPack = packedAt !== 0xffffffff && dctPack.at[by * stride + bx0 + n - 1] === packedAt + (n - 1) * 64;
     let rowsOf = null, top = 0, left = 0, rowW = W;
     if (!fromPack) ({planes: rowsOf, top, left = 0, stride: rowW = W} = planeRows(by * 8, by * 8 + 8, bx0 * 8, (bx0 + n) * 8));
-    const slot = vkKernel.table(0, table, 64, order, highOf(0, 64));
+    const slot = vk.table(0, table, 64, order, highOf(0, 64));
     if (!slot) return null;
     const params = runParams[0]?.length >= n * 4 ? runParams[0] : (runParams[0] = new Float64Array(n * 4));
     for (let j = 0; j < n; j++) {
       const bx = bx0 + j, ti = (by >> 3) * cfl.width + (bx >> 3), fine = fineOf(bx, by);
       params[j * 4] = cfl.x[ti] / 84; params[j * 4 + 1] = cfl.b[ti] / 84; params[j * 4 + 2] = fine; params[j * 4 + 3] = 8 * VB_QS * fine;
     }
-    const zones = zonesOf(zoneAt(bx0, by));
+    const zones = zonesOf(zoneAt(bx0, by)), rateArg = withRates ? [rc[0], rc[3]] : null;
     const made = fromPack
-      ? vk.row8(dctPack.planes, 0, packedAt, 0, 0, n, slot, params, zones, VB_ONE, rc[1], rc[2], rated ? [rc[0], rc[3]] : null)
-      : vk.row8(rowsOf, top, bx0 * 8 - left, by * 8, rowW, n, slot, params, zones, VB_ONE, rc[1], rc[2], rated ? [rc[0], rc[3]] : null);
-    if (!made) return null;
-    const done = made.done, out = [];
+      ? vk.row8(dctPack.planes, 0, packedAt, 0, 0, n, slot, params, zones, VB_ONE, rc[1], rc[2], rateArg)
+      : vk.row8(rowsOf, top, bx0 * 8 - left, by * 8, rowW, n, slot, params, zones, VB_ONE, rc[1], rc[2], rateArg);
+    return made ? {made, order} : null;
+  };
+  const run8 = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? () => null : (by, bx0, n) => {
+    if (!vk?.row8 || priced || rateBlock && by + 1 > rateFrom) return null;
+    const res = run8Raw(by, bx0, n, rated);
+    if (!res) return null;
+    const {made, order} = res, done = made.done, out = [];
     if (!done) return out;
     const step0 = comps[0].quant[0] / VB_QS, step1 = comps[1].quant[0] / VB_QS, step2 = comps[2].quant[0] / VB_QS;
     const rowLevels = keepsAll ? kept(done * 195) : new Int32Array(done * 195), dcBase = done * 192;
@@ -717,15 +721,11 @@ export function createStrategyBuilder(base, width, height, options = {}, storage
       rowLevels[dOff] = Math.round(made.dc[mOff] * 8 / step0);
       rowLevels[dOff + 1] = Math.round(made.dc[mOff + 1] * 8 / step1);
       rowLevels[dOff + 2] = Math.round(made.dc[mOff + 2] * 8 / step2);
-      const block = rated
-        ? {id: 0, bx: bx0 + j, by, bw: 1, bh: 1, area: 1, size: 64, order,
-            coeffs: [rowLevels.subarray(lOff, lOff + 64), rowLevels.subarray(lOff + 64, lOff + 128), rowLevels.subarray(lOff + 128, lOff + 192)],
-            dc: [rowLevels.subarray(dOff, dOff + 1), rowLevels.subarray(dOff + 1, dOff + 2), rowLevels.subarray(dOff + 2, dOff + 3)],
-            levels: rowLevels.subarray(lOff, lOff + 192), R: made.rates[j], J: 0, narrow: true}
-        : {id: 0, bx: bx0 + j, by, bw: 1, bh: 1, area: 1, size: 64, order,
-            coeffs: [rowLevels.subarray(lOff, lOff + 64), rowLevels.subarray(lOff + 64, lOff + 128), rowLevels.subarray(lOff + 128, lOff + 192)],
-            dc: [rowLevels.subarray(dOff, dOff + 1), rowLevels.subarray(dOff + 1, dOff + 2), rowLevels.subarray(dOff + 2, dOff + 3)],
-            levels: rowLevels.subarray(lOff, lOff + 192)};
+      const block = {id: 0, bx: bx0 + j, by, bw: 1, bh: 1, area: 1, size: 64, order,
+        coeffs: [rowLevels.subarray(lOff, lOff + 64), rowLevels.subarray(lOff + 64, lOff + 128), rowLevels.subarray(lOff + 128, lOff + 192)],
+        dc: [rowLevels.subarray(dOff, dOff + 1), rowLevels.subarray(dOff + 1, dOff + 2), rowLevels.subarray(dOff + 2, dOff + 3)],
+        levels: rowLevels.subarray(lOff, lOff + 192)};
+      if (rated) { block.R = made.rates[j]; block.J = 0; block.narrow = true; }
       built?.set(by * stride + bx0 + j, block);
       out.push(block);
     }
@@ -733,24 +733,9 @@ export function createStrategyBuilder(base, width, height, options = {}, storage
   };
   const compactRun8 = (by, bx0, n, by0, meta, mPos, levelsOut, lOff, dcsOut, dc0, dc1, dc2) => {
     if (!vk?.row8 || priced || rated || rateBlock) return 0;
-    const table = tableFor(0, comps, sizeScale, tables), order = naturalOrder(1, 1);
-    const packedAt = dctPack ? dctPack.at[by * stride + bx0] : 0xffffffff;
-    const fromPack = packedAt !== 0xffffffff && dctPack.at[by * stride + bx0 + n - 1] === packedAt + (n - 1) * 64;
-    let rowsOf = null, top = 0, left = 0, rowW = W;
-    if (!fromPack) ({planes: rowsOf, top, left = 0, stride: rowW = W} = planeRows(by * 8, by * 8 + 8, bx0 * 8, (bx0 + n) * 8));
-    const slot = vk.table(0, table, 64, order, highOf(0, 64));
-    if (!slot) return 0;
-    const params = runParams[0]?.length >= n * 4 ? runParams[0] : (runParams[0] = new Float64Array(n * 4));
-    for (let j = 0; j < n; j++) {
-      const bx = bx0 + j, ti = (by >> 3) * cfl.width + (bx >> 3), fine = fineOf(bx, by);
-      params[j * 4] = cfl.x[ti] / 84; params[j * 4 + 1] = cfl.b[ti] / 84; params[j * 4 + 2] = fine; params[j * 4 + 3] = 8 * VB_QS * fine;
-    }
-    const zones = zonesOf(zoneAt(bx0, by));
-    const made = fromPack
-      ? vk.row8(dctPack.planes, 0, packedAt, 0, 0, n, slot, params, zones, VB_ONE, rc[1], rc[2], null)
-      : vk.row8(rowsOf, top, bx0 * 8 - left, by * 8, rowW, n, slot, params, zones, VB_ONE, rc[1], rc[2], null);
-    if (!made || !made.done) return 0;
-    const done = made.done, byRel = by - by0, rowBase = byRel * stride;
+    const res = run8Raw(by, bx0, n, false);
+    if (!res || !res.made.done) return 0;
+    const {made} = res, done = made.done, byRel = by - by0, rowBase = byRel * stride;
     const step0 = comps[0].quant[0] / VB_QS, step1 = comps[1].quant[0] / VB_QS, step2 = comps[2].quant[0] / VB_QS;
     levelsOut.set(made.levels.subarray(0, done * 192), lOff);
     for (let j = 0; j < done; j++) {
@@ -985,7 +970,7 @@ export function fixedStrategyImage(base, width, height, options, storage = null)
     if (ok) {
       const dcRows = Math.max(bandRows, Math.min(fullRows, maxBottom) - by0), dcLen = stride * dcRows;
       const holder = !storage ? options.built : null;
-      let pk = null, meta, levels, dcs = null, dc0, dc1, dc2, rowBlock = null, rowLevel = null, rowWide = null, prev = null;
+      let pk = null, meta, levels, dcs = null, dc0, dc1, dc2, rowBlock = null, rowLevel = null, rowWide = null, prev = null, published = null;
       if (holder) {
         const slots = holder.compactSlots ||= [null, null], turn = holder.compactTurn ? 1 : 0;
         prev = slots[1 - turn];
@@ -1005,14 +990,13 @@ export function fixedStrategyImage(base, width, height, options, storage = null)
             by0: -1, by1: -1,
           };
         }
-        holder.compactTurn = 1 - turn;
         meta = slot.meta; levels = slot.levels; dcs = slot.dcs; pk = slot.pk;
         pk.used = 0; pk.start.fill(-1, 0, M);
         dc0 = slot.dc0.subarray(0, dcLen); dc1 = slot.dc1.subarray(0, dcLen); dc2 = slot.dc2.subarray(0, dcLen);
         dc0.fill(0); dc1.fill(0); dc2.fill(0);
         rowBlock = slot.rowBlock; rowLevel = slot.rowLevel; rowWide = slot.rowWide;
         rowWide.fill(0, 0, bandRows);
-        slot.by0 = by0; slot.by1 = by1;
+        slot.by0 = slot.by1 = -1; published = {slot, next: 1 - turn};
       } else {
         const alloc = storage ?? (n => new Int32Array(n));
         meta = alloc(M * 6); levels = alloc(cellsSum * 192);
@@ -1097,11 +1081,13 @@ export function fixedStrategyImage(base, width, height, options, storage = null)
         {h: 1, v: 1, stride, rows: fullRows, dcRow0: by0, quant: comps[2].quant, coeffs: EMPTY_I16, dc: dc2},
       ];
       const {planes: _p, values: _v, planeRows: _r, dctPack: _d, ...rest} = base;
-      return {
+      const made = {
         image: {...rest, components, wideCoefficients, ...(options.perceptual ? {perceptual: true} : {}),
           strategyData: {compact: {meta: meta.subarray(0, M * 6), levels: levels.subarray(0, lCursor), by0, rows: bandRows, ...(pk?.used && {packed: pk})}, tables: strategyTableList(builder.tables), stride}},
         counts: {}, layout: null, open: [], reprices: [], reverted: 0, settled: builder.settled,
       };
+      if (published) { published.slot.by0 = by0; published.slot.by1 = by1; holder.compactTurn = published.next; }
+      return made;
     }
   }
   const chosen = [];
@@ -1289,6 +1275,6 @@ export function lazyStrategyImage(base, width, height, options, layout) {
   };
   return {width, height, components: base.components, layout, lazyStrategy: {rows, materialize: () => timed('materialize', () => fixedStrategyImage(base, width, height, {...options, layout}).image)}};
 }
-export const materialize = image => image?.lazyStrategy ? image.lazyStrategy.materialize() : image;
+export {materialize} from './materialize.mjs';
 
 export {vbPackSigned, VB_SMALL, VB_ZD, VB_TOKENS, tableFor};

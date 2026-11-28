@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {jxlCodestreamParts} from './header.mjs';
+import {PICTURE_EDGE} from './limits.mjs';
 
 const PROBE = '/woAAACClQgIEACYAAAAAAEIAEsYk46DQ5SAGgEgvLkI0zH5QDC1/AsIAUCQBSZIe6M9RA4N7uMAcwZvBzMA';
 const FORMATS = ['RGBA', 'RGBX', 'BGRA', 'BGRX'], ROUTES = ['decoder', 'bitmap'];
-const LIMIT = {edge: 16384, pixels: 12000000};
+const LIMIT = {edge: PICTURE_EDGE, pixels: 12000000};
 let traits = null;
 
 async function frameRGBA(frame, limit) {

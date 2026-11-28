@@ -226,7 +226,7 @@ const PLACES = {
       const base = join(module, 'src/main'), out = new Map(), generated = 'app/build/generated/encoder-assets/';
       for (const name of ['encoder.html', 'encoder.mjs']) out.set(posix(join(base, 'assets', name)), made.get('app/src/main/assets/' + name));
       for (const [path, bytes] of made) if (path.startsWith(generated)) out.set(posix(join(base, 'assets', path.slice(generated.length))), bytes);
-      for (const name of ['BridgeProtocol.kt', 'MainActivity.kt']) {
+      for (const name of ['MainActivity.kt']) {
         const text = await readFile(join(root, 'android/app/src/main/java/app/rapier/jxlexample', name), 'utf8');
         const ktKeywords = new Set(['as', 'break', 'class', 'continue', 'do', 'else', 'false', 'for', 'fun', 'if', 'in', 'interface', 'is', 'null', 'object', 'package', 'return', 'super', 'this', 'throw', 'true', 'try', 'typealias', 'typeof', 'val', 'var', 'when', 'while']);
         const ktNs = namespace.split('.').map(seg => ktKeywords.has(seg) ? `\`${seg}\`` : seg).join('.');

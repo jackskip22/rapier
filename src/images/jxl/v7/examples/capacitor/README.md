@@ -7,4 +7,4 @@ Run `JXL_PACKAGE=/absolute/path/to/built-package npm run build`. An installed pa
 Run `npm run android` once, then `npm run sync` and `npm run open`. Run the app in Android Studio.
 Each result is saved in the app's private data directory under a new name. The page shows the path.
 Share uses the browser's Web Share API and reports `JXL_SHARE_UNAVAILABLE` when file sharing is unavailable.
-Encoding works offline. Native code is faster, and rapier-jxl needs none. Filesystem's native API accepts binary as base64.
+Encoding works offline. No native JPEG XL codec is needed. Filesystem's native API accepts binary as base64.

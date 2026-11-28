@@ -82,12 +82,20 @@ the whole text when it fits a page, otherwise a document map with line and byte
 counts. Choose a passage from the map before reading text.
 An authorized host file uses file {name, resourceUri}: the editor reads that opaque
 resource through the host, and the server never fetches a supplied file URL. An open
-workspace doesn't prove the person has opened its editor. Where the host shows a
+workspace confirms the document. Pixels, selection and presentation need their own
+current editor reports and acknowledgments. Where the host shows a
 Rapier view (ChatGPT, Claude), stay in chat: use fullscreen for writing or painting, return to chat
-and reuse the same private document value. The view's context also holds it as
-rapier.document. When that is null the person disconnected agents, and only their
-SHARE WITH AN AGENT gives it back. Never copy their text into a new document instead.
+and reuse the same private document value from a successful open in this chat.
+The view can report it as rapier.document. Null context means context is not
+available. It does not revoke a value you already received. Only an explicit
+agentsDisconnected:true or disconnected-access refusal says the person disconnected
+agents. Then ask them to choose SHARE WITH AN AGENT. Never copy their text into a new document instead.
 Check read {state:true} when editor presence matters. Offer editor_url only when no view shows or the person asks for a browser.
+On editor_unavailable, recovery is editor_not_ready. No picture, file or presentation
+was delivered. In a host with a view, call open {document} once with the same value
+to show the same draft in this chat. Wait for the editor's ready report, then retry
+the original call once. If it still refuses, say what was not delivered and stop.
+Do not create another draft or silently substitute a text result or a browser.
 In clients with no view, use the browser editor link.
 A browser editor link is not an agent permission to reopen from a new chat.
 The self-hosted server uses its MCP Apps editor transport instead of a paired link.
@@ -96,6 +104,15 @@ Note in the configured store. Hosted creation and import arguments don't apply. 
 show {target:"file"} for a device file. With a Note open, {target:"record"} asks the person to record audio into it and {target:"attachment"} to choose files for it.
 
 ## Read
+
+On the hosted Door, pass the private document value from a successful open in this
+chat. In the page or over WebMCP, tools use the bound page and need no document.
+read {guide:"overview"} needs no document and cannot also select document content.
+Notes search on the hosted Door also needs document. No selector chooses an ambient
+or last-opened document. A refusal's recovery class names the next step without
+changing its public error: document_required, document_unavailable or cursor_invalid.
+Use an existing reference in the original chat or connection. A refusal did not
+read or edit the document and never creates a replacement.
 
 Read whole text, heading (a title or a path of titles), lines [first,last]
 (one-based, inclusive), block (its stable id) or query (literal matches). Continue

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {xybKernelConstants} from './vardct-render.mjs';
+import {xybKernelConstants} from './vardct-render-base.mjs';
 import {requireDecode} from './decode-bits.mjs';
 import {signature, nativeEncoding} from './color-encoding.mjs';
 export {nativeEncoding};
@@ -163,8 +163,103 @@ function quantizedJob(from,to,maximum) {
     bounds:[0,3,6].map(r=>(Math.abs(m[r])+Math.abs(m[r+1])+Math.abs(m[r+2]))*input+1e-12),matrix:m,maximum};
 }
 
+const HDR_TF = new Set(['pq', 'hlg']);
+const SDR_PEAK = 255;
+const PQ_M1 = 2610 / 16384, PQ_M2 = (2523 / 4096) * 128;
+const PQ_C1 = 3424 / 4096, PQ_C2 = (2413 / 4096) * 32, PQ_C3 = (2392 / 4096) * 32;
+function pqEncoded(nits) {
+  if (nits === 0) return 0;
+  const s = nits < 0 ? -1 : 1, xp = Math.pow(Math.abs(nits) / 10000, PQ_M1);
+  return s * Math.pow((PQ_C1 + xp * PQ_C2) / (1 + xp * PQ_C3), PQ_M2);
+}
+function pqDisplay(e) {
+  if (e === 0) return 0;
+  const s = e < 0 ? -1 : 1, xp = Math.pow(Math.abs(e), 1 / PQ_M2);
+  return s * Math.pow(Math.max(xp - PQ_C1, 0) / (PQ_C2 - PQ_C3 * xp), 1 / PQ_M1) * 10000;
+}
+function gamutMapPixel(r, g, b, l0, l1, l2) {
+  const L = l0 * r + l1 * g + l2 * b;
+  let gSat = 0, gLum = 0;
+  for (let k = 0; k < 3; k++) {
+    const v = k === 0 ? r : k === 1 ? g : b, d = v - L, inv = 1 / (d === 0 ? 1 : d), vo = v * inv;
+    if (d < 0 && vo > gSat) gSat = vo;
+    const gl = d <= 0 ? gSat : vo - inv;
+    if (gl > gLum) gLum = gl;
+  }
+  const mix = Math.max(0, Math.min(1, 0.1 * (gSat - gLum) + gLum));
+  r += mix * (L - r); g += mix * (L - g); b += mix * (L - b);
+  const invMax = 1 / Math.max(1, r, g, b);
+  return [r * invMax, g * invMax, b * invMax];
+}
+function toneMapHDR(frame, h, source, target, preserveAssociation) {
+  const n = frame.width * frame.height, grayIn = source.space === 'gray', grayOut = target.space === 'gray';
+  const origPeak = h.toneMapping.intensityTarget > 0 ? h.toneMapping.intensityTarget : source.transferFunction === 'pq' ? 10000 : 1000;
+  const srcXYZ = primariesXYZ(grayIn ? 'srgb' : source.primaries, source.whitePoint);
+  const dstXYZ = primariesXYZ(grayOut ? 'srgb' : target.primaries, target.whitePoint);
+  const [sl0, sl1, sl2] = srcXYZ.slice(3, 6), [dl0, dl1, dl2] = dstXYZ.slice(3, 6);
+  const toLinear = [curveOp(0, transferCurve(source, true, origPeak)), ...(grayIn ? [{op: OP.grayAll}] : [curveOp(1, transferCurve(source, true, origPeak)), curveOp(2, transferCurve(source, true, origPeak))]),
+    ...(source.transferFunction === 'hlg' ? [{op: OP.hlgOotf, data: Float64Array.of(sl0, sl1, sl2, hlgScale(origPeak))}] : [])];
+  const lin = [0, 1, 2].map(() => new Float32Array(n));
+  const firstAlpha = preserveAssociation ? frame.extraChannels?.find(c => c.type === 0) : null;
+  const alpha = firstAlpha?.associated ? firstAlpha.data : null;
+  convertPixels(n, {inputs: frame.planes.slice(0, grayIn ? 1 : 3), alpha, outputs: lin, to: toLinear});
+  const srcToDst = multiply3(multiply3(inverse3(dstXYZ), adaptWhite(whiteXYZ(source.whitePoint), whiteXYZ(target.whitePoint))), srcXYZ);
+  const samePrimaries = JSON.stringify(grayIn ? 'srgb' : source.primaries ?? 'srgb') === JSON.stringify(grayOut ? 'srgb' : target.primaries ?? 'srgb') &&
+    JSON.stringify(source.whitePoint ?? 'd65') === JSON.stringify(target.whitePoint ?? 'd65');
+  const isPQ = source.transferFunction === 'pq', needRec2408 = isPQ && SDR_PEAK < origPeak;
+  const pqMax = needRec2408 ? pqEncoded(origPeak) : 1, maxLum = needRec2408 ? pqEncoded(SDR_PEAK) / pqMax : 1;
+  const ks = 1.5 * maxLum - 0.5, inv1mKs = 1 / Math.max(1e-6, 1 - ks), norm = origPeak / SDR_PEAK;
+  const hlgExp = !isPQ ? Math.pow(1.111, Math.log(SDR_PEAK / origPeak) / Math.LN2) - 1 : 0;
+  const needHlg = !isPQ && (hlgExp < -0.01 || hlgExp > 0.01), hlgGamut = needHlg && hlgExp < 0;
+  const [p0, p1, p2] = lin;
+  for (let i = 0; i < n; i++) {
+    let r = p0[i], g = p1[i], b = p2[i];
+    const a = alpha ? alpha[i] : 1;
+    if (alpha) {
+      if (a <= 0) { p0[i] = p1[i] = p2[i] = 0; continue; }
+      r /= a; g /= a; b /= a;
+    }
+    if (needRec2408) {
+      const L = origPeak * (sl0 * r + sl1 * g + sl2 * b);
+      const e1 = Math.min(1, pqEncoded(L) / pqMax);
+      let e2 = e1;
+      if (e1 >= ks) {
+        const t = (e1 - ks) * inv1mKs, t2 = t * t, t3 = t2 * t;
+        e2 = (2 * t3 - 3 * t2 + 1) * ks + (t3 - 2 * t2 + t) * (1 - ks) + (-2 * t3 + 3 * t2) * maxLum;
+      }
+      const newL = Math.max(0, Math.min(SDR_PEAK, pqDisplay(e2 * pqMax)));
+      if (L <= 1e-6) r = g = b = newL / SDR_PEAK;
+      else { const mult = (newL / L) * norm; r *= mult; g *= mult; b *= mult; }
+      [r, g, b] = gamutMapPixel(r, g, b, sl0, sl1, sl2);
+    } else if (isPQ) {
+      r *= norm; g *= norm; b *= norm;
+    } else if (needHlg) {
+      const L = sl0 * r + sl1 * g + sl2 * b;
+      const ratio = L <= 0 ? 0 : Math.min(Math.pow(L, hlgExp), 1e9);
+      r *= ratio; g *= ratio; b *= ratio;
+      if (hlgGamut) [r, g, b] = gamutMapPixel(r, g, b, sl0, sl1, sl2);
+    }
+    if (!samePrimaries) {
+      const nr = srcToDst[0] * r + srcToDst[1] * g + srcToDst[2] * b;
+      const ng = srcToDst[3] * r + srcToDst[4] * g + srcToDst[5] * b;
+      const nb = srcToDst[6] * r + srcToDst[7] * g + srcToDst[8] * b;
+      [r, g, b] = gamutMapPixel(nr, ng, nb, dl0, dl1, dl2);
+    }
+    if (grayOut) r = g = b = dl0 * r + dl1 * g + dl2 * b;
+    if (alpha) { r *= a; g *= a; b *= a; }
+    p0[i] = r; p1[i] = g; p2[i] = b;
+  }
+  const outPlanes = grayOut ? [new Float32Array(n)] : lin;
+  const curve = transferCurve(target, false, SDR_PEAK);
+  const fromLinear = grayOut ? [curveOp(0, curve)] : [curveOp(0, curve), curveOp(1, curve), curveOp(2, curve)];
+  convertPixels(n, {inputs: grayOut ? [p0] : lin, alpha, outputs: outPlanes, to: fromLinear});
+  return finish(frame, outPlanes, target);
+}
+
 function convert(frame,h,source,target,sourceICC,targetICC,preserveAssociation=false,quantize=0) {
   if(sameEncoding(source,target)||sourceICC&&sourceICC===targetICC)return finish(frame,frame.planes,target,targetICC);
+  if(!sourceICC&&!targetICC&&HDR_TF.has(source.transferFunction)&&!HDR_TF.has(target.transferFunction)&&target.space!=='xyb')
+    return toneMapHDR(frame,h,source,target,preserveAssociation);
   const intent=target.renderingIntent??source.renderingIntent;
   const inputProfile=sourceICC?part('iccColor').readICCColor(sourceICC,{intent}):null,outputProfile=targetICC?part('iccColor').readICCColor(targetICC,{intent}):null;
   const toPCS=inputProfile?inputProfile.toPCS?.ops:!sourceICC?enumToPCS(source,h):null,fromPCS=outputProfile?outputProfile.fromPCS?.ops:!targetICC?enumFromPCS(target,h):null;

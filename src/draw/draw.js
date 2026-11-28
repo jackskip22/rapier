@@ -1091,6 +1091,7 @@ function _rapierDrawRenderHistory() {
 }
 function _rapierDrawUndo(redo = false, target = null) {
 	const state = _rapierDrawState;
+	if (_rapierWatercolorDemo()) { _rapierWatercolorProOffer(); return false; }
 	if (target && (!state.open || target.session !== state.session)) return false;
 	if (!target) { state.effectsChangeEpoch = (state.effectsChangeEpoch || 0) + 1; state.effectsPendingChange = null; }
 	const water = _rapierPaintWaterPending();
@@ -1193,6 +1194,7 @@ function _rapierDrawFollowAgentJournal(redo, agent) {
 		return ok;
 	});
 }
+function _rapierDrawNextFrame() { return new Promise(done => { const timer = setTimeout(done, 50); requestAnimationFrame(() => { clearTimeout(timer); done(); }); }); }
 async function _rapierDrawClearAll(session) {
 	const state = _rapierDrawState, current = () => state.open && state.session === session && !state.finishing;
 	const idle = () => current() && !state.waterAction && !state.paintEraseFan && !state.paintDeparture && !state.gesture && !state.markerPress;
@@ -1203,10 +1205,10 @@ async function _rapierDrawClearAll(session) {
 			if (pending) { await pending; continue; }
 			const settled = _rapierPaintSettleOverflow(); if (settled) await settled;
 			if (!current()) return;
-			if (!idle()) continue;
+			if (!idle()) { await _rapierDrawNextFrame(); continue; }
 			const closed = _rapierPaintCloseLayer(idle); if (closed) await closed;
 			if (!current()) return;
-			if (!idle() || state.paintLayer) continue;
+			if (!idle() || state.paintLayer) { await _rapierDrawNextFrame(); continue; }
 			const flushing = _rapierPaintFlushRevision();
 			if (flushing) { await flushing; continue; }
 			const ids = _rapierDrawGroupSelection(state.recipe, state.recipe.shapes.map(shape => shape.id));
@@ -2608,7 +2610,7 @@ function _rapierDrawSyncCanvasMenu() {
 	swap.setAttribute('aria-label', 'Canvas: ' + (dark ? 'black; change to white' : 'white; change to black'));
 	adaptive.setAttribute('aria-checked', String(on));
 	adaptive.firstElementChild.textContent = on ? 'Adaptive: on' : 'Adaptive: off';
-	menu.querySelector('[data-draw-act="timelapse"]').hidden = !_rapierWaterProAvailable();
+	menu.querySelector('[data-draw-act="timelapse"]').hidden = !_rapierWaterProOffered();
 	const note = menu.querySelector('[data-draw-background-note]'), kind = (typeof _rapierBgCurrent === 'function' ? _rapierBgCurrent() : state.recipe.background)?.kind;
 	if (note) note.textContent = kind ? kind[0].toUpperCase() + kind.slice(1) : 'None';
 }
@@ -2895,6 +2897,7 @@ function _rapierDrawSetHint() {
 	el.textContent = RAPIER_DRAW_HINT_WORDS[_rapierDrawState.tool] || RAPIER_DRAW_HINT_WORDS.brush;
 }
 function _rapierDrawToolAllowed(name) {
+	if (name !== 'water' && _rapierWatercolorDemo()) return false;
 	if (['select', 'erase', 'effects', 'image'].includes(name))
 		return _rapierEmbedFeatureAllowed('draw') || _rapierEmbedFeatureAllowed('paint');
 	const paint = name === 'paint' || name === 'oil' || name === 'acrylic' || name === 'water';
@@ -3732,7 +3735,7 @@ function _rapierDrawLetterGlyph(set) {
 	const sample = set && globalThis.RapierDrawLetterPreviews.LETTER_PREVIEWS[set.id];
 	return sample ? '<svg class="rapier-draw-glyph" viewBox="0 0 ' + sample.glyph[0] + ' ' + sample.em + '" aria-hidden="true"><path fill="currentColor" transform="translate(' + sample.bearing + ',0)" d="' + sample.glyph[1] + '"/></svg>' : '';
 }
-const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.78/letters/';
+const RAPIER_DRAW_LETTERS_URL = 'https://cdn.jsdelivr.net/gh/jackskip22/rapier-plugins@cdn-v1.2.81/letters/';
 const _rapierDrawLettersDoor = { allowed: false, asking: null, providers: new Map(), bringing: new Map() };
 function _rapierDrawLettersProvider(set) {
 	const door = _rapierDrawLettersDoor;
@@ -6144,6 +6147,7 @@ function _rapierDrawBuildSurface() {
 		const button = evt.target.closest('[data-draw-act]'), act = button?.dataset.drawAct;
 		if (!act) return;
 		if (state.finishing) { if (act === 'undo' || act === 'redo') _rapierDialTurn(button, act === 'redo', false); return; }
+		if (_rapierWatercolorDemo() && RAPIER_WATERCOLOR_LOCKED_ACTS.includes(act)) { _rapierWatercolorProOffer(); return; }
 		if (state.resize && act !== 'resizeDone' && act !== 'resizePreset') {
 			if (act === 'undo') { await _rapierDrawResizeDone(true); return; }
 			if (act === 'redo' || act === 'clear') return;
@@ -6215,7 +6219,7 @@ function _rapierDrawBuildSurface() {
 		else if (act === 'paintExport') _rapierPaintExportBrush(_rapierPaintBrushId());
 		else if (act === 'paintSet') void _rapierPaintRequestSetLayer();
 		else if (act === 'settingsCollapse') { _rapierDrawSetSettingsCollapsed(!state.settingsCollapsed); reposition(); }
-		else if (act === 'clear') void (_rapierDrawClearExits() ? _rapierDrawFinish() : _rapierDrawRequestClear());
+		else if (act === 'clear') void (_rapierDrawClearExits() ? (_rapierWatercolorApp() ? window.RapierPlatform?.host?.requestClose?.() : _rapierDrawFinish()) : _rapierDrawRequestClear());
 		else if (act === 'ink') {
 			const open = !state.colourOpen;
 			_rapierDrawCloseSettingPanels(open ? 'ink' : '');
@@ -6335,6 +6339,12 @@ function _rapierDrawBuildSurface() {
 		if (state.dropper) { if (chord === 'Escape' || state.dropper.key?.(chord)) evt.preventDefault(); if (chord === 'Escape') state.dropper.close(false); return; }
 		if (state.resize) { if (chord === 'Escape' || chord === 'Mod+Z') { evt.preventDefault(); await _rapierDrawResizeDone(true); } return; }
 		if (!state.finishing && (_rapierDrawMenuKey(evt) || _rapierDrawRadioKey(evt) || _rapierDrawTabKey(evt))) return;
+		if (_rapierWatercolorApp() && ['Mod+S', 'Mod+O', 'Mod+N'].includes(chord) && !state.finishing) {
+			evt.preventDefault();
+			if (_rapierWatercolorDemo()) _rapierWatercolorProOffer();
+			else if (chord === 'Mod+S') void _rapierWatercolorSave(); else if (chord === 'Mod+O') _rapierWatercolorOpen(); else void _rapierWatercolorNew();
+			return;
+		}
 		if (['Mod+Z', 'Mod+Y', 'Mod+Shift+Z'].includes(chord) && !state.finishing && !evt.target.closest('input:not([type="range"]),textarea,select')) { evt.preventDefault(); _rapierDrawUndo(chord !== 'Mod+Z'); return; }
 		if (chord === 'Mod+A' && !state.finishing && !evt.target.closest('input:not([type="range"]),textarea,select')) {
 			evt.preventDefault();
@@ -6500,6 +6510,7 @@ function _rapierDrawOpenSurface(options) {
 	_rapierDrawTextDefaults();
 	state.menuPane = null; state.menuColour = false;
 	_rapierWaterReset();
+	_rapierWatercolorDemoSync();
 	state.paintSet = _rapierPaintRememberedSet(); state.paintBrush = _rapierPaintRememberedBrush(); state.paintSize = _rapierPaintRememberedSize(); state.paintStrength = _rapierPaintRememberedStrength(); state.paper = false; state.paperBlack = false; if (typeof _rapierPaintShownAs !== 'undefined') { _rapierPaintShownAs.clear(); if (typeof _rapierPaintForgetBlobs === 'function') _rapierPaintForgetBlobs(); } _rapierPaintCloseLayer(); state.surface.classList.remove('rapier-draw-surface--paper', 'rapier-draw-surface--black');
 	state.paintChosenId = null;
 	_rapierDrawSetToolMenu(false); _rapierDrawSetCanvasMenu(false); _rapierDrawResizeReset(); _rapierDrawSetSettingsCollapsed(false); _rapierDrawCloseSettingPanels();
@@ -7428,7 +7439,7 @@ async function _rapierDrawRemoveEditedEmpty(editing) {
 }
 function _rapierDrawAssetBudget() {
 	const test = typeof window !== 'undefined' ? window.__rapierDrawAssetMaxTest : undefined;
-	return Number.isFinite(test) ? test : globalThis.RapierImageAssets.IMAGE_LIMITS.bytes;
+	return Number.isFinite(test) ? test : globalThis.RapierImageAssets.PICTURE_BYTES;
 }
 async function _rapierDrawEffectStills(recipe, keeping = _rapierDrawWhileKeeping) {
 	await keeping(work => _rapierDrawLiquidStills(recipe, work));
@@ -7881,9 +7892,12 @@ async function _rapierPainterORA(out, svg, signal) {
 		{name: 'mergedimage.png', bytes: _rapierPngSoftware(merged)}, {name: 'Thumbnails/thumbnail.png', bytes: await _rapierPainterPNG(w, h, small, signal)}, {name: 'drawing.svg', bytes: svg});
 	return globalThis.RapierZipRecords.zipStored(entries);
 }
-async function _rapierDrawSavePainting(leaving = false) {
+async function _rapierDrawSavePainting(leaving = false, closing = null) {
 	const state = _rapierDrawState, session = state.session, live = () => state.open && state.session === session;
-	if (!live() || state.finishing || state.painterOpening?.session === session || !_rapierDrawFinishText()) return;
+	const settle = value => { const told = closing; closing = null; told?.(value); };
+	if (!live()) { settle(true); return; }
+	if (state.finishing || state.painterOpening?.session === session || !_rapierDrawFinishText()) { settle(false); return; }
+	const watercolor = _rapierWatercolorApp(), demo = watercolor && _rapierWatercolorDemo();
 	const opening = state.painterOpening = {session};
 	const preparing = _rapierProgressOpen({label: 'Preparing drawing', after: _rapierPainterBig() ? 0 : 500});
 	_rapierDrawReplayEnd();
@@ -7893,39 +7907,71 @@ async function _rapierDrawSavePainting(leaving = false) {
 		const effects = live() && state.effectsPendingChange && _rapierDrawEffectsFlush(); if (effects) await effects;
 		const flushing = live() && _rapierPaintFlushRevision(undefined, true); if (flushing) await flushing;
 		if (live() && state.agentQueue?.length) { _rapierDrawDrainAgentPatches(true); _rapierDrawReplayEnd(); }
-	} catch (error) { if (live()) showToast('Couldn’t prepare the painting.', 'error', null, error); return; }
+	} catch (error) { if (live()) showToast('Couldn’t prepare the painting.', 'error', null, error); settle(false); return; }
 	finally { preparing.end(); if (state.painterOpening === opening) state.painterOpening = null; }
-	if (!live()) return;
+	if (!live()) { settle(true); return; }
+	if (watercolor && closing && !_rapierWatercolorUnsaved()) { settle(true); return; }
+	if (watercolor && leaving && !closing && !_rapierWatercolorUnsaved()) return;
 	const untouched = () => !state.finishHandoff && (state.editing ? !_rapierDrawChangedSinceOpen() : !_rapierDrawHasContent(state.recipe));
-	if (untouched() && (state.editing || leaving && !state.undoStack.length && !state.redoStack.length)) { void _rapierDrawFinish(); return; }
+	if (!watercolor && untouched() && (state.editing || leaving && !state.undoStack.length && !state.redoStack.length)) { await _rapierDrawFinish(); settle(!state.open); return; }
 	const jxl = typeof _rapierJxlEncoderPresent !== 'function' || _rapierJxlEncoderPresent();
 	const native = window.RapierPlatform?.environment.native === true;
 	const download = (format, word) => '<button type="button" class="settings-action-btn" data-download="' + format + '">' + word + '</button>';
+	const info = demo
+		? 'Free Watercolor paints with ' + (['no', 'one', 'two', 'three', 'four', 'five', 'six'][globalThis.RapierWatercolorOrder.WATERCOLOR_FREE.watercolor.colors] || String(globalThis.RapierWatercolorOrder.WATERCOLOR_FREE.watercolor.colors)) + ' colors. Watercolor Pro opens everything: every color, brush, paper and tool, Undo, and saving your paintings.'
+		: watercolor
+		? 'Save keeps the painting as a file that opens here again, every layer as it is. JPEG XL is lossless and small. PNG opens everywhere. Layers is an OpenRaster file (.ora) for Krita, GIMP and MyPaint. Tap outside to return to your painting.'
+		: 'Add to document puts the painting in your document; Undo takes it out. JPEG XL is lossless and small. PNG opens everywhere. Layers is an OpenRaster file (.ora) for Krita, GIMP and MyPaint: each layer, the merged picture and the editable SVG. One painting layer saves exactly; effects, moved layers and drawings are flattened. The picture is what the canvas shows: with no background it is transparent. Tap outside to return to your painting.';
+	const main = demo ? RAPIER_WATERCOLOR_PRO_CHOICES
+		: watercolor ? '<button type="button" class="settings-action-btn" data-act="wc-save">Save</button>' : '<button type="button" class="settings-action-btn" data-act="add">Add to document</button>';
 	const overlay = document.createElement('div');
 	overlay.className = 'link-dialog__overlay';
 	overlay.innerHTML = '<div class="link-dialog rapier-draw-save" role="dialog" aria-modal="true" aria-label="Done painting"><div class="link-dialog__actions"><span class="link-dialog__spacer"></span>' +
 		'<button type="button" class="link-dialog__btn" data-info aria-label="Info" aria-expanded="false" aria-controls="rapier-save-info">' + RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>') + '</button></div>' +
-		'<p class="link-dialog__description" id="rapier-save-info" hidden>Add to document puts the painting in your document; Undo takes it out. JPEG XL is lossless and small. PNG opens everywhere. Layers is an OpenRaster file (.ora) for Krita, GIMP and MyPaint: each layer, the merged picture and the editable SVG. One painting layer saves exactly; effects, moved layers and drawings are flattened. The picture is what the canvas shows: with no background it is transparent. Tap outside to return to your painting.</p>' +
-		'<div class="rapier-pop__actions"><button type="button" class="settings-action-btn" data-act="add">Add to document</button>' +
-		'<div class="link-dialog__title" id="rapier-save-download">' + (native ? 'Save:' : 'Download:') + '</div>' +
-		'<div class="settings-action-pair" role="group" aria-labelledby="rapier-save-download">' + (jxl ? download('jxl', 'JPEG XL') : '') + download('png', 'PNG') + download('ora', 'Layers') + '</div>' +
+		'<p class="link-dialog__description" id="rapier-save-info" hidden>' + info + '</p>' +
+		'<div class="rapier-pop__actions">' + (watercolor && !demo ? '<div class="settings-action-pair" role="group" aria-label="Painting"><button type="button" class="settings-action-btn" data-act="wc-open">Open</button><button type="button" class="settings-action-btn" data-act="wc-new">New</button></div>' : '') + main + (demo ? '' :
+		'<div class="link-dialog__title" id="rapier-save-download">' + (watercolor ? 'Save a copy:' : native ? 'Save:' : 'Download:') + '</div>' +
+		'<div class="settings-action-pair" role="group" aria-labelledby="rapier-save-download">' + (jxl ? download('jxl', 'JPEG XL') : '') + download('png', 'PNG') + download('ora', 'Layers') + '</div>') +
 		'<button type="button" class="settings-action-btn" data-act="exit" data-pop-bottom>Exit without saving</button></div></div>';
 	const progress = _rapierProgressOver(overlay, true);
-	let work = null;
-	const dialog = _rapierBeginEngineDialog(overlay, () => { work?.abort(); progress.release(); });
+	let work = null, chosen = false;
+	const dialog = _rapierBeginEngineDialog(overlay, () => { work?.abort(); progress.release(); if (!chosen) settle(false); });
 	const say = (words, error) => { if (words) { progress.notice(); showToast(words, error ? 'error' : 'info'); } };
-	requestAnimationFrame(() => overlay.querySelector('[data-act="add"]')?.focus());
+	requestAnimationFrame(() => overlay.querySelector('[data-act="add"],[data-act="wc-save"],[data-act="wc-buy"]')?.focus());
 	overlay.addEventListener('click', async event => {
 		if (event.target === overlay) { dialog.cancel(true); return; }
 		const target = event.target.closest?.('button');
 		if (!target || work) return;
 		if (target.hasAttribute('data-info')) { const info = overlay.querySelector('#rapier-save-info'), open = info.hidden; info.hidden = !open; target.setAttribute('aria-expanded', String(open)); return; }
 		if (target.dataset.act === 'add' && !_rapierDrawHasPlace(state.notes)) { say('Plain text can’t hold a drawing. ' + (native ? 'Save' : 'Download') + ' it.'); return; }
-		if (target.dataset.act === 'add') { dialog.cancel(false); if (live()) await _rapierDrawFinish(); return; }
+		if (target.dataset.act === 'add') { chosen = true; dialog.cancel(false); if (live()) await _rapierDrawFinish(); settle(!state.open); return; }
+		if (target.dataset.act === 'wc-save') {
+			for (const control of overlay.querySelectorAll('.rapier-draw-save button')) control.disabled = true;
+			let saved = false;
+			try { saved = await _rapierWatercolorSave(); }
+			finally { for (const control of overlay.querySelectorAll('.rapier-draw-save button')) control.disabled = false; }
+			if (saved) { chosen = true; dialog.cancel(false); settle(true); }
+			return;
+		}
+		if (target.dataset.act === 'wc-buy' || target.dataset.act === 'wc-restore') {
+			for (const control of overlay.querySelectorAll('.rapier-draw-save button')) control.disabled = true;
+			let unlocked = false;
+			try { unlocked = await _rapierWatercolorBuy(target.dataset.act === 'wc-restore'); }
+			finally { for (const control of overlay.querySelectorAll('.rapier-draw-save button')) control.disabled = false; }
+			if (unlocked) { chosen = true; dialog.cancel(false); settle(false); }
+			return;
+		}
+		if (target.dataset.act === 'wc-open' || target.dataset.act === 'wc-new') {
+			chosen = true; dialog.cancel(false); settle(false);
+			if (target.dataset.act === 'wc-open') void _rapierWatercolorOpen(); else void _rapierWatercolorNew();
+			return;
+		}
 		if (target.dataset.act === 'exit') {
-			dialog.cancel(false);
+			chosen = true; dialog.cancel(false);
+			if (watercolor) { await _rapierDrawBackupClear(); state.watercolorLetGo = session; if (closing) settle(true); else void window.RapierPlatform?.host?.requestClose?.(); return; }
 			if (live() && untouched()) { await _rapierDrawBackupClear(); await _rapierDrawClose(); }
 			else if (live()) await _rapierDrawClose({ recover: true });
+			settle(true);
 			return;
 		}
 		const format = target.dataset.download;
@@ -7965,6 +8011,158 @@ async function _rapierDrawSavePainting(leaving = false) {
 			if (target.isConnected && (!document.activeElement || document.activeElement === document.body)) target.focus({ preventScroll: true });
 		}
 	});
+}
+// read from the Store's license (shell/platform.js pro.state) lifts all of it at once; losing it, a cancel or no network never
+function _rapierWatercolorFree() {
+	const order = globalThis.RapierWatercolorOrder, engine = _rapierWaterEngine();
+	return {pigments: order.watercolorFreeColors(engine.WATER_PIGMENTS, 'watercolor'), brushes: order.watercolorFreeBrushes(engine.WATER_BRUSHES, 'watercolor'), paper: 'cold-press'};
+}
+const RAPIER_WATERCOLOR_LOCKED_ACTS = Object.freeze(['toolMenu', 'canvas', 'undo', 'redo', 'waterTools', 'timelapse']);
+const RAPIER_WATERCOLOR_PRO_CHOICES = '<button type="button" class="settings-action-btn" data-act="wc-buy">Get Watercolor Pro</button>' +
+	'<button type="button" class="settings-action-btn" data-act="wc-restore">Restore purchase</button>';
+function _rapierWatercolorDemo() {
+	const platform = window.RapierPlatform;
+	if (!_rapierWatercolorApp() || platform?.environment?.store !== true) return false;
+	try { return platform.pro.state()?.unlocked !== true; } catch (_) { return true; }
+}
+function _rapierWatercolorDemoSettings() {
+	if (!_rapierWatercolorDemo()) return;
+	const settings = _rapierWaterState(), free = _rapierWatercolorFree(), first = [...free.brushes][0], round = _rapierWaterEngine().waterBrushById(first);
+	if (!free.pigments.has(settings.pigment)) settings.pigment = [...free.pigments][0];
+	if (!free.brushes.has(settings.brush) || settings.tip) Object.assign(settings, {brush: first, tip: null, tipKey: null, tipName: '', size: _rapierWaterEngine().waterHandSize(round.size), angle: round.angle, follow: round.follow});
+	settings.paper = free.paper; settings.tool = 'brush'; settings.sampling = false;
+}
+function _rapierWatercolorFreeChoice(button) {
+	if (button.hasAttribute('data-water-firmness') || button.dataset.waterMix || button.hasAttribute('data-draw-paint-head')) return true;
+	if (button.dataset.waterPigment != null) return _rapierWatercolorFree().pigments.has(button.dataset.waterPigment);
+	if (button.dataset.waterBrush != null) return _rapierWatercolorFree().brushes.has(button.dataset.waterBrush);
+	return false;
+}
+function _rapierWatercolorDemoSync() {
+	const state = _rapierDrawState, demo = _rapierWatercolorDemo();
+	state.surface?.classList.toggle('rapier-draw-surface--demo', demo);
+	if (!state.open) return;
+	if (demo) _rapierWatercolorDemoSettings();
+	if (typeof _rapierWaterUpdate === 'function') _rapierWaterUpdate();
+}
+if (typeof window !== 'undefined') window.addEventListener('rapier:pro-changed', () => _rapierWatercolorDemoSync());
+// Buy or restore Watercolor Pro through the Store; true once its license says so. The Store's own dialog shows the price.
+async function _rapierWatercolorBuy(restore = false) {
+	const pro = window.RapierPlatform?.pro;
+	let state = null;
+	try { state = await (restore ? pro?.restore?.() : pro?.purchase?.()); }
+	catch (error) { showToast('Couldn’t reach the Microsoft Store.', 'error', null, error); return false; }
+	_rapierWatercolorDemoSync();
+	if (state?.unlocked === true) { showToast('Watercolor Pro is on.', 'info'); return true; }
+	if (state?.message) showToast(String(state.message), state.billingStatus === 'ok' ? 'info' : 'error');
+	return false;
+}
+function _rapierWatercolorProOffer() {
+	if (_rapierDialogRuntime.active || _rapierDrawState.finishing) return;
+	const overlay = document.createElement('div');
+	overlay.className = 'link-dialog__overlay';
+	overlay.innerHTML = '<div class="link-dialog rapier-draw-save" role="dialog" aria-modal="true" aria-label="Watercolor Pro"><div class="rapier-pop__actions">' + RAPIER_WATERCOLOR_PRO_CHOICES + '</div></div>';
+	const dialog = _rapierBeginEngineDialog(overlay, () => {});
+	requestAnimationFrame(() => overlay.querySelector('[data-act="wc-buy"]')?.focus());
+	overlay.addEventListener('click', async event => {
+		if (event.target === overlay) { dialog.cancel(true); return; }
+		const target = event.target.closest?.('button');
+		if (!target || target.disabled) return;
+		for (const control of overlay.querySelectorAll('button')) control.disabled = true;
+		let unlocked = false;
+		try { unlocked = await _rapierWatercolorBuy(target.dataset.act === 'wc-restore'); }
+		finally { for (const control of overlay.querySelectorAll('button')) control.disabled = false; }
+		if (unlocked) dialog.cancel(false);
+	});
+}
+function _rapierWatercolorApp() { return window.RapierPlatform?.environment?.app === 'watercolor'; }
+function _rapierWatercolorUnsaved() {
+	const state = _rapierDrawState;
+	if (!state.open || state.watercolorLetGo === state.session) return false;
+	const saved = state.watercolorSaved?.session === state.session ? state.watercolorSaved.snapshot : state.openSnapshot;
+	return !_rapierDrawSameRecipe(saved) || !!state.paintLayer?.surface?.bounds?.() && !_rapierDrawHasContent(state.recipe);
+}
+function _rapierWatercolorSave() {
+	const state = _rapierDrawState;
+	if (state.watercolorSaving) return state.watercolorSaving;
+	const session = state.session, live = () => state.open && state.session === session;
+	if (_rapierWatercolorDemo()) { _rapierWatercolorProOffer(); return Promise.resolve(false); }
+	const run = (async () => {
+		if (!live() || state.finishing || !_rapierDrawFinishText()) return false;
+		_rapierDrawReplayEnd();
+		const pending = _rapierPaintPendingStroke(); if (pending) await pending;
+		const settled = live() && _rapierPaintSettleOverflow(); if (settled) await settled;
+		const effects = live() && state.effectsPendingChange && _rapierDrawEffectsFlush(); if (effects) await effects;
+		const flushing = live() && _rapierPaintFlushRevision(undefined, true); if (flushing) await flushing;
+		if (!live()) return false;
+		await _rapierDrawLoadFonts(state.recipe, session);
+		if (!live()) return false;
+		const drawn = _rapierDrawHistoryRecipe();
+		let recipe = _rapierDrawRestoreRecipe(drawn);
+		recipe.tool = state.tool;
+		const paperImage = await _rapierBgPaperSnapshot(recipe);
+		if (typeof _rapierPaintKeepAsJXL === 'function') {
+			try { await _rapierPaintKeepAsJXL(recipe, false, null, {sources: new Map(state.paintFastSources || [])}); }
+			catch (error) { console.warn('[rapier] paint keep', error); }
+		}
+		recipe = await _rapierDrawEffectStills(recipe);
+		if (!live()) return false;
+		const text = await _rapierPainterSVG(recipe, undefined, {paperImage});
+		if (!text || !live()) return false;
+		const current = String(rapier.document.filename || ''), name = /\.svg$/i.test(current) ? current : 'Painting.svg';
+		const metadata = name !== current || rapier.document.docKind !== _classifyDocKind(name)
+			? RapierLedger._rapierMetadataDelta(_rapierDocumentMetadata(), {filename: name, docKind: _classifyDocKind(name)}) : null;
+		const before = _rapierSourceText();
+		if ((before !== text || metadata) && !_rapierCommitSplices([{pos: 0, removed: before, inserted: text}], {metadata, operation: 'watercolor.save', changeSet: {label: 'Save painting'}}))
+			throw new Error('Couldn’t save the painting.');
+		const receipt = await rapierSave({returnReceipt: true});
+		const saved = receipt === true || receipt?.saved === true;
+		if (saved && live()) { state.watercolorSaved = {session, snapshot: drawn}; void _rapierDrawBackupClear(); }
+		return saved && live();
+	})().catch(error => { if (live()) showToast('Couldn’t save the painting.', 'error', null, error); return false; })
+		.finally(() => { if (state.watercolorSaving === run) state.watercolorSaving = null; });
+	return state.watercolorSaving = run;
+}
+function _rapierWatercolorKeepsUnsaved() {
+	if (!_rapierWatercolorUnsaved()) return false;
+	showToast('Save the painting first.', 'info');
+	return true;
+}
+function _rapierWatercolorOpen() {
+	if (_rapierWatercolorKeepsUnsaved()) return;
+	_rapierUiBeginOpenDocument();
+}
+async function _rapierWatercolorNew() {
+	const state = _rapierDrawState;
+	if (_rapierWatercolorKeepsUnsaved() || state.finishing) return;
+	if (state.open) await _rapierDrawClose();
+	if (await rapierNewDocument('untitled.md') === false) return;
+	if (!state.open) rapierOpenDraw(null, 'water');
+}
+async function _rapierWatercolorShowDocument() {
+	const state = _rapierDrawState;
+	if (!_rapierWatercolorApp() || state.finishing || !/\.svg$/i.test(String(rapier.document.filename || ''))) return false;
+	let recipe = null;
+	try { recipe = _rapierDrawReadSVGRecipe(_rapierSourceText()); } catch (_) { recipe = null; }
+	if (!recipe) { showToast('Not a painting.', 'info'); return false; }
+	if (state.open) await _rapierDrawClose();
+	if (state.open) return false;
+	_rapierDrawOpenSurface({recipe, keepRasters: true, tool: 'water'});
+	if (state.open) state.watercolorSaved = {session: state.session, snapshot: state.openSnapshot};
+	return state.open;
+}
+if (typeof window !== 'undefined') window.addEventListener('rapier:document-admitted', () => { if (_rapierWatercolorApp()) void _rapierWatercolorShowDocument(); });
+function _rapierDrawLeaveForClose() {
+	const state = _rapierDrawState;
+	if (!state.open || state.watercolorLetGo === state.session) return Promise.resolve(true);
+	if (state.finishing) return Promise.resolve(false);
+	state.dropper?.close(false);
+	if (state.canvasMenuOpen) _rapierDrawSetCanvasMenu(false);
+	if (state.toolMenuOpen) _rapierDrawSetToolMenu(false);
+	_rapierDrawCloseSettingPanels();
+	if (_rapierDrawLettersDoor.asking) _rapierDrawLettersDismiss();
+	_rapierDrawCancelGesture();
+	return new Promise(resolve => { _rapierDrawSavePainting(true, resolve).catch(() => resolve(false)); });
 }
 function _rapierPainterBig() { return _rapierDrawState.recipe.shapes.some(shape => shape.paint?.px?.[0] * shape.paint?.px?.[1] > 4e6); }
 function _rapierDrawHandleBack() {
@@ -8034,7 +8232,8 @@ async function _rapierDrawPictureRecipe(imageEl, work = {}) {
 	const w = imageEl.naturalWidth, h = imageEl.naturalHeight;
 	if (!(w > 0 && h > 0)) throw new Error('Picture still loading. Try again.');
 	if (w * h > RAPIER_PAINT_AREA_MAX * 2) throw new Error('Picture too large (12 MP max).');
-	if (w > 16384 || h > 16384) throw new Error('Picture too large (16,384 px max).');
+	const maxEdge = globalThis.RapierImageAssets.PICTURE_EDGE;
+	if (w > maxEdge || h > maxEdge) throw new Error('Picture too large (16,384 px max).');
 	const recipe = raster => ({version: RAPIER_DRAW_VERSION, canvas: {w, h}, strokes: [],
 		shapes: [{id: 's1', recognized: 'paint', geom: {cx: w / 2, cy: h / 2, w, h, rot: 0}, raster, paint: {px: [w, h], scale: 1}}]});
 	const original = _rapierDrawImageDataUrl(imageEl) || imageEl.currentSrc || imageEl.getAttribute('src');
@@ -8153,7 +8352,7 @@ function _rapierDrawPersonalApplied() {
 }
 _rapierDrawPart = Object.freeze({
 	state: _rapierDrawState, open: rapierOpenDraw, surface: _rapierDrawOpenSurface, edit: _rapierEditDrawing, onPicture: _rapierDrawOnPicture,
-	renderAll: _rapierDrawRenderAll, back: _rapierDrawHandleBack, overEditor: _rapierDrawOverEditor, history: _rapierDrawHistoryProject,
+	renderAll: _rapierDrawRenderAll, back: _rapierDrawHandleBack, leaveForClose: _rapierDrawLeaveForClose, overEditor: _rapierDrawOverEditor, history: _rapierDrawHistoryProject,
 	undo: _rapierDrawUndo, darkPaper: _rapierDrawDarkPaper, follow: _rapierDrawFollow, editingAsset: _rapierDrawEditingAsset,
 	changedSinceOpen: _rapierDrawChangedSinceOpen, selection: _rapierDrawSelection,
 	observe: options => _rapierPaintObserveDrawing(options),

@@ -6,7 +6,6 @@ import {DRIVE} from './drive.mjs';
 import {WORKER_PROTOCOL} from './protocol.mjs';
 import {check, fail, declared, optionSymbol} from './primitives.mjs';
 import {JOURNAL} from '../step-journal.mjs';
-import {previewCall} from './preview.mjs';
 import {DEVICE_RAN} from './result-reference.mjs';
 import {withinCall, withinPicture} from '../call-scope.mjs';
 import {suppliedWasm} from '../wasm-modules.mjs';
@@ -53,7 +52,6 @@ export function preparationWith(encode, hooks) {
   const bind = run => {
     const invoke = async (input, journal, variantHelpers, completion, helpers) => {
       const options = completion.options;
-      const preview = previewCall(options);
       const drive = helpers && encode[DRIVE];
       const local = (picture, settings) => withinPicture(() => encode(picture, settings));
       const direct = drive ? (picture, settings) => withinPicture(() => drive(picture, settings, helpers)) : local;
@@ -64,13 +62,10 @@ export function preparationWith(encode, hooks) {
       const coder = journal === undefined ? marked : (picture, settings) => marked(picture, {...settings, [JOURNAL]: journal});
       const callHooks = journal !== undefined ? {...hooks, journal}
         : variantHelpers ? {...hooks, variantHelpers, localEncode: markedLocal, ...(hooks.device && {markDeviceRan: markRan})} : hooks;
-      try {
-        let result = await run(coder, input, options, callHooks).catch(error => { throw declared(error); });
-        if (hooks.device) result = Array.isArray(result) ? result.map(each => ({...each, usedWebGPU: ran})) : {...result, usedWebGPU: ran};
-        await completion.finish();
-        await preview?.finish();
-        return result;
-      } finally { preview?.close(); }
+      let result = await run(coder, input, options, callHooks).catch(error => { throw declared(error); });
+      if (hooks.device) result = Array.isArray(result) ? result.map(each => ({...each, usedWebGPU: ran})) : {...result, usedWebGPU: ran};
+      await completion.finish();
+      return result;
     };
     const settle = (input, given, helpers) => {
       let completion;

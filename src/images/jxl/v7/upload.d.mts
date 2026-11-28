@@ -5,7 +5,6 @@ import type {UploadPreparationInput, UploadFitOptions, UploadVariantsOptions} fr
 import type {ResumableFunction} from './resumable.mjs';
 import type {CodecConfig} from './types.mjs';
 export type {UploadOptions, UploadInput, UploadCaptureInput, CapturePixels, MaxError, UploadInput as ImageInput, Bytes} from './types.mjs';
-export type {ImagePreview, PreviewOptions} from './types.mjs';
 export type {UploadCaptureOptions, CapturePhotoFidelity as CaptureFidelity} from './types.mjs';
 export type {UploadPreparationInput, UploadFitOptions, UploadVariantRequest, UploadVariantsOptions, UploadPreparation} from './preparation-upload.mjs';
 /** The upload encoder in one file: a page's calls run in its own worker. Calls in a worker, Node and edge hosts run in place: a File, Blob, canvas or pixels in. Efforts 1-3. An exact, unchanged

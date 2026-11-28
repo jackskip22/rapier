@@ -4,7 +4,7 @@
 # tag, so the publisher pushes release-tag first and moves main (the website, npm) only once the tag exists.
 # Its notes are the release commit's message body (the version's section of the private CHANGELOG.md, which the stager
 # refuses a version without; no public tree carries a CHANGELOG.md), then a line for each file it attaches.
-# Its GitHub release attaches Rapier.exe when it names this version itself and rapier-linux when it is the recorded Linux build
+# Its GitHub release attaches rapier-linux when it is the recorded Linux build
 # (any version, named in the notes), so releases/latest/download/rapier-linux always answers.
 name: release-tag
 on:
@@ -55,17 +55,13 @@ jobs:
               echo "tagged $cdn at $commit"
             fi
           fi
-          # The release lists what this version ships: Rapier.exe only when it names this version itself (an app kept from an
-          # earlier release never stands as this one), rapier-linux as recorded, and the newest release is always "latest".
+          # The release lists rapier-linux as recorded, and the newest release is always "latest".
           if [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GH_TOKEN:-}" ]; then
             set --
             # The notes open with the version's section, which the release commit's message carries after its subject; a release
             # commit without notes (rapier-plugins, a fixture) keeps the short line.
             notes=$(git log -1 --format=%B "$GITHUB_SHA" | awk -v v="$version" 'f && /^## /{exit} f{print} $0 == "## " v || index($0, "## " v " ") == 1 {f=1}' | sed -e '/./,$!d')
             if ! printf '%s' "$notes" | grep -q '[^[:space:]]'; then notes="Rapier $version."; fi
-            if [ -f Rapier.exe ] && [ "$(python3 -I -c 'import re,sys; m=re.search("ProductVersion\0".encode("utf-16-le")+rb"(?:\0\0)*((?:[0-9.]\0)+)\0\0",open("Rapier.exe","rb").read()); print(m.group(1).decode("utf-16-le") if m else "")')" = "$version" ]; then
-              set -- "$@" Rapier.exe; notes=$(printf '%s\n\n%s' "$notes" "Rapier.exe: the portable Windows app (it needs the Microsoft Edge WebView2 Runtime).")
-            fi
             # rapier-linux is attached when it is the build rapier-linux.json records (the file's own length and SHA-256): the site
             # ships the newest Linux build, which can be older than the release, and the Latest release must always carry it.
             if [ -f rapier-linux ] && [ -f rapier-linux.json ]; then

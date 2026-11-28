@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {inspectGIF} from '../images/gif.mjs';
 import {createMediaPlayback} from '../images/playback.mjs';
+import {PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS, PLAYBACK_PIXELS, PICTURE_BASE64_URL_CHARS, PICTURE_PERCENT_URL_CHARS} from '../images/limits.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
 import {formatLayout, parseLayout, validLayout, imageStyle, objectHeight} from './md-layout.mjs';
 
@@ -274,7 +275,8 @@ function htmlFrameRuntime(config, media, win) {
 }
 
 export function htmlRuntimeSource() {
-  return '{const HTML_ELEMENTS=' + JSON.stringify(HTML_ELEMENTS) + ';' + _rapierHtmlCodePaint.toString() + ';(' + mountHtmlBlocks.toString() + ')(document,{media:(' + createMediaPlayback.toString() + ')(window,' + inspectGIF.toString() + '),frameRuntime:' + htmlFrameRuntime.toString() + ',heightOf:' + objectHeight.toString() + '});}';
+  const limitsSource = 'const {PICTURE_BYTES,PICTURE_EDGE,ASSET_PIXELS,PLAYBACK_PIXELS,PICTURE_BASE64_URL_CHARS,PICTURE_PERCENT_URL_CHARS}=' + JSON.stringify({PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS, PLAYBACK_PIXELS, PICTURE_BASE64_URL_CHARS, PICTURE_PERCENT_URL_CHARS}) + ';';
+  return '{const HTML_ELEMENTS=' + JSON.stringify(HTML_ELEMENTS) + ';' + limitsSource + _rapierHtmlCodePaint.toString() + ';(' + mountHtmlBlocks.toString() + ')(document,{media:(' + createMediaPlayback.toString() + ')(window,' + inspectGIF.toString() + '),frameRuntime:' + htmlFrameRuntime.toString() + ',heightOf:' + objectHeight.toString() + '});}';
 }
 
 export function objectPosterLabel(image, width = 640) {
@@ -330,7 +332,7 @@ export function mountHtmlBlocks(doc, options = {}) {
   const root = options.root || doc.body;
   const win = doc.defaultView, media = options.media || createMediaPlayback(win, inspectGIF), frameRuntime = options.frameRuntime || htmlFrameRuntime;
   const imageInfo = options.imageInfo || (url => {const assets = win.RapierImageAssets; if (!assets?.decodeDataImageBytes) return null;
-    const {bytes, codec} = assets.decodeDataImageBytes(url); return {...(codec === 'image/jxl' ? assets.inspectJPEGXL(bytes) : {}), ...assets.imageDimensions(bytes, codec)};});
+    const {bytes, codec} = assets.decodeDataImageBytes(url); return {...(codec === 'image/jxl' ? assets.inspectJPEGXL(bytes, false, {animatedPixels: assets.PLAYBACK_PIXELS}) : {}), ...assets.imageDimensions(bytes, codec)};});
   const heightOf = options.heightOf || objectHeight;
   const owned = new Map(), local = new Map(), reduced = win.matchMedia('(prefers-reduced-motion: reduce)');
   let pending = 0, dead = false, sequence = 0, noticed = false, identity = options.identity?.(), refused = new WeakMap();
@@ -445,16 +447,18 @@ export function mountHtmlBlocks(doc, options = {}) {
         if (tag === 'img' || tag === 'image') {
           const name = tag === 'img' ? 'src' : el.hasAttribute('href') ? 'href' : 'xlink:href', original = el.getAttribute(name);
           if (original) {
-            const match = /^data:(image\/(?:png|jpeg|webp|gif|jxl|svg\+xml));(?:charset=[^;,]+;)?base64,([A-Za-z0-9+/]+={0,2})$/i.exec(original);
             const percent = /^data:image\/svg\+xml,/i.test(original);
-            if ((!match && !percent) || original.length > 24 * 1024 * 1024) throw new Error('Image requires a bounded base64 data URL');
+            if (original.length > (percent ? PICTURE_PERCENT_URL_CHARS : PICTURE_BASE64_URL_CHARS)) throw new Error('Image requires a bounded base64 data URL');
+            const match = percent ? null : /^data:(image\/(?:png|jpeg|webp|gif|jxl|svg\+xml));(?:charset=[^;,]+;)?base64,([A-Za-z0-9+/]+={0,2})$/i.exec(original);
+            if (!match && !percent) throw new Error('Image requires a bounded base64 data URL');
             const mime = percent ? 'image/svg+xml' : match[1].toLowerCase();
             const url = percent ? original : 'data:' + mime + ';base64,' + match[2];
             const bytes = percent ? new win.TextEncoder().encode(decodeURIComponent(original.slice(19)))
               : Uint8Array.from(win.atob(match[2]), c => c.charCodeAt(0));
+            if (bytes.length > PICTURE_BYTES) throw new Error('Image requires a bounded base64 data URL');
             const info = mime === 'image/gif' ? media.inspectGIF(bytes) : imageInfo(url) || admitted[url];
             if (!info && mime !== 'image/svg+xml') {el.removeAttribute(name); continue;}
-            if (info) {pixels += info.width * info.height; if (pixels > 24000000) throw new Error('HTML image pixel budget'); admitted[url] = {width: info.width, height: info.height, animated: !!info.animated};}
+            if (info) {pixels += info.width * info.height; if (pixels > ASSET_PIXELS) throw new Error('HTML image pixel budget'); admitted[url] = {width: info.width, height: info.height, animated: !!info.animated};}
             if (mime === 'image/svg+xml') {
               const svgText = new win.TextDecoder('utf-8', {fatal: true}).decode(bytes);
               if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(svgText)) throw new Error('SVG declarations are unsupported');
@@ -479,26 +483,34 @@ export function mountHtmlBlocks(doc, options = {}) {
     walk(template.content); return template.innerHTML;
   }
   function install(image) {
-    const key = keyOf(image); if (!key || key.length > 24 * 1024 * 1024 || refused.get(image) === key) return;
+    const key = keyOf(image), html = image.hasAttribute('data-rapier-html'), percent = !html && /^data:image\/svg\+xml,/i.test(key);
+    if (!key || key.length > (percent ? PICTURE_PERCENT_URL_CHARS : PICTURE_BASE64_URL_CHARS) || refused.get(image) === key) return;
     const existing = owned.get(image); if (existing?.key === key) return; if (existing) release(existing);
-    if (owned.size >= 64 || [...owned.values()].reduce((sum, row) => sum + row.key.length, key.length) > 32 * 1024 * 1024) {
+    if (owned.size >= 64 || owned.size && [...owned.values()].reduce((sum, row) => sum + (row.bytes ?? row.key.length), percent ? PICTURE_BYTES : key.length) > 32 * 1024 * 1024) {
       if (!noticed) {noticed = true; options.notice?.(owned.size >= 64 ? 'Only 64 objects play at once; the rest show their box' : 'Objects past 32 MB show their box');}
       image.dataset.rapierContour = 'budget-box'; return;
     }
     const parent = image.closest('.block-read') || image.parentElement?.parentElement; if (!parent) return;
     const row = {image, key, parent, id: prefix + '-' + ++sequence, generation: 0, attrs: {}, visible: !visibility, paused: local.get(key) ?? reduced.matches};
     try {
-      if (image.hasAttribute('data-rapier-html') || /^data:image\/svg\+xml[;,]/i.test(key)) {
-        const percent = !image.hasAttribute('data-rapier-html') && /^data:image\/svg\+xml,/i.test(key);
-        if (!image.hasAttribute('data-rapier-html') && key.length > (percent ? 3 * 1048576 : 1398200)) return;
-        const value = image.hasAttribute('data-rapier-html') ? JSON.parse(decodeURIComponent(key)) : {
-          body: percent ? decodeURIComponent(key.slice(key.indexOf(',') + 1)) : new win.TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(win.atob(key.slice(key.indexOf(',') + 1)), c => c.charCodeAt(0))),
-          attrs: {resize: 'scale', viewport: (image.dataset.rapierNaturalWidth || image.naturalWidth || 640) + 'x' + (image.dataset.rapierNaturalHeight || image.naturalHeight || 360)}};
-        if (typeof value.body !== 'string' || value.body.length > 1048576) return;
+      if (html || /^data:image\/svg\+xml[;,]/i.test(key)) {
+        let value;
+        if (html) {
+          value = JSON.parse(decodeURIComponent(key));
+          if (typeof value.body !== 'string' || value.body.length > 1048576) return;
+          row.bytes = value.body.length;
+        } else {
+          const raw = key.slice(key.indexOf(',') + 1);
+          const svgBytes = percent ? new win.TextEncoder().encode(decodeURIComponent(raw)) : Uint8Array.from(win.atob(raw), c => c.charCodeAt(0));
+          if (svgBytes.length > PICTURE_BYTES) return;
+          row.bytes = svgBytes.length;
+          value = {body: new win.TextDecoder('utf-8', {fatal: true}).decode(svgBytes),
+            attrs: {resize: 'scale', viewport: (image.dataset.rapierNaturalWidth || image.naturalWidth || 640) + 'x' + (image.dataset.rapierNaturalHeight || image.naturalHeight || 360)}};
+        }
         row.attrs = value.attrs || {}; const admitted = value.media || {}; const body = sanitize(value.body, admitted); row.media = admitted;
         const viewport = (row.attrs.viewport || '640x360').split('x').map(Number);
         row.pixels = viewport[0] * viewport[1] + Object.values(admitted).reduce((sum, size) => sum + size.width * size.height, 0);
-        if (!Number.isFinite(row.pixels) || [...owned.values()].reduce((sum, item) => sum + (item.pixels || 0), row.pixels) > 24000000) throw new Error('Object surface pixel budget');
+        if (!Number.isFinite(row.pixels) || [...owned.values()].reduce((sum, item) => sum + (item.pixels || 0), row.pixels) > PLAYBACK_PIXELS) throw new Error('Object surface pixel budget');
         const surface = doc.createElement('div'), frame = doc.createElement('iframe'); row.surface = surface; row.frame = frame;
         frame.dataset.rapierHtmlPreview = '';
         surface.dataset.rapierHtmlPreview = ''; surface.style.cssText = 'position:absolute;pointer-events:none;overflow:hidden;margin:0;padding:0;background:transparent';
@@ -666,7 +678,7 @@ export async function materializeObjects(root, {signal, width = 640, imageInfo, 
           if (!settles || !first.naturalWidth || Math.abs(clone.offsetWidth * first.naturalHeight / first.naturalWidth - clone.offsetHeight) <= 2) break;
           if (clone.dataset.rapierFirstFrame === frame) delete clone.dataset.rapierFirstFrame;
         }
-        if (!first.naturalWidth || !first.naturalHeight || first.naturalWidth * first.naturalHeight > 24000000) throw new Error('First-frame image budget');
+        if (!first.naturalWidth || !first.naturalHeight || first.naturalWidth * first.naturalHeight > ASSET_PIXELS) throw new Error('First-frame image budget');
         const scale = Math.min(1, 1024 / Math.max(first.naturalWidth, first.naturalHeight)), canvas = doc.createElement('canvas');
         canvas.width = Math.ceil(first.naturalWidth * scale); canvas.height = Math.ceil(first.naturalHeight * scale);
         try {canvas.getContext('2d').drawImage(first, 0, 0, canvas.width, canvas.height); image.src = canvas.toDataURL('image/png');}

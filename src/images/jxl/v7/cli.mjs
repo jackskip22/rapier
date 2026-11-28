@@ -30,8 +30,9 @@ export const HELP_TEXT = `Usage: ${COMMAND} <file|folder...> [options]
        ${COMMAND} selftest
        ${COMMAND} verify <original|folder> <file.jxl|folder>
 
-Encode images to JPEG XL (.jxl), or restore recompressed JPEGs.
+Encode images or EPUB books to JPEG XL (.jxl), or restore recompressed JPEGs.
 JPEGs are recompressed losslessly by default and restore exactly.
+Most EPUB readers cannot show JPEG XL yet.
 
 Options:
   -q, --quality <1-100>    Target quality (default 90, and a JPEG without it stays exact)
@@ -39,6 +40,7 @@ Options:
       --max-bytes <size>   Fit output under byte budget (e.g. 80KB, 1.5MB, 120000)
       --exact              Every pixel kept (default for JPEG)
       --jpeg-pixels        Re-encode JPEG pixels, retaining no JPEG reconstruction
+      --restore            Restore recompressed JPEGs in an EPUB or .jxl file
   -o, --out <path>         Output file or directory
       --keep-extension     Keep the source extension in automatic .jxl names
   -j, --jobs <count>       Nonnegative helper count (default: 0)
@@ -57,6 +59,8 @@ Examples:
   npx ${COMMAND} hero.png --quality 82 --out dist/hero.jxl
   npx ${COMMAND} banner.png --max-bytes 100KB
   npx ${COMMAND} photo.jxl --out restored.jpg
+  npx ${COMMAND} book.epub --out smaller.epub
+  npx ${COMMAND} smaller.epub --restore --out book.epub
   npx ${COMMAND} verify photos/ out/
 `;
 
@@ -105,6 +109,7 @@ export function parseCliArgs(argv) {
     maxBytes: undefined,
     exact: false,
     jpegPixels: false,
+    restore: false,
     out: undefined,
     keepExtension: false,
     jobs: 0,
@@ -154,6 +159,9 @@ export function parseCliArgs(argv) {
     } else if (flag === '--jpeg-pixels') {
       if (inlineValue !== undefined) throw cliError('JXL_OPTIONS', `--jpeg-pixels: no value "${arg}"`, 'use: --jpeg-pixels');
       options.jpegPixels = true;
+    } else if (flag === '--restore') {
+      if (inlineValue !== undefined) throw cliError('JXL_OPTIONS', `--restore: no value "${arg}"`, 'use: --restore');
+      options.restore = true;
     } else if (flag === '-q' || flag === '--quality') {
       const val = takeValue('--quality', `npx ${COMMAND} photo.png --quality 85`);
       const num = Number(val);
@@ -201,6 +209,8 @@ export function parseCliArgs(argv) {
   }
   if (options.effort === 10 && options.maxBytes !== undefined)
     throw cliError('JXL_OPTIONS', '--effort 10: not with --max-bytes', `remove: --max-bytes or use --effort 9`);
+  if (options.restore && (options.quality !== undefined || options.effortExplicit || options.maxBytes !== undefined || options.exact || options.jpegPixels || options.keepExtension))
+    throw cliError('JXL_OPTIONS', '--restore: not with encode options', 'remove: --restore or encode options');
   if ((typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && options.teach !== undefined && options.jobs > 0)
     throw cliError('JXL_OPTIONS', `--teach: not with --jobs ${options.jobs}`, 'remove: --jobs');
   return {inputs, options};
@@ -216,7 +226,7 @@ const getHdr = () => import('./hdr.mjs');
 
 async function firstBytes(path) {
   const file = await open(path, 'r');
-  try { const {buffer, bytesRead} = await file.read(new Uint8Array(32), 0, 32, 0); return buffer.subarray(0, bytesRead); }
+  try { const {buffer, bytesRead} = await file.read(new Uint8Array(64), 0, 64, 0); return buffer.subarray(0, bytesRead); }
   finally { await file.close(); }
 }
 
@@ -234,6 +244,10 @@ function detectFormat(bytes, filePath = '') {
   }
   if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0x0a) return 'jxl';
   if (bytes.length >= 12 && [0, 0, 0, 12, 74, 88, 76, 32, 13, 10, 135, 10].every((b, i) => bytes[i] === b)) return 'jxl';
+  if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
+    if (bytes.length >= 58 && String.fromCharCode(...bytes.subarray(30, 58)) === 'mimetypeapplication/epub+zip') return 'epub';
+    if (extname(filePath).toLowerCase() === '.epub') return 'epub';
+  }
   if (bytes.length >= 7 && bytes[0] === 0x23 && bytes[1] === 0x3f && (String.fromCharCode(...bytes.subarray(2, 9)) === 'RADIANC' || String.fromCharCode(...bytes.subarray(2, 6)) === 'RGBE')) return 'hdr';
   if (bytes.length >= 4 && bytes[0] === 0x76 && bytes[1] === 0x2f && bytes[2] === 0x31 && bytes[3] === 0x01) return 'hdr';
   const ext = extname(filePath).toLowerCase();
@@ -244,6 +258,7 @@ function detectFormat(bytes, filePath = '') {
   if (ext === '.avif') return 'avif';
   if (ext === '.gif') return 'gif';
   if (ext === '.jxl') return 'jxl';
+  if (ext === '.epub') return 'epub';
   return null;
 }
 
@@ -486,13 +501,13 @@ async function encodeFile(raw, format, displayIn, options, runner) {
   return pixels(await decodeViaRuntime(raw, format, displayIn));
 }
 
-async function decodeFile(raw, displayIn, outputPath, named) {
+async function decodeFile(raw, displayIn, outputPath, named, restoreOnly = false) {
   if (extname(outputPath).toLowerCase() !== '.png') {
     const {restore} = await getJpeg();
     try { return {result: await restore(raw), note: 'exact JPEG', outputPath}; }
     catch (error) {
       if (error?.code !== 'JXL_RECONSTRUCTION') throw error;
-      if (named) throw cliError('JXL_RECONSTRUCTION', `"${displayIn}": no JPEG restoration`,
+      if (named || restoreOnly) throw cliError('JXL_RECONSTRUCTION', `"${displayIn}": no JPEG restoration`,
         `run: npx ${COMMAND} "${displayIn}" --out "${replaceExtension(displayIn, '.png')}"`);
       outputPath = replaceExtension(outputPath, '.png');
     }
@@ -525,7 +540,7 @@ async function processSingleTask(task, options, runner) {
     throw cliError('JXL_OPTIONS', `"${displayIn}": --max-bytes not with JXL`, `remove: --max-bytes`);
   const taught = (typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && options.teach !== undefined && format !== 'jxl' ? [] : null;
   if ((typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && taught) globalThis.__RAPIER_JXL_TEACH = record => { taught.push(record); };
-  const made = format === 'jxl' ? await decodeFile(raw, displayIn, task.outputPath, named)
+  const made = format === 'jxl' ? await decodeFile(raw, displayIn, task.outputPath, named, options.restore)
     : {...await encodeFile(raw, format, displayIn, options, runner), outputPath: task.outputPath};
   if ((typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && taught) {
     delete globalThis.__RAPIER_JXL_TEACH;
@@ -810,6 +825,7 @@ async function runCliHere(argv, io, caller, extra = {}) {
     const automaticName = (path, ext) => options.keepExtension && ext === '.jxl' ? path + ext : replaceExtension(path, ext);
     for (const {rawInput, fullInput, isDirectory} of found) {
       if (isDirectory) {
+        if (options.restore) throw cliError('JXL_OPTIONS', `"${rawInput}": --restore needs an EPUB or .jxl file`, `run: npx ${COMMAND} book.jxl.epub --restore`);
         const items = await collectDirectoryImages(fullInput, out);
         if (!items.length) throw cliError('JXL_INPUT', `"${rawInput}": no supported images`, 'use: picture or image folder');
         for (const item of items) {
@@ -817,11 +833,27 @@ async function runCliHere(argv, io, caller, extra = {}) {
           tasks.push({inputPath: item.inputPath, outputPath, displayIn: show(item.inputPath), displayOut: show(outputPath), named: false, inFolder: true});
         }
       } else {
-        const ext = detectFormat(await firstBytes(fullInput)) === 'jxl' ? '.jpg' : '.jxl';
+        const head = await firstBytes(fullInput), detected = detectFormat(head);
+        const isEpub = detected === 'epub' || (!detected && extname(fullInput).toLowerCase() === '.epub');
+        if (isEpub) {
+          const sameDir = out && outIsDir && await samePath(out, dirname(fullInput));
+          const epubDefault = options.restore
+            ? basename(fullInput).replace(/(?:\.jxl|-jxl)?\.epub$/i, '') + '-restored.epub'
+            : replaceExtension(basename(fullInput), '.jxl.epub');
+          const outputPath = out ? (outIsDir ? join(out, sameDir ? epubDefault : basename(fullInput)) : out) : join(dirname(fullInput), epubDefault);
+          const named = out !== null && !outIsDir;
+          if (named && extname(out).toLowerCase() !== '.epub') throw cliError('JXL_OPTIONS',
+            `--out "${options.out}": need .epub`, `use: "${replaceExtension(options.out, '.epub')}"`);
+          tasks.push({inputPath: fullInput, outputPath, displayIn: show(fullInput), displayOut: show(outputPath), named, epub: true});
+          continue;
+        }
+        if (options.restore && detected !== 'jxl') throw cliError('JXL_OPTIONS',
+          `"${rawInput}": --restore needs an EPUB or .jxl file`, `run: npx ${COMMAND} book.jxl.epub --restore`);
+        const ext = detected === 'jxl' ? '.jpg' : '.jxl';
         const outputPath = out ? (outIsDir ? join(out, automaticName(basename(fullInput), ext)) : out) : automaticName(fullInput, ext);
-        const named = out !== null && !outIsDir, want = ext === '.jxl' ? ['.jxl'] : ['.jpg', '.jpeg', '.png'];
+        const named = out !== null && !outIsDir, want = ext === '.jxl' ? ['.jxl'] : options.restore ? ['.jpg', '.jpeg'] : ['.jpg', '.jpeg', '.png'];
         if (named && !want.includes(extname(out).toLowerCase())) throw cliError('JXL_OPTIONS',
-          `--out "${options.out}": need ${ext === '.jxl' ? '.jxl' : '.jpg/.jpeg/.png'}`,
+          `--out "${options.out}": need ${ext === '.jxl' ? '.jxl' : options.restore ? '.jpg/.jpeg' : '.jpg/.jpeg/.png'}`,
           `use: ${want.map(e => `"${replaceExtension(options.out, e)}"`).join(' or ')}`);
         tasks.push({inputPath: fullInput, outputPath, displayIn: show(fullInput), displayOut: show(outputPath), named: out !== null && !outIsDir, ...(extra.inFolder && {inFolder: true})});
       }
@@ -860,6 +892,17 @@ async function runCliHere(argv, io, caller, extra = {}) {
       while (next < tasks.length) {
         const task = tasks[next++], begun = performance.now();
         try {
+          if (task.epub) {
+            const {processEpubTask} = await import('./cli-epub.mjs');
+            const result = await processEpubTask({
+              task, options, runner, encodeFile, detectFormat, getJpeg, getVerify, getHdr,
+              writeWhole, samePath, writeError, formatLine, friendlyError, formatFriendlyError,
+              emit, stdout, stderr, json, caller, elapsed, begun,
+            });
+            results.push(result);
+            unread += result.unread ?? 0;
+            continue;
+          }
           const result = await processSingleTask(task, options, runner);
           results.push(result);
           const accepted = result.result.meetsTarget;

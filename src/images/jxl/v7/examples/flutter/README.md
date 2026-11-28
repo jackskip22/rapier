@@ -24,7 +24,7 @@ final codec = JXLCodec();
 final jxl = await codec.encode(photoBytes, quality: 80, effort: 3);   // PNG, JPEG, GIF or WebP in, JPEG XL out
 final exact = await codec.encodeExact(photoBytes);                    // every pixel kept
 final small = await codec.recompress(jpegBytes);                      // a JPEG's own bytes, smaller
-final same = await codec.restore(small);                              // the original JPEG, exactly
+final same = await codec.restore(small);                              // the original JPEG restored exactly
 final clip = await codec.animateVideo(mp4Bytes, type: 'video/mp4');   // every frame, each with its time
 final moving = await codec.animateGif(gifBytes);                      // a GIF, with its timing and loops
 
@@ -83,7 +83,7 @@ documentation, not on a run.
 - `lib/rapier_jxl.dart`: `JXLCodec`, `JXLCancel`, `JXLException`.
 - `lib/src/bridge.dart`: the loopback server.
 - `ios/`: the iOS plug-in that reads a video's frames.
-- `assets/web/`: the page (videos and GIFs), its worker (photos and JPEGs), and (after `prepare-assets.mjs`) the modules.
+- `assets/web/`: the page (videos and GIFs), its worker (photos and JPEGs), and (after `prepare-assets.mjs`) the `animation` and `jpeg` modules, loaded only when first used (~2.49 MB uncompressed, 974 KB Deflate-9, 786 KB Brotli 11).
 - `example/`: an app with three buttons on bundled files, and `integration_test/` for the real app.
 - `test/`: `flutter test`, the server's rules.
 

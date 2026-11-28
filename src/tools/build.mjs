@@ -193,11 +193,22 @@ else {
     'mcpDescriptors) must produce both, fed the same deployment facts.');
 }
 
+{
+  const {checkPictureLimits} = await import('./check-picture-limits.mjs');
+  const pictureLimits = await checkPictureLimits({root});
+  if (!pictureLimits.ok) throw new Error('The picture limits disagree with images/limits.mjs:\n' + pictureLimits.failures.join('\n'));
+}
+
 if (PROFILE !== 'reader') {
   const {checkEngineOwnership} = await import('./check-engine-ownership.mjs');
   checkEngineOwnership();
   const {checkFocusRings} = await import('./check-focus-rings.mjs');
   checkFocusRings();
+  const {checkWatercolorOrder} = await import('./check-watercolor-order.mjs');
+  checkWatercolorOrder();
+  const {checkNativeOps} = await import('./check-native-ops.mjs');
+  const nativeOps = await checkNativeOps();
+  if (!nativeOps.ok) throw new Error('The native bridge disagrees with shell/native-ops.mjs:\n' + nativeOps.errors.join('\n'));
 }
 await collisionLaw();
 await captureBuildGateOutputs({root, paths: [...VERSIONED_FILES, 'packages/rapier-embed/README.md', 'mcp/render-assets.mjs',

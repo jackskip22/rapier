@@ -64,10 +64,8 @@ async function _rapierPrepareInterchangeContext(options, captured, progress = nu
   const images = [...context.semanticRoot.querySelectorAll('img')];
   context.stats.embeddedImages = images.filter(image => /^data:image\//i.test(image.getAttribute('src') || '')).length;
   context.stats.unresolvedImages = images.filter(image => !/^data:image\//i.test(image.getAttribute('src') || '')).length;
-  context.stats.embeddedImageBytes = images.reduce((total, image) => {
-    const value = image.getAttribute('src') || '';
-    return total + (value.startsWith('data:') ? Math.floor((value.length-value.indexOf(',')-1)*.75) : 0);
-  }, 0);
+  context.stats.embeddedImageBytes = images.reduce((total, image) =>
+    total + (globalThis.RapierImageAssets.dataImage(image.getAttribute('src') || '')?.byteLength || 0), 0);
   return context;
 }
 
@@ -294,9 +292,9 @@ async function _rapierReadTextPackDocument(file, options = {}) {
       record.mime = [...RAPIER_RASTER_MIMES, 'image/svg+xml'].find(type => _rapierRenderModule('render-sanitize')._rapierVerifyRasterBytes(bytes, type));
       if (!record.mime) throw new Error('Unsupported bundle image: ' + record.path);
       const owner = globalThis.RapierImageAssets;
-      if (!bytes.length || bytes.length > owner.IMAGE_LIMITS.bytes) throw new Error('Images must be smaller than 16 MiB.');
+      if (!bytes.length || bytes.length > owner.PICTURE_BYTES) throw new Error('Images must be smaller than 16 MiB.');
       record.isJxl = record.mime === 'image/jxl';
-      record.info = record.mime === 'image/svg+xml' ? owner.inspectSVG(bytes) : record.isJxl ? owner.inspectJPEGXL(bytes) : owner.inspectRaster(bytes);
+      record.info = record.mime === 'image/svg+xml' ? owner.inspectSVG(bytes) : record.isJxl ? owner.inspectJPEGXL(bytes, false, {animatedPixels: owner.PLAYBACK_PIXELS}) : owner.inspectRaster(bytes, {maximumPixels: owner.ASSET_PIXELS});
       await work.checkpoint();
     }
     await bundle.verify();

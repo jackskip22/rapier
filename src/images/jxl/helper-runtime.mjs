@@ -2,7 +2,6 @@
 import {configureModules} from './wasm-modules.mjs';
 import {ensureKernels, disableEntropyKernels, lendEntropy} from './kernels.mjs';
 import {holdEntropy, releaseEntropy} from './kernel-hooks.mjs';
-import {previewRelay} from './v7/preview-relay.mjs';
 
 
 const helperPort = () => {
@@ -19,23 +18,20 @@ export function serveHelper(load, port = helperPort()) {
   const loaded = Promise.resolve().then(load);
   loaded.catch(fatal);
   const ok = loaded.then(() => true, () => false);
-  let order = Promise.resolve(), previews;
+  let order = Promise.resolve();
   const next = step => { order = order.then(async () => { if (await ok) await step(await loaded); }).catch(fatal); };
   async function whole({id, task}, {run}) {
-    const preview = task.preview === true ? previewRelay((value, sequence, transfer) => port.postMessage({id, preview: value, previewSequence: sequence}, transfer)) : null;
-    if (preview) (previews ??= new Map()).set(id, preview);
     holdEntropy(lendEntropy);
     try {
-      const result = await run(task.operation, task.input, task.options, {maxPixels: task.maxPixels, webgpu: task.webgpu, onProgress: progress => port.postMessage({id, progress}), ...(preview && {onPreview: preview.send})});
+      const result = await run(task.operation, task.input, task.options, {maxPixels: task.maxPixels, webgpu: task.webgpu, onProgress: progress => port.postMessage({id, progress})});
       post({id, result}, ArrayBuffer.isView(result) ? [result.buffer] : [], error => ({id, error: described(error)}));
     } catch (error) { port.postMessage({id, error: described(error)}); }
-    finally { releaseEntropy(); preview?.close(); previews?.delete(id); }
+    finally { releaseEntropy(); }
   }
   const asked = new Map();
   let asks = 0;
   const relayOf = id => request => new Promise(resolve => { const ask = ++asks; asked.set(ask, resolve); port.postMessage({id, gpu: request, ask}); });
   const serve = data => {
-    if (data?.previewAck !== undefined) { previews?.get(data.id)?.ack(data.previewAck); return; }
     if (data?.gpuAnswer !== undefined) { const resolve = asked.get(data.ask); asked.delete(data.ask); resolve?.(data.gpuAnswer); return; }
     if (data?.kernels !== undefined && data.input === undefined && data.task === undefined) {
       next(() => { if (data.wasmModules) configureModules(data.wasmModules); ensureKernels(); });
@@ -53,7 +49,7 @@ export function serveHelper(load, port = helperPort()) {
     }
     next(async ({serveParallel}) => {
       let reply;
-      if (!serveParallel) { if (data?.task === undefined) return; reply = [{id: data?.id, error: described(Object.assign(new Error('helper-runtime:task'), {code: 'JXL_INTERNAL'}))}, []]; }
+      if (!serveParallel) { if (data?.drop === null) reply = [{dropped: true}, []]; else if (data?.task === undefined) return; else reply = [{id: data?.id, error: described(Object.assign(new Error('helper-runtime:task'), {code: 'JXL_INTERNAL'}))}, []]; }
       else try { reply = serveParallel(data, relayOf(data?.id)); if (reply?.then) reply = await reply; } catch (error) { reply = [{id: data?.id, error: described(error)}, []]; }
       if (reply) post(reply[0], reply[1], error => ({id: data?.id, error: described(error)}));
     });

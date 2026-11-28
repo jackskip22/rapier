@@ -36,7 +36,7 @@ export async function supported(feature) {
   try { return await compileKernels(); } catch { return false; }
 }
 const HDR = ['pq', 'hlg'];
-const FLAGS = ['applyOrientation', 'unpremultiplyAlpha', 'renderSpotColors', 'planes', 'partial'];
+const FLAGS = ['applyOrientation', 'unpremultiplyAlpha', 'renderSpotColors', 'planes', 'partial', 'firstFrame', 'components'];
 const KEYS = new Set([...PUBLIC_DECODE_LIMITS, ...FLAGS, 'format', 'colorSpace', 'region', 'signal', 'onProgress', 'onFrame']);
 const NAMED_SPACES = ['original', 'srgb', 'linear-srgb', 'display-p3', 'rec2020', 'xyb'];
 const TARGET = {space: ['rgb', 'gray', 'xyb'], whitePoint: ['d65', 'dci', 'e', 'd50'], primaries: ['srgb', 'display-p3', 'rec2020'],
@@ -90,6 +90,8 @@ function admitDecode(options) {
   if (given.colorSpace !== undefined) given.colorSpace = colorTarget(given.colorSpace);
   if (given.region !== undefined) given.region = admitRegion(given.region);
   if (given.partial && given.region) throw fail('JXL_OPTIONS', 'partial: not with region');
+  if (given.components && (given.unpremultiplyAlpha || given.renderSpotColors))
+    throw fail('JXL_OPTIONS', 'components: not with unpremultiplyAlpha or renderSpotColors');
   if (given.onFrame !== undefined) {
     if (typeof given.onFrame !== 'function') throw fail('JXL_OPTIONS', 'onFrame: function');
     if (given.region || given.partial) throw fail('JXL_OPTIONS', 'onFrame: not with region or partial');
@@ -156,7 +158,9 @@ async function decodeHere(input, options, opened = null, withoutNoise = false) {
   const target = limits.colorSpace ?? 'original';
   if (target !== 'original') {
     let transfer; try { transfer = (opened?.h ?? header(owned)).colorEncoding?.transferFunction; } catch {}
-    if (HDR.includes(transfer)) throw fail('JXL_UNSUPPORTED', "HDR PQ/HLG: colorSpace 'original'");
+    const dstTf = typeof target === 'string' ? (target === 'xyb' ? 'xyb' : 'sdr') : (target.space === 'xyb' ? 'xyb' : target.transferFunction ?? 'sdr');
+    if (HDR.includes(transfer) && (dstTf === 'xyb' || HDR.includes(dstTf)))
+      throw fail('JXL_UNSUPPORTED', "HDR PQ/HLG: colorSpace 'original' or an SDR target");
   }
   await prepare();
   check(signal);
@@ -175,13 +179,12 @@ async function decodeHere(input, options, opened = null, withoutNoise = false) {
 }
 
 import * as self from './decode.mjs';
-import {serveRole} from './module-roles.mjs';
-import {moduleRuntime} from './module-runtime.mjs';
+import {serveRole} from './module-role.mjs';
+import {simpleRuntime, inPlaceSimple} from './decode-runtime.mjs';
 import {install, workerPort} from './worker-runtime.mjs';
-serveRole('rapier-jxl/decode', {worker: () => install(workerPort(), [], moduleRuntime(self, {name: 'rapier-jxl/decode'}))});
+serveRole('rapier-jxl/decode', {worker: () => install(workerPort(), [], simpleRuntime(self, 'rapier-jxl/decode'))});
 
-import {inPlace} from './module-roles.mjs';
-const here = inPlace('rapier-jxl/decode', {decode, prepare}, {url: () => new URL(import.meta.url)});
+const here = inPlaceSimple('rapier-jxl/decode', {decode, prepare});
 const decodeIn = here.wrap('decode'), prepareIn = here.wrap('prepare');
 export {decodeIn as decode, prepareIn as prepare};
 export const {configure, close} = here;

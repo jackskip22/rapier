@@ -3,8 +3,9 @@
 import {isWordSidecarBlock} from './word-sidecar.mjs';
 import {tuneMarkdownEngine} from './md-engine.mjs';
 import {sourceFacts, sourceView, sourceEdit} from '../kit/ledger/source.mjs';
+import {PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS} from '../images/limits.mjs';
 
-export const IMAGE_LIMITS = Object.freeze({bytes: 16 * 1024 * 1024, sourceChars: 64 * 1024 * 1024, dimension: 16384, pixels: 24000000});
+export const IMAGE_LIMITS = Object.freeze({bytes: PICTURE_BYTES, sourceChars: 64 * 1024 * 1024, dimension: PICTURE_EDGE, pixels: ASSET_PIXELS});
 const parsers = new WeakMap();
 const cached = [];
 let preparedDefinitions = [];

@@ -594,7 +594,8 @@ function _rapierPaintPainterLost(holder, error) {
 	if (!state.open || state.paintLayer && state.paintLayer.mode !== holder.mode) return;
 	const said = _rapierPaintLossSaid(error);
 	if (holder.mode === 'water' && ['WATER_DEVICE_LOST', 'WATER_GPU_FAILED', 'WATER_GPU_MEMORY'].includes(error?.code)) state.waterLost = {session: state.session, error};
-	if (!said) (console.error(error), showToast("Couldn't save the painting. It's still open.", 'error'));
+	const gpuLost = holder.mode === 'water' && ['WATER_DEVICE_LOST', 'WATER_GPU_FAILED'].includes(error?.code);
+	if (!said) (console.error(error), showToast(gpuLost ? 'The GPU stopped. Paint again to continue.' : "Couldn't save the painting. It's still open.", 'error'));
 	const gesture = state.gesture, saved = gesture?.paintRollback;
 	if (gesture?.kind === 'paint') {
 		if (gesture.paint) gesture.paint.discarded = true;
@@ -3373,11 +3374,13 @@ async function _rapierPaintWaterRun(gesture, work) {
 }
 function _rapierPaintBegin(evt, gesture) {
 	const timing = _rapierDrawState.paintTiming = { begin: performance.now(), layer: 0, brush: 0, seat: 0, blit: 0, opened: false };
+	if (typeof _rapierWatercolorDemoSettings === 'function') _rapierWatercolorDemoSettings();
 	const settings = _rapierPaintAdmitSettings(gesture.eraseInk, gesture.tool), geom = _rapierDrawPointerGeometry();
 	if (!gesture.fanReplay && !gesture.trail && (gesture.eraseInk || settings.erasing || settings.brushId === RAPIER_PAINT_ERASER_ID)) gesture.trail = { down: evt, moves: [], end: null, geom };
 	const queued = gesture.paint = { pending: true, session: _rapierDrawState.session, tool: _rapierDrawTool(), settings, geom, downEvt: evt, moveEvents: [], ended: false, endEvt: null };
 	let start;
 	if (settings.mode === 'water') {
+		if (!gesture.fanReplay && _rapierDrawState.waterLost?.session === queued.session) delete _rapierDrawState.waterLost;
 		const queue = _rapierDrawState.waterStrokes || (_rapierDrawState.waterStrokes = []);
 		let resolve;
 		const receipt = gesture.waterStroke = {gesture, session: queued.session, tool: queued.tool, before: queue.at(-1)?.promise, promise: new Promise(ok => { resolve = ok; }), resolve: () => resolve(), running: 0, finished: false, ended: false};

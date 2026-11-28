@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-import {captureAnswer, screenPhotoAnswer} from './screen-floor.mjs';
+import {captureAnswer} from './capture-codec.mjs';
+import {screenPhotoAnswer} from './screen-photo-mixed.mjs';
 import {answer, guard} from './admit.mjs';
 import {gpuQueue} from './gpu-queue.mjs';
 import {deviceTrials} from './device-trial.mjs';

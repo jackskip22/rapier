@@ -5,7 +5,6 @@ import {captureSmoothRegions} from './capture-smooth.mjs';
 import {smoothQuantize} from './capture-smooth-quantize.mjs';
 import {pagePalette} from './capture-page-palette.mjs';
 import {gradientPageLayers} from './capture-gradient-page.mjs';
-const PAGE_PALETTES=new WeakMap();
 import {admitOptions, admitPixels, admitOutputSize, fault} from './admit.mjs';
 import {encodeCaptureSteps, encodeCaptureBytes, captureBandSteps, captureCompareLevel, captureExact, markCaptureExact, CAPTURE_LEVEL, CAPTURE_BASE, CAPTURE_FLOOR, CAPTURE_SMALL_FLOOR, CAPTURE_PATCHES, CAPTURE_TOOLS, CAPTURE_TRACE, CAPTURE_HELPERS, CAPTURE_GPU, DEFAULT_EFFORT} from './capture-codec.mjs';
 import {photoKernels, captureMergePhotoHints, captureBoxBound, captureFillUnder, captureTextDiff, captureUnionExact, captureProtectedBoxes} from './capture-kernels.mjs';
@@ -620,7 +619,7 @@ function* photoSteps(data,width,height,options,band,large=false,reading=options.
       const retainFloor=route?function*(floor){if(!floor&&!exact)exact=yield* exactFile(0);}:null;
       const asked=route?.effort??options.photoBlockEffort??effort??DEFAULT_EFFORT;
       const whole=at=>(options.wholePhoto??lowWholePhotoSteps)(data,width,height,{quality:own,colorSpace,effort:at,
-        ...(route&&{firstEffort:4,retainFloor,preview:route.preview}),readingIntent:options.readingIntent,signal,
+        ...(route&&{firstEffort:4,retainFloor}),readingIntent:options.readingIntent,signal,
         photoAdmission,photoSearch:options.photoSearch,...(measuredWhole&&{photoCrops:photoSubjects})});
       let photo;
       if(route&&asked>=8&&smallPicture(width,height)&&!measuredWhole){
@@ -691,10 +690,10 @@ function* photoSteps(data,width,height,options,band,large=false,reading=options.
   };
   if(effort>=3&&!band&&!large&&colorSpace==='srgb'&&!exactRects.length&&!photoRects.length&&!regions.length&&!graphics.length&&!withoutText&&options.readingIntent!==undefined&&options.textComplete!==true){
     const measured=((UPLOAD?undefined:options.wholePhotoRoute)?.effort??options.photoBlockEffort??effort)>=MEASURED_EFFORT;
-    const memo=measured||width*height<=2.5e6?PAGE_PALETTES.get(data)??new Map():null,key=`${options.readingIntent}|${measured}|${effort}`;
-    if(memo){
-      PAGE_PALETTES.set(data,memo);
-      let made=memo.get(key);
+    if(measured||width*height<=2.5e6){
+      const memo=UPLOAD?null:options.baseMemo,key=`page-palette|${options.readingIntent}|${measured}|${effort}`;
+      const hit=memo?.get(key);
+      let made=hit&&hit.data===data&&hit.width===width&&hit.height===height?hit.made:undefined;
       if(made===undefined){
         const paletted=yield* unit('page-palette',()=>pagePalette(data,width,height,options.readingIntent,signal,measured,!UPLOAD));
         made=null;
@@ -708,7 +707,7 @@ function* photoSteps(data,width,height,options,band,large=false,reading=options.
             made=quick.length<=bytes.length?false:{bytes,score:paletted.score,floor:paletted.floor};
           }
         }
-        memo.set(key,made);
+        memo?.set(key,{data,width,height,made});
       }
       if(made===false)return yield* gradientInstead(yield* exactFile(0.9));
       if(made?.exact)return yield* gradientInstead(markCaptureExact(made.exact.slice()));

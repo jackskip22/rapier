@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {ASSET_PIXELS} from '../images/limits.mjs';
 import {inspectRaster} from '../images/raster.mjs';
 export function rtfPictures(value) {
   const source = String(value || '');
@@ -14,7 +15,7 @@ export function rtfPictures(value) {
           const bytes = new Uint8Array(picture.hex.length / 2);
           for (let n = 0; n < bytes.length; n++) bytes[n] = parseInt(picture.hex.slice(n * 2, n * 2 + 2), 16);
           try {
-            const info = inspectRaster(bytes);
+            const info = inspectRaster(bytes, {maximumPixels: ASSET_PIXELS});
             if (info.type === picture.type) pictures.push({bytes, type: info.type});
           } catch (_) {  }
         }

@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: MIT
-import {fault} from './admit.mjs';
+import {fault, checkInteger as squeezeInteger} from './admit.mjs';
 import {capturePlanarSqueezeStep} from './capture-kernels.mjs';
 
 const PLANAR_SQUEEZE_POWERS = [1]; for (let i = 1; i <= 32; i++) PLANAR_SQUEEZE_POWERS.push(PLANAR_SQUEEZE_POWERS[i - 1] * 2);
-const squeezeInteger = (value, minimum, maximum, name) => {
-  if (!Number.isInteger(value) || value < minimum || value > maximum) throw fault('JXL_INPUT', name + ': integer ' + minimum + '-' + maximum);
-  return value;
-};
 function squeezeShape(channel) { return {width: channel.width, height: channel.height, hshift: channel.hshift ?? channel.shift, vshift: channel.vshift ?? channel.shift}; }
 function advanceSqueezeShape(list, step) {
   const offset = step.inPlace ? step.beginC + step.numC : list.length;

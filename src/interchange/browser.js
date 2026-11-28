@@ -183,14 +183,14 @@ async function _rapierReadImportedDocument(file, name = file?.name || '', {quiet
     const embedImage = async image => {
       await work.checkpoint();
       const bytes = image.bytes instanceof Uint8Array ? image.bytes : new Uint8Array(image.bytes);
-      if (!bytes.length || bytes.length > RapierImageAssets.IMAGE_LIMITS.bytes) throw new Error('Images must be smaller than 16 MiB.');
+      if (!bytes.length || bytes.length > RapierImageAssets.PICTURE_BYTES) throw new Error('Images must be smaller than 16 MiB.');
       const digest = await crypto.subtle.digest('SHA-256', bytes);
       checkCurrent();
       const transform = _rapierCanonicalImportedTransform(image.transform);
       const key = RapierBundleIO.toBase64(new Uint8Array(digest)) + ':' + JSON.stringify(transform);
       if (!converted.has(key)) {
         ++imageCount;
-        const isJxl = RapierImageAssets.isJxl(bytes), info = isJxl ? RapierImageAssets.inspectJPEGXL(bytes) : image.mime === 'image/svg+xml' ? null : RapierImageAssets.inspectRaster(bytes);
+        const isJxl = RapierImageAssets.isJxl(bytes), info = isJxl ? RapierImageAssets.inspectJPEGXL(bytes, false, {animatedPixels: RapierImageAssets.PLAYBACK_PIXELS}) : image.mime === 'image/svg+xml' ? null : RapierImageAssets.inspectRaster(bytes, {maximumPixels: RapierImageAssets.ASSET_PIXELS});
         const normalized = info ? await _rapierNormaliseRaster(null, profile, transform, {
           input: {bytes, isJxl, info, mime: isJxl ? 'image/jxl' : info.type}, signal: work.signal,
           progress: () => work.check(),

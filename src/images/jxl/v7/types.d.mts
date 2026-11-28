@@ -1,5 +1,4 @@
 import type {EncodeOptions as CoreOptions, ColorSpace} from '../index.mjs';
-import type {ResultMeasurement} from './result.mjs';
 import type {AdvancedPhotoOptions} from '../photo-advanced.mjs';
 import type {DecodedImage as CoreDecodedImage, DecodeOptions as CoreDecodeOptions} from '../decode.mjs';
 import type {Metadata, BrotliCodec as CoreBrotliCodec} from '../metadata.mjs';
@@ -13,10 +12,10 @@ export type {ImageJob, ImageVerb, Digest, ResultSource, ResultReason, ResultTran
 export interface Float16Samples extends ArrayBufferView { readonly [Symbol.toStringTag]: 'Float16Array'; readonly length: number; [index: number]: number; }
 /** The typed arrays a picture's samples may be in: 8 or 16 bit integers, half or full floats. */
 export type Samples = Uint8Array | Uint8ClampedArray | Uint16Array | Float16Samples | Float32Array;
-/** Library-produced bytes own an ArrayBuffer. Byte callbacks may return plain Uint8Array; encoded files use EncodedInput. */
+/** Library-produced bytes own an ArrayBuffer. Byte callbacks may return plain Uint8Array. Encoded files use EncodedInput. */
 export type Bytes = Uint8Array<ArrayBuffer>;
 /** Encoded bytes, as a whole buffer or a view of its byte range. Shared and detached storage is refused at runtime.
- * A file input must be nonempty; stream chunks may be empty. */
+ * A file input must be nonempty. Stream chunks may be empty. */
 export type EncodedInput = ArrayBuffer | ArrayBufferView;
 /** Metadata callbacks receive owned bytes and may return bytes immediately or through any thenable. */
 type BrotliCodec = (bytes: Bytes, options: Parameters<CoreBrotliCodec>[1]) => Uint8Array | PromiseLike<Uint8Array>;
@@ -143,22 +142,6 @@ export interface JobOptions {
   maxPixels?: number;
 }
 
-/** A complete candidate, before the final result. Its bytes belong to the observer. Measurements contain only
- * scores already computed for this file. Candidates can grow or lose quality while the encoder searches. */
-export interface ImagePreview {
-  readonly bytes: Bytes;
-  readonly width: number;
-  readonly height: number;
-  readonly measurements: readonly ResultMeasurement[];
-}
-/** Latest only, at most every 100 ms. A returned promise delays the next preview. Delivered observers settle before
- * success, unless aborted, and thrown or rejected values reject the operation unchanged. Undelivered previews are
- * discarded on completion or cancellation. The final result is separate. */
-export interface PreviewOptions {
-  /** Called with the latest complete candidate file, at most every 100 ms, while the encoder searches. */
-  onPreview?: ((preview: ImagePreview) => void | PromiseLike<void>) | undefined;
-}
-
 /**
  * The one fidelity choice. Its shape is exclusive. For a pixel encode, 'exact' reproduces the input samples in their
  * tagged color space. {quality}: 1 to 100, fractions allowed. 100 is 'exact'. The number aims at a measured SSIMULACRA 2
@@ -227,13 +210,13 @@ type PixelEncoding = {
   /** 'exact', or {quality} from 1 to 100 (100 is exact). Default {quality: 90}. */
   fidelity?: PixelFidelity};
 type MeasuredEncoding = {
-  /** The score to reach: {ssimulacra2}. The smallest file that reaches it. */
+  /** The score to reach: {ssimulacra2}. The search seeks the smallest qualifying candidate it finds. Check the result's meetsTarget. */
   fidelity: MeasuredFidelity};
-type EncodingExecution = JobOptions & PreviewOptions & Described & Handed & {
+type EncodingExecution = JobOptions & Described & Handed & {
   /** Encode a JPEG's decoded pixels without reconstruction data. Omitted, an unchanged JPEG is preserved for
    * 'exact'. A look request at efforts 6-10 compares reversible recompression with the pixel result. */
   jpeg?: 'pixels';
-  /** An Ultra HDR JPEG's gain map: kept as a jhgm box by default (recompress's option); false keeps it inside jbrd only. */
+  /** An Ultra HDR JPEG's gain map: kept as a jhgm box by default, as in recompress. Pass false to keep it inside jbrd only. */
   gainMap?: boolean;
   /** 1 (fastest) to 9 (smallest file). Default 7. Same fidelity, same file on every host. */
   effort?: Effort;
@@ -265,13 +248,14 @@ export type VariantRequest = OutputSize & {/** As encode's effort. */ effort?: E
   {/** Largest file in bytes for this output. */ maxBytes: number; /** As fit's fidelity. */ fidelity?: FitFidelity} |
   ({maxBytes?: never} & (PixelEncoding | MeasuredEncoding))
 );
+/** Options for independently sized outputs from one source picture. */
 export type VariantsOptions = StillEncoding & {
   /** One entry per file wanted: its size, and its own effort, fidelity, JPEG policy or maxBytes. */
   outputs: readonly VariantRequest[]};
 /** jpegxl/upload's options: efforts 1-3 (default 3), 'exact' or a quality, with the full encoder's meanings. Lossy
  * float (HDR) samples, a GPU texture and firstRegion are jpegxl's: refused JXL_UNSUPPORTED. Upload runs on
  * WebAssembly: it takes no webgpu. */
-export type UploadOptions = JobOptions & PreviewOptions & Described & Handed & {
+export type UploadOptions = JobOptions & Described & Handed & {
   /** Encode a JPEG's decoded pixels without reconstruction data. Omitted, an unchanged 'exact' JPEG preserves the original file. */
   jpeg?: 'pixels';
   /** 'exact', or {quality} from 1 to 100 (100 is exact). Default {quality: 90}. */
@@ -292,7 +276,7 @@ type Animation = Omit<CoreAnimation, 'frames'> & {
 export type AnimationInput = Animation & Omit<SampleDescription, 'orientation' | 'extraChannels'> &
   {orientation?: never; extraChannels?: never};
 /** An animation, {width, height, frames}: 'exact' or a quality for every frame. No measured target. */
-export type AnimationOptions = JobOptions & PreviewOptions & Described & Handed & {
+export type AnimationOptions = JobOptions & Described & Handed & {
   /** 'exact', or {quality} from 1 to 100 for every frame. Default {quality: 90}. */
   fidelity?: PixelFidelity;
   /** 1 (fastest) to 9 (smallest file). Default 7. */
@@ -307,7 +291,7 @@ export type CaptureEffort = 1 | 2 | 3 | 4 | 5;
  * own file. A module refuses an effort it does not carry (JXL_UNSUPPORTED) and names the module that does. Every module
  * that carries an effort writes the same file for the same call. jpegxl/capture and upload's capture run on
  * WebAssembly and take no webgpu. Capture-complete's is CapturePhotoOptions.webgpu. */
-export type CaptureOptions = JobOptions & PreviewOptions & Described & Handed & {
+export type CaptureOptions = JobOptions & Described & Handed & {
   /** 'exact' (default), or {maxError} 0 to 8: every sample within that many levels of the input. */
   fidelity?: CaptureFidelity;
   /** 1 (fastest) to 5 (smallest file). Default 3. */
@@ -390,6 +374,7 @@ export interface ColorEncoding {
   /** Decoded CMYK samples: true, as JPEG XL stores ink inverted. */
   invertedCMYK?: boolean;
 }
+/** The sample depth and floating-point layout declared by the image header. */
 export interface HeaderBitDepth {bits: number; exponentBits: number; float: boolean}
 /** An extra channel as the header declares it. type: alpha 0, depth 1, spot 2, selection 3, black 4, CFA 5, thermal 6,
  * optional 15, nonoptional 16. dimShift: the channel's resolution is the image's divided by 2 ** dimShift. */
@@ -468,7 +453,7 @@ export type DecodedImageOf<F> = F extends 'uint8' ? FormattedImage<'uint8', Uint
  * closed). A job canceled through its signal rejects with that signal's reason, an AbortError DOMException unless you
  * passed one. Not done by this version: JXL_UNSUPPORTED, a valid request or file asking for
  * something this version does not do. The setup commands: JXL_SETUP (`add` or `remove` cannot change a project's files
- * safely. Its message names the step to do by hand). Ours: JXL_INTERNAL (a fault in jpegxl itself). A code keeps its meaning through 8.x. A later 8.x may add one.
+ * safely. Its message names the step to do by hand). JXL_INTERNAL means a fault in jpegxl itself. A code keeps its meaning through 8.x. New codes arrive only as additions.
  */
 export type ErrorCode =
   | 'JXL_OPTIONS' | 'JXL_INPUT' | 'JXL_DIMENSIONS' | 'JXL_JPEG' | 'JXL_DECODE' | 'JXL_RECONSTRUCTION' | 'JXL_TARGET' | 'JXL_PLATFORM'

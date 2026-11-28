@@ -2,6 +2,8 @@
 import {fault} from './fault.mjs';
 import {scaledDCTBases, lowFrequencies} from './vardct-strategies.mjs';
 import {inRange, Rn, Rb, rSplit, udiv} from './int-ops.mjs';
+import {IS_BIAS, cbrtTables, BLACK} from './int-cbrt.mjs';
+export {IS_BIAS, cbrtTables, BLACK};
 
 export const R = (s, k) => Math.floor((s + 2 ** (k - 1)) / 2 ** k);
 export const ISR = /* @__PURE__ */ Object.freeze({planeX: 2 ** 16, planeYB: 2 ** 18, planes: 2 ** 20, gaborish: 2 ** 36, split: 2 ** 31, coef: 2 ** 21, dctSum: 2 ** 41,
@@ -17,24 +19,9 @@ const LINEAR = /* @__PURE__ */ Float64Array.from({length: 256}, (_, i) => {
   for (let n = 0; n < 12; n++) fifth = (4 * fifth + square / (fifth * fifth * fifth * fifth)) / 5;
   return square * fifth;
 });
-const MIX = [0.3, 0.622, 0.078, 0.23, 0.692, 0.078, 0.24342268924547819, 0.20476744424496821, 0.5518098665095536], BIAS = 0.0037930732552754493;
+const MIX = [0.3, 0.622, 0.078, 0.23, 0.692, 0.078, 0.24342268924547819, 0.20476744424496821, 0.5518098665095536];
 export const IS_CONE = /* @__PURE__ */ Int32Array.from({length: 9 * 256}, (_, j) => Math.round(MIX[j >> 8] * LINEAR[j & 255] * Q20));
-export const IS_BIAS = Math.round(BIAS * Q20);
-const cubeSign = (t, v) => {
-  const n8 = v * 8796093022208, c = t * t * t, d = c - n8;
-  if (Math.abs(d) > Math.abs(c) * 2 ** -50) return d > 0 ? 1 : -1;
-  const e = BigInt(t) ** 3n - 8n * BigInt(v) * (1n << 40n);
-  return e > 0n ? 1 : e < 0n ? -1 : 0;
-};
-const exactRoot = v => {
-  let r = Math.round(Math.cbrt(v / Q20) * Q20);
-  for (;;) { if (v && cubeSign(2 * r - 1, v) > 0) r--; else if (cubeSign(2 * r + 1, v) <= 0) r++; else return r; }
-};
-let roots;
-export const cbrtTables = () => roots ||= {lo: Int32Array.from({length: 1 << 16}, (_, v) => exactRoot(v)),
-  hi: Int32Array.from({length: ((Q20 + IS_BIAS + 2) >> 4) + 2}, (_, i) => exactRoot(i * 16))};
 const cbrt = v => { const {lo, hi} = cbrtTables(); return v < 1 << 16 ? lo[v] : hi[R(v, 4)]; };
-export const BLACK = /* @__PURE__ */ (() => IS_BIAS < 1 << 16 ? exactRoot(IS_BIAS) : exactRoot(R(IS_BIAS, 4) * 16))();
 
 export function isXYB(r, g, b) {
   const cone = o => IS_CONE[o * 256 + r] + IS_CONE[(o + 1) * 256 + g] + IS_CONE[(o + 2) * 256 + b] + IS_BIAS;

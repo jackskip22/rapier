@@ -2,7 +2,7 @@
 import {INT_WGSL} from './int-ops.mjs';
 import {gpuWait, gpuKernel, gpuAlloc, gpuUpload, gpuUni, gpuStep, gpuStage, gpuDestroy, gpuScoped, gpuSize, gpuAbort} from './gpu-kit.mjs';
 import {maHistogramLayout} from './gpu-ma-counts.mjs';
-import {MA_WINNER_WGSL} from './gpu-ma-price.mjs';
+import {MA_RECORDS_WGSL, packMAPrices} from './gpu-ma-price.mjs';
 const U32 = 0xffffffff, TWO32 = 4294967296, NONE = U32, BAD = U32 - 1;
 const shape = (ok, reason) => { if (!ok) throw Object.assign(new Error(reason), {code: 'MA_SPARSE_SHAPE'}); };
 const limit = (ok, reason) => { if (!ok) throw Object.assign(new Error(reason), {code: 'MA_SPARSE_LIMIT'}); };
@@ -17,18 +17,6 @@ struct Params {
 }
 @group(0) @binding(0) var<uniform> p: Params;
 `;
-
-const recordCode =  `
-struct Record {
-  column: u32, bin: u32, loSelected: u32, hiSelected: u32,
-  loBits: vec2u, hiBits: vec2u,
-}
-fn absent() -> Record { return Record(0xffffffffu, 0u, 0u, 0u, vec2u(0u), vec2u(0u)); }
-fn invalid() -> Record { return Record(0xfffffffeu, 0u, 0u, 0u, vec2u(0u), vec2u(0u)); }
-fn less64(a: vec2u, b: vec2u) -> bool {
-  let ah = bitcast<i32>(a.y); let bh = bitcast<i32>(b.y);
-  return ah < bh || (ah == bh && a.x < b.x);
-}` + MA_WINNER_WGSL;
 
 const histShader = wg => INT_WGSL + parameters +  `
 @group(0) @binding(1) var<storage, read> members: array<u32>;
@@ -260,7 +248,7 @@ fn main(@builtin(workgroup_id) group: vec3u, @builtin(local_invocation_id) local
 }
 `;
 
-const chooseShader = wg => INT_WGSL + parameters + recordCode +  `
+const chooseShader = wg => INT_WGSL + parameters + MA_RECORDS_WGSL +  `
 @group(0) @binding(1) var<storage, read> metadata: array<u32>;
 @group(0) @binding(2) var<storage, read> work: array<u32>;
 @group(0) @binding(3) var<storage, read_write> chosen: array<Record>;
@@ -298,7 +286,7 @@ fn main(@builtin(workgroup_id) group: vec3u, @builtin(local_invocation_id) local
 }
 `;
 
-const mergeShader = wg => INT_WGSL + parameters + recordCode +  `
+const mergeShader = wg => INT_WGSL + parameters + MA_RECORDS_WGSL +  `
 @group(0) @binding(1) var<storage, read> chosen: array<Record>;
 @group(0) @binding(2) var<storage, read_write> best: array<Record>;
 var<workgroup> choices: array<Record, ${wg}>;
@@ -339,21 +327,7 @@ export async function createMASparseProposalBatch(device, samples, prices, {sign
   limit(gpuSize(count * kinds) <= storageBytes && gpuSize(count * layout.columns.length) <= storageBytes &&
     gpuSize((count + 1) * 8) <= storageBytes && gpuSize(alphabet * 4) <= storageBytes,
     'An immutable symbol/bin/table buffer exceeds an actual device binding limit');
-  shape(prices?.table instanceof Float64Array && prices.table.length >= count + 1 &&
-    prices.rawPrice instanceof Float64Array && prices.rawPrice.length === alphabet, 'Canonical f64 integer table/raw arrays required');
-  const table = prices.table.slice(0, count + 1), raw = prices.rawPrice.slice();
-  const maxQ = (32 - Math.clz32(count)) * 4096 - 1; let previousQ = 0;
-  shape(table[0] === 0, 'Canonical entropy table must start at zero');
-  for (let n = 1; n <= count; n++) {
-    const q = table[n] / n;
-    shape(Number.isSafeInteger(table[n]) && Number.isInteger(q) && q >= previousQ && q <= maxQ,
-      'Entropy table is outside the exact monotone Q12 domain'); previousQ = q;
-  }
-  for (const value of raw) shape(Number.isSafeInteger(value) && value >= 0 && value <= 30 * 4096 && value % 4096 === 0,
-    'Raw prices are outside the canonical integer Q12 domain');
-  const packedTable = new Uint32Array((count + 1) * 2);
-  for (let n = 0; n <= count; n++) { packedTable[n * 2] = table[n]; packedTable[n * 2 + 1] = Math.floor(table[n] / TWO32); }
-  const packedRaw = Uint32Array.from(raw);
+  const {packedTable, packedRaw} = packMAPrices(prices, count, alphabet, shape);
   const symbols = new Uint8Array(round4(kinds * count)), indices = new Uint8Array(round4(layout.columns.length * count));
   for (let k = 0; k < kinds; k++) symbols.set(samples.symbolSets[k], k * count);
   for (let c = 0; c < layout.columns.length; c++) indices.set(samples.columns[c].indices, c * count);

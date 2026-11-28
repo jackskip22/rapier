@@ -15,7 +15,7 @@ Each job runs rapier-jxl on a device we do not have and writes one results file.
 
 On Node, `npx rapier-jxl@8.4.1 selftest` runs the same test on any computer.
 
-Every job uses the fixed [pictures](pictures/README.md), a real screenshot, photo and camera JPEG, and this release's package. Each picture is encoded at efforts 1, 3 and 7, lossless and lossy, decoded and verified. The camera JPEG is recompressed and restored. Every output's SHA-256 must match this release's. Nothing is installed by the test pages, no files or screen content are read, and no results are sent: you attach them yourself. Results are unchecked until repeated. Answered jobs are removed.
+Every job uses the fixed [pictures](pictures/README.md), a real screenshot, photo and camera JPEG, and this release's package. The screenshot and photo are encoded at efforts 1, 3, and 7, lossless and lossy, then decoded and verified. The camera JPEG is recompressed, restored, and verified at those efforts. Every output's SHA-256 must match this release's. Nothing is installed by the test pages, no files or screen content are read, and no results are sent: you attach them yourself. Results are unchecked until repeated. Answered jobs are removed.
 
 ## Results file
 

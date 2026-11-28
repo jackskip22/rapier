@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createPaintPNGCodec} from '../draw/paint-png.mjs';
+import {PICTURE_EDGE} from './limits.mjs';
 import {inspectJPEGXL} from './header.mjs';
 import {inspectRaster} from './raster.mjs';
 import {readJXL, jxlRefused, codestreamComplete} from './jxl-native.mjs';
@@ -82,7 +83,7 @@ function jxlBytes(raster, bytes) {
 	bytes ||= base64Bytes(raster);
 	let info;
 	try { info = inspectJPEGXL(bytes); } catch (error) { throw ['JXL_SIGNATURE', 'JXL_CONTAINER', 'JXL_INPUT', 'JXL_DECODE'].includes(error?.code) ? Object.assign(damaged(), {cause: error}) : error; }
-	if (info.width > 16384 || info.height > 16384 || info.width * info.height > 12000000) throw new Error('Painting raster exceeds its pixel budget');
+	if (info.width > PICTURE_EDGE || info.height > PICTURE_EDGE || info.width * info.height > 12000000) throw new Error('Painting raster exceeds its pixel budget');
 	return {bytes, info};
 }
 const damaged = () => Object.assign(new Error('Damaged painting JPEG XL'), {code: 'paint_raster_damaged'});

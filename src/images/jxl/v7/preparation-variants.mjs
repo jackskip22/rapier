@@ -7,7 +7,6 @@ import {DEFAULT_INPUT_BYTES} from './ownership.mjs';
 import {check, fail, progressOf} from './primitives.mjs';
 import {JPEG_SOURCE, jpegSource, readJpegSource, chooseJpeg} from './jpeg-choice.mjs';
 import {RESULT_REFERENCE, resultFacts} from './result-reference.mjs';
-import {PREVIEW} from './preview.mjs';
 
 const variantRateKey = settings => JSON.stringify([settings.effort, settings.features]);
 const variantOutputBudget = maxPixels => Math.max(DEFAULT_INPUT_BYTES, maxPixels * 16);
@@ -35,7 +34,7 @@ const canSendWhole = settings => {
 };
 
 const toPublicEncodeOptions = settings => {
-  const {readAs: _r, signal: _s, onProgress: _p, onPreview: _v, features, ...rest} = settings;
+  const {readAs: _r, signal: _s, onProgress: _p, features, ...rest} = settings;
   return {...rest, ...(features?.firstRegion !== undefined && {firstRegion: features.firstRegion})};
 };
 
@@ -50,8 +49,7 @@ export async function variantsWith(encode, input, options, hooks = {}) {
   const jpeg = originalSource ? await readJpegSource(originalSource, {signal, maxPixels}) : null;
   const encoded = new WeakMap();
   const defaultEffort = hooks.admitEncode ? hooks.admitEncode({}).effort : hooks.carriesJpeg ? 3 : 7;
-  const fixedOnly = hooks.journal === undefined && common[PREVIEW] === undefined &&
-    common.onPreview === undefined && requests.every(r => !r.policy);
+  const fixedOnly = hooks.journal === undefined && requests.every(r => !r.policy);
   const measuredAny = fixedOnly && requests.some(r => (r.options?.effort ?? defaultEffort) >= 6);
 
   const distinctSizes = sizes => {
@@ -305,7 +303,7 @@ export async function variantsWith(encode, input, options, hooks = {}) {
         maxBytes: request.policy.maxBytes, signal, transform: {width: resized.width, height: resized.height}});
     }
     const {readAs: _spent, ...settings} = request.options;
-    const key = sharedSize && settings[PREVIEW] === undefined && JSON.stringify([!!jpeg, !!unchanged, settings],
+    const key = sharedSize && JSON.stringify([!!jpeg, !!unchanged, settings],
       (name, value) => name === 'signal' || name === 'onProgress' || typeof value === 'function' ? undefined : value);
     const same = key && encoded.get(resized)?.get(key);
     let answer;

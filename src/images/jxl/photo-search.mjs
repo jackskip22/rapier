@@ -5,7 +5,6 @@ import {closedLoopStrategySteps} from './varblock-measured.mjs';
 import {meets, qualitySteps} from './photo-quality-search.mjs';
 import {fault} from './fault.mjs';
 import {journaling, stage} from './step-journal.mjs';
-import {photoOutputMeasurements} from './photo-output-policy.mjs';
 export {meets, qualitySteps} from './photo-quality-search.mjs';
 
 const CAPTURE_PHOTO = typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true;
@@ -51,7 +50,7 @@ export function* candidateImageSteps(provider, name, quality, decisions) {
 }
 
 
-export function* scoreSteps(provider, target, {candidates = CANDIDATES, effort = 7, start = 85, aq = AQ, ids = VARBLOCK_IDS, lambda = 1, field = true, targetDoubt = null, initial = null, reuseDecisions = true, pooled = false, exactSize = false, measureSteps = null, preview = null, libjxlOf = null, seen = null, knownField: knownFieldIn = null} = {}) {
+export function* scoreSteps(provider, target, {candidates = CANDIDATES, effort = 7, start = 85, aq = AQ, ids = VARBLOCK_IDS, lambda = 1, field = true, targetDoubt = null, initial = null, reuseDecisions = true, pooled = false, exactSize = false, measureSteps = null, libjxlOf = null, seen = null, knownField: knownFieldIn = null, lowerBound = null} = {}) {
   const knownField = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : knownFieldIn;
   if (provider.width < 8 || provider.height < 8)
     candidates = candidates.filter(name => candidateApplies(name, provider.width, provider.height));
@@ -87,8 +86,15 @@ export function* scoreSteps(provider, target, {candidates = CANDIDATES, effort =
     const candidate = {candidate: name, quality: best.quality, imageAt, ...(!CAPTURE_PHOTO && {decisions}), ...best.scores, pass: meets(best.scores, target),
       bestObserved: {candidate: name, ...best.bestObserved}};
     if (measureSteps) {
-      if (!best.output || !best.output.bytes && best.output.effort === effort || best.output.bytes && best.output.effort !== effort) {
-        const write = function* () { const image = yield* imageAt(best.quality); return shown(yield* provider.write(image, effort, {pass: true}), image); };
+      const unwritten = !best.output || !best.output.bytes && best.output.effort === effort || best.output.bytes && best.output.effort !== effort;
+      let made = null;
+      if (unwritten && lowerBound && outputWinner && !journaling() && (outputWinner.pass && !candidate.pass
+        || outputWinner.pass === candidate.pass && (yield* lowerBound(made = yield* imageAt(best.quality), effort, outputWinner.size)))) {
+        found.push(candidate);
+        continue;
+      }
+      if (unwritten) {
+        const write = function* () { const image = made ?? (yield* imageAt(best.quality)); made = null; return shown(yield* provider.write(image, effort, {pass: true}), image); };
         best.output = {...best.output, effort, bytes: journaling() ? yield* stage('candidate-file', write) : yield* write()};
       }
       if (!(best.output?.bytes instanceof Uint8Array) || best.output.effort !== effort)
@@ -125,15 +131,11 @@ export function* scoreSteps(provider, target, {candidates = CANDIDATES, effort =
   if (measureSteps) { chosen = outputWinner; bytes = chosen.output.bytes; }
   else if (completeFiles) for (const f of pool) {
     const encoded = yield* encode(f); f.size = encoded.length;
-    preview?.(encoded, {width: provider.width, height: provider.height,
-      measurements: photoOutputMeasurements(target, f, 'encoder-reconstruction')});
     if (!bytes || encoded.length < bytes.length) { chosen = f; bytes = encoded; }
   }
   else {
     chosen = pool.reduce(smallerCandidate);
     bytes = yield* encode(chosen);
-    preview?.(bytes, {width: provider.width, height: provider.height,
-      measurements: photoOutputMeasurements(target, chosen, 'encoder-reconstruction')});
   }
   const {output, ...selected} = chosen;
   const sameField = chosen.candidate === 'field' && knownField?.ready && knownField.quality === chosen.quality && knownField.start === gaborishQuality && knownField.recipe === recipeKey(gaborishQuality);

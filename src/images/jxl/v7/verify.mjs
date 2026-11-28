@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import './engines.mjs';
-import {configuredDecoder, DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {configuredDecoder, DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {own} from './ownership.mjs';
 import {check, fail, declared, isCaller, object, snapshotOptions, dimensions, pixelLimit, PIXELS, admitSignal, progressOf, admitKeys} from './primitives.mjs';
 import {header} from './inspect.mjs';
@@ -27,7 +27,7 @@ import {compileKernels} from '../kernel-runtime.mjs';
 import {prepareKernels, ensureKernels, orientBlock, sampleBands} from '../kernels.mjs';
 import {wasmRequired} from '../capture-wasm-error.mjs';
 import {sampleResizeConfig, sampleResizeStep} from '../sample-transforms.mjs';
-export {configureDecoder} from '../shown-picture.mjs';
+export {setDecoder as configureDecoder} from '../decoder-setting.mjs';
 
 const CLAIM_SLACK = 0.1, MAX_ERROR_SLACK = 1;
 const sameBytes = (a, b) => !!a && !!b && a.length === b.length && a.every((value, i) => value === b[i]);

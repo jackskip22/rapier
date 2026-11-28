@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {admitRefraction} from './refraction.mjs';
+import {PICTURE_EDGE} from '../images/limits.mjs';
 
 const clock = () => globalThis.performance?.now() ?? Date.now();
 const abort = options => { if (options.signal?.aborted) throw options.signal.reason || new DOMException('Rendering canceled', 'AbortError'); };
@@ -8,7 +9,7 @@ const prepared = new WeakMap();
 
 function pixels(image, width = image?.width, height = image?.height) {
 	if (!image || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
-		width > 16384 || height > 16384 || width * height > 16 * 1024 * 1024 ||
+		width > PICTURE_EDGE || height > PICTURE_EDGE || width * height > 16 * 1024 * 1024 ||
 		image.width !== width || image.height !== height || !(image.data instanceof Uint8Array || image.data instanceof Uint8ClampedArray) ||
 		image.data.length !== width * height * 4) throw new TypeError('Invalid refracted light pixels');
 	return image;

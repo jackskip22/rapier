@@ -1054,10 +1054,13 @@ function* writeScan(out, jpeg, scan, huffman, restart, progressive, pad, nonzero
     return {resets: Int32Array.from(scan.resets).sort(), zeros};
   });
   const resets = events.resets, writer = new ScanWriter(out, scan, events.zeros);
-  const entries = scan.components.map(entry => ({index: entry.index, co: components[entry.index].coeffs, row0: 0, dc: huffman[entry.dc] || NO_CODE, ac: huffman[16 + entry.ac] || NO_CODE,
-    nonzero: progressive && ss && !bands ? nonzero(entry.index) : null}));
   const {hmax, vmax, single, lead, nx, ny} = scanGrid(jpeg, scan);
-  const shapes = entries.map(entry => { const c = components[entry.index]; return {stride: c.stride, h: single ? 1 : c.h, v: single ? 1 : c.v}; });
+  const entries = scan.components.map(entry => {
+    const c = components[entry.index];
+    return {index: entry.index, co: c.coeffs, row0: 0, stride: c.stride, h: single ? 1 : c.h, v: single ? 1 : c.v,
+      dc: huffman[entry.dc] || NO_CODE, ac: huffman[16 + entry.ac] || NO_CODE,
+      nonzero: progressive && ss && !bands ? nonzero(entry.index) : null};
+  });
   const per = 32 * (single ? lead.v : 1) / vmax, banded = bands && jpeg.band && (out.expected || out.parts);
   const canKernelBands = banded && !journaling() && Number.isInteger(per) && per > 0 && !scan.resets.length;
   if (!progressive && (!bands || canKernelBands)) {
@@ -1065,11 +1068,11 @@ function* writeScan(out, jpeg, scan, huffman, restart, progressive, pad, nonzero
       jpeg.band(Math.floor(y0 / per));
       for (let i = 0; i < entries.length; i++) ({coeffs: entries[i].co, row0: entries[i].row0} = components[entries[i].index]);
     } : null;
-    const written = kernelHooks.entropy?.()?.sequentialScan(out, entries.map((entry, e) => ({...entry, ...shapes[e]})), nx, ny, restart,
+    const written = kernelHooks.entropy?.()?.sequentialScan(out, entries, nx, ny, restart,
       writer.zeros || new Map(), pad, NATURAL, loadBand, per);
     if (written === null) requireJPEG(false);
     if (written) {
-      const blocks = nx * ny * shapes.reduce((n, {h, v}) => n + h * v, 0);
+      const blocks = nx * ny * entries.reduce((n, {h, v}) => n + h * v, 0);
       requireJPEG(scan.resets.every(n => n < blocks) && scan.zeros.every((value, i) => i % 2 || value < blocks)); out.align(pad);
       return;
     }
@@ -1090,7 +1093,7 @@ function* writeScan(out, jpeg, scan, huffman, restart, progressive, pad, nonzero
     for (let x = 0; x < nx; x++, m++) {
       if (restart && m && m % restart === 0) { writer.flush(); out.align(pad); out.marker(208 + ((m / restart - 1) & 7)); preds.fill(0); }
       for (let e = 0; e < entries.length; e++) {
-        const entry = entries[e], {stride, h, v} = shapes[e];
+        const entry = entries[e], {stride, h, v} = entry;
         for (let dy = 0; dy < v; dy++) for (let dx = 0; dx < h; dx++) {
           if (resets[nextReset] === writer.blockIndex) { writer.flush(); while (resets[nextReset] === writer.blockIndex) nextReset++; }
           const at = ((y * v + dy - entry.row0) * stride + x * h + dx) * 64;

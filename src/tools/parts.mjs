@@ -15,7 +15,7 @@ export const PARTS = Object.freeze([
     globals: {RapierDrawLetterPreviews: 'draw/letter-previews.mjs', RapierDrawFit: 'draw/fit.mjs', RapierDrawWaterVideo: 'draw/water-video.mjs', RapierDrawPaint: 'draw/paint.mjs',
       RapierDrawBrushes: 'draw/brushes.mjs', RapierDrawAgentPaint: 'draw/agent-paint.mjs', RapierDrawPaintWorker: 'draw/paint-worker.mjs',
       RapierDrawPaintRows: 'draw/paint-parallel.mjs', RapierDrawPaintRemote: 'draw/paint-remote.mjs', RapierDrawLiquid: 'draw/liquid-gpu.mjs',
-      RapierDrawLiquidWorker: 'draw/liquid-worker.mjs', RapierDrawCopier: 'draw/copier-gpu.mjs', RapierDrawWater: 'draw/water.mjs',
+      RapierDrawLiquidWorker: 'draw/liquid-worker.mjs', RapierDrawCopier: 'draw/copier-gpu.mjs', RapierDrawWater: 'draw/water.mjs', RapierWatercolorOrder: 'draw/watercolor-order.mjs',
       RapierDrawWaterWorker: 'draw/water-worker.mjs', RapierDrawWaterPaths: 'draw/water-paths.mjs'}},
   {id: 'jxl', label: 'JPEG XL converter', scripts: ['jxl/maker.js', 'jxl/view.js'], styles: ['rapier-jxl-style', 'rapier-jxl-maker-style'],
     globals: {RapierJxlConvert: 'jxl/convert.mjs', RapierJxlMaker: 'jxl/maker.mjs'}},

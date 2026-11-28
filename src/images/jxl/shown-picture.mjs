@@ -3,7 +3,7 @@ import {nativePicture, decodesJXL} from './native-picture.mjs';
 import {fault} from './fault.mjs';
 import {callers, check, snapshotOptions} from './v7/primitives.mjs';
 import {nativeGammaRGBA} from './photo-output.mjs';
-import {configuredDecoder, setDecoder} from './decoder-setting.mjs';
+import {configuredDecoder, setDecoder, DECODER_SNAPSHOT} from './decoder-setting.mjs';
 
 const NEEDS = 'no JPEG XL decoder: call configureDecoder(decode) with decode from jpegxl/decode';
 const BROWSER_NEEDS = 'no browser JPEG XL decode: use effort 1-5';
@@ -15,8 +15,7 @@ const unsupported = error => {
 
 export const configureDecoder = setDecoder;
 
-export {configuredDecoder};
-export const DECODER_SNAPSHOT = /* @__PURE__ */ Symbol.for('rapier-jxl.decoder.snapshot');
+export {configuredDecoder, DECODER_SNAPSHOT};
 
 async function hostPicture(decode, bytes, {width, height, colorSpace, signal}) {
   check(signal);

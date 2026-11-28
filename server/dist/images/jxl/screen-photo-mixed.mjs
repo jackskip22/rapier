@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: MIT
-import {part} from './bits.mjs';
-import {encodeCaptureBytes, CAPTURE_BASE} from './capture-codec.mjs';
+import {part, complete} from './bits.mjs';
+import {encodeCaptureBytes, compileCaptureKernels, CAPTURE_BASE} from './capture-codec.mjs';
+import {captureRefused} from './fault.mjs';
+import {exclusive} from './turn.mjs';
+import {screenPhotoRegions} from './screen-photo-regions.mjs';
 
-export {compileJpegKernels} from './jpeg-kernels.mjs';
+import {compileJpegKernels} from './jpeg-kernels.mjs';
+export {compileJpegKernels};
 import {expandPhotoRegions} from './screen-photo-borders.mjs';
 import {photoCoefficientSteps} from './photo-dct.mjs';
 import {coefficientAnsSteps} from './coefficient-ans.mjs';
 import {encodeLayersSteps} from './layers-core.mjs';
 import {opaquePixels} from './lossless.mjs';
+import {composed, partsOf} from './photo-shown.mjs';
 
 function crop(data, width, region) {
   const {x, y, width: w, height: h} = region, out = new Uint8Array(w * h * 4);
@@ -40,16 +45,24 @@ export function* screenPhotoSteps({data, width, height, quality, regions: rawReg
     const image = yield* stage(photoCoefficientSteps(pixels, region.width, region.height, quality, 'srgb'),
       start, 0.15 / regions.length);
     if (alpha) image.alpha = pixels;
-    const bytes = yield* stage(coefficientAnsSteps(image, 1), start + 0.15 / regions.length, 0.15 / regions.length);
+    const bytes = yield* stage(partsOf(coefficientAnsSteps(image, 1)), start + 0.15 / regions.length, 0.15 / regions.length);
     coded.push({image, bytes}); layers.push({bytes, x: region.x, y: region.y});
   }
-  const first = yield* stage(encodeLayersSteps({width, height, layers}), 0.5, 0.1);
+  const shows = {base: null, crops: coded.map(({image}, i) => ({image, x: regions[i].x, y: regions[i].y}))};
+  const first = composed(yield* stage(encodeLayersSteps({width, height, layers}), 0.5, 0.1), shows);
   if (effort < 2 || first.length > bound) return first;
   for (let i = 0; i < regions.length; i++) {
     let {image, bytes} = coded[i]; const start = 0.6 + i * 0.3 / regions.length;
-    if (effort > 3) bytes = yield* stage(coefficientAnsSteps(image, 3, bytes), start, 0.1 / regions.length);
-    layers[i + 1].bytes = yield* stage(coefficientAnsSteps(image, effort, bytes), start + (effort > 3 ? 0.1 : 0) / regions.length, (effort > 3 ? 0.2 : 0.3) / regions.length);
+    if (effort > 3) bytes = yield* stage(partsOf(coefficientAnsSteps(image, 3, bytes)), start, 0.1 / regions.length);
+    layers[i + 1].bytes = yield* stage(partsOf(coefficientAnsSteps(image, effort, bytes)), start + (effort > 3 ? 0.1 : 0) / regions.length, (effort > 3 ? 0.2 : 0.3) / regions.length);
   }
-  const better = yield* stage(encodeLayersSteps({width, height, layers}), 0.9, 0.1);
+  const better = composed(yield* stage(encodeLayersSteps({width, height, layers}), 0.9, 0.1), shows);
   return better.length < first.length ? better : first;
+}
+
+export async function screenPhotoAnswer(request, signal) {
+  await compileCaptureKernels(); await compileJpegKernels().catch(() => false);
+  try { return await exclusive(() => complete(screenPhotoSteps({...request,
+    regions: request.regions ?? screenPhotoRegions(request.data, request.width, request.height)})), signal); }
+  catch (error) { if (signal?.aborted && error === signal.reason || !captureRefused(error)) throw error; return null; }
 }

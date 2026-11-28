@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {DECODER_SNAPSHOT} from './shown-picture.mjs';
+import {DECODER_SNAPSHOT} from './decoder-setting.mjs';
 import {createStepper, MAX_PART_BYTES, refOf} from './resumable-encode.mjs';
 import {encodeValue, decodeValue, lazySource, lazyValue, unreadPath, joinedBytes, journalFact, JOIN, SAVED, PASSED, journalNext, journalProtocol, plainJournal} from './step-journal.mjs';
 import {writeData, parseData} from './resumable-data.mjs';

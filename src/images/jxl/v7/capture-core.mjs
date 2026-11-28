@@ -1,5 +1,4 @@
 import {resultOperationWith} from './result-operation.mjs';
-import {PREVIEW, previewCall} from './preview.mjs';
 import {unmeasuredResult} from './result-record.mjs';
 import {runCapture, prepareCapture} from './run-capture.mjs';
 import {captureDomain} from '../capture-domain.mjs';
@@ -21,11 +20,11 @@ const LEAN = carriedBy('rapier-jxl/capture', CAPTURE_LEAN);
 const exactDriver = {admit: options => ({maxError: admitCapture(options, LEAN)}), run: runCapture};
 export const captureWith = (readTexture, driver = exactDriver, record = unmeasuredResult, device = false) => resultOperationWith(record, (input, options) => {
   return captureHere(input, options, readTexture, driver);
-}, {fidelity: 'exact', capture: true, preview: previewCall, device});
+}, {fidelity: 'exact', capture: true, device});
 const RECT = ['x', 'y', 'width', 'height', 'solidText', 'edge'];
 async function captureHere(input, options = {}, readTexture, driver) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw fail('JXL_OPTIONS', "options: object");
-  const {signal, onProgress, [CAPTURE_RECORD]: onEncoded, [JOURNAL]: journal, [PREVIEW]: preview, ...rest} = options;
+  const {signal, onProgress, [CAPTURE_RECORD]: onEncoded, [JOURNAL]: journal, ...rest} = options;
   if (rest.features?.firstRegion !== undefined) throw fail('JXL_UNSUPPORTED', "firstRegion: use encode");
   admitSignal(signal);
   if (onProgress !== undefined && typeof onProgress !== 'function') throw fail('JXL_OPTIONS', "onProgress: function");
@@ -84,7 +83,7 @@ async function captureHere(input, options = {}, readTexture, driver) {
   const report = progressOf(onProgress, signal);
   const record = onEncoded && (value => { try { onEncoded(value); } catch (error) { throw callers(error); } });
   const bytes = await withArenaLease(signal, outsideArena => driver.run(owned, rest, {signal: signal ?? new AbortController().signal, onProgress: report, onEncoded: record, outsideArena,
-    ...(normalizedRects && {normalizedRects}), ...(journal && {journal}), ...(preview && {preview})}));
+    ...(normalizedRects && {normalizedRects}), ...(journal && {journal})}));
   const stated = withRenderingIntent(bytes, intent);
   return stated !== bytes && captureExact(bytes) ? markCaptureExact(stated) : stated;
 }

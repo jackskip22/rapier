@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
+import {PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS} from './limits.mjs';
 export function inspectGIF(bytes) {
   const fail = message => {throw Object.assign(new Error(message), {code: 'GIF_ADMISSION'});};
-  if (!(bytes instanceof Uint8Array) || bytes.length < 13 || bytes.length > 16 * 1024 * 1024 ||
+  if (!(bytes instanceof Uint8Array) || bytes.length < 13 || bytes.length > PICTURE_BYTES ||
       !/^GIF8[79]a$/.test(String.fromCharCode(...bytes.subarray(0, 6)))) fail('Invalid GIF header or byte budget');
   const u16 = at => bytes[at] + bytes[at + 1] * 256;
   const width = u16(6), height = u16(8);
-  if (!width || !height || width > 16384 || height > 16384 || width * height > 24000000) fail('GIF dimensions exceed the image budget');
+  if (!width || !height || width > PICTURE_EDGE || height > PICTURE_EDGE || width * height > ASSET_PIXELS) fail('GIF dimensions exceed the image budget');
   let at = 13, frames = 0, control = null, first = null, duration = 0;
   const need = n => {if (at + n > bytes.length) fail('Truncated GIF');};
   if (bytes[10] & 128) at += 3 * (2 << (bytes[10] & 7));

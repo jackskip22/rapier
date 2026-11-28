@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {fault} from './admit.mjs';
+import {fault, checkInteger as transformInteger} from './admit.mjs';
 import {part} from './bits.mjs';
 import {leaf} from './modular.mjs';
 import {codeChannel} from './modular-channel.mjs';
@@ -8,11 +8,6 @@ import {DELTA_IMPLICIT} from './implicit-palette.mjs';
 
 const PLANAR_PALETTE_PREDICTORS = new Map([['zero', 0], ['left', 1], ['top', 2], ['average', 3], ['select', 4], ['gradient', 5], ['weighted', 6]]);
 const TRANSFORM_POWERS = [1]; for (let i = 1; i <= 32; i++) TRANSFORM_POWERS.push(TRANSFORM_POWERS[i - 1] * 2);
-const transformInteger = (value, minimum, maximum, name) => {
-  if (!Number.isInteger(value) || value < minimum || value > maximum)
-    throw fault('JXL_INPUT', name + ': integer ' + minimum + '-' + maximum);
-  return value;
-};
 const transformShape = channel => ({...channel, hshift: channel.hshift ?? channel.shift, vshift: channel.vshift ?? channel.shift});
 const transformKey = (planes, at) => planes.map(plane => plane[at] | 0).join(',');
 

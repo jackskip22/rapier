@@ -12,7 +12,8 @@ import {frontMatterFrame} from '../spec/frontmatter.mjs';
 import {WORD_SIDECAR_OPEN} from '../spec/word-sidecar.mjs';
 import {initialRange} from '../layout/initial-range.mjs';
 import {willMarkerOf} from '../agent/will.mjs';
-import {IMAGE_LIMITS, inspectRaster, inspectSVG, inspectJPEGXL, isJxl, dataImage, sanitizeSvgText, svgElements, validAssetDimensions} from '../images/assets.mjs';
+import {PICTURE_BYTES, ASSET_PIXELS, PLAYBACK_PIXELS} from '../images/limits.mjs';
+import {inspectRaster, inspectSVG, inspectJPEGXL, isJxl, dataImage, sanitizeSvgText, svgElements, validAssetDimensions} from '../images/assets.mjs';
 import {markdownParser, markdownBodyOffset, documentAssets, normalizeLabel} from '../spec/md-assets.mjs';
 import {parseComments, commentThreads, commentAnchor, writeComments, commentSplices, validCommentDate, validCommentTimestamp} from '../agent/comments.mjs';
 import {DOCX_FONTS} from '../shell/fonts/docx-fonts.mjs';
@@ -1632,7 +1633,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
       return {html: ''};
     }
     if (!entries.get(path).size) return fail('DOCX contains an empty picture.');
-    if (entries.get(path).size > IMAGE_LIMITS.bytes) return fail('DOCX picture exceeds the 16 MiB image limit.', 'docx_image_invalid');
+    if (entries.get(path).size > PICTURE_BYTES) return fail('DOCX picture exceeds the 16 MiB image limit.', 'docx_image_invalid');
     if (contentType(path) !== 'image/svg+xml') {
       if (!readablePictures.has(path)) {
         await work.checkpoint();
@@ -1649,7 +1650,7 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     if (width !== null && !Object.values(transform.crop).some(Boolean)) {
       if (!naturalWidths.has(path)) {
         let natural = 0;
-        try { const bytes = await files.read(path), info = contentType(path) === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes); natural = info.orientation >= 5 ? info.height : info.width; }
+        try { const bytes = await files.read(path), info = contentType(path) === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes, {maximumPixels: ASSET_PIXELS}); natural = info.orientation >= 5 ? info.height : info.width; }
         catch (_) { natural = 0; }
         naturalWidths.set(path, natural);
       }
@@ -2692,11 +2693,11 @@ export async function readDocx(blob, {embedImage, checkCurrent, signal, onProgre
     if (admittedImages.has(path)) { request.image.mime = admittedImages.get(path).type; continue; }
     await work.checkpoint();
     const bytes = await files.read(path);
-    if (!bytes.length || bytes.length > IMAGE_LIMITS.bytes) return fail('DOCX picture exceeds the 16 MiB image limit.', 'docx_image_invalid');
+    if (!bytes.length || bytes.length > PICTURE_BYTES) return fail('DOCX picture exceeds the 16 MiB image limit.', 'docx_image_invalid');
     let info;
-    if (isJxl(bytes)) info = {...inspectJPEGXL(bytes), type: 'image/jxl'};
+    if (isJxl(bytes)) info = {...inspectJPEGXL(bytes, false, {animatedPixels: PLAYBACK_PIXELS}), type: 'image/jxl'};
     else {
-      try { info = inspectRaster(bytes); }
+      try { info = inspectRaster(bytes, {maximumPixels: ASSET_PIXELS}); }
       catch (error) {
         if (type !== 'image/svg+xml') throw error;
         info = inspectSVG(bytes);

@@ -5,16 +5,15 @@ import {fault} from './fault.mjs';
 import {complete, part, scaled} from './bits.mjs';
 import {transformDCT8, dct8Basis} from './photo-dct.mjs';
 import {photoXYBSteps, gaborishPlanes, FAST_RANGE, XYB_TABLES} from './photo-xyb.mjs';
-import {photoXYBBands, photoXYBBand, appendPhotoBand, PHOTO_BAND_MARGIN, photoFastBands} from './photo-bands.mjs';
+import {photoXYBBands, photoXYBBand, appendPhotoBand, PHOTO_BAND_MARGIN, photoFastBands, photoFastImage} from './photo-bands.mjs';
 import {offloading} from './offload.mjs';
 import {photoSplitSteps, photoSplitCandidates, splitRoute, encodeSplit} from './photo-split.mjs';
-import {fastBudgets, fastSmallSteps} from './photo-low-ladder.mjs';
-import {coefficientAnsSteps} from './coefficient-ans.mjs';
+import {coefficientAnsSteps, fastBudgets, fastSmallSteps} from './coefficient-ans.mjs';
 const UPLOAD = typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true;
 const effortOne = (width, height, quality, effort, screen) => effort === 1 && quality < 100 && !screen && splitRoute(width, height);
 import {SPLIT_HOOKS} from './split-hooks.mjs';
 import {stage, unit, journaling} from './step-journal.mjs';
-import {V6, v6For, smallPicture, GABORISH, UPLOAD_PICTURE, UPLOAD_FLAT_PICTURE, uploadFlat, uploadGrain, uploadBandPicture, measuredUploadPicture} from './photo-v6-settings.mjs';
+import {V6, v6For, smallPicture, GABORISH, UPLOAD_PICTURE, UPLOAD_FLAT_PICTURE, uploadFlat, uploadGrain, uploadBandPicture, measuredUploadPicture, profiledUploadPicture} from './photo-v6-settings.mjs';
 
 export {V6, GABORISH, UPLOAD_PICTURE, UPLOAD_FLAT_PICTURE};
 
@@ -195,7 +194,7 @@ export function* photoV6Steps(data, width, height, quality, effort, encodeCoeffi
     } } finally { if (!step?.done) steps.return?.(); }
     return step.value;
   }
-  if (!screen && (effort === 6 || effort === 7) && quality < 100 && width >= 128 && height >= 128 && encodeCoefficients.splits) {
+  if (!screen && (effort === 4 || effort === 5 || effort === 6 || effort === 7) && quality < 100 && width >= 128 && height >= 128 && encodeCoefficients.splits) {
     const bytes = yield* share(pictureSteps(data, width, height, quality, effort, encodeCoefficients, search, color, gpu, memory, screen, true, false, both), 0, 1);
     if (!hurry && bytes) return bytes;
     const late = yield* share(pictureSteps(data, width, height, quality, 1, encodeCoefficients, undefined, color, undefined, memory, screen), 1, 1);
@@ -235,12 +234,6 @@ export function* photoV6Steps(data, width, height, quality, effort, encodeCoeffi
     v6Trace('hurried: effort 1');
     const late = yield* share(pictureSteps(data, width, height, quality, 1, encodeCoefficients, undefined, color, undefined, memory, screen), 1, 1);
     return best && best.length < late.length ? best : late;
-  }
-  if (!screen && (effort === 4 || effort === 5) && quality < 100 && width >= 128 && height >= 128 && encodeCoefficients.splits) {
-    const bytes = yield* share(pictureSteps(data, width, height, quality, effort, encodeCoefficients, search, color, gpu, memory, screen, true, false, both), 0, 1);
-    if (!hurry && bytes) return bytes;
-    const late = yield* share(pictureSteps(data, width, height, quality, 1, encodeCoefficients, undefined, color, undefined, memory, screen), 1, 1);
-    return bytes && bytes.length < late.length ? bytes : late;
   }
   v6Trace('floor');
   const floor = yield* share(pictureSteps(data, width, height, quality, 1, encodeCoefficients, undefined, color, undefined, memory, screen), 0, 0.1);
@@ -327,9 +320,7 @@ function* pictureSteps(data, width, height, quality, effort, encodeCoefficients,
     const budgets = fastBudgets(effort, false, width * height);
     if (splitRoute(width, height)) return yield* photoSplitCandidates(data, width, height, quality, budgets, {screen: false});
     admitV6Memory(data, width, height, memory);
-    let image;
-    try { image = complete(photoXYBSteps(data, width, height, quality, {...v6For(width, height), fast: true, fastBand: true})); }
-    catch (error) { if (error !== FAST_RANGE) throw error; image = complete(photoXYBSteps(data, width, height, quality, {...v6For(width, height)})); }
+    const image = photoFastImage(data, width, height, quality, v6For(width, height), {fastBand: true});
     return yield* fastSmallSteps(image, effort, {hurried: false}, true);
   }
   if (effort <= 3 && !color) {
@@ -352,7 +343,7 @@ function* pictureSteps(data, width, height, quality, effort, encodeCoefficients,
     }
     const image = (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && offloading()) && !screen ? yield* part(photoFastBands(data, width, height, quality, {...v6For(width, height), fast: true, fastBand: true}), 0, 2)
       : complete(photoXYBSteps(data, width, height, quality, screen ? {...v6For(width, height), fast: true, calibrationRow: 'screen'} : {...v6For(width, height), fast: true, fastBand: true}));
-    const coded = effortOne(width, height, quality, effort, screen) ? coefficientAnsSteps(image, 2) : encodeCoefficients(image, effort);
+    const coded = encodeCoefficients(image, effort);
     return yield* ((!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && offloading()) ? part(coded, 1, 2) : coded);
   }
   if (effort <= 3 && color?.transform && !color.transform.gray) {
@@ -361,8 +352,7 @@ function* pictureSteps(data, width, height, quality, effort, encodeCoefficients,
         try { return yield* photoSplitCandidates(data, width, height, quality, [], {color, screen: false}); } catch (error) { if (error !== FAST_RANGE) throw error; }
       }
       admitV6Memory(data, width, height, memory);
-      let image = null;
-      try { image = complete(photoXYBSteps(data, width, height, quality, {...v6For(width, height), fast: true, ...color})); } catch (error) { if (error !== FAST_RANGE) throw error; }
+      const image = photoFastImage(data, width, height, quality, v6For(width, height), {color, fallback: false});
       if (image) return yield* (effortOne(width, height, quality, effort, false) ? coefficientAnsSteps(image, 2) : encodeCoefficients(image, effort));
     } else if (quality < 100 && !screen && splitRoute(width, height) && (encodeCoefficients.splits || effort === 1)) {
       const picture = yield* uploadPictureSteps(data, width, height, quality);
@@ -385,9 +375,7 @@ function* pictureSteps(data, width, height, quality, effort, encodeCoefficients,
       try { return yield* photoSplitCandidates(data, width, height, quality, fastBudgets(effort, false, width * height), {color, screen: false}); } catch (error) { if (error !== FAST_RANGE) throw error; }
     }
     admitV6Memory(data, width, height, memory);
-    let image;
-    try { image = complete(photoXYBSteps(data, width, height, quality, {...v6For(width, height), fast: true, ...color})); }
-    catch (error) { if (error !== FAST_RANGE) throw error; image = complete(photoXYBSteps(data, width, height, quality, {...v6For(width, height), ...color})); }
+    const image = photoFastImage(data, width, height, quality, v6For(width, height), {color});
     return yield* fastSmallSteps(image, effort, {hurried: false}, true);
   }
   const commonUpload = (effort <= 5 && (effort >= 4 || !!color)) && quality < 100 && !screen && (!color || color.transform && !color.transform.gray);
@@ -403,7 +391,7 @@ function* pictureSteps(data, width, height, quality, effort, encodeCoefficients,
       if (bytes) return bytes;
     }
     admitV6Memory(data, width, height, memory);
-    const options = picture && color ? {...v6For(width, height), ...GABORISH, tune: picture.tune, calibrationRow: picture.calibrationRow, ...color}
+    const options = picture && color ? profiledUploadPicture(width, height, picture, color)
       : picture || {...v6For(width, height), ...GABORISH, ...color};
     const write = image => effortOne(width, height, quality, effort, screen) ? coefficientAnsSteps(image, 2) : encodeCoefficients(image, effort);
     if ((!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && offloading())) return yield* bandsThenCoefficients(photoXYBBands(data, width, height, quality, options, color || {}), write);

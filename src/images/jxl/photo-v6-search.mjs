@@ -298,14 +298,3 @@ function* fieldSearch(prepared, quality, layout, reference, scored, c0, choose, 
   v6Trace('s2 field search ranked');
   return out;
 }
-
-export function certain(order, w, c0) {
-  const kOf = s => 1.03 / Math.max(6, 100 - s), k0 = kOf(c0.s2 - c0.doubt), k1 = kOf(c0.s2 + c0.doubt);
-  for (const c of order) {
-    if (c === w) continue;
-    const L = Math.log(c.bytes.length) - Math.log(w.bytes.length), d = c.s2 - w.s2, e = c.doubt + w.doubt;
-    const most = Math.max(k0 * (d - e), k0 * (d + e), k1 * (d - e), k1 * (d + e));
-    if (!(L - most > 1e-12 * (1 + Math.abs(Math.log(c.bytes.length))))) return false;
-  }
-  return true;
-}

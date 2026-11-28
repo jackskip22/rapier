@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {complete} from './bits.mjs';
-import {materialize} from './varblock-core.mjs';
+import {materialize} from './materialize.mjs';
 import {encodeStrategyImageSteps} from './varblock-write.mjs';
 import {coefficientAnsSteps, PLAN_LF} from './coefficient-ans.mjs';
 import {packedPictureSteps} from './photo-packed-picture.mjs';

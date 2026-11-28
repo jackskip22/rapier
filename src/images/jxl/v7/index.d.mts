@@ -4,7 +4,7 @@ import type {ImageInput, EncodeOptions, PreparationInput, FitOptions, VariantsOp
 import type {ResumableFunction} from './resumable.mjs';
 import type {CodecConfig} from './types.mjs';
 export type * from './types.mjs';
-// Types only: page capture's options; the function is jpegxl/capture-complete's.
+// Types for page capture. The function is jpegxl/capture-complete's.
 export type {CaptureCompleteOptions, CapturePhotoFidelity as CaptureFidelity} from './capture-complete.mjs';
 /** jpegxl: the full still encoder in one file: a page's calls run in its own worker. Calls in a worker, Node and edge hosts run in place. Efforts 1-9, exact or lossy. Measured fidelity, WebGPU
  * at lossy efforts 7-9, HDR and deeper samples, ICC and codestream features. An exact, unchanged JPEG File or Blob

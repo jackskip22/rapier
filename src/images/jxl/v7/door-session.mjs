@@ -10,7 +10,6 @@ import {fail, object, dimensions, pixelLimit, webgpuSetting, lostBlank, proveRea
 import {arrayBufferBytes} from './bytes.mjs';
 import {open2d, glGpuSpace, copy2d, read2d} from './canvas-2d.mjs';
 import {JPEG_SOURCE, JPEG_SOURCE_WIRE} from './jpeg-choice-policy.mjs';
-import {replyPreview, clearPreviewReply} from './preview-relay.mjs';
 import {outputSides} from './preparation-sides.mjs';
 
 const isFn = v => typeof v === 'function', isObj = v => !!v && typeof v === 'object', isInt = Number.isSafeInteger, noop = () => {};
@@ -21,8 +20,8 @@ const isSpace = s => s === 'srgb' || s === 'display-p3';
 const STILL_FIELDS = /* @__PURE__ */ new Set(['data', 'width', 'height', ...DESCRIPTION]);
 const ANIM_FIELDS = /* @__PURE__ */ new Set(['width', 'height', 'frames', 'loops', ...DESCRIPTION]);
 const ROW_FIELDS = /* @__PURE__ */ new Set(['width', 'height', 'rows', ...DESCRIPTION]);
-const ENCODE_KEYS = /* @__PURE__ */ new Set(['fidelity', 'effort', 'progressive', 'firstRegion', 'readAs', 'jpeg', 'webgpu', 'maxPixels', 'signal', 'onProgress', 'onPreview']);
-const CAP_KEYS = /* @__PURE__ */ new Set(['fidelity', 'effort', 'readAs', 'maxPixels', 'signal', 'onProgress', 'onPreview']);
+const ENCODE_KEYS = /* @__PURE__ */ new Set(['fidelity', 'effort', 'progressive', 'firstRegion', 'readAs', 'jpeg', 'webgpu', 'maxPixels', 'signal', 'onProgress']);
+const CAP_KEYS = /* @__PURE__ */ new Set(['fidelity', 'effort', 'readAs', 'maxPixels', 'signal', 'onProgress']);
 
 export let bitmapClones;
 export const bitmapCloneCheck = /* @__PURE__ */ (() => !isFn(globalThis.createImageBitmap) || !isFn(globalThis.ImageData) || !isFn(globalThis.MessageChannel)
@@ -34,20 +33,6 @@ export const bitmapCloneCheck = /* @__PURE__ */ (() => !isFn(globalThis.createIm
       finally { for (const x of [bm, ch.port1, ch.port2]) { try { x.close(); } catch {} } }
       return bitmapClones;
     }, () => (bitmapClones = false)).catch(() => (bitmapClones = false)))();
-
-export const doorPreviews = /* @__PURE__ */ Object.freeze({
-  ops: new Set(['encode', 'capture', 'fit', 'variants']),
-  clear: clearPreviewReply,
-  handle(j, data, onCancel, ack) {
-    if (!j.v || j.d) return;
-    replyPreview(j, data.preview, data.previewSequence, val => {
-      if (j.d) return;
-      const fn = j.v;
-      try { return j.z = Promise.resolve(fn?.(val)).catch(onCancel); }
-      catch (r) { onCancel(r); }
-    }, ack);
-  },
-});
 
 export const variantsResult = check => (v, op) => op === 'variants' ? Array.isArray(v) && v.length > 0 && v.every(check) : check(v);
 export const jpegSourceKeys = /* @__PURE__ */ Object.freeze({inKey: JPEG_SOURCE, wireKey: JPEG_SOURCE_WIRE});
@@ -149,7 +134,7 @@ export function admitCaptureDoor(value, levels) {
 
 export function admitPhotoCaptureDoor(opt, spec) {
   if (isObj(opt) && 'features' in opt) throw fail('JXL_OPTIONS', 'unknown option: features');
-  const {signal: _s, onProgress: _p, onPreview: _v, firstRegion, ...rest} = opt ?? {};
+  const {signal: _s, onProgress: _p, firstRegion, ...rest} = opt ?? {};
   spec.captureAdmission(firstRegion === undefined ? rest : {...rest, features: {firstRegion}}, {module: spec.module, ...spec.captureLevels});
   return optLimit(rest);
 }
@@ -355,8 +340,8 @@ export function admitEncodePlain(input, readAs) {
 
 function fix(opt) {
   if (!isObj(opt)) return opt;
-  const {signal, onProgress, onPreview, ...data} = opt;
-  return {...structuredClone(data), ...(signal !== undefined && {signal}), ...(onProgress !== undefined && {onProgress}), ...(onPreview !== undefined && {onPreview})};
+  const {signal, onProgress, ...data} = opt;
+  return {...structuredClone(data), ...(signal !== undefined && {signal}), ...(onProgress !== undefined && {onProgress})};
 }
 
 function admitSurface(q, shape, opt) {

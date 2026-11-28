@@ -32,11 +32,11 @@ export interface ResultReason {
   readonly code: ErrorCode;
   readonly message: string;
 }
-/** The transform applied to the original for this output: our area average in linear light to width and height. */
+/** The transform applied to the original for this output: area averaging in linear light to width and height. */
 export interface ResultTransform {readonly width: number; readonly height: number; readonly frame?: number;}
 /** Measurements already made by the encoder, or attached by an independent verifier. The domain names
- * what was measured. 'predicted' is not a measurement: the target a lossy effort 1-5 file aimed at, as its floor, with no
- * score (no meter ran), at every depth and quality. A lower bound uses floor and an upper bound uses limit. Explicit S2 targets at efforts 1–5
+ * what was measured. A 'predicted' record states the target estimate as its floor, without a score. It makes no
+ * per-picture measurement claim. A lower bound uses floor and an upper bound uses limit. Explicit S2 targets at efforts 1–5
  * report a guarded reconstruction score: a lower bound for the browser-decoded picture. */
 export type ResultMeasurement = ({
   readonly score: number;
@@ -48,7 +48,7 @@ export type ResultMeasurement = ({
   {readonly metric: 'ssimulacra2'; readonly floor?: number; readonly limit?: never} |
   {readonly metric: 'max-error'; readonly limit?: number; readonly floor?: never}
 )) |
-  /** Efforts 1-5 measure nothing: the SSIMULACRA 2 target the file aimed at, at every depth and quality ('pu21' for HDR). */
+  /** The SSIMULACRA 2 target estimate, without a measured score ('pu21' for HDR). */
   {readonly metric: 'ssimulacra2'; readonly domain: 'predicted'; readonly floor: number; readonly view?: 'pu21' | 'without-noise'; readonly score?: never; readonly limit?: never; readonly region?: never};
 interface ResultDescription<F = ResultFidelity> {
   readonly width: number;

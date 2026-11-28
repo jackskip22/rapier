@@ -6,6 +6,7 @@ import {apiFetch} from 'emdash/plugin-utils';
 import {createApi, check, createLibraryClient, createQueue, createSettings, rewriteAndRead, workerResult} from './admin-work.mjs';
 import {DEFAULTS} from './media-settings.mjs';
 import {deliveryWidths} from './deliver.mjs';
+import {originalResponse} from './read-all.mjs';
 import {WORDS, words} from './media-words.mjs';
 
 const api = createApi(apiFetch), ROUTE = '/_emdash/api/plugins/rapier-media';
@@ -124,11 +125,12 @@ function useOriginals() {
 async function fetchFile(item, signal) {
   check(signal);
   const response = await fetch(`/_emdash/api/media/file/${encodeURIComponent(item.storageKey)}`,
-    {signal, credentials: 'same-origin', cache: 'no-store', headers: {Accept: item.mimeType}});
+    {signal, credentials: 'same-origin', cache: 'no-store', headers: {Accept: item.mimeType, 'Cache-Control': 'no-transform'}});
   check(signal);
   if (!response.ok) throw new Error(`${response.status}`);
+  const mimeType = originalResponse(response, item.storageKey, item.mimeType);
   const blob = await response.blob(); check(signal);
-  return new File([blob], item.filename, {type: item.mimeType});
+  return new File([blob], item.filename, {type: mimeType});
 }
 async function download(item, signal) {
   const file = await fetchFile(item, signal), url = URL.createObjectURL(file), a = document.createElement('a');

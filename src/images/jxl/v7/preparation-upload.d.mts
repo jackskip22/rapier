@@ -7,7 +7,9 @@ export type UploadPreparationInput = Exclude<PreparationInput, TextureInput>;
 export type UploadFitOptions = Omit<FitOptions, 'effort' | 'firstRegion' | 'webgpu'> & {
   /** 1 (fastest) to 3 (smallest file). Default 3. */
   effort?: 1 | 2 | 3;
-  firstRegion?: never; webgpu?: never};
+  firstRegion?: never;
+  /** Not accepted by jpegxl/upload. Passing webgpu refuses JXL_OPTIONS. */
+  webgpu?: never};
 /** One output of upload's variants: its size, and its own effort (1-3), progressive, JPEG policy, maxBytes or fidelity. */
 export type UploadVariantRequest = OutputSize & {effort?: 1 | 2 | 3; /** As encode's progressive. */ progressive?: boolean; /** As encode's JPEG policy. */ jpeg?: 'pixels'; /** true: a side past the source's enlarges. By default it gives the source's. */ upscale?: boolean} & (
   {maxBytes: number; fidelity?: FitFidelity} |

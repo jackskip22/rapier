@@ -1,5 +1,4 @@
 import './engines.mjs';
-import {previewCall} from './preview.mjs';
 import {smallExactBeside, exactCandidate} from './exact-cap.mjs';
 import {resultOperation, resultReference, resultFacts, RESULT_REFERENCE} from './result-operation.mjs';
 import {JOURNAL, JOURNAL_FILE, journaled, journalFact, JOIN} from '../step-journal.mjs';
@@ -13,7 +12,8 @@ import {orientSamples} from '../sample-transforms.mjs';
 import {coreSteps} from './instant.mjs';
 import {HDR} from '../photo-hdr.mjs';
 import {check, fail, declared, callers, progressOf, dimensions, isBlob} from './primitives.mjs';
-import {drain, driveSteps, callOptions} from './common.mjs';
+import {drainPlain as drain} from './drain.mjs';
+import {callOptions} from './encode-options.mjs';
 import {uploadOptions} from './upload-options.mjs';
 import {ordinaryStillReader, predictedFacts} from './ordinary-still-policy.mjs';
 import {lowPhotoSteps, lowPhotoRoute, encodeLowSplit, makeLowUpload, finishLowUpload, closeLowUpload, smoothPhoto, smoothDecides} from './low-photo.mjs';
@@ -59,7 +59,7 @@ const runCapture = lowCaptureRunner();
 const capture = captureWith(null,{admit:options => admitCapturePhoto(options,carried),rectangles:captureRectangles,run:runCapture},imageResult), prepareCapture = () => prepareCapturePhoto().catch(error => { throw declared(error); });
 import {compileCaptureKernels} from '../capture-codec.mjs';
 export {wasmOnlySupported as supported} from './capture-support.mjs';
-export {configureDecoder} from '../shown-picture.mjs';
+export {setDecoder as configureDecoder} from '../decoder-setting.mjs';
 
 const FULL = 'jpegxl';
 
@@ -84,7 +84,7 @@ prepare.operations = ['encode', 'capture'];
 
 const encodeBytes = (input, options) => encodeHere(input, options).catch(error => { throw declared(error); });
 encodeBytes[DRIVE] = (input, options, helpers) => encodeHere(input, options, helpers).catch(error => { throw declared(error); });
-const encode = resultOperation(encodeBytes, {preview: previewCall});
+const encode = resultOperation(encodeBytes);
 const {fit, variants} = preparationUpload(encodeBytes, {jpegPixels, deep: async () => ({readSource: readPNG16, orient: orientSamples})});
 const TAKEN = ['fidelity', 'effort', 'progressive', 'jpeg', 'readAs', 'maxPixels'];
 Object.defineProperty(encode, STEPS, {value: verbSteps('encode:rapier-jxl/upload', encode, {taken: TAKEN, admit: options => { uploadOptions(options); }, rows: true, files: true})});
@@ -266,7 +266,7 @@ async function encodePicture({data, width, height, ...source}, codec, hooks, hel
   const floored = settings.quality < 100 && await journaled(hooks.journal, 'text-floor', () => textFloorEligible(data, width, height, settings, settledFacts.get(data)));
   const baseSteps = floored ? textFloorSteps(coded, data, width, height, settings.colorSpace) : coded;
   const steps = settings.progressive ? withProgressive(true, baseSteps, settings.effort) : baseSteps;
-  return helpers && !lettered && (low || settings.effort !== 1 || splitRoute(width, height)) ? driveSteps(steps, hooks, undefined, width * height, helpers, null) : drain(steps, hooks);
+  return helpers && !lettered && (low || settings.effort !== 1 || splitRoute(width, height)) ? drain(steps, helpers?.split ? {...hooks, split: helpers.split} : hooks) : drain(steps, hooks);
 }
 
 async function splitHere(read, direct, helpers, options, maxPixels) {
@@ -322,8 +322,8 @@ function directRoute(read, maxPixels) {
 import {serveRole, ownFile, roleName} from './module-roles.mjs';
 import {moduleRuntime} from './module-runtime.mjs';
 import {install, workerPort} from './worker-runtime.mjs';
-import {previewHub} from './preview-relay.mjs';
-import * as pool from '../helper-pool.mjs';
+import {warmHelpers, closeHelpers, helperJob, splitOnIdle} from '../helper-pool-base.mjs';
+const pool = {warmHelpers, closeHelpers, helperJob, splitOnIdle};
 import {serveHelper} from '../helper-runtime.mjs';
 import {WORKER_PROTOCOL} from './protocol.mjs';
 import {serveSplit} from '../photo-split.mjs';
@@ -331,7 +331,7 @@ const NAME = 'rapier-jxl/upload', raw = {encode, fit, variants, capture, prepare
 serveRole(NAME, {
   worker: () => {
     const file = ownFile(roleName(NAME, 'helper'));
-    install(workerPort(), [], withVariantsHelpers(moduleRuntime(raw, {name: NAME, helpers: async () => pool, helper: file}), pool, NAME, file), previewHub);
+    install(workerPort(), [], withVariantsHelpers(moduleRuntime(raw, {name: NAME, helpers: async () => pool, helper: file}), pool, NAME, file));
   },
   helper: () => {
     const runtime = moduleRuntime(raw, {name: NAME});

@@ -61,11 +61,11 @@ function refineEnergyOpen({hf, each}, open, planeRows, stride, rows) {
   return {weight: m.weight, weightDoubt: maskWeightDoubts(bound, stride, rows, m.eroded)};
 }
 
-function* fullBlocksOnDevice({base, data, width, height, row, blockSearch, mask, own, ownWork, refineOpen, whileLevels, label = ''}) {
-  const request = {data, width, height, options: {...V6, ...GABORISH, ...row}, input: strategyInputs(base, width, height, blockSearch), search: blockSearch, ids: blockSearch.ids, scaledDCTBases, lowFrequencies,
+function* blocksOnDevice({kind = 'blocks', base, data, width, height, row, blockSearch, mask, own, ownWork, refineOpen, whileLevels, label = ''}) {
+  const request = {data, width, height, options: {...V6, ...GABORISH, ...row}, input: strategyInputs(base, width, height, blockSearch), search: blockSearch, ...(kind === 'blocks' ? {ids: blockSearch.ids} : {}), scaledDCTBases, lowFrequencies,
     lib: {complete, photoXYBSteps, transformDCT8, dct8Basis, xyb: XYB_TABLES}};
   v6Trace(label + ' inputs and mask');
-  let priced = yield {gpu: {kind: 'blocks', ...request, ...mask}};
+  let priced = yield {gpu: {kind, ...request, ...mask}};
   v6Trace(label + ' GPU costs');
   if (priced?.costs && !(auditCosts(base, width, height, blockSearch, priced) <= 1)) { yield {gpu: {kind: 'audit-failed'}}; priced = null; }
   v6Trace(label + ' audit');
@@ -77,20 +77,27 @@ function* fullBlocksOnDevice({base, data, width, height, row, blockSearch, mask,
     v6Trace(`${label} refined (open ${choice.open.length})`);
   }
   if (choice?.open.length && maskDoubtMax(priced.weightDoubt)) {
-    if (ownWork && !ownWork.done) { yield {idle: ownWork}; yield {await: ownWork.finished}; }
-    choice = xybStrategies(base, width, height, {...blockSearch, costs: priced.costs, maskWeight: own(), priceOnly: true, chooseOnly: true});
+    const work = typeof ownWork === 'function' ? ownWork() : ownWork;
+    if (work && !work.done) { yield {idle: work}; yield {await: work.finished}; }
+    const w = own();
+    choice = xybStrategies(base, width, height, {...blockSearch, costs: priced.costs, maskWeight: w, priceOnly: true, chooseOnly: true});
+    if (kind === 'blocks16') blockSearch.maskWeight = w;
   }
   if (!choice || choice.open.length) return null;
   v6Trace(label + ' audit and choice');
-  const asked = yield {gpu: {kind: 'blocks-levels', ...request, layout: choice.layout}, later: true};
-  whileLevels?.();
-  const made = asked && typeof asked.then === 'function' ? yield {await: asked} : asked;
+  const levels = {gpu: {kind: kind + '-levels', ...request, layout: choice.layout}};
+  let made;
+  if (whileLevels) {
+    const asked = yield {...levels, later: true};
+    whileLevels();
+    made = asked && typeof asked.then === 'function' ? yield {await: asked} : asked;
+  } else made = yield levels;
   v6Trace(label + ' GPU levels');
   return xybStrategies(base, width, height, {...blockSearch, layout: choice.layout, ...(made?.exact ? {exact: made.exact} : {})}).image;
 }
 
-export const E7_LOW = Object.freeze([0.62, 0.62, 0.58, 0.72]);
-export const E7_SCALE = Array.from({length: 192}, (_, i) => { const c = i >> 6, k = i & 63; return k && (k & 7) < 2 && k < 16 ? E7_LOW[c] : c > 1 && k && (k & 7) < 3 && k < 24 ? E7_LOW[3] : 1; });
+export const E7_LOW = /* @__PURE__ */ Object.freeze([0.62, 0.62, 0.58, 0.72]);
+export const E7_SCALE = /* @__PURE__ */ Array.from({length: 192}, (_, i) => { const c = i >> 6, k = i & 63; return k && (k & 7) < 2 && k < 16 ? E7_LOW[c] : c > 1 && k && (k & 7) < 3 && k < 24 ? E7_LOW[3] : 1; });
 
 const pairMask = (pair, data, width, height, stride, rows) => pair.mask ??= idleWork(perceptualMaskSteps(stride, rows,
   (rowsOf => by => rowsOf(by * 8, by * 8 + 8))(gaborishRows(data, width, height, {...V6, ...GABORISH}))));
@@ -154,46 +161,20 @@ function* blockPictureSteps({data, width, height, quality, effort, encodeCoeffic
 
   let varImage = splitMade?.varImage ?? null, dct8Estimate = null;
   if (splitMade) blockSearch.maskWeight = splitMade.mask;
-  if (fast && gpu && !color && !screen) {
-    const input = strategyInputs(base, width, height, blockSearch), weight = base.planes ? perceptualMaskField(base.planes, stride, rows).weight : null;
-    const m16 = !weight && deviceEnergy ? maskWeights(deviceEnergy.hf, stride, rows) : null;
-    const fromEnergy = m16 ? {weight: m16.weight, weightDoubt: deviceEnergy.each ? maskWeightDoubts(deviceEnergy.each, stride, rows, m16.eroded) : 0.75 * deviceEnergy.bound + 1e-12} : null;
-    const source = {data, width, height, options: {...V6, ...GABORISH, ...row}, ...(weight ? {weight} : fromEnergy ?? {maskWeights}),
-      lib: {complete, photoXYBSteps, transformDCT8, dct8Basis, xyb: XYB_TABLES}};
-    v6Trace(effort + ' inputs');
-    let priced = yield {gpu: {kind: 'blocks16', ...source, input, search: blockSearch, scaledDCTBases, lowFrequencies}};
-    v6Trace(effort + ' GPU costs');
-    if (priced?.costs && !(auditCosts(base, width, height, blockSearch, priced) <= 1)) { yield {gpu: {kind: 'audit-failed'}}; priced = null; }
-    let choice = priced?.costs ? xybStrategies(base, width, height, {...blockSearch, costs: priced.costs, maskWeight: priced.weight, costDoubt: priced.weightDoubt, priceOnly: true, chooseOnly: true}) : null;
-    if (choice?.open.length && maskDoubtMax(priced.weightDoubt) && deviceEnergy?.each && base.planeRows) {
-      const refined = refineEnergyOpen(deviceEnergy, choice.open, base.planeRows, stride, rows);
-      choice = xybStrategies(base, width, height, {...blockSearch, costs: priced.costs, maskWeight: refined.weight, costDoubt: refined.weightDoubt, priceOnly: true, chooseOnly: true});
-    }
-    if (choice?.open.length && maskDoubtMax(priced.weightDoubt)) {
-      const work = pair && !base.planes ? pairMask(pair, data, width, height, stride, rows) : null;
-      if (work && !work.done) { yield {idle: work}; yield {await: work.finished}; }
-      const own = work ? work.run().weight : perceptualMaskField(null, stride, rows, by => base.planeRows(by * 8, by * 8 + 8)).weight;
-      choice = xybStrategies(base, width, height, {...blockSearch, costs: priced.costs, maskWeight: own, priceOnly: true, chooseOnly: true});
-      blockSearch.maskWeight = own;
-    }
-    if (choice && !choice.open.length) {
-      v6Trace(effort + ' audit and choice');
-      const made = yield {gpu: {kind: 'blocks16-levels', ...source, input, search: blockSearch, scaledDCTBases, lowFrequencies, layout: choice.layout}};
-      v6Trace(effort + ' GPU levels');
-      varImage = xybStrategies(base, width, height, {...blockSearch, layout: choice.layout, ...(made?.exact ? {exact: made.exact} : {})}).image;
-    }
-    if (weight) blockSearch.maskWeight = weight;
-  }
-  if (blockDesign === 'full' && gpu && !color && !screen) {
+  if ((fast || blockDesign === 'full') && gpu && !color && !screen) {
     let cpuMask = null;
-    const ownWork = pair && !base.planes && deviceEnergy ? pairMask(pair, data, width, height, stride, rows) : null;
+    const makeWork = () => pair && !base.planes ? pairMask(pair, data, width, height, stride, rows) : null;
+    const ownWork = !fast && deviceEnergy ? makeWork() : null;
     if (ownWork) yield {idle: ownWork};
-    const own = () => cpuMask ??= base.planes ? perceptualMaskField(base.planes, stride, rows).weight : ownWork ? ownWork.run().weight : perceptualMaskField(null, stride, rows, by => base.planeRows(by * 8, by * 8 + 8)).weight;
-    const mFull = !base.planes && deviceEnergy ? maskWeights(deviceEnergy.hf, stride, rows) : null;
-    const mask = mFull ? {weight: mFull.weight, weightDoubt: deviceEnergy.each ? maskWeightDoubts(deviceEnergy.each, stride, rows, mFull.eroded) : 0.75 * deviceEnergy.bound + 1e-12} : {weight: own(), weightDoubt: 0};
-    const refineOpen = mFull && deviceEnergy.each && base.planeRows ? open => refineEnergyOpen(deviceEnergy, open, base.planeRows, stride, rows) : null;
-    varImage = yield* fullBlocksOnDevice({base, data, width, height, row, blockSearch, mask, own, ownWork, refineOpen, label: effort, whileLevels: () => { dct8Estimate = estimateBytes(image); }});
-    if (!varImage && cpuMask && !base.planes) blockSearch.maskWeight = cpuMask;
+    const own = () => cpuMask ??= base.planes ? perceptualMaskField(base.planes, stride, rows).weight : (ownWork ?? (fast ? makeWork() : null))?.run().weight ?? perceptualMaskField(null, stride, rows, by => base.planeRows(by * 8, by * 8 + 8)).weight;
+    const m = !base.planes && deviceEnergy ? maskWeights(deviceEnergy.hf, stride, rows) : null;
+    const fromEnergy = m ? {weight: m.weight, weightDoubt: deviceEnergy.each ? maskWeightDoubts(deviceEnergy.each, stride, rows, m.eroded) : 0.75 * deviceEnergy.bound + 1e-12} : null;
+    const weight = base.planes ? own() : null;
+    const mask = weight ? {weight, ...(fast ? {} : {weightDoubt: 0})} : fromEnergy ?? (fast ? {maskWeights} : {weight: own(), weightDoubt: 0});
+    const refineOpen = m && deviceEnergy.each && base.planeRows ? open => refineEnergyOpen(deviceEnergy, open, base.planeRows, stride, rows) : null;
+    varImage = yield* blocksOnDevice({kind: fast ? 'blocks16' : 'blocks', base, data, width, height, row, blockSearch, mask, own, ownWork: fast ? makeWork : ownWork, refineOpen, label: effort, ...(fast ? {} : {whileLevels: () => { dct8Estimate = estimateBytes(image); }})});
+    if (fast && weight) blockSearch.maskWeight = weight;
+    else if (!fast && !varImage && cpuMask && !base.planes) blockSearch.maskWeight = cpuMask;
   }
   if (!varImage && denseRows) base.planeRows = denseRows;
   if (!varImage && !base.planes && !blockSearch.maskWeight) blockSearch.maskWeight = (energy ? maskWeights(energy, stride, rows) : perceptualMaskField(null, stride, rows, by => base.planeRows(by * 8, by * 8 + 8))).weight;

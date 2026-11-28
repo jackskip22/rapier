@@ -103,14 +103,13 @@ async function restoreHere(input, options) {
   return result;
 }
 
-import {serveRole} from './module-roles.mjs';
-import {moduleRuntime} from './module-runtime.mjs';
+import {serveRole} from './module-role.mjs';
+import {simpleRuntime, inPlaceSimple} from './decode-runtime.mjs';
 import {install, workerPort} from './worker-runtime.mjs';
 const raw = {recompress, restore, prepare};
-serveRole('rapier-jxl/jpeg', {worker: () => install(workerPort(), [], moduleRuntime(raw, {name: 'rapier-jxl/jpeg'}))});
+serveRole('rapier-jxl/jpeg', {worker: () => install(workerPort(), [], simpleRuntime(raw, 'rapier-jxl/jpeg'))});
 
-import {inPlace} from './module-roles.mjs';
-const here = inPlace('rapier-jxl/jpeg', raw, {url: () => new URL(import.meta.url)});
+const here = inPlaceSimple('rapier-jxl/jpeg', raw);
 const recompressIn = here.wrap('recompress'), restoreIn = here.wrap('restore'), prepareIn = here.wrap('prepare');
 export {recompressIn as recompress, restoreIn as restore, prepareIn as prepare};
 export const {configure, close} = here;

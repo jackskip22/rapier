@@ -76,7 +76,7 @@ class JXLCodec {
   /// Loads the hidden page and its worker now, so the first call does not wait for them. Optional.
   Future<void> warmUp() => _turn(() => _start());
 
-  /// Lossy, [quality] 1 to 100 (SSIMULACRA 2 score) and [effort] 1 to 3.
+  /// Lossy, [quality] 1 to 100 (SSIMULACRA 2 score) and [effort] 1 to 9.
   Future<Uint8List> encode(Uint8List image, {double quality = 80, int effort = 3, JXLCancel? cancel}) =>
       _run('encode', image, _mime(image), quality: quality, effort: effort, cancel: cancel);
 

@@ -19,6 +19,7 @@ function admitWithoutText(value) {
   admitRects('withoutText.rects', value.rects);
 }
 
+const MAX_PHOTO_RECTS = 65536;
 export function captureRectangles(options, width, height) {
   const clipped = {}, budget = width * height * 8;
   if (options.withoutText !== undefined && (options.withoutText.width !== width || options.withoutText.height !== height))
@@ -36,6 +37,7 @@ export function captureRectangles(options, width, height) {
       seen.add(key);
       work += w * h;
       if (work > budget) throw fail('JXL_LIMIT', 'rectangles: reduce count or area');
+      if (name === 'photoRects' && out.length >= MAX_PHOTO_RECTS) throw fail('JXL_LIMIT', 'photoRects: at most 65536');
       out.push({...r, x, y, width: w, height: h});
     }
     clipped[name] = out;

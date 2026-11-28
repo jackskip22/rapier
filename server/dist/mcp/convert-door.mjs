@@ -17,7 +17,7 @@ export function convertOnDoor({files = [], quality, effort, max_bytes, longer_si
 		(unpassed ? ' ' + unpassed + (unpassed === 1 ? ' picture was' : ' pictures were') + ' passed without a file_id, so the converter cannot read ' + (unpassed === 1 ? 'it' : 'them') +
 			'. Tell the person to choose ' + (unpassed === 1 ? 'it' : 'them') + ' in the converter.' : '') +
 		' The converter tells you what it got and how the conversion ended.';
-	return {reply: {outcome: 'converter', converter, pictures: count, ...(unpassed ? {unpassed} : {}), message: opened, ...(quality ? {quality} : {}), ...(effort ? {effort} : {}),
+	return {reply: {outcome: 'converter', receipt: {stage: 'handed_off'}, converter, pictures: count, ...(unpassed ? {unpassed} : {}), message: opened, ...(quality ? {quality} : {}), ...(effort ? {effort} : {}),
 		...(max_bytes ? {max_bytes} : {}), ...(longer_side ? {longer_side} : {}), ...(typeof remove_location === 'boolean' ? {remove_location} : {}),
 		hint: 'Where no view shows, give the person ' + converter + ' to add the pictures there. An agent with a shell converts its own files: ' +
 			'npx jpegxl <file> --json (a .jxl that carries its JPEG restores with --out <name>.jpg).',

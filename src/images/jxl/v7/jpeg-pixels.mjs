@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {fail} from './primitives.mjs';
-import {configuredDecoder} from '../shown-picture.mjs';
+import {configuredDecoder} from '../decoder-setting.mjs';
 
 const JPEG_PIXELS = Symbol.for('rapier-jxl.jpeg.pixels');
 

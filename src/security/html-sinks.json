@@ -128,6 +128,11 @@
 				"count": 1,
 				"kind": "static-template",
 				"reason": "The SAVE PAINTING popup: fixed markup whose only interpolations are fixed format/background words, a fixed Feather icon from RAPIER_DRAW_ICON_WRAP and pressed booleans; no person or document text reaches it."
+			},
+			"_rapierWatercolorProOffer": {
+				"count": 1,
+				"kind": "static-template",
+				"reason": "The Watercolor Pro sheet: fixed markup whose only interpolation is the constant RAPIER_WATERCOLOR_PRO_CHOICES (two fixed buttons); no person or document text reaches it."
 			}
 		},
 		"draw/reader.js": {

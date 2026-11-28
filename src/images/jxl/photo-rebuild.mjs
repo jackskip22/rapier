@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 import {rebuildKernels} from './rebuild-kernels.mjs';
 import {bandScratch} from './band-scratch.mjs';
-import {renderVarBlock, renderBlock8, blockTables, prepareLF, epfSigma, xybKernelConstants} from './vardct-render.mjs';
-import {restorePlanes, restorationStages, restorationSizes, RESTORE_ROWS, SLICE_ROWS, scaledBasis} from './vardct-inverse.mjs';
-import {TRANSFORMS} from './vardct-bases.mjs';
+import {renderVarBlock, renderBlock8} from './vardct-render.mjs';
+import {blockTables, prepareLF, epfSigma, xybKernelConstants} from './vardct-render-base.mjs';
+import {restorePlanes, restorationStages, restorationSizes, RESTORE_ROWS, SLICE_ROWS} from './vardct-restore.mjs';
+import {scaledBasis} from './vardct-dct8-basis.mjs';
+import {TRANSFORMS} from './vardct-transforms.mjs';
 import {varDCTLayout} from './vardct-header.mjs';
 import {varDCTDCSpec, copyVarDCTDCRows, copyVarDCTCorrelation} from './vardct-planes.mjs';
 import {prepareQuantParams, photoDCT8Table} from './quantization-params.mjs';
@@ -11,7 +13,7 @@ import {DEFAULT_OPSIN} from './opsin-defaults.mjs';
 import {OPSIN, inverse, times, SRGB_CURVE} from './color-transform.mjs';
 import {wideLevels} from './color-bytes.mjs';
 import {half} from './reconstruct-dct8.mjs';
-import {materialize} from './varblock-core.mjs';
+import {materialize} from './materialize.mjs';
 import {nativeRGBA, nativeGammaRGBA} from './photo-output.mjs';
 import {fault} from './fault.mjs';
 
@@ -28,13 +30,14 @@ function ycbcrToRGB([cb, y, cr], n) {
 }
 const uniform = image => image.components.every(c => (c.h ?? 1) === 1 && (c.v ?? 1) === 1);
 const GAB = [0.115169525, 0.061248592], SHARP = Array.from({length: 8}, (_, i) => i / 7);
-const TABLE_BYTES = /* @__PURE__ */ TRANSFORMS.reduce((sizes, t) => (sizes[t.table] = t.width * t.height * 12, sizes), new Array(17).fill(0)), BIAS3 = /* @__PURE__ */ DEFAULT_OPSIN.quantizationBiases.slice(0, 3);
+const TABLE_BYTES = [768, 768, 768, 768, 3072, 12288, 1536, 3072, 6144, 768, 768, 49152, 24576, 196608, 98304, 786432, 393216], BIAS3 = /* @__PURE__ */ DEFAULT_OPSIN.quantizationBiases.slice(0, 3);
 let DEFAULT_XYB = null;
 const LIBRARY = new Map();
 const libraryMatrix = table => {
   let m = LIBRARY.get(table);
   if (!m) {
-    const t = TRANSFORMS.find(item => item.table === table), w = Math.max(t.width, t.height), h = Math.min(t.width, t.height);
+    const t = table === 0 ? null : TRANSFORMS.find(item => item.table === table);
+    const w = t ? Math.max(t.width, t.height) : 8, h = t ? Math.min(t.width, t.height) : 8;
     LIBRARY.set(table, m = prepareQuantParams({mode: 'library'}, w, h, table).weights.map(p => Float32Array.from(p, v => 1 / v)));
   }
   return m;
@@ -383,7 +386,6 @@ export function rebuildPicture(source, {rgba: wantRGBA = true, linear: wantLinea
     const out = {width, height, xsize: BW, ysize: BH, ycbcr, arena: arena.subarray(0, used), tables,
       lf, groups, global, bias: ctx.bias, numerator: ctx.numerator, filter, sigma,
       blocks};
-    for (const block of blocks) { block.source = null; block.arena = null; }
     return {inputs: out};
   }
   const targets = [xAt, yAt, bAt].map(o => new Float32Array(buffer, o, tCount));
@@ -404,38 +406,26 @@ export function rebuildPicture(source, {rgba: wantRGBA = true, linear: wantLinea
     const corr = global.correlation, baseX = corr.baseX, baseB = corr.baseB, corrFactor = corr.factor;
     const gScale = global.globalScale, uniformScale = !fields ? 65536 / (gScale * field) : 0;
     const block8 = kernels.block8, blocks8 = !fields ? kernels.blocks8 : null;
-    if (cMeta) {
+    if (cMeta || full) {
       let varBlock = null;
-      for (let p = 0; p < cMeta.length; p += 6) {
-        const id = cMeta[p], bx = cMeta[p + 1], by = cMeta[p + 2], bw = cMeta[p + 3], bh = cMeta[p + 4], u = cMeta[p + 5];
-        if ((by + bh) * 8 <= ry0 || by * 8 >= ry1) continue;
-        const lfGroup = (by >> 8) * dcGroupsX + (bx >> 8);
-        if (id === 0) {
-          const group = groups[lfGroup], scale = fields ? 65536 / (gScale * (fields[by * BW + bx] * shift)) : uniformScale;
-          const tile = ((by >> 3) - (group.by >> 3)) * group.width + (bx >> 3) - (group.bx >> 3), atCell = by * BW + bx;
-          const x0 = bx * 8, y0 = by * 8, dstOff = (y0 * width + x0) * 4, a0 = arenaByte + u * 4;
-          const corrx = baseX + group.xFromY[tile] / corrFactor, corrb = baseB + group.bFromY[tile] / corrFactor;
-          if (blocks8 && y0 + 8 <= height && x0 + 8 <= width) {
-            const tileEnd = Math.min(((bx >> 3) + 1) * 8, width >> 3);
-            let run = 1;
-            while (bx + run < tileEnd && p + run * 6 < cMeta.length) {
-              const np = p + run * 6;
-              if (cMeta[np] !== 0 || cMeta[np + 2] !== by || cMeta[np + 1] !== bx + run || cMeta[np + 5] !== u + run * 192) break;
-              run++;
-            }
-            if (run > 1) {
-              blocks8(run, a0, w0, scale, b0, b1, b2, num, corrx, corrb,
-                lf0Off + atCell * 4, lf1Off + atCell * 4, lf2Off + atCell * 4,
-                t0 + dstOff, t1 + dstOff, t2 + dstOff, rowBytes, basis8);
-              p += (run - 1) * 6;
-              continue;
-            }
-          }
-          block8(a0, a0 + 256, a0 + 512, w0, scale, scale, scale, b0, b1, b2, num,
-            corrx, corrb,
-            lf0[atCell], lf1[atCell], lf2[atCell], t0 + dstOff, t1 + dstOff, t2 + dstOff, rowBytes,
-            Math.min(8, width - x0), Math.min(8, height - y0), basis8);
-        } else if ((typeof __RAPIER_JXL_UPLOAD__ === 'undefined' || __RAPIER_JXL_UPLOAD__ !== true)) {
+      const render8 = (bx, by, u, lfGroup, run) => {
+        const group = groups[lfGroup], scale = fields ? 65536 / (gScale * (fields[by * BW + bx] * shift)) : uniformScale;
+        const tile = ((by >> 3) - (group.by >> 3)) * group.width + (bx >> 3) - (group.bx >> 3), atCell = by * BW + bx;
+        const x0 = bx * 8, y0 = by * 8, dstOff = (y0 * width + x0) * 4, a0 = arenaByte + u * 4;
+        const corrx = baseX + group.xFromY[tile] / corrFactor, corrb = baseB + group.bFromY[tile] / corrFactor;
+        if (run > 1) {
+          blocks8(run, a0, w0, scale, b0, b1, b2, num, corrx, corrb,
+            lf0Off + atCell * 4, lf1Off + atCell * 4, lf2Off + atCell * 4,
+            t0 + dstOff, t1 + dstOff, t2 + dstOff, rowBytes, basis8);
+          return;
+        }
+        block8(a0, a0 + 256, a0 + 512, w0, scale, scale, scale, b0, b1, b2, num,
+          corrx, corrb,
+          lf0[atCell], lf1[atCell], lf2[atCell], t0 + dstOff, t1 + dstOff, t2 + dstOff, rowBytes,
+          Math.min(8, width - x0), Math.min(8, height - y0), basis8);
+      };
+      const renderVar = (id, bx, by, bw, bh, u, lfGroup) => {
+        if ((typeof __RAPIER_JXL_UPLOAD__ === 'undefined' || __RAPIER_JXL_UPLOAD__ !== true)) {
           const size = bw * bh * 64;
           varBlock ??= {id: 0, x: 0, y: 0, bw: 1, bh: 1, area: 1, multiplier: 0, lfGroup: 0, coefficients: null, arena: null};
           varBlock.id = id; varBlock.x = bx; varBlock.y = by; varBlock.bw = bw; varBlock.bh = bh; varBlock.area = bw * bh;
@@ -443,47 +433,46 @@ export function rebuildPicture(source, {rgba: wantRGBA = true, linear: wantLinea
           varBlock.coefficients = [u, u + size, u + 2 * size]; varBlock.arena = arena;
           renderVarBlock(ctx, varBlock, targets, zero);
         } else throw fault('JXL_INTERNAL', 'photo-rebuild:dct8');
-      }
-    } else if (full) {
-      const src = full.blocks;
-      let varBlock = null;
-      for (let i = 0; i < src.length; i++) {
-        const b = src[i], bx = b.bx, by = b.by;
-        if ((by + b.bh) * 8 <= ry0 || by * 8 >= ry1) continue;
-        const lfGroup = (by >> 8) * dcGroupsX + (bx >> 8), u = fullOffsets[i];
-        if (b.id === 0) {
-          const group = groups[lfGroup], scale = fields ? 65536 / (gScale * (fields[by * BW + bx] * shift)) : uniformScale;
-          const tile = ((by >> 3) - (group.by >> 3)) * group.width + (bx >> 3) - (group.bx >> 3), atCell = by * BW + bx;
-          const x0 = bx * 8, y0 = by * 8, dstOff = (y0 * width + x0) * 4, a0 = arenaByte + u * 4;
-          const corrx = baseX + group.xFromY[tile] / corrFactor, corrb = baseB + group.bFromY[tile] / corrFactor;
-          if (blocks8 && y0 + 8 <= height && x0 + 8 <= width) {
-            const tileEnd = Math.min(((bx >> 3) + 1) * 8, width >> 3);
+      };
+      if (cMeta) {
+        for (let p = 0; p < cMeta.length; p += 6) {
+          const id = cMeta[p], bx = cMeta[p + 1], by = cMeta[p + 2], bw = cMeta[p + 3], bh = cMeta[p + 4], u = cMeta[p + 5];
+          if ((by + bh) * 8 <= ry0 || by * 8 >= ry1) continue;
+          const lfGroup = (by >> 8) * dcGroupsX + (bx >> 8);
+          if (id === 0) {
             let run = 1;
-            while (bx + run < tileEnd && i + run < src.length) {
-              const nb = src[i + run];
-              if (nb.id !== 0 || nb.by !== by || nb.bx !== bx + run || fullOffsets[i + run] !== u + run * 192) break;
-              run++;
+            if (blocks8 && by * 8 + 8 <= height && bx * 8 + 8 <= width) {
+              const tileEnd = Math.min(((bx >> 3) + 1) * 8, width >> 3);
+              while (bx + run < tileEnd && p + run * 6 < cMeta.length) {
+                const np = p + run * 6;
+                if (cMeta[np] !== 0 || cMeta[np + 2] !== by || cMeta[np + 1] !== bx + run || cMeta[np + 5] !== u + run * 192) break;
+                run++;
+              }
             }
-            if (run > 1) {
-              blocks8(run, a0, w0, scale, b0, b1, b2, num, corrx, corrb,
-                lf0Off + atCell * 4, lf1Off + atCell * 4, lf2Off + atCell * 4,
-                t0 + dstOff, t1 + dstOff, t2 + dstOff, rowBytes, basis8);
-              i += run - 1;
-              continue;
+            render8(bx, by, u, lfGroup, run);
+            if (run > 1) p += (run - 1) * 6;
+          } else renderVar(id, bx, by, bw, bh, u, lfGroup);
+        }
+      } else {
+        const src = full.blocks;
+        for (let i = 0; i < src.length; i++) {
+          const b = src[i], bx = b.bx, by = b.by;
+          if ((by + b.bh) * 8 <= ry0 || by * 8 >= ry1) continue;
+          const lfGroup = (by >> 8) * dcGroupsX + (bx >> 8), u = fullOffsets[i];
+          if (b.id === 0) {
+            let run = 1;
+            if (blocks8 && by * 8 + 8 <= height && bx * 8 + 8 <= width) {
+              const tileEnd = Math.min(((bx >> 3) + 1) * 8, width >> 3);
+              while (bx + run < tileEnd && i + run < src.length) {
+                const nb = src[i + run];
+                if (nb.id !== 0 || nb.by !== by || nb.bx !== bx + run || fullOffsets[i + run] !== u + run * 192) break;
+                run++;
+              }
             }
-          }
-          block8(a0, a0 + 256, a0 + 512, w0, scale, scale, scale, b0, b1, b2, num,
-            corrx, corrb,
-            lf0[atCell], lf1[atCell], lf2[atCell], t0 + dstOff, t1 + dstOff, t2 + dstOff, rowBytes,
-            Math.min(8, width - x0), Math.min(8, height - y0), basis8);
-        } else if ((typeof __RAPIER_JXL_UPLOAD__ === 'undefined' || __RAPIER_JXL_UPLOAD__ !== true)) {
-          const size = b.bw * b.bh * 64;
-          varBlock ??= {id: 0, x: 0, y: 0, bw: 1, bh: 1, area: 1, multiplier: 0, lfGroup: 0, coefficients: null, arena: null};
-          varBlock.id = b.id; varBlock.x = bx; varBlock.y = by; varBlock.bw = b.bw; varBlock.bh = b.bh; varBlock.area = b.bw * b.bh;
-          varBlock.multiplier = fields ? fields[by * BW + bx] * shift : field; varBlock.lfGroup = lfGroup;
-          varBlock.coefficients = [u, u + size, u + 2 * size]; varBlock.arena = arena;
-          renderVarBlock(ctx, varBlock, targets, zero);
-        } else throw fault('JXL_INTERNAL', 'photo-rebuild:dct8');
+            render8(bx, by, u, lfGroup, run);
+            if (run > 1) i += run - 1;
+          } else renderVar(b.id, bx, by, b.bw, b.bh, u, lfGroup);
+        }
       }
     } else {
       CELL_LOOPS[1](by0, by1, tTop, BW, width, height, dcGroupsX, groups, baseX, baseB, corrFactor, arenaByte, w0, uniformScale, fields, shift, gScale, b0, b1, b2, num, lf0, lf1, lf2, lf0Off, lf1Off, lf2Off, t0, t1, t2, rowBytes, basis8, block8, blocks8);

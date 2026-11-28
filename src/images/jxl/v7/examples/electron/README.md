@@ -5,8 +5,8 @@ Drop or choose a photo to encode, recompress a JPEG and restore the same SHA-256
 cancel a call, and save with the platform's save dialog. A refusal shows the package's `JXL_` code. The Node files run in the
 main process too.
 
-The files under `web/` are 3,358,892 bytes. Brotli 11 module sizes, not install sizes: photos 331,953 B, JPEG 166,269 B,
-animation 495,809 B and its page file 19,719 B. Nothing here claims speed.
+Run `npm run assets` to measure the files copied from your package into `web/`.
+The package version, file sizes, hashes, and total are recorded in `web-assets.json`. These are asset sizes, not app install or download sizes.
 
 ## Use
 
@@ -24,7 +24,7 @@ npm start
   headers. Photos, JPEGs and videos encode in the package's own workers. The page never leaves the window.
 - `preload.cjs` gives the page one call, `rapierDesktop.save(bytes, name)`. `contextIsolation` and `sandbox` stay on. The page has no Node.
 - `main-check.mjs` runs the Node files in a main process: `import {encode} from 'jpegxl/upload'`, `recompress` and `restore` from `jpegxl/jpeg`.
-  Node reads no JPEG, as everywhere: a photo there is pixels.
+  The main-process check encodes RGBA pixels and separately verifies JPEG restoration.
 - The page, `../desktop/`, is the one Tauri uses.
 
 Found while building it:

@@ -52,9 +52,22 @@ const keptVary = response => (response.headers.get('vary') ?? '').split(',').map
 function varied(vary, variesByPreview = false) {
   const names = (vary ?? '').split(',').map(name => name.trim()).filter(Boolean);
   if (names.includes('*')) return vary;
-  for (const name of ['Accept', ...(variesByPreview ? ['User-Agent', 'Purpose', 'Sec-Purpose', 'X-Purpose', 'Range'] : [])])
+  for (const name of ['Accept', ...(variesByPreview ? ['User-Agent', 'Purpose', 'Sec-Purpose', 'X-Purpose'] : []), 'Range'])
     if (!names.some(existing => existing.toLowerCase() === name.toLowerCase())) names.push(name);
   return names.join(', ');
+}
+
+function varyResponse(response, variesByPreview = false) {
+  const headers = new Headers(response.headers);
+  headers.set('vary', varied(headers.get('vary'), variesByPreview));
+  return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
+}
+
+function sourceRequest(request, type, preview) {
+  const headers = new Headers(request.headers);
+  headers.set('accept', type);
+  if (preview) { headers.delete('if-none-match'); headers.delete('if-modified-since'); }
+  return new Request(request, {headers, cache: 'no-store', cf: {...request.cf, polish: 'off'}});
 }
 
 function pixels(b) {
@@ -134,7 +147,7 @@ async function siblingAt(request, at, origin, response) {
   try { bytes = await readBounded(answer.body, cap); } catch { return null; }
   if (!bytes) return null;
   if (!isJxlMagic(bytes) || size > 0 && bytes.byteLength >= size) return null;
-  const headers = new Headers({'content-type': 'image/jxl', vary: varied(response.headers.get('vary')),
+  const headers = new Headers({'content-type': 'image/jxl', vary: response.headers.get('vary') ?? '',
     'cache-control': response.headers.get('cache-control') ?? 'public, max-age=3600'});
   const etag = answer.headers.get('etag');
   if (etag) headers.set('etag', etag);
@@ -279,7 +292,7 @@ export function jxl(handler = {}) {
       const ranged = request.method === 'GET' && request.headers.has('range');
 
       if (!options.spaceSaver && type !== 'image/jpeg') {
-        if (ranged || !acceptsJxl(request.headers.get('accept'), type)) return origin();
+        if (ranged || !acceptsJxl(request.headers.get('accept'), type)) return varyResponse(await origin());
       }
 
       const saver = options.spaceSaver || type === 'image/jpeg' ? await getSpaceSaver() : null;
@@ -288,10 +301,11 @@ export function jxl(handler = {}) {
       const preview = saver ? saver.isSharePreviewRequest(request) : false;
       const wantsJxl = !ranged && !preview && acceptsJxl(request.headers.get('accept'), type);
 
-      if (type !== 'image/jpeg' && !wantsJxl) return origin();
-      if (request.headers.has('authorization') || request.headers.has('cookie')) return origin();
+      if (type !== 'image/jpeg' && !wantsJxl) return varyResponse(await origin());
+      if (!preview && (request.headers.has('authorization') || request.headers.has('cookie'))) return origin();
 
-      const response = await origin(), path = url.pathname + url.search, logged = url.pathname;
+      const response = await origin(wantsJxl || preview ? sourceRequest(request, type, preview) : request);
+      const path = url.pathname + url.search, logged = url.pathname;
       const said = (r, state) => { r.headers.set('vary', varied(r.headers.get('vary'), type === 'image/jpeg')); r.headers.set('x-jxl', state); console.log(`rapier-jxl ${logged}: ${state}`); return r; };
       const original = (reason, body = response.body) => said(new Response(body, response), `skipped: ${reason}`);
 
@@ -313,7 +327,7 @@ export function jxl(handler = {}) {
             if (wantsJxl) await saver.rebuildOriginalJpeg(archived.bytes, identity);
             const rebuilt = await saver.serveStoredJxl(archived.bytes, request, {...identity,
               cacheControl: archived.cacheControl, etag: archived.etag,
-              vary: varied(archived.vary), lastModified: archived.lastModified,
+              vary: varied(archived.vary, true), lastModified: archived.lastModified,
             });
             const state = rebuilt.headers.get('content-type') === 'image/jxl' ? archived.kind : 'restored';
             return said(rebuilt, state);
@@ -324,17 +338,35 @@ export function jxl(handler = {}) {
         if (response.status === 404) return response;
       }
 
+      if (preview && response.status === 304 || (wantsJxl || preview) && [200, 206].includes(response.status) &&
+          (mediaType(response.headers.get('content-type')) !== type || response.headers.has('cf-polished'))) {
+        const reason = response.headers.has('cf-polished') ? 'the source is optimized' : 'unexpected content type';
+        response.body?.cancel();
+        if (preview) return new Response(request.method === 'HEAD' ? null : JSON.stringify({
+          code: 'JXL_PLATFORM', error: 'The origin must serve the original JPEG for share previews.',
+        }), {status: 503, headers: {'content-type': 'application/json', 'cache-control': 'no-store', vary: varied(undefined, true)}});
+        const fallback = await origin();
+        return said(new Response(fallback.body, fallback), `skipped: ${reason}`);
+      }
+
       if (!wantsJxl) {
-        if (response.status === 200 && !privateAnswer(request, response) && keptVary(response)) {
-          const headers = new Headers(response.headers);
-          headers.set('vary', varied(headers.get('vary'), type === 'image/jpeg'));
-          return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
+        if (preview && response.status === 200) {
+          const tag = request.headers.get('if-none-match');
+          const modified = Date.parse(response.headers.get('last-modified'));
+          const since = Date.parse(request.headers.get('if-modified-since'));
+          const unchanged = tag !== null ? tag.trim() === '*' || matchesIfNoneMatch(tag, response.headers.get('etag')) :
+            Number.isFinite(modified) && Number.isFinite(since) && modified <= since;
+          if (unchanged) {
+            response.body?.cancel();
+            const headers = new Headers(response.headers);
+            headers.delete('content-length');
+            return varyResponse(new Response(null, {status: 304, headers}), true);
+          }
         }
-        return response;
+        return varyResponse(response, type === 'image/jpeg');
       }
 
       if (response.status !== 200) return original(`the site answered ${response.status}`);
-      if ((mediaType(response.headers.get('content-type')) ?? type) !== type) return original('unexpected content type');
       if (privateAnswer(request, response)) return original('the answer is private');
       const converts = options.convert && allowed(options, type);
       if (!keptVary(response)) return original('the answer varies on more than Accept');

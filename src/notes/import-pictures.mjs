@@ -5,7 +5,7 @@ import {appendAssetText, documentAssets, normalizeLabel, markdownParser, escapeI
 
 const IMAGE_PATH = /\.(?:png|jpe?g|jxl|webp|svg|gif|bmp|ico|avif|heic|heif)(?:\?|$)/i;
 const WIKI_DIMENSIONS = /^[1-9]\d*x[1-9]\d*$/;
-const SUPPORTED = new Set(['image/png', 'image/jpeg', 'image/jxl', 'image/webp', 'image/svg+xml']);
+const SUPPORTED = new Set(['image/png', 'image/jpeg', 'image/jxl', 'image/webp', 'image/gif', 'image/svg+xml']);
 const rootOf = row => typeof row?.rootId === 'string' ? row.rootId : '';
 const nameOf = row => typeof row?.sourceName === 'string' ? row.sourceName : typeof row?.name === 'string' ? row.name : '';
 const bytesOf = value => value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : null;
@@ -121,7 +121,7 @@ export async function importPictures(source, options = {}) {
       }
     } catch (error) {
       const mime = String(picture.mime || picture.codec || '').toLowerCase();
-      const unsupported = mime && !SUPPORTED.has(mime) || /\.(?:gif|bmp|ico|avif|heic|heif)$/i.test(nameOf(picture));
+      const unsupported = mime && !SUPPORTED.has(mime) || /\.(?:bmp|ico|avif|heic|heif)$/i.test(nameOf(picture));
       const reason = unsupported ? 'unsupported' : 'not_embedded';
       warn(link, reason, 'The original picture link was kept: ' + String(error?.message || error) + '.');
     }

@@ -15,13 +15,18 @@ import {photoReference} from './photo-reference.mjs';
 import {nativeRGBA, nativeGammaRGBA, nativeTables, nativeByte} from './photo-output.mjs';
 const NATIVE = {nativeTables, nativeByte};
 import {rebuildKernels} from './rebuild-kernels.mjs';
-import {xybKernelConstants} from './vardct-render.mjs';
+import {xybKernelConstants} from './vardct-render-base.mjs';
 import {DEFAULT_OPSIN} from "./opsin-defaults.mjs";
 import {gaussianCoefficients, s2DeviceTables, transformTable, releaseReferenceArena} from './ssimulacra2-arithmetic.mjs';
 import {GAUSS} from './ssimulacra2-constants.mjs';
 import {s2Interval} from './gpu-s2-score.mjs';
 import {s2Stream} from './photo-s2-stream.mjs';
+import {openParallelS2} from './photo-s2-parallel.mjs';
 import {journaling, carried, unit, readAll, PASSED} from './step-journal.mjs';
+const METER_SPLIT = !((typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ||
+  (typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) ||
+  (typeof __RAPIER_JXL_NO_HELPERS__ !== 'undefined' && __RAPIER_JXL_NO_HELPERS__ === true) ||
+  (typeof __RAPIER_JXL_SAMPLE__ !== 'undefined' && __RAPIER_JXL_SAMPLE__ === true));
 import {s2CellStream, s2CellMap} from './s2-cells.mjs';
 import {memoryPlan} from './memory-plan.mjs';
 import {retainsWhole, BAND_PIXELS, WHOLE_BYTES, BANDED_BYTES, RETAINED_BYTES, ONE_PLANE_BYTES, BAND_CACHE_BYTES} from './memory-device.mjs';
@@ -98,7 +103,8 @@ export function wholeRebuildMeasure(data, width, height, color, signal, plan) {
   const bandEdge = k => scoreBandEdge(k, height);
   const trDirect = !!color.transform && transformTable(color.transform).ok, trRef = trDirect ? {rgba: data, transform: color.transform} : null;
   const keepOuts = keepBand && !journaling();
-  let probe32 = null, refCache = keepBand ? Object.assign([], {keepP1, keepY, keepFull}) : null, outs = keepOuts ? takeOuts() : [null, null], outTurn = 0, pinned = null;
+  const boundKeep = keepBand && retainsWhole(pixels, baseExtra + (keepFull ? 32 : keepY ? 8 : 0) + 24);
+  let probe32 = null, refCache = keepBand ? Object.assign([], {keepP1, keepY, keepFull}) : null, boundCache = boundKeep ? Object.assign([], {keepP1: true, keepY: false, keepFull: false}) : null, outs = keepOuts ? takeOuts() : [null, null], outTurn = 0, pinned = null;
   const tagOf = image => image?.lookTag ?? image, findOut = image => outs.find(e => e?.img === tagOf(image))?.buf ?? null;
   const makeBuf = tr => tr ? [new Uint8Array(pixels * 4)] : [new Uint8ClampedArray(pixels * 4), new Uint8ClampedArray(pixels * 4)];
   const takeSlot = init => outs[outs[0]?.img === pinned ? 1 : outs[1]?.img === pinned ? 0 : (outTurn ^= 1) ^ 1] ??= {img: null, buf: init()};
@@ -115,7 +121,7 @@ export function wholeRebuildMeasure(data, width, height, color, signal, plan) {
       return tr ? s2Scores(bounds[0][0], bounds[0][1])
         : s2Scores(Math.min(bounds[0][0], bounds[1][0]), Math.min(bounds[0][1], bounds[1][1]));
     }
-    const [pack, own] = stream.finish();
+    const [pack, own] = Array.isArray(stream) ? stream : stream.finish();
     if (slot && filled === height) slot.img = tagOf(image);
     return tr ? {ssimulacra2: pack} : {ssimulacra2: Math.min(pack, own), nativeScores: {package: pack, native: own, minimum: Math.min(pack, own)}};
   };
@@ -268,38 +274,47 @@ export function wholeRebuildMeasure(data, width, height, color, signal, plan) {
     } finally { stream.release(); }
   };
   function* streamedSteps(image, libjxl = false, wantDoubt = false, minScore = undefined) {
-    const resume = journaling(), bnd = wantDoubt && !libjxl && !resume, tr = !!color.transform, nOut = tr ? 1 : 2, ref = tr ? (trRef ?? refBand) : {rgba: data}, cache = resume ? null : refCache, earlyMin = resume ? undefined : minScore;
+    const resume = journaling(), bnd = wantDoubt && !libjxl && !resume, tr = !!color.transform, nOut = tr ? 1 : 2, ref = tr ? (trRef ?? refBand) : {rgba: data}, cache = resume ? null : libjxl ? boundCache : refCache, earlyMin = resume ? undefined : minScore;
     const reuse = keepOuts && !resume, hit = reuse ? findOut(image) : null;
     const slot = reuse && !hit ? openSlot(tr) : null;
     let stream = null, place = null, filled = 0;
+    let pStream = METER_SPLIT && !resume && !bnd ? yield* openParallelS2(ref, width, height, nOut, libjxl, cache, earlyMin) : null;
+    const bandAt = (y0, y1) => {
+      check(signal);
+      if (hit) return [y0, y1 - y0, tr ? [trDirect ? {rgba: hit[0].subarray(y0 * width * 4, y1 * width * 4), transform: color.transform, fullRgba: hit[0]} : linBand(hit[0].subarray(y0 * width * 4, y1 * width * 4), (y1 - y0) * width)] : hit.map(b => ({rgba: b.subarray(y0 * width * 4, y1 * width * 4), fullRgba: b}))];
+      if (tr) {
+        const fillSlot = !!(slot && filled === y0), band = trBand(image, y0, y1, fillSlot ? (filled = y1, slot.buf[0].subarray(y0 * width * 4, y1 * width * 4)) : null);
+        return [y0, y1 - y0, [fillSlot && band.rgba ? {...band, fullRgba: slot.buf[0]} : band]];
+      }
+      let out;
+      bandedOutputs(image, y1 - y0, nativeBand, (y, r, pack, own) => {
+        check(signal);
+        const fillSlot = !!(slot && filled === y);
+        if (fillSlot) { slot.buf[0].set(pack.subarray(0, r * width * 4), y * width * 4); slot.buf[1].set(own.subarray(0, r * width * 4), y * width * 4); filled = y + r; }
+        out = [y, r, fillSlot ? [{rgba: pack, fullRgba: slot.buf[0]}, {rgba: own, fullRgba: slot.buf[1]}] : [pack, own]];
+      }, y0, y1);
+      return out;
+    };
     try {
-      for (let k = 0, y0 = 0; y0 < height && !stream?.done; y0 = bandEdge(++k)) {
+      for (let k = 0, y0 = 0; y0 < height && !(pStream ?? stream)?.done; y0 = bandEdge(++k)) {
         const y1 = bandEdge(k + 1);
+        if (pStream) {
+          if (yield* pStream.push(...bandAt(y0, y1))) continue;
+          yield* pStream.release(); pStream = null; if (cache) cache._k = null; if (slot) slot.img = null; filled = 0; k = -1; continue;
+        }
         const saved = yield* carried('score-band', () => {
           if (!stream) { stream = s2Stream(ref, width, height, nOut, resume, libjxl, cache, bnd, earlyMin); if (place) stream.restore(place); }
           if (stream.rows !== y0) throw fault('JXL_INTERNAL', 'photo-whole-rebuild:order');
-          if (hit) {
-            check(signal);
-            stream.push(y0, y1 - y0, tr ? [trDirect ? {rgba: hit[0].subarray(y0 * width * 4, y1 * width * 4), transform: color.transform, fullRgba: hit[0]} : linBand(hit[0].subarray(y0 * width * 4, y1 * width * 4), (y1 - y0) * width)] : hit.map(b => ({rgba: b.subarray(y0 * width * 4, y1 * width * 4), fullRgba: b})));
-          } else if (tr) {
-            check(signal);
-            const fillSlot = !!(slot && filled === y0);
-            const band = trBand(image, y0, y1, fillSlot ? (filled = y1, slot.buf[0].subarray(y0 * width * 4, y1 * width * 4)) : null);
-            stream.push(y0, y1 - y0, [fillSlot && band.rgba ? {...band, fullRgba: slot.buf[0]} : band]);
-          } else bandedOutputs(image, y1 - y0, nativeBand, (y, r, pack, own) => {
-            check(signal);
-            const fillSlot = !!(slot && filled === y);
-            if (fillSlot) { slot.buf[0].set(pack.subarray(0, r * width * 4), y * width * 4); slot.buf[1].set(own.subarray(0, r * width * 4), y * width * 4); filled = y + r; }
-            stream.push(y, r, fillSlot ? [{rgba: pack, fullRgba: slot.buf[0]}, {rgba: own, fullRgba: slot.buf[1]}] : [pack, own]);
-          }, y0, y1);
+          stream.push(...bandAt(y0, y1));
           return resume ? stream.save() : null;
         });
         if (saved !== PASSED && saved !== null && !stream) place = saved;
         if (!resume) yield 0;
       }
-      if (!stream) { stream = s2Stream(ref, width, height, nOut, resume, libjxl, cache, bnd, earlyMin); stream.restore(place); }
+      if (pStream) return finishStream(yield* pStream.finish(), pStream.done ? null : slot, filled, image, tr);
+      if (!stream) { stream = s2Stream(ref, width, height, nOut, resume, libjxl, cache, bnd, earlyMin); if (place) stream.restore(place); }
       return finishStream(stream, slot, filled, image, tr, bnd);
-    } finally { stream?.release(); }
+    } finally { if (pStream) yield* pStream.release(); stream?.release(); }
   }
   const mapsInJournal = (image, want) => !image.ycbcr && !color.transform && (want?.p !== undefined || want?.margin !== undefined) &&
     !want.ssimulacra2 && !want.butteraugli && okBytes &&
@@ -338,7 +353,7 @@ export function wholeRebuildMeasure(data, width, height, color, signal, plan) {
       tasks.set(k, task);
       return task;
     };
-    const stream = s2Stream(tr ? (trRef ?? refBand) : {rgba: data}, width, height, tr ? 1 : 2, false, libjxl, refCache, bnd);
+    const stream = s2Stream(tr ? (trRef ?? refBand) : {rgba: data}, width, height, tr ? 1 : 2, false, libjxl, libjxl ? boundCache : refCache, bnd);
     let finished = false, filled = 0;
     try {
       yield {offload: 'prefetch', tasks: Array.from({length: ahead}, (_, k) => taskAt(k))};
@@ -618,6 +633,6 @@ export function wholeRebuildMeasure(data, width, height, color, signal, plan) {
     zoneSteps,
     later() { s2Later = true; },
     settle: settleCheck,
-    destroy() { s2Pending = null; cpu?.destroy(); cpu = null; bandStorage?.destroy(); bandStorage = null; probe32 = null; if (keepOuts) recycleOuts(outs); outs = [null, null]; pinned = null; if (refCache?.arena) { releaseReferenceArena(refCache.arena); refCache.arena = null; } if (refCache) refCache.length = 0; s2Held.state?.release(); cellsHeld.release?.(); rebuildHeld.release?.(); },
+    destroy() { s2Pending = null; cpu?.destroy(); cpu = null; bandStorage?.destroy(); bandStorage = null; probe32 = null; if (keepOuts) recycleOuts(outs); outs = [null, null]; pinned = null; if (refCache?.arena) { releaseReferenceArena(refCache.arena); refCache.arena = null; } if (refCache) { refCache._b = refCache._k = null; refCache.length = 0; } if (boundCache?.arena) { releaseReferenceArena(boundCache.arena); boundCache.arena = null; } if (boundCache) boundCache._b = boundCache._k = null; s2Held.state?.release(); cellsHeld.release?.(); rebuildHeld.release?.(); },
   };
 }

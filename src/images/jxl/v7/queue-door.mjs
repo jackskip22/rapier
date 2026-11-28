@@ -131,7 +131,7 @@ function validateSettings(cfg, caps, inPlace = false) {
   return [wf, helpers, gpu, maxBytes, maxPixels, maxJobs, startupMs];
 }
 
-const LIVE = new Set(['signal', 'onProgress', 'onPreview', 'onEncoded', 'onFrame']);
+const LIVE = new Set(['signal', 'onProgress', 'onEncoded', 'onFrame']);
 const isCanvas = v => isFn(globalThis.OffscreenCanvas) && v instanceof OffscreenCanvas || isFn(globalThis.HTMLCanvasElement) && v instanceof HTMLCanvasElement;
 const dropBitmaps = made => made.forEach(v => v.then(b => { try { if (isFn(globalThis.ImageBitmap) && b instanceof ImageBitmap) b.close(); } catch {} }, noop));
 function holdArgs(args, budget, maxPixels, half, reserve, made) {
@@ -314,7 +314,7 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
   let factory = userFactory || (() => browserWorker(spec));
   const file = (() => { try { return spec.url?.().pathname.split('/').pop(); } catch {} })();
   let lanes = caps.lanes?.(helpers);
-  const replies = caps.previews, checkResult = caps.result;
+  const checkResult = caps.result;
   let closed = false, nextId = 0, retained = 0, scheduled = false, thread = null, stopping = null, ended, failed, closing = null, idleTimer, preparing = 0;
   const queue = [], running = new Map(), held = new Set();
 
@@ -341,7 +341,6 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
   const release = j => {
     if (j.l || j.q) return;
     j.l = true; retained -= j.b; j.x = j.p = null;
-    if (j.v) { replies?.clear(j); j.v = null; }
     j.F = j.G = null;
     running.delete(j.i); lanes?.free(j);
     schedule(); rest();
@@ -351,7 +350,6 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
     if (j.d) return;
     const out = !ok && !caller ? (() => { try { return declared(coded(val, j.c.signal)); } catch { return val; } })() : val;
     j.d = true;
-    if (j.v) replies?.clear(j);
     try { j.s?.removeEventListener('abort', j.h); } catch {}
     ok ? j.y(out) : j.r(out);
   };
@@ -389,7 +387,7 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
     if (j.f) return;
     j.f = true;
     try {
-      if (ok) { progress(j, 1); await j.w?.finish(); if (j.z) await abortable(j.z, j.c.signal); if (j.G) await abortable(j.G, j.c.signal); }
+      if (ok) { progress(j, 1); await j.w?.finish(); if (j.G) await abortable(j.G, j.c.signal); }
       settle(j, ok, val);
     } catch (r) { settle(j, false, r, true); }
     finally { release(j); }
@@ -423,7 +421,7 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
   function send(cur, j) {
     if (!cur.r() || !j.t || j.m || j.d || thread !== cur || running.get(j.i) !== j) return;
     try {
-      cur.w.postMessage({id: j.i, operation: j.o, input: j.x, options: j.p, ...(isBitmap(j.x) && {bitmap: true}), ...(j.v && {preview: true}), ...(j.F && {frames: true}), maxPixels, helpers, webgpu, lane: j.L, alone: j.A}, [...transfers([j.x, j.p])]);
+      cur.w.postMessage({id: j.i, operation: j.o, input: j.x, options: j.p, ...(isBitmap(j.x) && {bitmap: true}), ...(j.F && {frames: true}), maxPixels, helpers, webgpu, lane: j.L, alone: j.A}, [...transfers([j.x, j.p])]);
       j.m = true; j.x = j.p = null;
     } catch (r) { try { complete(j, false, r); } finally { stopThread(); } }
   }
@@ -482,9 +480,6 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
         if (caps.expand && 'inputBytes' in data) return caps.expand(j, data, maxBytes, () => retained, n => { retained += n; }, r => crash(cur, r), m => w.postMessage(m));
         if ('progress' in data) return progress(j, data.progress);
         if ('frame' in data) { frame(j, data.frame, data.frameIndex, () => { if (thread === cur && running.get(j.i) === j && !j.d) w.postMessage({id: j.i, frameAck: data.frameSequence}); }); return; }
-        if (replies && 'preview' in data) {
-          return replies.handle(j, data, r => cancel(j, r), () => { if (thread === cur && running.get(j.i) === j && !j.d) w.postMessage({id: j.i, previewAck: data.previewSequence}); });
-        }
         if (data.ok === true || data.ok === false) deviceHeld(data.device === true);
         if (data.ok === true) {
           const ok = !checkResult || checkResult(data.value, j.o);
@@ -533,26 +528,24 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
     let fields;
     try { fields = record(options); }
     catch (r) { throw !r?.code || r.code === 'JXL_INPUT' ? optErr("options: plain data fields") : r; }
-    const {signal, onProgress, onPreview, onFrame, ...params} = Object.fromEntries(fields.map(([k, d]) => [k, d.value]));
+    const {signal, onProgress, onFrame, ...params} = Object.fromEntries(fields.map(([k, d]) => [k, d.value]));
     if (admitSignal(signal) && !isFn(signal.removeEventListener)) throw optErr("signal: AbortSignal");
     if (onProgress !== undefined && !isFn(onProgress)) throw optErr("onProgress: function");
-    if (onPreview !== undefined && !isFn(onPreview)) throw optErr("onPreview: function");
     if (onFrame !== undefined && !isFn(onFrame)) throw optErr("onFrame: function");
     check(signal);
     if (queue.length + running.size + held.size >= maxJobs) throw memErr("maxPendingJobs: queue full");
     const optPlans = new Map();
     let optBytes;
     try { optBytes = measure(params, Number.MAX_SAFE_INTEGER, optPlans); }
-    catch (r) { throw r?.code === 'JXL_INPUT' ? optErr("callbacks: onProgress|onPreview|onFrame") : r; }
+    catch (r) { throw r?.code === 'JXL_INPUT' ? optErr("callbacks: onProgress|onFrame") : r; }
     overBytes(inBytes + optBytes, maxBytes, retained);
-    return [signal, onProgress, onPreview, params, optBytes, optPlans, onFrame];
+    return [signal, onProgress, params, optBytes, optPlans, onFrame];
   }
 
   function submit(op, input, options = {}, acquire = null, area = 0) {
     try {
-      const [signal, onProgress, onPreview, params, optBytes, optPlans, onFrame] = admit(options);
+      const [signal, onProgress, params, optBytes, optPlans, onFrame] = admit(options);
       if (onFrame !== undefined && op !== 'decode') throw optErr("onFrame: decode only");
-      if (onPreview !== undefined && !replies?.ops.has(op)) throw optErr("onPreview: unsupported operation");
       spec.admitInput?.(op, input);
       const inPlans = new Map(), bytes = measure(input, maxPixels, inPlans) + optBytes;
       overBytes(bytes, maxBytes, retained);
@@ -560,7 +553,7 @@ function makeQueue([userFactory, helpers, webgpu, maxBytes, maxPixels, maxJobs, 
       const moved = new Map(), ownIn = snapshot(input, inPlans, undefined, moved), ownOpt = snapshot(params, optPlans, undefined, moved);
       return new Promise((resolve, reject) => {
         const px = lanes && op === 'encode' && ArrayBuffer.isView(ownIn?.data) ? ownIn.width * ownIn.height : 0;
-        const j = {i: ++nextId, o: op, x: ownIn, p: ownOpt, b: bytes, n: px, a: px || area, s: signal, g: onProgress, v: onPreview, F: onFrame, y: resolve, r: reject, d: false, l: false, u: -1, c: new AbortController()};
+        const j = {i: ++nextId, o: op, x: ownIn, p: ownOpt, b: bytes, n: px, a: px || area, s: signal, g: onProgress, F: onFrame, y: resolve, r: reject, d: false, l: false, u: -1, c: new AbortController()};
         j.h = () => cancel(j, aborted(signal));
         retained += bytes; queue.push(j);
         acquire?.(j, () => { held.delete(j); if (j.d) release(j); else if (running.get(j.i) === j && !j.t) begin(j); }, inputBytes => {

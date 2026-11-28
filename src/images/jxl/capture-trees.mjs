@@ -4,7 +4,7 @@ import {hybridToken, priceCode, prefixCodeBits, writePrefixCode} from './prefix.
 import {captureCutHistogram, capturePlaneHash, capturePlanesEqual, captureQuantize, captureResiduals, captureTreeSample, captureTreeWalk, captureRctPrices} from './capture-kernels.mjs';
 import {kernelHooks, ensured, missing, declined} from './kernel-hooks.mjs';
 import {BitWriter, packSigned, floorLog2} from './bits.mjs';
-import {transformKeys} from './rct-search.mjs';
+import {transformKeys} from './rct-fill.mjs';
 import {positionsOf, letGoPositions} from './sample-positions.mjs';
 import {unit, carried, journaling, journalFact, FACTS, PASSED} from './step-journal.mjs';
 

@@ -17,6 +17,7 @@ import {admitWaterActions, waterPaperById} from './water-data.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
 import {inspectJPEGXL} from '../images/header.mjs';
 import {inspectRaster} from '../images/raster.mjs';
+import {PICTURE_EDGE} from '../images/limits.mjs';
 import {ornamentPath} from './ornaments.mjs';
 import {hasRefraction, refractionRecipeKey, admitRefractionRenditions, currentRefractionRenditions, stripRefractionRenditions, restoreRefractionRenditions} from './refraction-rendition.mjs';
 import {layoutLayeredGraph, layoutIncrementalGraph, planFlowchartPorts, outsideHullLength, ROUTE_PRICE} from './flowchart-layout.mjs';
@@ -2687,7 +2688,7 @@ function _rapierDrawSceneMarkup(recipe, includeFonts = true, keepRasters = false
 		} else markup = _rapierDrawShapeMarkup(shape, recipe, renderOptions);
 		const rendition = !renderOptions.sourceOnly && renderOptions.renditions.find(row => row.scope === (pieces.length > 1 ? 'layer:' : 'shape:') + shape.id);
 		work += markup.length - (keepRasters && shape.recognized === 'paint' ? pieces.reduce((sum, piece) => sum + piece.raster.length, 0) : 0) - (rendition ? rendition.png.length + rendition.jxl.length : 0);
-		_rapierDrawWorkCount(work, 16 * 1024 * 1024);
+		_rapierDrawWorkCount(work, RAPIER_DRAW_SCENE_BYTES);
 		body += markup;
 	}
 	return recipe.effect ? effectMarkup(recipe.effect, body, _rapierDrawEffectFrame(recipe), 'canvas', true, {...renderOptions, rendition: renderOptions.renditions.find(row => row.scope === 'canvas')}) : body;
@@ -4055,7 +4056,7 @@ function _rapierDrawAdmitRecipe(input, keepRasters = false, keep = false) {
 				if (paint.mode != null) { if (paint.mode !== 'water' || !waterPaperById(paint.paper)) return null; record.mode = 'water'; record.paper = paint.paper; }
 				if (paint.actions != null) { const actions = admitWaterActions(paint.actions); if (record.mode !== 'water' || !actions) return null; record.actions = actions; }
 				if (paint.brush != null) { if (typeof paint.brush !== 'string' || paint.brush.length > 96) return null; record.brush = paint.brush; }
-				if (paint.px != null) { const side = paint.strokes != null ? 2048 : 16384; if (!Array.isArray(paint.px) || paint.px.length !== 2 || !paint.px.every(n => Number.isInteger(n) && n > 0 && n <= side) || paint.px[0] !== raster.width || paint.px[1] !== raster.height) return null; record.px = paint.px.slice(); }
+				if (paint.px != null) { const side = paint.strokes != null ? 2048 : PICTURE_EDGE; if (!Array.isArray(paint.px) || paint.px.length !== 2 || !paint.px.every(n => Number.isInteger(n) && n > 0 && n <= side) || paint.px[0] !== raster.width || paint.px[1] !== raster.height) return null; record.px = paint.px.slice(); }
 				if (paint.scale != null) { if (!finite(paint.scale) || paint.scale <= 0 || paint.scale > 16) return null; record.scale = paint.scale; }
 				if (paint.group != null) { if (typeof paint.group !== 'string' || !_RAPIER_DRAW_ID.test(paint.group)) return null; record.group = paint.group; }
 				if (paint.strokes != null) {

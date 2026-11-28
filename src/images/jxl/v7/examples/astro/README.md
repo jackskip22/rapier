@@ -35,7 +35,7 @@ Astro's own sharp service, unchanged.
 | `jxl()` option | Default | Meaning |
 | --- | --- | --- |
 | `effort` | `3` | 1 (fastest) to 9 (smallest). |
-| `quality` | `72` | Used when the component asks none. 72 is at least the look of Astro's default WebP. |
+| `quality` | `72` | Used when the component asks none. |
 | `jpeg` | `'pixels'` | `'exact'`: a JPEG shown at its own size with no `quality` keeps every byte. The file restores the original JPEG. |
 | `maxPixels` | `12600000` on Workers | The largest picture a Worker reads on demand. Larger ones are served as they are. |
 
@@ -51,8 +51,7 @@ On-demand pages make each picture inside the Worker:
   config).
 - Without the binding, a PNG is resized by rapier-jxl itself.
 
-Anything else, or any refusal, serves the original file. Each picture takes from about 0.2 s (1 MP) to 1.5 s (12 MP)
-of CPU time: on the Free plan's 10 ms, make pictures at build.
+Anything else, or any refusal, serves the original file. Measure request CPU on your deployment. For a 10 ms CPU allowance, make pictures at build.
 
 ## What breaks
 
@@ -63,6 +62,6 @@ of CPU time: on the Free plan's 10 ms, make pictures at build.
 | No `sharp` at build | Astro's own error. `add astro` installs it. |
 | A Worker on the Free plan | The request exceeds 10 ms of CPU. |
 
-On 200 open photographs and screenshots, the files are 23% smaller than Astro's default WebP with at least its look, and the build takes 1.8 times as long. With `jpeg: 'exact'`, JPEGs are 17% smaller and restore exactly.
+With `jpeg: 'exact'`, supported full-size JPEGs are recompressed losslessly and restore the original JPEG exactly.
 
 rapier-jxl is the encoder inside rapier.website, the free Markdown editor and painting app.

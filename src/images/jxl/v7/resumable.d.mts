@@ -148,12 +148,14 @@ export type StartOptions<Operation extends ResumableOperation = ResumableOperati
 } & (undefined extends Parameters<NoInfer<Operation>>[1]
   ? {readonly options?: ResumableOptions<NoInfer<Operation>>}
   : {readonly options: ResumableOptions<NoInfer<Operation>>}) : never;
+/** Options for assembling the output of a finished resumable job. */
 export interface FinishOptions<Operation extends ResumableOperation = ResumableOperation> extends OperationContext<Operation> {
   /** The input start was given, the same descriptor: a checkpoint of another original is refused. */
   readonly input: InputOf<NoInfer<Operation>>;
   /** Aborts this call. The job stays resumable from its last checkpoint. Explicit undefined is accepted. */
   readonly signal?: AbortSignal | undefined;
 }
+/** Options for advancing a resumable job within this call's budget. */
 export interface AdvanceOptions<Operation extends ResumableOperation = ResumableOperation> extends FinishOptions<Operation> {
   /** `ms`: positive milliseconds, at most 60000. Defaults to {ms: 30}. A call advances at least one step. `reads`: the store
    * reads a call may make, for a host that allows few calls a request (none by default). */
@@ -161,6 +163,7 @@ export interface AdvanceOptions<Operation extends ResumableOperation = Resumable
   /** jpegxl/verify's verify, for a job started with it (an advance without it refuses with JXL_OPTIONS). */
   readonly verify?: typeof verify;
 }
+/** The saved checkpoint, completion state and parts released by an advance. */
 export interface AdvanceResult {
   readonly checkpoint: Checkpoint;
   readonly done: boolean;
@@ -199,7 +202,7 @@ export interface WorkerAdmission {
   readonly measured: {readonly pixels: number; readonly estimate: number | null} | null;
 }
 /** Malformed option records, unknown option keys and invalid maxPixels refuse JXL_OPTIONS.
- * Verification estimates read result.kept; stored result and part identities are checked when the job starts.
+ * Verification estimates read result.kept. Stored result and part identities are checked when the job starts.
  * @example const {admitted} = workerAdmission({operation: encode, width: 4032, height: 3024}); */
 export function workerAdmission<Operation extends ResumableOperation>(options: {readonly operation: Operation; readonly options?: ResumableOptions<NoInfer<Operation>>; readonly width: number; readonly height: number; readonly kind?: ResumableInput['kind']}): WorkerAdmission;
 

@@ -4,6 +4,7 @@ import {renderRefraction} from './refraction-render.mjs';
 import {hasRefraction, refractionRecipeKey, currentRefractionRenditions} from './refraction-rendition.mjs';
 import {createPaintPNGCodec} from './paint-png.mjs';
 import {decodePaintRaster, rasterizeSVG} from '../images/paint-raster.mjs';
+import {PICTURE_EDGE} from '../images/limits.mjs';
 
 export {hasRefraction, refractionRecipeKey};
 const png = createPaintPNGCodec(), ns = 'http://www.w3.org/2000/svg';
@@ -23,7 +24,7 @@ function grid(node, ratio) {
 	const [left, top, right, bottom] = box;
 	const x = Math.floor(left), y = Math.floor(top), w = Math.max(1, Math.ceil(right) - x), h = Math.max(1, Math.ceil(bottom) - y);
 	const width = Math.max(1, Math.ceil(w * ratio)), height = Math.max(1, Math.ceil(h * ratio));
-	if (width > 16384 || height > 16384 || width * height > png.pixelLimit) throw fail('This refracted picture exceeds the full-quality pixel limit.');
+	if (width > PICTURE_EDGE || height > PICTURE_EDGE || width * height > png.pixelLimit) throw fail('This refracted picture exceeds the full-quality pixel limit.');
 	return {view: {x, y, w, h}, width, height};
 }
 

@@ -8,7 +8,7 @@ import {iccProfileLimit} from './decode-icc-admission.mjs';
 import {IccCursor} from './icc-profile.mjs';
 import {JxlBits, requireDecode, unpackSigned} from './decode-bits.mjs';
 import {readDecodeImageHeader, readDecodeFrameHeader, readDecodeTOC} from './decode-header.mjs';
-import {TRANSFORMS} from './vardct-bases.mjs';
+import {TRANSFORMS} from './vardct-transforms.mjs';
 import {viewBytes, copyBytes} from './v7/bytes.mjs';
 import {fail, declared, snapshotOptions} from './v7/primitives.mjs';
 

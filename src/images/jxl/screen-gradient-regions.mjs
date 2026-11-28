@@ -70,6 +70,28 @@ export function gradientRegions(data, width, height) {
 }
 
 export function smoothPageGround(data, width, height) {
+  const {BLOCK, STEP} = P();
+  if (width < BLOCK * TILE || height < BLOCK * TILE) return false;
+  const had = CELLS.get(data);
+  if (!had || had.width !== width || had.height !== height) {
+    const cols = Math.floor(width / TILE), rows = Math.floor(height / TILE), need = Math.floor(cols * rows / 2) + 1;
+    const stride = width * 4, o0 = 8 * stride + 16, o1 = 8 * stride + 80, o2 = 24 * stride + 32, o3 = 24 * stride + 96;
+    let bad = 0;
+    for (let ty = 0; ty < rows; ty++) {
+      const rb = ty * TILE * stride;
+      for (let tx = 0; tx < cols; tx++) {
+        const b = rb + tx * TILE * 4;
+        let i = b + o0;
+        if (Math.abs(data[i] - data[i + 4]) > STEP || Math.abs(data[i + 1] - data[i + 5]) > STEP || Math.abs(data[i + 2] - data[i + 6]) > STEP) { if (++bad >= need) return false; continue; }
+        i = b + o1;
+        if (Math.abs(data[i] - data[i + 4]) > STEP || Math.abs(data[i + 1] - data[i + 5]) > STEP || Math.abs(data[i + 2] - data[i + 6]) > STEP) { if (++bad >= need) return false; continue; }
+        i = b + o2;
+        if (Math.abs(data[i] - data[i + 4]) > STEP || Math.abs(data[i + 1] - data[i + 5]) > STEP || Math.abs(data[i + 2] - data[i + 6]) > STEP) { if (++bad >= need) return false; continue; }
+        i = b + o3;
+        if (Math.abs(data[i] - data[i + 4]) > STEP || Math.abs(data[i + 1] - data[i + 5]) > STEP || Math.abs(data[i + 2] - data[i + 6]) > STEP) { if (++bad >= need) return false; }
+      }
+    }
+  }
   if (!gradientRegions(data, width, height).length) return false;
   const {cols, rows, quiet} = gradientCells(data, width, height);
   return cols > 0 && rows > 0 && quiet * 2 >= cols * rows;

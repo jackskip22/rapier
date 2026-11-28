@@ -1,12 +1,12 @@
 import {MEASURED_EFFORT} from '../effort-level.mjs';
+import {PHOTO_LEVELS} from '../photo-quality-table.mjs';
 import {screenPhotoRegions} from '../screen-photo-regions.mjs';
 import {smallExactBeside, exactCandidate} from './exact-cap.mjs';
 import {resultOperation, resultReference, resultFacts} from './result-operation.mjs';
 import {FIT_BYTES, namedPicture, DEVICE_RAN, RESULT_REFERENCE} from './result-reference.mjs';
 import {seedLexer} from '../visual-lexer-plan.mjs';
 import {withRenderingIntent} from './header-intent.mjs';
-import {PREVIEW, previewCall} from './preview.mjs';
-import {effortJob} from '../effort-job.mjs';
+import {effortJob, exactAnswer} from '../effort-job.mjs';
 import {EXACT_LADDER as DEEP} from '../exact-ladder.mjs';
 import {photoAnsSteps} from '../photo-v6-blocks.mjs';
 import {searchV6} from '../photo-v6-search.mjs';
@@ -16,9 +16,17 @@ import {measuredFeatures} from './feature-photo.mjs';
 import {upsampledSamples} from './upsampling.mjs';
 import {scoreTarget} from './score-target.mjs';
 import {measuredFileSearch, withAnnounced} from './measured-search.mjs';
+import {EXACT, watchComposed, watchedSteps} from '../photo-shown.mjs';
+import {selectedYCbCrRGBA} from '../photo-whole-rebuild.mjs';
+import {ssimulacra2, ssimulacra2Reference} from '../ssimulacra2.mjs';
 import {wholeRebuildMeasure} from '../photo-whole-rebuild.mjs';
 import {memoryPlan} from '../memory-plan.mjs';
-import {explicitShownMargin} from '../photo-whole-policy.mjs';
+import {explicitShownMargin, wholePhotoTarget} from '../photo-whole-policy.mjs';
+import {smallPicture} from '../photo-v6-settings.mjs';
+import {measuredLook} from '../photo-quality-table.mjs';
+import {alphaRebuildMeasure} from '../photo-alpha-measure.mjs';
+import {captureFillClear} from '../capture-kernels.mjs';
+import {P3_TRANSFORM} from '../color-transform.mjs';
 import {readPNG16} from '../source.mjs';
 import {orientSamples} from '../sample-transforms.mjs';
 import {compileCaptureKernels, captureExact} from '../capture-codec.mjs';
@@ -47,7 +55,7 @@ import {lowIntentFacts, settledFacts, lowIntentEligible, LOW_INTENT_CALIBRATION}
 import {settleScans} from './settle-scans.mjs';
 import {stillPhotoTargetSteps, LOW_MEASURED_PIXELS} from './still-photo-target.mjs';
 const SMALL_LADDER = 512 * 512;
-import {planGate} from '../photo-whole-search.mjs';
+import {planGate, LIBJXL_BOUND} from '../photo-whole-search.mjs';
 import {declineSampledSeed} from '../photo-seed-sample.mjs';
 import {HDR} from '../photo-hdr.mjs';
 import {isRowSource, admitRows, readBand} from './rows.mjs';
@@ -64,7 +72,7 @@ import {pagePicture, pageFile, exactCodec, unletteredFile, letteredSteps, letter
 import {landedLetteredSteps} from './lettered-landed.mjs';
 import {screenLike} from '../screen.mjs';
 import {runCaptureComplete} from './capture-complete-run.mjs';
-import {configuredDecoder, DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {configuredDecoder, DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {remember} from '../call-memo.mjs';
 import {withProgressive} from '../coefficient-ans.mjs';
 import {admitSampleFormat} from '../admit-samples.mjs';
@@ -85,7 +93,7 @@ export function stillEncoder(ten = false) {
   const run = (input, options, helpers, region) => encodeHere(input, options, helpers, region, ten);
   const encodeBytes = (input, options) => regioned(run, input, options).catch(error => { throw declared(error); });
   encodeBytes[DRIVE] = (input, options, helpers) => regioned(run, input, options, helpers).catch(error => { throw declared(error); });
-  const encode = resultOperation(encodeBytes, {preview: previewCall, device: true});
+  const encode = resultOperation(encodeBytes, {device: true});
   const admit = ({maxBytes, outputs, ...rest}) => { encodeOptions(publicVocabulary(rest), ten, true); };
   if (!(typeof __RAPIER_JXL_UNSTEPPED__ !== 'undefined' && __RAPIER_JXL_UNSTEPPED__ === true)) Object.defineProperty(encode, STEPS, {value: verbSteps(ten ? 'encode:rapier-jxl/max' : 'encode:rapier-jxl', encode, {taken: ['fidelity', 'effort', 'progressive', 'jpeg', 'readAs', 'maxPixels', 'firstRegion', 'webgpu'], admit, rows: true, files: true})});
   return encode;
@@ -108,7 +116,8 @@ async function encodeHere(input, given = {}, helpers = null, region, ten = false
   const run = async (settings = options, jpeg) => withRenderingIntent(await encodeOwned(input, settings, helpers,
     {codec, target, webgpu, maxPixels, journal, fit, lexer, carried,
       jpeg: original?.preserve === false || settings.readAs !== undefined ? undefined : jpeg, owned}, reader, region), carried.intent, journal?.join);
-  const ladder = codec.effort > MEASURED_EFFORT && codec.effort <= 9 && codec.quality < 100 && target === undefined && journal === undefined
+  const smallHolds = PHOTO_LEVELS[codec.effort]?.smallHolds;
+  const ladder = smallHolds !== undefined && codec.quality < 100 && target === undefined && journal === undefined
     && fit === undefined && !region && !source && !original && input?.data && input.width * input.height < SMALL_LADDER
     && !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true);
   const again = ladder ? {options: {...given, fidelity: own(given.fidelity, maxPixels)}} : undefined;
@@ -120,7 +129,7 @@ async function encodeHere(input, given = {}, helpers = null, region, ten = false
       const look = sevenFacts.kept === 'lossy' ? sevenFacts.measurements?.find(m => m.metric === 'ssimulacra2' && Number.isFinite(m.floor)) : null;
       if (!look) return withRenderingIntent(mine, carried.intent, journal?.join);
       const six = {};
-      const sixBytes = await encodeHere(again.input, {...again.options, features: again.features, effort: MEASURED_EFFORT, webgpu: false, [RESULT_REFERENCE]: (r, p, f) => { if (f) Object.assign(six, f); }}, helpers, region, ten, again);
+      const sixBytes = await encodeHere(again.input, {...again.options, features: again.features, effort: smallHolds, webgpu: false, [RESULT_REFERENCE]: (r, p, f) => { if (f) Object.assign(six, f); }}, helpers, region, ten, again);
       const sixLook = six.kept === 'lossy' ? six.measurements?.find(m => m.metric === 'ssimulacra2' && Number.isFinite(m.score)) : null;
       if (!sixLook || sixBytes.length >= mine.length || sixLook.score < look.floor) return withRenderingIntent(mine, carried.intent, journal?.join);
       resultFacts(options, {...sevenFacts, measurements: sevenFacts.measurements.map(m => m === look ? {...m, score: sixLook.score} : m)});
@@ -144,8 +153,7 @@ async function encodeOwned(input, options, helpers, {codec, target, webgpu, maxP
     const source = admitRows(input, maxPixels), report = options.onProgress;
     source.description = own(source.description, maxPixels);
     resultReference(options, source);
-    const hooks = {signal: options.signal ?? new AbortController().signal, maxPixels, onProgress: progressOf(report, options.signal), journal,
-      ...(options[PREVIEW] && {preview: options[PREVIEW]}), ran: options[DEVICE_RAN]};
+    const hooks = {signal: options.signal ?? new AbortController().signal, maxPixels, onProgress: progressOf(report, options.signal), journal, ran: options[DEVICE_RAN]};
     const run = fn => withArenaLease(options.signal, fn);
     if (webgpu === 'required') await run(async () => {
       await abortable(requireWebGPU('required', codec.quality < 100 || target !== undefined, codec.effort), options.signal);
@@ -160,24 +168,28 @@ async function encodeOwned(input, options, helpers, {codec, target, webgpu, maxP
       const settled = reader.read(codec, band) ?? await reader.project(codec, band);
       exact &&= settled.quality === 100; return settled;
     };
+    const book = bandBook(codec, codec.effort >= MEASURED_EFFORT ? codec.qualityIntent : undefined, source);
     const recode = async function* (band, shared) {
-      const settled = await settle(band); return yield* recodeBand(band, settled, shared, HDR, ...bandCoders(settled));
+      const settled = await settle(band);
+      return yield* book.recode(band, shared, (quality, exact) => recodeBand(band, {...settled, quality}, {...shared, exact}, HDR, ...bandCoders(settled)), hooks.signal);
     };
-    const read = (y, rows) => readBand(source, y, rows, hooks.signal);
+    const read = book.read((y, rows) => readBand(source, y, rows, hooks.signal));
     if (target !== undefined) return bandedScore({width: source.width, height: source.height, read}, settle, target, hooks, webgpu, options, run);
     const bytes = await encodeBands({width: source.width, height: source.height, read},
-      async (band, bandHooks) => { const s = await settle(band); return encodePicture(band, s, bandHooks, helpers, deviceSetting(s, webgpu)); }, recode, drain, hooks, run);
-    if (exact) resultFacts(options, {kept: 'pixels', measurements: []});
+      async (band, bandHooks) => { const s = await settle(band); return encodePicture(band, s, bandHooks, helpers, deviceSetting(s, webgpu), book.intent, book.intent === undefined ? undefined : book.selected(band), null); }, recode, drain, hooks, run);
+    const record = book.record();
+    if (record) resultFacts(options, record);
+    else if (exact) resultFacts(options, {kept: 'pixels', measurements: []});
     return bytes;
   }
   const budget = Math.max(DEFAULT_INPUT_BYTES, maxPixels * 16);
   const features = owned ? owned.features : own(options.features, maxPixels, budget);
   if ((typeof __RAPIER_JXL_STILL__ !== 'undefined' && __RAPIER_JXL_STILL__ === true) && features !== undefined) throw fail('JXL_OPTIONS', 'unknown option: features');
-  const settle = (picture, floorLater = false, at = codec) => {
-    if (picture.extraChannels !== undefined && at.qualityIntent === undefined && at.quality === 100)
+  const settle = (picture, floorLater = false) => {
+    if (picture.extraChannels !== undefined && codec.qualityIntent === undefined && codec.quality === 100)
       throw fail('JXL_UNSUPPORTED', EXTRA_EXACT);
-    return reader.read(at, picture, {jpeg, floorLater, exactAllowed: features === undefined && target === undefined &&
-      picture.extraChannels === undefined}) ?? reader.project(at, picture, {jpeg, floorLater});
+    return reader.read(codec, picture, {jpeg, floorLater, exactAllowed: features === undefined && target === undefined &&
+      picture.extraChannels === undefined}) ?? reader.project(codec, picture, {jpeg, floorLater});
   };
   if (isTexture(input)) input = await abortable(readTexture(input, maxPixels), options.signal);
   let decoded = null;
@@ -200,8 +212,7 @@ async function encodeOwned(input, options, helpers, {codec, target, webgpu, maxP
   if (again) { again.input = captured.raw; again.features = features; }
   if (captured) resultReference(options, captured.input);
   const report = options.onProgress, onProgress = progressOf(report, options.signal);
-  const hooks = {signal: options.signal ?? new AbortController().signal, onProgress, maxPixels, journal,
-    ...(options[PREVIEW] && {preview: options[PREVIEW]}), ran: options[DEVICE_RAN],
+  const hooks = {signal: options.signal ?? new AbortController().signal, onProgress, maxPixels, journal, ran: options[DEVICE_RAN],
     ...(lexer && {lexer, onLexerEvaluated: id => resultFacts(options, {lexer: id})})};
   return withArenaLease(options.signal, async () => {
   if (webgpu === 'required') await abortable(requireWebGPU('required', codec.quality < 100 || target !== undefined, codec.effort), options.signal);
@@ -339,17 +350,12 @@ async function encodeOwned(input, options, helpers, {codec, target, webgpu, maxP
     return drain(steps, hooks);
   }
   if (needsBands(width, height, settings, data)) {
-    const facts = new Map(), recoded = new Set(), at = band => band.data.byteOffset;
-    const bytes = await encodeBands({width, height, read: (y, rows) => ({...source, data: data.subarray(y * width * 4, (y + rows) * width * 4), width, height: rows})},
-      (band, bandHooks) => encodePicture(band, captured.codec, bandHooks, helpers, deviceSetting(captured.codec, webgpu), codec.qualityIntent, fact => facts.set(at(band), fact)),
-      (band, target) => { recoded.add(at(band)); return recodeBand(band, captured.codec, target, HDR, ...bandCoders(captured.codec)); }, drain, hooks);
-    if (facts.size) {
-      const read = [...facts.values()].flatMap(fact => fact.measurements ?? []), floor = read.find(m => m.floor !== undefined)?.floor;
-      const shown = [...facts].flatMap(([key, fact]) => !recoded.has(key) ? fact.measurements ?? []
-        : settings.quality < 100 && floor !== undefined ? [{metric: 'ssimulacra2', domain: 'predicted', floor}] : []);
-      resultFacts(options, {kept: [...facts].every(([key, fact]) => fact.kept === 'pixels' && (!recoded.has(key) || settings.quality >= 100)) ? 'pixels' : 'lossy',
-        measurements: shown});
-    }
+    const book = bandBook(captured.codec, codec.qualityIntent, {width, height});
+    const bytes = await encodeBands({width, height, read: book.read((y, rows) => ({...source, data: data.subarray(y * width * 4, (y + rows) * width * 4), width, height: rows}))},
+      (band, bandHooks) => encodePicture(band, captured.codec, bandHooks, helpers, deviceSetting(captured.codec, webgpu), book.intent, book.selected(band)),
+      (band, target) => book.recode(band, target, (quality, exact) => recodeBand(band, {...captured.codec, quality}, {...target, exact}, HDR, ...bandCoders(captured.codec)), hooks.signal), drain, hooks);
+    const record = book.record();
+    if (record) resultFacts(options, record);
     return bytes;
   }
   const small = codec.effort === MEASURED_EFFORT && width * height <= LOW_MEASURED_PIXELS;
@@ -358,22 +364,15 @@ async function encodeOwned(input, options, helpers, {codec, target, webgpu, maxP
   let sampledDecline = false;
   if (!(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) &&
       !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) &&
-      codec.effort === MEASURED_EFFORT && seedShips && hooks.lexer && journal === undefined && fit === undefined &&
+      codec.effort === MEASURED_EFFORT && seedShips && hooks.lexer && fit === undefined &&
       !featured && captured.target === undefined && settings.quality < 100 && codec.qualityIntent !== undefined &&
       (source.space ?? 'srgb') === 'srgb' && !source.transform && data instanceof Uint8Array && data.length === width * height * 4) {
-    const {plan} = planGate(hooks.lexer, data, width, height, settings.quality, codec.qualityIntent, MEASURED_EFFORT);
-    sampledDecline = declineSampledSeed(data, width, height, settings.quality, plan);
+    sampledDecline = await journaled(journal, 'sampled-decline', () => {
+      const {plan} = planGate(hooks.lexer, data, width, height, settings.quality, codec.qualityIntent, MEASURED_EFFORT);
+      return declineSampledSeed(data, width, height, settings.quality, plan);
+    });
   }
-  const lowFive = codec.effort === MEASURED_EFFORT && fit === undefined && settings.quality < 100 && captured.target === undefined
-    && !(typeof __RAPIER_JXL_UPLOAD__ !== 'undefined' && __RAPIER_JXL_UPLOAD__ === true) && !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true)
-    ? async () => {
-      const five = await settle(captured.input, false, {...codec, effort: MEASURED_EFFORT - 1});
-      if (!five || !(five.quality < 100)) return null;
-      let kept = null;
-      const bytes = await encodePicture(captured.input, five, {...hooks, lexer: seedLexer(), onLexerEvaluated: undefined, lowLook: (file, look) => { kept = {file, look}; }}, helpers, false, codec.qualityIntent, () => {});
-      return {bytes, look: kept && kept.file === bytes ? kept.look : null};
-    } : null;
-  return once(captured.input, () => codedPicture(captured, settings, sampledDecline ? {...hooks, lexer: null} : routed, fit, helpers, webgpu, codec, options, unlettered, lowFive));
+  return once(captured.input, () => codedPicture(captured, settings, sampledDecline ? {...hooks, lexer: null} : routed, fit, helpers, webgpu, codec, options, unlettered));
   });
 }
 
@@ -389,7 +388,7 @@ async function bandedScore({width, height, read}, settings, target, hooks, webgp
   const source = {width, height, read: async (y, rows) => {
     const band = await read(y, rows); positions.set(band, y); return band;
   }};
-  const replacementHooks = {...hooks, preview: undefined, onProgress: undefined};
+  const replacementHooks = {...hooks, onProgress: undefined};
   const code = (band, coded, shared, quality, bandHooks = replacementHooks) =>
     drain(recodeBand(band, {...coded, quality}, shared, HDR, ...bandCoders(coded)), bandHooks);
   const exactBand = async (band, shared, bandHooks = replacementHooks) => {
@@ -424,8 +423,7 @@ async function bandedScore({width, height, read}, settings, target, hooks, webgp
       return {quality, bytes, scores: {ssimulacra2: scores.ssimulacra2 - explicitShownMargin(scores.ssimulacra2, w, h)}};
     };
     try {
-      const answer = await measuredFileSearch(aim, probe, null, {...replacementHooks, exact, width: w, height: h,
-        domain: 'encoder-reconstruction'});
+      const answer = await measuredFileSearch(aim, probe, null, {...replacementHooks, exact, domain: 'encoder-reconstruction'});
       facts.set(positions.get(band), {kept: answer.exact ? 'pixels' : 'lossy', measurements: answer.measurements});
       return answer.bytes;
     } catch (error) { failed = true; throw error; }
@@ -449,18 +447,9 @@ async function bandedScore({width, height, read}, settings, target, hooks, webgp
   return bytes;
 }
 
-async function codedPicture(captured, settings, hooks, fit, helpers, webgpu, codec, options, unlettered, lowFive = null) {
-  let sixFacts = null;
+async function codedPicture(captured, settings, hooks, fit, helpers, webgpu, codec, options, unlettered) {
   const bytes = await encodePicture(captured.input, captured.codec, {...hooks, fit}, helpers, deviceSetting(captured.codec, webgpu), codec.qualityIntent,
-    facts => { sixFacts = facts; resultFacts(options, facts); });
-  const sixLook = sixFacts?.kept === 'lossy' ? sixFacts.measurements?.find(m => m.metric === 'ssimulacra2' && Number.isFinite(m.score)) : null;
-  if (lowFive && sixFacts?.kept === 'lossy' && !captureExact(bytes)) {
-    const five = await lowFive();
-    if (five && five.bytes.length < bytes.length) {
-      resultFacts(options, {...sixFacts, measurements: sixLook && five.look !== null ? sixFacts.measurements.map(m => m === sixLook ? {...m, score: five.look} : m) : []});
-      return five.bytes;
-    }
-  }
+    facts => resultFacts(options, facts));
   if (settings.quality < 100 && captureExact(bytes)) {
     resultFacts(options, {kept: 'pixels', measurements: []});
     if (settings.effort >= MEASURED_EFFORT) {
@@ -483,13 +472,155 @@ function journalPixels({data, width, height, colorSpace, colorEncoding, icc}, ma
 
 const bandCoders = codec => [codec.effort >= 6 ? photoAnsSteps : undefined, codec.effort >= 8 ? searchV6 : undefined];
 
-const encodePicture = (picture, codec, hooks, helpers, webgpu, intent, selected) =>
-  deviceAgain(webgpu, gpu => encodeWith(picture, codec, hooks, helpers, gpu, intent, selected));
+function bandBook(settings, intent, picture) {
+  const rows = new WeakMap(), facts = new Map(), recoded = new Map();
+  const measuring = settings.effort >= MEASURED_EFFORT && settings.quality < 100 && intent !== undefined;
+  const floor = measuring ? keptFloor(intent, picture) : undefined;
+  const tag = y => band => { rows.set(band, y); return band; };
+  return {
+    intent,
+    read: read => (y, count) => { const band = read(y, count); return typeof band?.then === 'function' ? band.then(tag(y)) : tag(y)(band); },
+    selected: band => fact => { facts.set(rows.get(band), fact); },
+    *recode(band, target, codeAt, signal) {
+      const y = rows.get(band);
+      if (!measuring || target.exact || settings.quality >= 100) {
+        recoded.set(y, measuring && target.exact ? [] : null);
+        return yield* codeAt(settings.quality, target.exact);
+      }
+      const q = settings.quality;
+      for (const quality of [q, q + (100 - q) / 2, q + (100 - q) * 0.8, 99.99]) {
+        const shown = smallestShown(), bytes = yield* watchedSteps(codeAt(quality, false), shown.seen, shown.composed), image = shown.of(bytes);
+        const look = image ? yield* keptLookSteps(band, image, signal) : null;
+        if (look === null) { recoded.set(y, null); return bytes; }
+        if (look >= floor) { recoded.set(y, [{metric: 'ssimulacra2', score: look, floor, domain: 'encoder-reconstruction'}]); return bytes; }
+        if (quality === 99.99) {
+          if (!target.xyb) { recoded.set(y, []); return yield* codeAt(settings.quality, true); }
+          recoded.set(y, [{metric: 'ssimulacra2', score: look, domain: 'encoder-reconstruction'}]); return bytes;
+        }
+      }
+    },
+    record() {
+      if (!facts.size) return null;
+      const read = [...facts.values()].flatMap(fact => fact.measurements ?? []), stated = read.find(m => m.floor !== undefined)?.floor ?? floor;
+      const shown = [...facts].flatMap(([y, fact]) => !recoded.has(y) ? fact.measurements ?? [] : recoded.get(y)
+        ?? (settings.quality < 100 && stated !== undefined ? [{metric: 'ssimulacra2', domain: 'predicted', floor: stated}] : []));
+      const exactAgain = y => !recoded.has(y) || settings.quality >= 100 || measuring && recoded.get(y)?.length === 0;
+      return {kept: [...facts].every(([y, fact]) => fact.kept === 'pixels' && exactAgain(y)) ? 'pixels' : 'lossy', measurements: shown};
+    },
+  };
+}
+
+async function encodePicture(picture, codec, hooks, helpers, webgpu, intent, selected, route = intent) {
+  const run = (coding, runHooks, report, pool = helpers, asked = route ?? undefined) => deviceAgain(webgpu, gpu => encodeWith(picture, coding, runHooks, pool, gpu, asked, report));
+  const measuring = codec.effort >= MEASURED_EFFORT && codec.quality < 100 && intent !== undefined && !hooks.fit && !hooks.measureScreen;
+  if (!measuring) return codec.effort >= 2 && codec.effort < MEASURED_EFFORT && codec.quality < 100 && intent !== undefined && !hooks.fit &&
+    !hooks.measureScreen && picture.data instanceof Uint8Array && screenLike(picture.data, picture.width, picture.height)
+    ? lowScreenPicture(picture, codec, hooks, helpers, intent, selected, run) : run(codec, hooks, selected);
+  let facts = null;
+  const read = bytes => facts ? facts.kept !== 'lossy' || facts.measurements?.some(m => m.metric === 'ssimulacra2' && Number.isFinite(m.score)) : exactAnswer(bytes);
+  const {bytes, image} = await keptShown(pool => run(codec, hooks, route === null ? undefined : found => { facts = found; }, pool), helpers, read);
+  if (read(bytes)) { if (facts) selected?.(facts); return bytes; }
+  const floor = keptFloor(intent, picture);
+  const look = image ? await keptLook(picture, image, hooks.signal) : null;
+  if (look !== null && look >= floor) {
+    selected?.({...facts, kept: 'lossy', measurements: [{metric: 'ssimulacra2', score: look, floor, domain: 'encoder-reconstruction'}]});
+    return bytes;
+  }
+  let reached = 0;
+  const report = hooks.onProgress, onProgress = report && (fraction => { if (fraction > reached) report(reached = fraction); });
+  return run({...codec, quality: intent * 100, lowIntent: intent}, {...hooks, measureScreen: true, ...(report && {onProgress})}, selected, helpers, intent);
+}
+
+const LOW_SCREEN_SLOPE = 0.6, LOW_SCREEN_OVER = 1;
+async function lowScreenPicture(picture, codec, hooks, helpers, intent, selected, run) {
+  let facts = null;
+  const report = found => { facts = found; };
+  const floor = keptFloor(intent, picture);
+  const read = async (coding, runHooks) => {
+    facts = null;
+    const {bytes, image} = await keptShown(pool => run(coding, runHooks, report, pool), helpers, out => exactAnswer(out) || facts?.kept === 'pixels');
+    const look = image ? await keptLook(picture, image, hooks.signal) : null;
+    const libjxl = look !== null ? await keptLook(picture, image, hooks.signal, 'libjxl') : null;
+    return {bytes, look, libjxl, room: look === null || libjxl === null ? null : Math.min(look - floor, libjxl - (floor - LIBJXL_BOUND)), facts};
+  };
+  const first = await read(codec, hooks);
+  if (exactAnswer(first.bytes) || first.facts?.kept === 'pixels' || first.room === null) { if (first.facts) selected?.(first.facts); return first.bytes; }
+  const stand = ({bytes, look, facts: found}) => { selected?.({...found, kept: 'lossy', measurements: [{metric: 'ssimulacra2', score: look, floor, domain: 'encoder-reconstruction'}]}); return bytes; };
+  if (first.room >= 0) return stand(first);
+  const quality = Math.min(99.9, Math.round((codec.quality + Math.max(1, (0.3 - first.room) / LOW_SCREEN_SLOPE)) * 100) / 100);
+  const again = await read({...codec, quality}, {...hooks, onProgress: undefined});
+  const lossy = r => r.room !== null && !exactAnswer(r.bytes);
+  const passes = lossy(again) && again.room >= 0;
+  if (lossy(again) && (!passes || again.room > LOW_SCREEN_OVER) && again.room > first.room + 0.05) {
+    const slope = (again.room - first.room) / (quality - codec.quality);
+    const aim = Math.min(99.9, Math.max(codec.quality + 0.05, Math.round((codec.quality + (0.3 - first.room) / slope) * 100) / 100));
+    if (Math.abs(aim - quality) > 0.1) {
+      const third = await read({...codec, quality: aim}, {...hooks, onProgress: undefined});
+      if (lossy(third) && third.room >= 0 && (!passes || third.bytes.length < again.bytes.length)) return stand(third);
+    }
+  }
+  if (passes) return stand(again);
+  return run(exactCodec(codec), hooks, selected);
+}
+
+const smallestShown = () => {
+  let held = null;
+  const hold = (file, image) => { if (image && image !== EXACT && (!held || file.length <= held.file.length)) held = {file, image}; };
+  return {seen: hold, composed: (file, parts) => hold(file, {parts}),
+    of: bytes => { const image = held?.file === bytes ? held.image : null; held = null; return image; }};
+};
+const withShown = (produce, shown) => {
+  const stop = watchComposed(shown.composed);
+  return withAnnounced(produce, shown.seen).finally(stop);
+};
+const keptFloor = (intent, {width, height}) => smallPicture(width, height) ? wholePhotoTarget(0, intent, false, true) : measuredLook(intent);
+async function keptShown(write, helpers, measured = () => false) {
+  if (helpers) {
+    const bytes = await write(helpers);
+    if (measured(bytes)) return {bytes, image: null};
+  }
+  const shown = smallestShown(), bytes = await withShown(() => write(null), shown);
+  return {bytes, image: shown.of(bytes)};
+}
+
+function composedLook(data, width, height, {base = null, crops = [], exact = null}, space, alpha, signal, arithmetic = 'binary64') {
+  if (alpha || space !== 'srgb' || base && !base.ycbcr || crops.some(({image}) => !image.ycbcr)) return null;
+  const color = {space: 'srgb'}, shown = base ? selectedYCbCrRGBA(base, color, signal) : Uint8Array.from(data);
+  if (shown.length !== data.length) return null;
+  for (const {image, x, y} of crops) {
+    const rgba = selectedYCbCrRGBA(image, color, signal), w = image.width;
+    if (x + w > width || y + image.height > height || rgba.length !== w * image.height * 4) return null;
+    for (let row = 0; row < image.height; row++) shown.set(rgba.subarray(row * w * 4, (row + 1) * w * 4), ((y + row) * width + x) * 4);
+  }
+  if (exact) for (let i = 0; i < width * height; i++) if (exact[i]) shown.set(data.subarray(i * 4, i * 4 + 4), i * 4);
+  for (let i = 3; i < shown.length; i += 4) shown[i] = 255;
+  const reference = ssimulacra2Reference({rgba: data}, width, height, {immutable: true, arithmetic});
+  try {
+    const score = ssimulacra2(reference, {rgba: shown}, width, height, {arithmetic})?.score;
+    return Number.isFinite(score) ? score : null;
+  } finally { reference.release(); }
+}
+const keptLook = (picture, image, signal, arithmetic) => drain(keptLookSteps(picture, image, signal, arithmetic), {signal});
+function* keptLookSteps({data, width, height, colorSpace: space = 'srgb', colorEncoding, icc}, image, signal, arithmetic = 'binary64') {
+  if (!(data instanceof Uint8Array || data instanceof Uint8ClampedArray) || data.length !== width * height * 4 ||
+      colorEncoding !== undefined || icc !== undefined || space !== 'srgb' && space !== 'display-p3') return null;
+  let alpha = false;
+  for (let at = 3; at < data.length; at += 4) if (data[at] !== 255) { alpha = true; break; }
+  if (image.parts) return composedLook(data, width, height, image.parts, space, alpha, signal, arithmetic);
+  const color = {space, ...(space === 'display-p3' && {transform: P3_TRANSFORM})};
+  const meter = (alpha ? alphaRebuildMeasure : wholeRebuildMeasure)(alpha ? captureFillClear(data, width, height) : data, width, height, color, signal,
+    memoryPlan(width * height, {width, height, inputBytes: data.buffer.byteLength}));
+  try {
+    let scores = meter.measure(image, {ssimulacra2: true, butteraugli: false, ...(arithmetic === 'libjxl' && {exact: true, arithmetic})});
+    if (typeof scores?.next === 'function') scores = yield* scores;
+    return Number.isFinite(scores?.ssimulacra2) ? scores.ssimulacra2 : null;
+  } finally { meter.destroy(); }
+}
 async function encodeWith({data, width, height, ...source}, codec, hooks, helpers, webgpu, intent, selected) {
   const settings = {...source, ...codec}, lossy = settings.quality < 100;
   check(hooks.signal);
-  const target = stillPhotoTargetSteps(data, width, height, settings, {intent, signal: hooks.signal, selected, maxPixels: hooks.maxPixels, fit: hooks.fit,
-    preview: hooks.preview, lexer: hooks.lexer, onLexerEvaluated: hooks.onLexerEvaluated, lowLook: hooks.lowLook, lowPlan: hooks.lowPlan,
+  const target = stillPhotoTargetSteps(data, width, height, settings, {intent, signal: hooks.signal, selected, maxPixels: hooks.maxPixels, fit: hooks.fit, screen: hooks.measureScreen,
+    lexer: hooks.lexer, onLexerEvaluated: hooks.onLexerEvaluated,
     exact: (effort = 5, limit) => effortJob(data, width, height, {...settings, quality: 100, effort}, false,
       undefined, undefined, undefined, limit > 0 ? {...DEEP, limit} : DEEP, HDR)});
   const bandBytes = target ? scoreBandBytes(width, height) : undefined, geometry = target ? scoreBandGeometry(width, height) : undefined;

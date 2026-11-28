@@ -89,7 +89,7 @@ export const DOORS = Object.freeze({
 			Object.freeze(['Is my picture uploaded?', 'No. Files are converted on your device.']),
 			Object.freeze(['Does it work offline?', 'Yes. The encoder is inside Rapier. Videos and animations need JPEG XL complete, a one-time download. After that they convert offline too.']),
 			Object.freeze(['Is JPEG XL lossless?', 'Lossless is. High and Very high are lossy and much smaller. A JPEG converted under Lossless restores exactly.']),
-			Object.freeze(['How much smaller is JPEG XL?', 'An exact JPEG: usually 10 to 20% smaller. A 710 KB PNG painting: 428 KB lossless, 73 KB at High.']),
+			Object.freeze(['How much smaller is JPEG XL?', 'An exact JPEG: usually 10 to 20% smaller. A 389 KB PNG painting: 185 KB lossless.']),
 			Object.freeze(['What does it keep?', 'Transparency, 16-bit PNG (Lossless), color profiles such as Display P3 and Adobe RGB, and HDR PNGs (PQ or HLG). Video sound is dropped.']),
 			Object.freeze(['How many pictures can I convert?', 'Any number. Rapier converts a few at a time. Cancel stops it. If the device runs out of memory, finished files are kept.']),
 			Object.freeze(['Which browsers open JPEG XL?', 'Chrome 155, Firefox 158 and Safari 17 and later. Safari does not play animated JPEG XL. Any browser can make the files here.']),

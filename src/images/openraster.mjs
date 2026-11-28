@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {_rapierDrawReadRecipeFromSVGText} from '../draw/core.mjs';
+import {ASSET_PIXELS} from './limits.mjs';
 import {inspectRaster} from './raster.mjs';
 
 export async function readOpenRasterMembers(archive, work) {
@@ -13,7 +14,7 @@ export async function readOpenRasterMembers(archive, work) {
     result = {bytes, codec: 'image/svg+xml', editable: true};
   } else {
     const bytes = await archive.read('mergedimage.png');
-    if (inspectRaster(bytes).type !== 'image/png') throw new Error('Invalid OpenRaster picture');
+    if (inspectRaster(bytes, {maximumPixels: ASSET_PIXELS}).type !== 'image/png') throw new Error('Invalid OpenRaster picture');
     result = {bytes, codec: 'image/png', editable: false};
   }
   await archive.verify();

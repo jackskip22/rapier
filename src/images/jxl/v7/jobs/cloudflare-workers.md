@@ -16,4 +16,4 @@ Why it helps: Cloudflare's runtime, run locally with `wrangler dev`.
 
 3. Open http://localhost:8787. It runs the test and downloads `rapier-jxl-selftest-workerd.json`. Attach it to your issue, including failures.
 
-The Worker encodes a screenshot, a photo and a camera JPEG at efforts 1, 3 and 7, decodes and verifies each, and compares every file's SHA-256 with this release's. It sends nothing.
+The Worker encodes and decodes the screenshot and photo at efforts 1, 3, and 7. It recompresses and restores the camera JPEG at those efforts, verifies every result, and checks each SHA-256 against this release. It sends nothing.

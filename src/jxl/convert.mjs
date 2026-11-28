@@ -67,7 +67,7 @@ export const ABOUT = Object.freeze([
 	'Rapier is a single HTML file that works offline, free and open source.',
 	'It encodes lossless and lossy pictures, carries a JPEG exactly, and keeps alpha and HDR.',
 	'Quality: High looks like the original at normal size. Very high is hard to tell from it even zoomed in, for larger files. Lossless keeps every pixel exactly.',
-	'In your own site or app: npm install rapier-jxl, then import {encode} from "rapier-jxl/upload". encode(file) returns the JPEG XL bytes.']);
+	'In your own site or app: npm install jpegxl, then import {encode} from "jpegxl/upload". Read the JPEG XL bytes from (await encode(file)).bytes.']);
 
 export const mediaNote = framesNote;
 
@@ -237,7 +237,6 @@ export const exhausted = error => error?.code === 'JXL_MEMORY' || error instance
 export const EFFORT = Object.freeze({min: 1, max: 9, start: 7});
 export const STILL_EFFORT = Object.freeze({min: 1, max: 10, start: 7, long: 9, slow: 10});
 export const SLOW_WORDS = 'A 12 MP photo can take 20 to 30 minutes, depending on your device.';
-export const PREVIEW_EFFORT = 6;
 export const effortOf = (value, range = EFFORT) => Math.min(range.max, Math.max(range.min, Math.round(Number(value)) || range.start));
 
 export async function pixelsOf(file, {raw = false} = {}) {
@@ -275,27 +274,12 @@ async function opens(bytes) {
 	try { (await createImageBitmap(new Blob([bytes], {type: 'image/jxl'}))).close(); return true; } catch (_) { return false; }
 }
 
-export async function convert(file, {mode = 'lossless', quality: askedQuality, maxBytes = 0, side = 0, location = true, effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, onPreview, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
+export async function convert(file, {mode = 'lossless', quality: askedQuality, maxBytes = 0, side = 0, location = true, effort: asked = EFFORT.start, complete, signal, say = () => {}, progress = () => {}, codec = globalThis.RapierEmbeddedImages.codec, budget} = {}) {
 	const effort = effortOf(asked, STILL_EFFORT), effortFor = () => effortOf(effort);
 	const quality = qualityOf(askedQuality ?? QUALITY[mode]), lossless = quality === 100;
 	mode = lossless ? 'lossless' : mode === 'lossless' ? 'high' : mode;
 	maxBytes = Number.isSafeInteger(maxBytes) && maxBytes > 0 ? maxBytes : 0;
 	side = Number.isSafeInteger(side) && side > 0 ? side : 0;
-	if (effort >= PREVIEW_EFFORT && typeof onPreview === 'function') {
-		const call = codec;
-		codec = (operation, input, options, work) => {
-			if (!['encode', 'fit', 'variants'].includes(operation)) return call(operation, input, options, work);
-			const lifetime = new AbortController();
-			const preview = {signal: work?.signal ? AbortSignal.any([work.signal, lifetime.signal]) : lifetime.signal};
-			return (async () => {
-				try {
-					return await call(operation, input, options, {...work, onPreview: frame => {
-						if (!preview.signal.aborted) return onPreview(frame, preview);
-					}});
-				} finally { lifetime.abort(); }
-			})();
-		};
-	}
 	const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
 	if (kindOf(head) === 'other' && mediaKind(head, file.type) === 'video')
 		return convertMedia(file, null, 'video', {mode, quality, effortFor, resultOf, signal, say, progress, codec, complete, ...(budget ? {budget} : {})});

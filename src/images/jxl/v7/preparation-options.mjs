@@ -5,7 +5,6 @@ import {own} from './ownership.mjs';
 import {fail, snapshotOptions, snapshotArray, pixelLimit, unknownOption} from './primitives.mjs';
 import {isPlainRecord} from './records.mjs';
 import {outputSides} from './preparation-sides.mjs';
-import {PREVIEW} from './preview.mjs';
 
 export function fitOptions(value, admitEncode = encodeOptions) {
   const {maxBytes, fidelity = {quality: 90}, ...encode} = featureless(snapshotOptions(value));
@@ -27,10 +26,9 @@ export function fitOptions(value, admitEncode = encodeOptions) {
   }
   admitEncode({...encode, fidelity: {quality: maxQuality}});
   pixelLimit(encode.maxPixels);
-  const {signal, onProgress, onPreview, [PREVIEW]: preview, ...data} = encode;
+  const {signal, onProgress, ...data} = encode;
   return {maxBytes, requestedFidelity, search: {minQuality, maxQuality, maxProbes: 12},
-    encode: {...own(data), ...(signal !== undefined && {signal}), ...(onProgress !== undefined && {onProgress}),
-      ...(onPreview !== undefined && {onPreview}), ...(preview && {[PREVIEW]: preview})}};
+    encode: {...own(data), ...(signal !== undefined && {signal}), ...(onProgress !== undefined && {onProgress})}};
 }
 
 export function variantsOptions(value, admitEncode = encodeOptions) {
@@ -40,8 +38,8 @@ export function variantsOptions(value, admitEncode = encodeOptions) {
   const maxPixels = pixelLimit(shared.maxPixels);
   if (!Array.isArray(outputs) || !outputs.length) throw fail('JXL_OPTIONS', 'outputs: nonempty array');
   const list = snapshotArray(outputs, 'outputs');
-  const {signal, onProgress, onPreview, [PREVIEW]: preview, ...data} = shared;
-  const common = {...own(data), signal, onProgress, ...(onPreview !== undefined && {onPreview}), ...(preview && {[PREVIEW]: preview})};
+  const {signal, onProgress, ...data} = shared;
+  const common = {...own(data), signal, onProgress};
   const requests = list.map(item => {
     if (!isPlainRecord(item)) throw fail('JXL_OPTIONS', 'output: object');
     const {width, height, upscale, firstRegion, ...settings} = snapshotOptions(item, 'output', [], true);
@@ -56,8 +54,8 @@ export function variantsOptions(value, admitEncode = encodeOptions) {
     const rawOptions = {...common, ...settings, ...(firstRegion !== undefined && {features: {firstRegion}})};
     if (settings.maxBytes !== undefined) return {width, height, upscale, policy: fitOptions(rawOptions, admitEncode)};
     admitEncode(rawOptions);
-    const {signal: _s, onProgress: _p, onPreview: _v, [PREVIEW]: _pv, ...ownable} = rawOptions;
-    const owned = {...own(ownable), signal, onProgress, ...(onPreview !== undefined && {onPreview}), ...(preview && {[PREVIEW]: preview})};
+    const {signal: _s, onProgress: _p, ...ownable} = rawOptions;
+    const owned = {...own(ownable), signal, onProgress};
     return {width, height, upscale, options: owned};
   });
   return {requests, common, maxPixels};

@@ -13,7 +13,7 @@ import {paletteSteps} from './palette-search.mjs';
 import {localScreenSteps} from './screen-local.mjs';
 const SCREEN = Object.freeze({paletteSteps, localScreenSteps});
 import {codeWeighted} from './weighted.mjs';
-import {colourTransform} from './rct-search.mjs';
+import {colourTransform} from './rct-fill.mjs';
 
 import {DELTA_IMPLICIT} from './implicit-palette.mjs';
 

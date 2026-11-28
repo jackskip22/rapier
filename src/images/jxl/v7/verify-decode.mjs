@@ -3,7 +3,7 @@ import {header} from './inspect.mjs';
 import {isDecoded} from './describe.mjs';
 import {check, fail, callers, snapshotOptions} from './primitives.mjs';
 import {nativePicture, decodesJXL, nativeKeeps} from '../native-picture.mjs';
-import {configuredDecoder, DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {configuredDecoder, DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {ownDecoder} from './verify-own.mjs';
 import {boxes} from '../container.mjs';
 

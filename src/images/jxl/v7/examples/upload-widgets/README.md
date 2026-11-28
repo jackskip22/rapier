@@ -1,7 +1,6 @@
 # JPEG XL for FilePond (an example)
 
-Photographs become JPEG XL on the person's device before they are uploaded. A 12 MP phone photo goes up at about a
-sixth of its size.
+Photographs become JPEG XL on the person's device before they are uploaded. The plug-in uploads the JPEG XL file only when it is smaller.
 
 rapier-jxl is the encoder inside rapier.website, the free Markdown editor and painting app.
 
@@ -56,4 +55,4 @@ const {file, code} = await shrink(picked); // file: the JPEG XL file, or the ori
 A Content Security Policy must allow `'wasm-unsafe-eval'`.
 
 The photo is turned upright by its Exif orientation, as the browser shows it. Exif is dropped unless kept by the
-option. Color profiles such as Display P3 are converted to sRGB.
+option. Supported color descriptions are preserved. A file the encoder refuses is uploaded unchanged.

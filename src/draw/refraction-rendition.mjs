@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {sha256} from '../kit/ledger/hash.mjs';
 import {inspectRaster} from '../images/raster.mjs';
-import {inspectJPEGXL, JPEG_XL_LIMITS} from '../images/header.mjs';
+import {inspectJPEGXL} from '../images/header.mjs';
+import {PICTURE_BYTES} from '../images/limits.mjs';
 
 export const hasRefraction = recipe => recipe?.effect?.type === 'refraction' || recipe?.shapes?.some(shape => shape.effect?.type === 'refraction');
 
@@ -40,7 +41,7 @@ export function admitRefractionRenditions(raw) {
         const url = row[codec];
         if (typeof url !== 'string' || (size += url.length) > 128 * 1024 * 1024 ||
             !new RegExp('^data:image/' + codec + ';base64,[A-Za-z0-9+/]+={0,2}$').test(url)) return null;
-        const maximumBytes = codec === 'png' ? 64 * 1024 * 1024 : JPEG_XL_LIMITS.bytes;
+        const maximumBytes = codec === 'png' ? 64 * 1024 * 1024 : PICTURE_BYTES;
         const data = bytes(url, maximumBytes);
         const header = codec === 'png' ? inspectRaster(data, {maximumBytes}) : inspectJPEGXL(data);
         if (codec === 'png' && header.type !== 'image/png' || header.orientation !== 1 ||

@@ -7,6 +7,15 @@ import {s2Dimensions, s2Samples, s2Planes} from './ssimulacra2-input.mjs';
 import {s2CellSums, s2CellMap} from './s2-cells.mjs';
 import {fault} from './fault.mjs';
 
+export function worseScores(a, b) {
+  const out = {...a, ssimulacra2: Math.min(a.ssimulacra2, b.ssimulacra2)};
+  if (a.nativeScores && b.nativeScores) {
+    const low = key => Math.min(a.nativeScores[key], b.nativeScores[key]);
+    out.nativeScores = {package: low('package'), native: low('native'), minimum: low('minimum')};
+  }
+  for (const key of ['cells', 'blocks']) if (a[key] && b[key]) out[key] = a[key].map((value, i) => Math.max(value, b[key][i]));
+  return out;
+}
 
 export function cpuMeasure(rgba, width, height, {reconstruct, bandedRGBA, rgbaOutputs = null, streamedScores = null, native = false, reference = null, cacheBytes = 0, immutable = false}) {
   const n = s2Dimensions(width, height);

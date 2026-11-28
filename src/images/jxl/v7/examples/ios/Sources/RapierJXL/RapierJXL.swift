@@ -46,7 +46,7 @@ public final class JXLCodec {
         try await start()
     }
 
-    /// Lossy, `quality` 1 to 100 (SSIMULACRA 2 score) and `effort` 1 to 3.
+    /// Lossy, `quality` 1 to 100 (SSIMULACRA 2 score) and `effort` 1 to 9.
     public func encode(_ data: Data, quality: Double = 80, effort: Int = 3) async throws -> Data {
         try await run("encode", data, mime: Self.mime(of: data), quality: quality, effort: effort)
     }

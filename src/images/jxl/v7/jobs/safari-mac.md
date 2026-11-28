@@ -10,4 +10,4 @@ Why it helps: Safari's own JPEG XL decoder and WebAssembly on macOS.
 2. [Open the test page](https://rapier.website/docs/jxl-job.html?job=selftest) in that browser. Enter the browser, OS and device, and press **Run**. Keep the page in front.
 3. Press **Download results** and attach the file to your issue, including failures.
 
-The page encodes a screenshot, a photo and a camera JPEG at efforts 1, 3 and 7, decodes and verifies each, and compares every file's SHA-256 with this release's. Where the browser decodes JPEG XL itself, it also checks that its pixels match. It reads no files and sends nothing.
+The page encodes and decodes the screenshot and photo at efforts 1, 3, and 7. It recompresses and restores the camera JPEG at those efforts, verifies every result, and checks each SHA-256 against this release. Where native decoding is available, it checks the exact PNG outputs. It reads no local files and sends no results.

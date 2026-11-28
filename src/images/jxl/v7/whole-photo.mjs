@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {wholePhotoSteps} from '../photo-whole-search.mjs';
 import {fail} from './primitives.mjs';
 import {MEASURED_EFFORT} from '../effort-level.mjs';

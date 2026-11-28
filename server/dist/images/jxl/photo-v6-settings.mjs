@@ -36,6 +36,8 @@ export const SMALL_V6 = {...V6, tune: (c, k) => c === 2 ? 0.5 * baseStep(1, k) *
   dcScale: [1.675, 1.35, 0.4], deadzone: [0.72, 0.76, 0.485, 0.575, 0.485, 0.575], epfScale: 1.5, smallFloor: true};
 export const v6For = (width, height) => smallPicture(width, height) ? SMALL_V6 : V6;
 export const GABORISH = {gaborish: {strength: 1, tilt: 1}, epfScale: 2};
+export const profiledUploadPicture = (width, height, picture, color) =>
+  ({...v6For(width, height), ...GABORISH, tune: picture.tune, calibrationRow: picture.calibrationRow, ...color});
 const E7_GRAIN = Object.freeze({epfScale: 1.5});
 export function grainRegime(data, width, height) {
   const {flatShare, curvature} = grainSample(data, width, height);

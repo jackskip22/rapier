@@ -750,6 +750,7 @@ body.light .compare-mark--add { background: color-mix(in srgb, var(--color-succe
 	margin: 0 0 var(--space-4);
 }
 .pro-sheet-overlay {
+	z-index: 950;
 	display: flex;
 	align-items: flex-end;
 	justify-content: center;

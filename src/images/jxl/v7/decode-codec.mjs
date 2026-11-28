@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-import {createCodec as createClient} from './client.mjs';
+import {createBaseCodec as createClient} from './client-base.mjs';
 import {DECODE_SPEC} from './codec-spec-decode.mjs';
-import {bounded} from './session.mjs';
+import {bounded} from './primitives.mjs';
 
 export function createDecodeCodec(config) {
   const client = createClient(config, DECODE_SPEC);

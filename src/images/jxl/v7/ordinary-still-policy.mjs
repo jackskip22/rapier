@@ -13,10 +13,10 @@ const statedPicture = picture => {
 };
 const statedView = (picture, transform = statedSpace(admitSampleFormat(picture.data, picture)).transform) =>
   ({data: srgbView(picture.data, picture.width * picture.height, transform), width: picture.width, height: picture.height});
-import {measuredLook, usesRegionalCalibration, landsAtEffort, settlesOnCoefficients, landSteps} from '../photo-quality-table.mjs';
+import {measuredLook, usesRegionalCalibration, landsAtEffort, settlesOnCoefficients, landSteps, e13HighQ, e13FastSettle} from '../photo-quality-table.mjs';
 import {MEASURED_EFFORT} from '../effort-level.mjs';
 import {profileTransform} from '../icc-transform.mjs';
-import {largePhoto} from '../photo-low-settings.mjs';
+import {largePhoto} from '../memory-device.mjs';
 import {filteredQuality} from '../photo-low.mjs';
 import {UPLOAD_HIGH} from '../photo-v6-settings.mjs';
 import {needsStillWindow, needsWideWindow, ownedStillWindow, ordinaryStillWindow, ordinaryStillWindowNow, earlierStillWindow, stillFloor, stillFloorSync,
@@ -57,6 +57,12 @@ export function ordinaryStillDecision(intent, picture, {exactAllowed = true, fac
     const start = facts.blocks ? Math.max(MODEL_LEAST, Math.min(98.5, Math.round(qualityLanding(intent, false, 3, facts).quality * 100) / 100)) : curve;
     return {quality: Math.min(NATIVE_STILL_CALIBRATION.maximumLossy, Math.round((start + 0.5) * 100) / 100),
       lowFilteredQuality: start, coeffLand: 'one-check', calibratedWindow: true, route: 'photo', facts};
+  }
+  if ((e13FastSettle() && intent >= 0.85 - 1e-9 || e13HighQ() && (intent > NATIVE_STILL_CALIBRATION.intent[2] + 1e-9 || largePhoto(facts.width, facts.height) && intent >= 0.85 - 1e-9)) &&
+      effort >= 1 && effort <= 3 && intent <= 0.98 + 1e-9 && sharedLow && filteredStill && !wide && curve < 100 && coeffLookEligibleFacts(facts)) {
+    const start = facts.blocks ? Math.max(MODEL_LEAST, Math.min(98.5, Math.round(qualityLanding(intent, false, 3, facts).quality * 100) / 100)) : curve;
+    return {quality: Math.min(NATIVE_STILL_CALIBRATION.maximumLossy, Math.round((start + 0.5) * 100) / 100),
+      lowFilteredQuality: start, coeffLand: e13FastSettle() ? 'e13-fast' : 'e13-high-q', calibratedWindow: true, route: 'photo', facts};
   }
   if (landsAtEffort(effort) && commonLow && curve < 100 && facts.blocks) {
     const start = Math.max(MODEL_LEAST, Math.min(98.5, Math.round(qualityLanding(intent, false, 3, facts).quality * 100) / 100));
@@ -128,7 +134,7 @@ const acrossStep = (pick, candidates) => {
 
 export const needsFloor = (decision, effort, intent) => {
   const f = decision?.facts;
-  return !!f && usesRegionalCalibration(intent, effort) && effort >= 1 && effort < MEASURED_EFFORT && decision.route === 'photo' && !decision.settled &&
+  return !!f && usesRegionalCalibration(intent, effort) && effort >= 1 && effort < MEASURED_EFFORT && decision.route === 'photo' && !decision.settled && !decision.noFloor &&
     decision.quality < NATIVE_STILL_CALIBRATION.maximumLossy && f.eligible && f.alpha === false && !f.palette && !f.screenLike && f.shorterSide >= 256;
 };
 

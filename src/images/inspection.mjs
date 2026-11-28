@@ -7,6 +7,7 @@ import {_rapierColorForDarkPaper} from '../editor/colour-math.mjs';
 import {jxlWhole} from './jxl-native.mjs';
 import {portablePaintPNG, validatePaintRaster} from './paint-raster.mjs';
 import {inspectGIF} from './gif.mjs';
+import {PLAYBACK_PIXELS} from './limits.mjs';
 export {jxlWhole, portablePaintPNG, validatePaintRaster};
 export {configurePaintRasterDecoder} from './paint-raster.mjs';
 
@@ -73,7 +74,7 @@ async function inspectImageBytes({bytes, codec, size, canonical, containerDamage
   let blob = new Blob([gif?.first || canonical], {type: codec}), playbackUnavailable = false;
   if (codec === 'image/jxl' && animated) {
     if (typeof ImageDecoder === 'function' && await ImageDecoder.isTypeSupported(codec)) {
-      if (size.width * size.height > 24000000) throw new Error('Animated JPEG XL exceeds the pixel budget');
+      if (size.width * size.height > PLAYBACK_PIXELS) throw new Error('Animated JPEG XL exceeds the pixel budget');
       const decoder = new ImageDecoder({data: canonical, type: codec, preferAnimation: true});
       try {
         const first = await decoder.decode({frameIndex: 0, completeFramesOnly: true}).catch(error => { if (error?.name === 'EncodingError') return null; throw error; });

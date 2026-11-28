@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-import {DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {runCaptureUsing, finished} from './run-capture.mjs';
 import {capturePhotoRunner} from './capture-photo-runner.mjs';
 export {prepareCapturePhoto} from './capture-photo-runner.mjs';
 import {CAPTURE_TOOLS_LEAN} from '../capture-codec.mjs';
 import {qualityLooks} from '../photo-region-search.mjs';
 import {regionPhotoFrameSteps} from '../photo-rgb.mjs';
-import {fileStage} from '../capture-patched.mjs';
+import {fileStage} from '../capture-file-stage.mjs';
 import {SHARED_PHOTO_SEARCH as search} from '../photo-plane-measured.mjs';
 import {runPhotoLadder} from './capture-photo-ladder.mjs';
 import {wholePhotoOutputSteps} from './whole-photo.mjs';

@@ -10,7 +10,7 @@ import {P3_TRANSFORM, linearFromTransformPlanes} from './color-transform.mjs';
 import {photoReference} from './photo-reference.mjs';
 import {nativeRGBA, nativeGammaRGBA} from './photo-output.mjs';
 import {colorPixels} from './color-band.mjs';
-import {PHOTO_PAD_SIDE, padPhotoCrop, photoRegionTarget, clipPhotoRect, cutPhotoRGBA} from './photo-region-score.mjs';
+import {PHOTO_PAD_SIDE, padPhotoCrop, photoRegionTarget, clipPhotoRect, cutPhotoRGBA} from './photo-region-helpers.mjs';
 import {fault} from './fault.mjs';
 
 const SLOPE = 1, MARGIN = 1;

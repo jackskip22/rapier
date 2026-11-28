@@ -17,7 +17,6 @@ import {journaled} from '../step-journal.mjs';
 const INTENT_BYTES = 4;
 export const intended = (result, source) => result.bytes && sourceIntent(source) ? {...result, bytes: withRenderingIntent(result.bytes, sourceIntent(source))} : result;
 export const intentPolicy = (policy, source) => sourceIntent(source) && policy.maxBytes > INTENT_BYTES ? {...policy, maxBytes: policy.maxBytes - INTENT_BYTES} : policy;
-import {PREVIEW} from './preview.mjs';
 
 export function fitSettle(picture, effort, jpeg) {
   let facts;
@@ -103,7 +102,6 @@ async function fitPreparedAt(encode, picture, policy, capabilities = {}) {
       check(signal);
       if (bytes !== null && (!(bytes instanceof Uint8Array) || !bytes.byteLength))
         throw fail('JXL_INTERNAL', 'preparation-fit:empty');
-      if (bytes) options[PREVIEW]?.(bytes, {width: picture.width, height: picture.height, measurements: facts.get(bytes)?.measurements ?? []});
       count++;
       next = candidates.next({bytes});
     }

@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS} from './limits.mjs';
+import {PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS, JPEG_XL_ENCODE_PIXELS, KEPT_JPEG_PIXELS} from './limits.mjs';
 import {inspectGIF} from './gif.mjs';
 
 function fail(code = 'RASTER_HEADER', message = 'Rapier could not read this image’s dimensions.') {
   throw Object.assign(new Error(message), {code});
 }
 
-function dimensions(width, height, limits = JPEG_XL_LIMITS) {
+function dimensions(width, height, pixels = JPEG_XL_ENCODE_PIXELS) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) fail();
-  if (width > limits.edge || height > limits.edge || width * height > limits.pixels) {
-    fail('RASTER_DIMENSIONS', 'This image exceeds the ' + limits.pixels / 1e6 + ' megapixel or 16,384 pixel edge limit.');
+  const edge = width > PICTURE_EDGE || height > PICTURE_EDGE;
+  if (edge || width * height > pixels) {
+    fail('RASTER_DIMENSIONS', 'This image exceeds the ' + pixels / 1e6 + (pixels === ASSET_PIXELS && !edge ? ' megapixel image limit.' : ' megapixel or 16,384 pixel edge limit.'));
   }
   return {width, height};
 }
 
-function result(type, width, height, orientation = 1) {
-  dimensions(width, height, type === 'image/jpeg' ? JPEG_XL_PICTURE_LIMITS : JPEG_XL_LIMITS);
+function result(type, width, height, orientation = 1, maximumPixels = JPEG_XL_ENCODE_PIXELS) {
+  dimensions(width, height, type === 'image/jpeg' ? KEPT_JPEG_PIXELS : maximumPixels);
   orientation ||= 1;
   return {type, width, height, orientation, displayWidth: orientation >= 5 ? height : width, displayHeight: orientation >= 5 ? width : height};
 }
@@ -47,9 +48,9 @@ function exifOrientation(bytes, start, end) {
   return null;
 }
 
-function png(bytes, view) {
+function png(bytes, view, maximumPixels) {
   if (bytes.length < 24 || view.getUint32(8) !== 13 || fourCC(bytes, 12) !== 'IHDR') fail();
-  const {width, height} = dimensions(view.getUint32(16), view.getUint32(20));
+  const {width, height} = dimensions(view.getUint32(16), view.getUint32(20), maximumPixels);
   let orientation = null;
   for (let position = 33; position + 8 <= bytes.length;) {
     const length = view.getUint32(position), type = fourCC(bytes, position + 4), start = position + 8, end = start + length;
@@ -59,7 +60,7 @@ function png(bytes, view) {
     if (type === 'eXIf' && orientation == null) orientation = exifOrientation(bytes, start, end);
     position = end + 4;
   }
-  return result('image/png', width, height, orientation);
+  return result('image/png', width, height, orientation, maximumPixels);
 }
 
 function jpeg(bytes, view) {
@@ -75,7 +76,7 @@ function jpeg(bytes, view) {
     const length = view.getUint16(position), start = position + 2, end = position + length;
     if (length < 2 || end > bytes.length) break;
     if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker) && start + 5 <= end) {
-      const frame = dimensions(view.getUint16(start + 3), view.getUint16(start + 1), JPEG_XL_PICTURE_LIMITS);
+      const frame = dimensions(view.getUint16(start + 3), view.getUint16(start + 1), KEPT_JPEG_PIXELS);
       width ??= frame.width; height ??= frame.height;
     } else if (marker === 0xe1) {
       if (end - start >= 6 && fourCC(bytes, start) === 'Exif' && bytes[start + 4] === 0) {
@@ -91,7 +92,7 @@ function jpeg(bytes, view) {
   return {...result('image/jpeg', width, height, orientation), auxiliaryPictures, cameraMotion};
 }
 
-function webp(bytes, view) {
+function webp(bytes, view, maximumPixels) {
   if (bytes.length < 20) fail();
   const limit = Math.min(bytes.length, view.getUint32(4, true) + 8);
   let width, height, canvasWidth, canvasHeight, orientation = null;
@@ -101,13 +102,13 @@ function webp(bytes, view) {
     const available = Math.min(end, limit) - start;
     if (type === 'VP8X' && available >= 10) {
       if (bytes[start] & 2) animation();
-      const canvas = dimensions(1 + uint24(start + 4), 1 + uint24(start + 7));
+      const canvas = dimensions(1 + uint24(start + 4), 1 + uint24(start + 7), maximumPixels);
       canvasWidth ??= canvas.width; canvasHeight ??= canvas.height;
     } else if (type === 'VP8 ' && available >= 10 && bytes[start + 3] === 0x9d && bytes[start + 4] === 1 && bytes[start + 5] === 0x2a) {
-      const frame = dimensions(view.getUint16(start + 6, true) & 0x3fff, view.getUint16(start + 8, true) & 0x3fff);
+      const frame = dimensions(view.getUint16(start + 6, true) & 0x3fff, view.getUint16(start + 8, true) & 0x3fff, maximumPixels);
       width ??= frame.width; height ??= frame.height;
     } else if (type === 'VP8L' && available >= 5 && bytes[start] === 0x2f) {
-      const packed = view.getUint32(start + 1, true), frame = dimensions(1 + (packed & 0x3fff), 1 + (packed >>> 14 & 0x3fff));
+      const packed = view.getUint32(start + 1, true), frame = dimensions(1 + (packed & 0x3fff), 1 + (packed >>> 14 & 0x3fff), maximumPixels);
       width ??= frame.width; height ??= frame.height;
     } else if (type === 'EXIF' && end <= limit && orientation == null) {
       orientation = exifOrientation(bytes, start, end);
@@ -115,13 +116,13 @@ function webp(bytes, view) {
     if (end > limit) break;
     position = end + (length & 1);
   }
-  return result('image/webp', canvasWidth ?? width, canvasHeight ?? height, orientation);
+  return result('image/webp', canvasWidth ?? width, canvasHeight ?? height, orientation, maximumPixels);
 }
 
 const HEIF_TYPES = {avif: 'image/avif', heic: 'image/heic', heix: 'image/heic', heim: 'image/heic', heis: 'image/heic'};
-export function inspectHEIF(input) {
+export function inspectHEIF(input, {maximumBytes = PICTURE_BYTES, maximumPixels = JPEG_XL_ENCODE_PIXELS} = {}) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  if (!bytes.length || bytes.length > JPEG_XL_LIMITS.bytes) fail('RASTER_SIZE', 'This image is empty or exceeds 16 MiB.');
+  if (!bytes.length || bytes.length > maximumBytes) fail('RASTER_SIZE', 'This image is empty or exceeds 16 MiB.');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const children = (start, end) => {
     const out = [];
@@ -166,18 +167,18 @@ export function inspectHEIF(input) {
       }
     }
   }
-  return result(type, width, height, [1, 8, 3, 6][angle]);
+  return result(type, width, height, [1, 8, 3, 6][angle], maximumPixels);
 }
 
-export function inspectRaster(input, {maximumBytes = JPEG_XL_LIMITS.bytes} = {}) {
+export function inspectRaster(input, {maximumBytes = PICTURE_BYTES, maximumPixels = JPEG_XL_ENCODE_PIXELS} = {}) {
   const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) :
     input instanceof Uint8Array || input instanceof Uint8ClampedArray ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength) : null;
   if (!bytes) fail('RASTER_INPUT', 'Image input must be bytes.');
   if (!bytes.length || bytes.length > maximumBytes) fail('RASTER_SIZE', 'This image is empty or exceeds 16 MiB.');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.length >= 6 && fourCC(bytes, 0) === 'GIF8') return inspectGIF(bytes);
-  if (bytes.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return png(bytes, view);
+  if (bytes.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return png(bytes, view, maximumPixels);
   if (bytes.length >= 2 && bytes[0] === 255 && bytes[1] === 0xd8) return jpeg(bytes, view);
-  if (bytes.length >= 12 && fourCC(bytes, 0) === 'RIFF' && fourCC(bytes, 8) === 'WEBP') return webp(bytes, view);
+  if (bytes.length >= 12 && fourCC(bytes, 0) === 'RIFF' && fourCC(bytes, 8) === 'WEBP') return webp(bytes, view, maximumPixels);
   fail('RASTER_SIGNATURE', 'Choose a PNG, JPEG, WebP or GIF image.');
 }

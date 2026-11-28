@@ -108,7 +108,6 @@ export async function keepSmaller({input, options, hooks, coding, photo, runCapt
     if (candidate.pageRoute && candidate.pageRoute.smaller === undefined && made.route) candidate.pageRoute.smaller = made.route;
     if (made.exact && !captureExact(bytes)) markCaptureExact(bytes);
     if (admission && made.passed !== admission.accepts(bytes)) admission.record(bytes, made.passed, made.measured);
-    hooks.preview?.(bytes, {measurements: admission?.measurements(bytes) ?? []});
     if ((!admission || admission.accepts(bytes)) && (!best || bytes.length < best.length)) { best = bytes; record = got; }
     return made;
   };
@@ -180,7 +179,7 @@ export async function runPhotoLadder(call) {
   const looks = policy.qualityLooks(input), release = holdCaptureMemory();
   let failed = false;
   try {
-    const wholePhotoRoute = {effort: asked, complete: false, preview: call.hooks.preview};
+    const wholePhotoRoute = {effort: asked, complete: false};
     const engine = {photoBlocks: policy.regionPhotoFrameSteps, photoSearch: policy.photoSearch, photoScoreMemo: looks.scoreMemo, baseMemo: new Map(), regionMemo: new Map(), wholePhotoRoute, pageRoute: {}};
     const level = measuredLevel(asked === 7 && smallRegionsOnly(options, input) ? 6 : asked), candidates = [{...engine, photoBlockEffort: 4}];
     const hasExactRects = Array.isArray(options.exactRects) && options.exactRects.length > 0;

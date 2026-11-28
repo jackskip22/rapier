@@ -85,15 +85,23 @@ function coeffSettleNow(intent, picture, decision) {
   const flat = uploadFlat(data, width, height), grain = !flat && uploadGrain(data, width, height);
   const start = facts?.blocks ? qualityLanding(intent, false, 3, facts).quality : (decision.lowFilteredQuality ?? decision.quality);
   const T = measuredLook(intent), pad = coeffLookPadding(intent);
-  const aimE3 = T + pad;
-  const res = coeffLookSettle(data, width, height, T + 0.35, start, q => uploadBandPicture(flat, grain, q), flat);
-  if (!res) return decision;
   const toDecision = (rq, extra) => ({
     ...decision,
     quality: Math.min(NATIVE_STILL_CALIBRATION.maximumLossy, Math.round((rq + 0.5) * 100) / 100),
     lowFilteredQuality: rq,
     ...extra,
   });
+  if (decision.coeffLand === 'e13-high-q' || decision.coeffLand === 'e13-fast') {
+    const fast = decision.coeffLand === 'e13-fast';
+    const aim = T + Math.max(pad + (fast ? 0.85 : 0), fast ? 2.2 : 2.1);
+    const res = coeffLookSettle(data, width, height, aim, start, q => uploadBandPicture(flat, grain, q), flat, fast ? 262144 : 1048576);
+    if (!res) return decision;
+    return {...toDecision(res.quality, {coeffLand: undefined, calibratedWindow: undefined}),
+      quality: Math.min(99.49, Math.round((res.quality + 0.5) * 100) / 100), noFloor: true};
+  }
+  const aimE3 = T + pad;
+  const res = coeffLookSettle(data, width, height, T + 0.35, start, q => uploadBandPicture(flat, grain, q), flat);
+  if (!res) return decision;
   const [[q0, s0], [q1, s1], [q2, s2]] = res.nodes;
   let capQ;
   if (aimE3 <= s0) capQ = Math.max(36, q0 - Math.min(14, (s0 - aimE3) / Math.max(0.35, (s1 - s0) / Math.max(0.5, q1 - q0))));
@@ -183,8 +191,8 @@ export async function earlierStillWindow(intent, picture, decision, effort, sign
 
 const FLOOR = Object.freeze({margin: 3, aim: 0.3, steps: 3});
 
-function floorProbes(data, width, height, decision, memo, effort) {
-  if (decision.calibratedWindow || decision.coeffOneCheck) return windowProbes(data, width, height, decision, 3, false, 'srgb', memo, effort);
+function floorProbes(data, width, height, decision, memo, effort, own = false) {
+  if (decision.calibratedWindow || decision.coeffOneCheck) return windowProbes(data, width, height, decision, own ? effort : 3, false, 'srgb', memo, effort);
   if (decision.facts.preferXYB) {
     const smooth = smoothDecides(decision) && (memo.smooth ??= smoothPhoto(data, width, height, decision.facts));
     return windowProbes(data, width, height, decision, 3, smooth, 'srgb', memo, effort);
@@ -235,8 +243,8 @@ export function stillFloorNow(intent, picture, decision, signal, effort) {
   const {data, width, height} = picture, top = NATIVE_STILL_CALIBRATION.maximumLossy, memo = {};
   const T = measuredLook(intent);
   const whole = {pixels: data, x: 0, y: 0, width, height};
-  const look = (d, win) => {
-    const probes = floorProbes(data, width, height, d, memo, effort);
+  const look = (d, win, own = false) => {
+    const probes = floorProbes(data, width, height, d, memo, effort, own);
     if (!probes.length) return Infinity;
     let s = Infinity, reference = null;
     for (const p of probes) {
@@ -274,7 +282,7 @@ export function stillFloorNow(intent, picture, decision, signal, effort) {
   const {lowFilteredOther: _o, lowBoth: _b, windowRead: _r, ...measured} = decision;
   let d = measured, score = look(d, whole);
   if (score >= T) {
-    let best = decision, cur = d, reading = score;
+    let best = decision, before = decision, cur = d, reading = score;
     for (let step = 0; step < (decision.landSteps ?? 0) && reading > T + 0.6; step++) {
       const slope = Math.max(0.5, 0.9 + 0.02 * (cur.quality - 70)), fall = (reading - (T + 0.3)) / slope;
       const lower = {...cur, quality: Math.round((cur.quality - fall) * 100) / 100,
@@ -282,8 +290,9 @@ export function stillFloorNow(intent, picture, decision, signal, effort) {
       if (!(lower.quality > 8)) break;
       const next = look(lower, whole);
       if (!(next >= T + LAND_KEEP)) break;
-      best = cur = lower; reading = next;
+      before = best; best = cur = lower; reading = next;
     }
+    if (best !== decision && intent > 0.92 + 1e-9 && !(look(best, whole, true) >= T + LAND_KEEP)) best = before;
     data.ahead?.(0, 0); return best;
   }
   for (let step = 0; score < T && step < FLOOR.steps && d.quality < top; step++) {

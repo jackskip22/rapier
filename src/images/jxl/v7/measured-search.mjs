@@ -9,7 +9,7 @@ export async function withAnnounced(produce, seen) {
   try { return await produce(); } finally { stop(); }
 }
 
-export async function measuredFileSearch(target, probe, measure, {start = 90, probes = 8, signal, onProgress, exact, closest = false, preview, width, height, domain = 'decoded-output'} = {}) {
+export async function measuredFileSearch(target, probe, measure, {start = 90, probes = 8, signal, onProgress, exact, closest = false, domain = 'decoded-output'} = {}) {
   let best = null, near = null, last = null, count = 0, reply = null, search = null;
   try {
     search = qualitySteps(function* (quality) { return yield {encode: quality}; }, target, {start, probes, low: 1, high: 99.99});
@@ -31,7 +31,6 @@ export async function measuredFileSearch(target, probe, measure, {start = 90, pr
         candidate.scores ??= candidate.shown ? measure(candidate.shown, request.want) : null;
         if (!candidate.scores) break;
         if (!Number.isFinite(candidate.scores.ssimulacra2)) throw fail('JXL_INPUT', 'score: finite number');
-        preview?.(candidate.bytes, {width, height, measurements: photoOutputMeasurements(target, candidate.scores, domain)});
         reply = candidate.scores;
         if (preferredPhotoOutput(best, candidate, target)) best = candidate;
         else if (!best && (!near || candidate.scores.ssimulacra2 > near.scores.ssimulacra2)) near = candidate;
@@ -44,6 +43,5 @@ export async function measuredFileSearch(target, probe, measure, {start = 90, pr
   if (!exact) throw fail('JXL_TARGET', 'unmeasurable fidelity: use {quality} or configureDecoder(decode) with decode from jpegxl/decode');
   const bytes = await exact(fraction => onProgress?.(photoOutputProgress(fraction, {exact: true})));
   check(signal);
-  preview?.(bytes, {width, height, measurements: []});
   return {bytes, quality: 100, exact: true, measurements: []};
 }

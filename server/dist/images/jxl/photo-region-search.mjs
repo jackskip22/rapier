@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {qualitySteps} from './photo-quality-search.mjs';
 import {lookFromScores, prepareCropScores, held, SMALLEST} from './photo-region-quality.mjs';
-import {photoRegionTarget} from './photo-region-score.mjs';
+import {photoRegionTarget} from './photo-region-helpers.mjs';
 import {measuredTarget} from './photo-browser-margin.mjs';
 import {photoQualityMemo} from './photo-quality-cache.mjs';
 import {photoScoreMemo} from './photo-score-cache.mjs';

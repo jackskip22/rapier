@@ -3,8 +3,7 @@ const RAPIER_WATER_DRY_ICON = RAPIER_DRAW_ICON_WRAP('<circle cx="12" cy="12" r="
 const RAPIER_WATER_FILL_ICON = RAPIER_DRAW_ICON_WRAP('<path d="M19 11l-8 -8l-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8 .8 2 .8 2.8 0l8.6 -8.6z"></path><path d="M5 2l5 5"></path><path d="M2 13h15"></path><path d="M22 20a2 2 0 0 1 -4 0c0 -1.1 2 -3 2 -3s2 1.9 2 3z"></path>');
 const RAPIER_WATER_KEY = 'rapier:draw.water';
 const RAPIER_WATER_DEFAULT_BRUSH = 'water/round', RAPIER_WATER_DEFAULT_PIGMENT = 'ultramarine';
-const RAPIER_WATER_FIRST_PIGMENTS = ['ultramarine', 'pyrrol-scarlet'];
-const _rapierWaterPigmentsOrdered = rows => [...RAPIER_WATER_FIRST_PIGMENTS.map(id => rows.find(row => row.id === id)), ...rows.filter(row => !RAPIER_WATER_FIRST_PIGMENTS.includes(row.id))].filter(Boolean);
+const _rapierWaterPigmentsOrdered = rows => globalThis.RapierWatercolorOrder.watercolorOrdered(rows);
 const _rapierWaterGlyphs = new Map(), _rapierWaterGlyphPending = new Set();
 let _rapierWaterGlyphWork = Promise.resolve();
 function _rapierWaterEngine() { return globalThis.RapierDrawWater; }
@@ -24,8 +23,8 @@ function _rapierWaterOwn() {
 function _rapierWaterState() {
 	if (_rapierDrawState.waterSettings) return _rapierDrawState.waterSettings;
 	let raw = {}; try { raw = JSON.parse(localStorage.getItem(RAPIER_WATER_KEY) || '{}') || {}; } catch (_) {}
-	const engine = _rapierWaterEngine(), own = _rapierWaterOwn().find(row => row.id === raw.brush && _rapierWaterProBrushAvailable(row)), brush = engine.WATER_BRUSHES.find(row => row.id === raw.brush) || own?.water || engine.waterBrushById(RAPIER_WATER_DEFAULT_BRUSH);
-	return _rapierDrawState.waterSettings = {brush: own?.id || brush.id, tool: 'brush', pigment: engine.admitWaterPigment(raw.pigment) && (!engine.isWaterSpecialtyPigment(raw.pigment) || _rapierWaterProAvailable()) ? structuredClone(raw.pigment) : RAPIER_WATER_DEFAULT_PIGMENT,
+	const engine = _rapierWaterEngine(), own = _rapierWaterOwn().find(row => row.id === raw.brush && _rapierWaterProBrushAvailable(row)), brush = engine.WATER_BRUSHES.find(row => row.id === raw.brush && _rapierWaterProFree('brush', row.id)) || own?.water || engine.waterBrushById(RAPIER_WATER_DEFAULT_BRUSH);
+	return _rapierDrawState.waterSettings = {brush: own?.id || brush.id, tool: 'brush', pigment: engine.admitWaterPigment(raw.pigment) && (!engine.isWaterSpecialtyPigment(raw.pigment) || _rapierWaterProAvailable()) && _rapierWaterProFree('pigment', raw.pigment) ? structuredClone(raw.pigment) : RAPIER_WATER_DEFAULT_PIGMENT,
 		paper: engine.waterPaperById(raw.paper) && (!engine.waterPaperById(raw.paper).pro || _rapierWaterProAvailable()) ? raw.paper : 'cold-press', size: Number.isFinite(raw.size) ? engine.waterHandSize(raw.size) : brush.size,
 		water: Number.isFinite(raw.water) ? _rapierDrawClamp(raw.water, 0, 1) : brush.water, load: Number.isFinite(raw.load) ? _rapierDrawClamp(raw.load, 0, 1) : brush.load,
 		flow: Number.isFinite(raw.flow) ? _rapierDrawClamp(raw.flow, 0, 1) : .45, bleed: Number.isFinite(raw.bleed) ? _rapierDrawClamp(raw.bleed, 0, 1) : .5,
@@ -178,7 +177,7 @@ function _rapierWaterUpdate() {
 			chip('act','paper','Paper',RAPIER_DRAW_ICONS.canvas,false) + chip('act','add','Add',RAPIER_DRAW_ICONS.upload,false) + chip('act','save','Save',RAPIER_DRAW_ICONS.download,false) + (settings.tip ? chip('act','remove','Remove',RAPIER_DRAW_ICONS.trash,false) : '');
 		row.scrollLeft = scroll;
 	} else if (panel === 'waterTools') {
-		surface.querySelector('.rapier-draw-water-tools').innerHTML = engine.WATER_TOOLS.filter(tool => tool.id !== 'brush' && tool.id !== 'dry' && (tool.id !== 'trace' || _rapierWaterProAvailable())).map(tool => chip('tool',tool.id || tool.tool || tool.kind,tool.name,_rapierWaterIcon(tool.id || tool.tool || tool.kind),settings.tool === (tool.id || tool.tool || tool.kind))).join('') + _rapierWaterProToolsHTML(chip);
+		surface.querySelector('.rapier-draw-water-tools').innerHTML = engine.WATER_TOOLS.filter(tool => tool.id !== 'brush' && tool.id !== 'dry' && (tool.id !== 'trace' || _rapierWaterProOffered())).map(tool => chip('tool',tool.id || tool.tool || tool.kind,tool.name,_rapierWaterIcon(tool.id || tool.tool || tool.kind),settings.tool === (tool.id || tool.tool || tool.kind))).join('') + _rapierWaterProToolsHTML(chip);
 	} else if (panel === 'waterPaper') {
 		surface.querySelector('.rapier-draw-water-paper').innerHTML = [...engine.WATER_PAPERS, ...(_rapierWaterProAvailable() ? engine.WATER_PRO_PAPERS : [])].map(paper => chip('paper',paper.id,paper.name,RAPIER_DRAW_ICONS.canvas,settings.paper === paper.id)).join('');
 	} else if (panel === 'waterPigments') {
@@ -232,6 +231,7 @@ function _rapierWaterBind(surface) {
 		_rapierDrawBindTap(row, async event => {
 			if (_rapierDrawState.finishing) return;
 			const button = event.target.closest('button'); if (!button) return;
+			if (_rapierWatercolorDemo() && !_rapierWatercolorFreeChoice(button)) { _rapierWatercolorProOffer(); return; }
 			if (button.hasAttribute('data-draw-paint-head')) { _rapierPaintAngleOpen(true); return; }
 			if (button.hasAttribute('data-water-firmness')) { _rapierWaterToggleFirmness(); return; }
 			if (button.dataset.waterMix) { _rapierWaterStrength(button.dataset.waterMix); return; }
@@ -241,6 +241,7 @@ function _rapierWaterBind(surface) {
 			const tool = button.dataset.waterTool, act = button.dataset.waterAct;
 			if (act && await _rapierWaterProAction(act, button)) return;
 			if (tool) {
+				if (tool === 'trace' && _rapierWaterProLocked('trace')) return;
 				if (tool === 'dry') { void _rapierWaterRunAction({kind:'dry'}); return; }
 				if (tool === 'text') { _rapierWaterTextDialog(); return; }
 				_rapierWaterSet('tool',tool); _rapierWaterState().sampling = false; _rapierDrawCloseSettingPanels(); return;

@@ -3,7 +3,7 @@ import {BitWriter, ceilLog2} from './bits.mjs';
 import {hybridToken, writeUintConfig} from './prefix.mjs';
 import {SCREEN_INTEGER_CONFIGS} from './screen-codes.mjs';
 import {learnedModel, learnedModelSteps, letGoTrees} from './capture-trees.mjs';
-import {colourTransform} from './rct-search.mjs';
+import {colourTransform} from './rct-fill.mjs';
 import {fault} from './fault.mjs';
 import {reverseAlias, shapeHistogram, writeModularAnsHeader, SYMBOL_BITS} from './ans-core.mjs';
 import './kernels.mjs';

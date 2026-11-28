@@ -10,7 +10,7 @@ import {cpuMeasure} from './photo-measure.mjs';
 import {linearFromRGBA} from './ssimulacra2.mjs';
 import {compileKernels} from './kernel-runtime.mjs';
 import {djxlResidual} from './photo-browser-margin.mjs';
-import {padPhotoCrop, photoRegionTarget, clipPhotoRect, cutPhotoRGBA} from './photo-region-score.mjs';
+import {padPhotoCrop, photoRegionTarget, clipPhotoRect, cutPhotoRGBA} from './photo-region-helpers.mjs';
 import {measuredLook} from './photo-quality-table.mjs';
 
 const check = signal => { if (signal?.aborted) throw signal.reason; };

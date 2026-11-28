@@ -47,7 +47,7 @@ export function rebuildInSpace(picture, isP3) {
     rgba: isP3 && !gamma ? p3RGBA(picture, made.linear) : made.rgba};
 }
 
-export async function measuredAnimation(animation, target, encodeAt, {start = 90, probes = 8, signal, onProgress, maxPixels, preview, toolBound = LIBJXL_BOUND} = {}) {
+export async function measuredAnimation(animation, target, encodeAt, {start = 90, probes = 8, signal, onProgress, maxPixels, toolBound = LIBJXL_BOUND} = {}) {
   check(signal);
   await preparePictureMeasure(); check(signal);
   const metric = photoAnimationMeasure(animation, {signal, maxPixels});
@@ -67,7 +67,7 @@ export async function measuredAnimation(animation, target, encodeAt, {start = 90
   try {
     const selected = await measuredFileSearch(target, probe, metric.measure, {start, probes: Math.min(probes, 8), signal,
       onProgress: onProgress ? f => onProgress(f * 0.92) : undefined,
-      exact: progress => encodeAt(100, progress), preview, width: animation.width, height: animation.height});
+      exact: progress => encodeAt(100, progress)});
     if (!selected || selected.exact) return selected;
     const quick = quickFiles.has(selected.bytes);
     let toolShort = false, short = [];

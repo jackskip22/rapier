@@ -731,7 +731,22 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		? String(window.__RAPIER_NATIVE_PLATFORM_ID || 'native').toLowerCase()
 		: 'web';
 	const _nativeAppId = hasNative && ['rapier', 'watercolor', 'converter'].includes(window.__RAPIER_NATIVE_APP) ? window.__RAPIER_NATIVE_APP : '';
-	const _nativeStoreRapier = hasNative && _nativePlatformId === 'windows' && _nativeAppId === 'rapier' && window.__RAPIER_NATIVE_STORE === true;
+	const _nativeStoreRapier = hasNative && _nativePlatformId === 'windows' && _nativeAppId !== 'watercolor' && _nativeAppId !== 'converter';
+	const _nativeStoreWatercolor = hasNative && _nativePlatformId === 'windows' && _nativeAppId === 'watercolor';
+	if (_nativeAppId === 'watercolor') try { document.documentElement.classList.add('rapier-watercolor-app'); } catch (_) {}
+	function _nativeApplyAccent(value) {
+		if (_nativeAppId !== 'watercolor') return;
+		var hex = typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '';
+		var style = document.getElementById('rapier-windows-accent');
+		if (!hex) { if (style) style.remove(); return; }
+		var channel = function (at) { var c = parseInt(hex.slice(at, at + 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+		var light = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+		var foreground = (light + 0.05) / 0.05 >= 1.05 / (light + 0.05) ? '#000000' : '#ffffff';
+		if (!style) { style = document.createElement('style'); style.id = 'rapier-windows-accent'; document.head.appendChild(style); }
+		style.textContent = 'html.rapier-watercolor-app body{--color-accent:' + hex + '!important;--color-accent-foreground:' + foreground + '!important;' +
+			'--color-accent-text:color-mix(in srgb,' + hex + ' 80%,#ffffff)!important;--color-focus:color-mix(in srgb,' + hex + ' 80%,#ffffff)!important}' +
+			'html.rapier-watercolor-app body.light{--color-accent-text:color-mix(in srgb,' + hex + ' 50%,#000000)!important;--color-focus:color-mix(in srgb,' + hex + ' 50%,#000000)!important}';
+	}
 	const _nativeHostRuntime = Object.seal({
 		sequence: 0,
 		pending: new Map(),
@@ -746,7 +761,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			recents: [],
 			pendingIntake: false,
 			recoveryAutoResume: false,
-			installation: { state: 'standalone', installed: false },
 			notesStoreGeneration: null,
 			resources: null,
 			partPacks: null,
@@ -846,7 +860,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			_nativeHostRuntime.pending.set(id, { resolve: resolve, reject: reject, timeout: timeout });
 			try {
 				var seam = window.RapierNativeTransport;
-				if ((args && args.bytes) || (seam && seam.NATIVE_BYTE_OPS.indexOf(operation) >= 0)) _nativeHostTransport().request(operation, id, args, { generation: generation });
+				if (seam && seam.NATIVE_BYTE_OPS.indexOf(operation) >= 0) _nativeHostTransport().request(operation, id, args, { generation: generation });
 				else nativeHost.postMessage(JSON.stringify({
 					id: id,
 					operation: String(operation || ''),
@@ -1029,11 +1043,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			_applyNativeWindowInsets(detail);
 			return;
 		}
-		if (name === 'installation.changed') {
-			if (detail && typeof detail === 'object') _nativeHostRuntime.state.installation = detail;
-			try { window.dispatchEvent(new CustomEvent('rapier:installation-changed', { detail: detail || {} })); } catch (_) {}
-			return;
-		}
 		if (name === 'file.changed') {
 			try { window.dispatchEvent(new CustomEvent('rapier:file-changed', { detail: detail || {} })); } catch (_) {}
 			return;
@@ -1059,6 +1068,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			return;
 		}
 		if (name === 'window.closeCancelled') { _nativeCloseCancelled(detail); return; }
+		if (name === 'window.accent') { _nativeApplyAccent(detail && detail.accent); return; }
 		if (name === 'window.checkpointRequested') {
 			var checkpoint = Number(detail && detail.checkpoint), kept = _platformCheckpoint(checkpoint);
 			if (Number.isSafeInteger(checkpoint) && checkpoint > 0) kept.then(function (value) {
@@ -1925,11 +1935,11 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			documentGeneration: Number(options.documentGeneration || 0),
 			documentRevision: Number(options.documentRevision || 0),
 			fileGeneration: options.fileGeneration == null ? null : options.fileGeneration,
-			exclusiveNewDestination: options.exclusiveNewDestination === true,
-			chosenDestination: String(options.chosenDestination || ''),
 			payloadLength: fingerprint.bytes,
 			payloadDigest: fingerprint.digest,
 		};
+		if (options.exclusiveNewDestination === true) args.exclusiveNewDestination = true;
+		if (options.chosenDestination) args.chosenDestination = String(options.chosenDestination);
 		var begun = false;
 		try {
 			if (options.check) options.check();
@@ -2444,7 +2454,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	}
 	function _nativeProAuthority() {
 		var id = String(_nativeHostRuntime.state.platformId || _nativePlatformId).toLowerCase();
-		return !!(hasNative && (id === 'android' || id === 'native' || id === 'windows' && _nativeStoreRapier));
+		return !!(hasNative && (id === 'android' || id === 'native' || id === 'windows' && (_nativeStoreRapier || _nativeStoreWatercolor)));
 	}
 
 	function _normalizeProState(raw) {
@@ -2549,7 +2559,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		} else if (value.currentFileBound === false) {
 			_clearPlatformFileBinding();
 		}
-		if (value.installation && typeof value.installation === 'object') _nativeHostRuntime.state.installation = value.installation;
 		if (value.windowInsets) _applyNativeWindowInsets(value.windowInsets);
 		if (value.resources) _applyNativeResources(value.resources);
 		if (Array.isArray(value.partPacks)) _nativeHostRuntime.state.partPacks = value.partPacks.map(String);
@@ -2559,6 +2568,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 	_nativeHostRuntime.ready = hasNative
 		? _nativeHostCall('platform.state', {}, 15000).then(function (state) {
 				_applyNativeHostState(state);
+				_nativeApplyAccent(state && state.accent);
 				return state;
 			}).catch(function (error) {
 				_nativeHostRuntime.state.pro = null;
@@ -3170,7 +3180,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 		try { _rapierBootstrapRuntime.pendingIntake = null; } catch (_) {}
 		_nativeIntakeRuntime.expecting = true;
 		try {
-			var result = await _nativeHostCall(operation, Object.assign({ purpose: purpose }, args || {}), operation === 'file.open' ? 3600000 : 120000);
+			var result = await _nativeHostCall(operation, Object.assign(purpose ? { purpose: purpose } : {}, args || {}), operation === 'file.open' ? 3600000 : 120000);
 			if (!result || result.cancelled === true || result.started === false) return null;
 			return await _waitForNativeIntake();
 		} finally {
@@ -3375,6 +3385,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get android() { return environment.id === 'android'; },
 			get app() { return raw.app === 'rapier' || raw.app === 'watercolor' || raw.app === 'converter' ? raw.app : ''; },
 			get paints() { return environment.app !== 'rapier'; },
+			get store() { return raw.storeApp === true; },
 			get native() { return raw.native === true; },
 			get network() { return raw.native !== true || raw.network === true; },
 			get here() { return environment.id === 'web' ? 'This browser' : 'This app'; },
@@ -3587,11 +3598,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			get publishBackState() { return method('publishBackState'); },
 		});
 		var installation = Object.freeze({
-			get supported() { return raw.installationSupported === true; },
-			get state() { return method('installationState'); },
-			get install() { return method('install'); },
-			get uninstall() { return method('uninstall'); },
-			get openDefaultApps() { return method('openDefaultApps'); },
 			get launcherIcon() { return method('launcherIconState'); },
 			get setLauncherIcon() { return method('setLauncherIcon'); },
 		});
@@ -3818,6 +3824,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				return preferencesReady;
 			},
 			app: _nativeAppId,
+			storeApp: _nativeStoreRapier || _nativeStoreWatercolor,
 			ownsPreferenceStore: false,
 			get ownsRecoveryStore() { return _nativeCapability('lockedNotes'); },
 			get binaryRecoveryStore() { return _nativeCapability('binaryRecovery') ? binaryRecovery ||= _nativeBinaryRecoveryStore() : null; },
@@ -3891,7 +3898,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			},
 			get readCurrentDocument() {
 				return _nativeCapability('currentDocumentRead') ? function (documentAuthority) {
-					return _nativeRequestIntake('file.readCurrent', { documentAuthority: String(documentAuthority || '') }, 'read-current');
+					return _nativeRequestIntake('file.readCurrent', { documentAuthority: String(documentAuthority || '') });
 				} : null;
 			},
 			checkExternalFileChange: function (documentAuthority) {
@@ -4051,7 +4058,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 			noteRecent: function (name, path, documentAuthority) {
 				if (!_nativeCapability('recents')) return;
 				var entry = { name: String(name || 'document'), path: String(path || name || ''), documentAuthority: String(documentAuthority || ''), ts: Date.now() };
-				_nativeHostNotify('recent.note', entry);
+				_nativeHostNotify('recent.note', { name: entry.name, path: entry.path, documentAuthority: entry.documentAuthority });
 				_nativeHostRuntime.state.recents = [entry].concat(_nativeHostRuntime.state.recents.filter(function (r) { return r && r.path !== entry.path; })).slice(0, RECENTS_CAP);
 				try { window.dispatchEvent(new CustomEvent('rapier:recent-files-changed', { detail: { count: _nativeHostRuntime.state.recents.length } })); } catch (_) {}
 			},
@@ -4112,27 +4119,6 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 					var follow = function (event) { if (event.detail.id === String(id) && onProgress) onProgress(event.detail.progress); };
 					window.addEventListener('rapier:platform-part', follow);
 					return _nativeHostCall('parts.ensure', { id: String(id) }, 3600000).finally(function () { window.removeEventListener('rapier:platform-part', follow); });
-				} : null;
-			},
-			get installationSupported() { return _nativeCapability('installation'); },
-			installationState: function () {
-				return Object.assign({}, _nativeHostRuntime.state.installation || { state: 'standalone', installed: false });
-			},
-			install: function () {
-				return _nativeHostCall('platform.install', {}).then(function (value) {
-					if (value) _nativeHostRuntime.state.installation = value;
-					return value;
-				});
-			},
-			uninstall: function () {
-				return _nativeHostCall('platform.uninstall', {}).then(function (value) {
-					if (value) _nativeHostRuntime.state.installation = value;
-					return value;
-				});
-			},
-			get openDefaultApps() {
-				return _nativeCapability('defaultApps') ? function () {
-					return _nativeHostCall('platform.defaultApps', {}).then(function () { return true; });
 				} : null;
 			},
 			get openMicrophoneSettings() {
@@ -4289,6 +4275,7 @@ function _rapierPwaFrameAdmission(isTopLevel, hasCarriedDocument, appsHost = fal
 				});
 			},
 			publishTitle: function (value) {
+				if (_nativeAppId === 'watercolor') value = /\.svg$/i.test(String(value || '')) ? String(value).replace(/\.svg$/i, '') : 'Watercolor';
 				if (_nativeCapability('windowDocumentState')) _nativeHostNotify('document.title', { title: String(value || 'Rapier') });
 			},
 		};

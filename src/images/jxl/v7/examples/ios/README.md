@@ -1,16 +1,13 @@
 # rapier-jxl in iOS
 
 A Swift wrapper around the browser encoder in a `WKWebView`: no native JPEG XL codec to build or link. It turns videos into
-animated JPEG XL, encodes a photo, recompresses a JPEG and restores the same SHA-256, turns a GIF into an animated JPEG XL,
-keeps every sample of an opaque photo in exact mode, cancels a call, and refuses bad input with the package's `JXL_` code. On the iPhone 17 Pro simulator (iOS 26.2),
-`UIImage` decodes the result and ImageIO shows an animation's first frame.
-
-The files under `Sources/RapierJXL/Web` are 3,283,824 bytes. Brotli 11 module sizes, not install sizes: photos 331,753 B,
-JPEG 166,151 B, animation 497,163 B and its page file 19,599 B. Nothing here claims speed.
+animated JPEG XL, encodes a photo, recompresses a JPEG and restores the exact original SHA-256, turns a GIF into an animated JPEG XL,
+keeps every sample of an opaque photo in exact mode, cancels a call, and refuses bad input with the package's `JXL_` code.
+On iOS 17 and later, `UIImage` decodes the result and ImageIO reads an animation's first frame.
 
 ## Use
 
-iOS 16.4 or newer, Swift 5.9, Xcode 15.
+iOS 16.4 or newer, Swift 5.9, Xcode 15, Node 22.3 or later.
 
 ```sh
 npm install --no-save jpegxl
@@ -27,13 +24,13 @@ let codec = JXLCodec()
 let jxl = try await codec.encode(photo, quality: 80, effort: 3)     // UIImage or Data in, JPEG XL Data out
 let exact = try await codec.encodeExact(photo)                      // every pixel kept
 let small = try await codec.recompress(jpeg: jpegData)              // a JPEG's own bytes, smaller
-let same = try await codec.restore(small)                           // the original JPEG, exactly
+let same = try await codec.restore(small)                           // the original JPEG restored exactly
 let clip = try await codec.animate(video: movieURL)                 // a video: every frame, each with its time
 let moving = try await codec.animate(gif: gifData)                  // a GIF, with its timing and loops
 let shown = UIImage(data: jxl)                                      // iOS 17 and later
 ```
 
-AVFoundation reads a video's frames (every frame, each with its own time, faster than real time and with no playback), so any
+AVFoundation reads a video's frames (every frame, each with its own time, without playback pacing), so any
 video the system reads works (`animate(video: Data, type: "video/mp4")` takes bytes). The page encodes them.
 `animate` reports progress from 0 to 1 through its `progress` closure. Each call runs one at a time. Cancel a call by canceling its `Task`. The next call runs normally. A refusal throws
 `JXLError` with the package's own `JXL_` code. A page that stops (iOS can end its process) refuses the call with `JXL_BRIDGE`, and the next call starts a new page.
@@ -43,29 +40,20 @@ video the system reads works (`animate(video: Data, type: "video/mp4")` takes by
 - `Sources/RapierJXL/RapierJXL.swift`: `JXLCodec` and its calls.
 - `Sources/RapierJXL/Video.swift`: reads a video's frames with AVFoundation, turned as the file is shown.
 - `Sources/RapierJXL/Bridge.swift`: serves the bundle and carries bytes as HTTP bodies, `/in/<id>` and `/out/<id>/result`. No base64.
-- `Sources/RapierJXL/Web/`: the page (video frames and GIFs), its worker (photos and JPEGs), and (after `prepare-assets.mjs`) the modules.
+- `Sources/RapierJXL/Web/`: the page relay, the single encoder worker, and (after `prepare-assets.mjs`) `animation.mjs` and `jpeg.mjs`.
 - `Example/`: a SwiftUI app that picks a video, photo or GIF, writes JPEG XL, shows it, and shares it. `xcodegen` builds its project.
 - `Tests/`: `xcodebuild test -scheme RapierJXL -destination 'platform=iOS Simulator,name=iPhone 16' (or id=<simulator>)`.
 
 ## Asset bytes
 
-Measured on Linux x64 with Node 24 and an 8.4.0 package (16 Nov). Brotli 11, window 24 (the app's download is compressed and the
-bundle on disk is not).
-
-| Module | Bytes | Brotli 11 |
-| --- | ---: | ---: |
-| `upload.mjs` (photos) | 1,058,059 | 331,753 |
-| `jpeg.mjs` (recompress, restore) | 527,025 | 166,151 |
-| `animation.mjs` (videos, GIFs) | 1,630,990 | 497,163 |
-| `animation.browser.mjs` (reads a video on the page) | 61,336 | 19,599 |
-| Page, worker, headers, license | 6,414 | |
-| Total | 3,283,824 | |
+`node prepare-assets.mjs` records the bytes and SHA-256 of each copied asset in `build/web-assets.json`.
+Measure compressed delivery and app installation separately for the intended distribution.
 
 ## Check
 
-The WebKit proof script runs the same page and worker in WebKit against the built package, with a local
-server in the place of Swift: photo, exact JPEG restore, GIF, video, refusal, cancel, and the next call. The Swift side runs on a
+The WebKit proof script (`repo/tools/jxl-ios-example.mjs`) runs the same page and worker in WebKit against the built package, with a local
+server in the place of Swift: lazy module loading, photo, exact JPEG restore, GIF, video, refusal, cancel, and the next call. The Swift side runs on a
 macOS runner (`ci/ios.yml`). A phone checks the real picker and share sheet.
 
-On the simulator, ImageIO read one of the two frames of an animated JPEG XL. The package's decoder, run in Node on the bytes
-WebKit wrote, reads both frames and their delays.
+ImageIO reads one frame of an animated JPEG XL on older system builds. The package's decoder, run in Node on the bytes
+the worker wrote, reads every frame and its delay.

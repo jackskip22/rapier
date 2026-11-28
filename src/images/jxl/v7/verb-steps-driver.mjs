@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {JOURNAL, JOURNAL_FILE, JOIN, SAVED, journaled, journalFact} from '../step-journal.mjs';
-import {configuredDecoder, DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {configuredDecoder, DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {sha256Start, sha256Update, sha256Finish} from '../sha256.mjs';
 import {fail, unknownOption, dimensions, pixelLimit, PIXELS} from './primitives.mjs';
 import {sourceColor} from './header-intent.mjs';

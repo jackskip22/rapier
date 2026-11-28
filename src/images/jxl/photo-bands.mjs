@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {complete} from './bits.mjs';
-import {photoXYBSteps} from './photo-xyb.mjs';
+import {photoXYBSteps, FAST_RANGE} from './photo-xyb.mjs';
 import {offloading, offloadWorkers, sharing, shareable} from './offload.mjs';
 import {journaling, unit} from './step-journal.mjs';
 import {opaquePixels} from './lossless.mjs';
@@ -8,6 +8,12 @@ import {opaquePixels} from './lossless.mjs';
 const CAPTURE_PHOTO = typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true;
 
 export const PHOTO_BAND_MARGIN = 8;
+
+export function photoFastImage(data, width, height, quality, options, {color, fastBand, fallback = true} = {}) {
+  try { return complete(photoXYBSteps(data, width, height, quality, {...options, fast: true, ...(fastBand === undefined ? {} : {fastBand}), ...color})); }
+  catch (error) { if (error !== FAST_RANGE) throw error; }
+  return fallback ? complete(photoXYBSteps(data, width, height, quality, {...options, ...color})) : null;
+}
 
 export function photoXYBBand(data, width, height, quality, options, top = 0, only = false) {
   return complete(photoXYBSteps(data.subarray(top * width * 4, (top + height) * width * 4), width, height, quality, {...options, band: {data, top, only}}));

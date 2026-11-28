@@ -24,7 +24,7 @@ import {maskEnergy, maskWeights} from './photo-mask.mjs';
 import {memoryPlan, s2Admitted} from './memory-plan.mjs';
 import {materialize, fixedStrategyImage, packLayoutDct} from './varblock-core.mjs';
 import {packedPicture} from './photo-packed-picture.mjs';
-import {learnedOrders} from './varblock-write.mjs';
+import {learnedOrders, optimalLearnedOrders} from './varblock-write.mjs';
 import {varDCTSteps} from './vardct.mjs';
 import {strategyAnsSteps, strategyLfLowerBound, strategyOrderEntry, progressiveTwin, progressiveCarried, progressiveKept, passesKept, keptPasses} from './coefficient-ans.mjs';
 import {wholePhotoTarget, wholePhotoFloor, wholePhotoSmaller, wholePhotoMeasurements} from './photo-whole-policy.mjs';
@@ -264,6 +264,24 @@ function wholeProvider(prepared, signal, device = false, banded = false) {
   }};
 }
 
+export const LAZY_KEPT = Symbol('lazy kept file');
+export const sizeWalk = (list, all = list) => {
+  const len = c => c.bytes.length, order = list.slice();
+  const sort = () => order.sort((a, b) => len(a) - len(b) || all.indexOf(a) - all.indexOf(b));
+  sort();
+  return {order, *at(i) {
+    for (;;) {
+      const c = order[i];
+      if (!c) return null;
+      const lazy = c.bytes[LAZY_KEPT] ? c : order.find((d, k) => k > i && d.bytes[LAZY_KEPT] && len(d) <= len(c));
+      if (!lazy) return c;
+      const made = lazy.bytes[LAZY_KEPT];
+      if (!made.file) made.file = yield* made.make();
+      lazy.bytes = made.file;
+      sort();
+    }
+  }};
+};
 let LOG2_TABLE = null;
 const fastLog2 = n => {
   if (n < 65536) {
@@ -272,17 +290,22 @@ const fastLog2 = n => {
   }
   return Math.log2(n);
 };
-const plainLowerBoundBytes = CAPTURE_PHOTO ? null : function plainLowerBoundBytes(image, effort = 7, targetBytes = Infinity) {
+const plainLowerBoundBytes = CAPTURE_PHOTO ? null : function plainLowerBoundBytes(image, effort = 7, targetBytes = Infinity, optimal = false) {
   if (!image?.strategyData || image.progressive || image.progression || image.alpha || image.auxiliary) return 0;
   const groupsX = Math.ceil(image.components[0].stride / 32), groupsY = Math.ceil(image.components[0].rows / 32), numGroups = groupsX * groupsY;
   if (numGroups < 1) return 0;
-  const std = learnedOrders(image), orders = std ? [null, std] : [null];
+  const std = learnedOrders(image), opt = optimal ? optimalLearnedOrders(image) : null, orders = [null, ...(std ? [std] : []), ...(opt ? [opt] : [])];
   let minAcBits = Infinity, lfBits = null;
   for (const authored of orders) {
     const {img, shared} = strategyOrderEntry(image, authored);
-    const {counts, blockCounts} = complete(varDCTSteps(img, {countGroups: [0, numGroups]}, shared));
-    (shared.countedByOrder ||= new Map()).set(authored, [counts]);
-    shared.blockCounts = blockCounts;
+    const held = shared.countedByOrder?.get(authored);
+    let counts = held?.length === 1 && shared.blockCounts ? held[0] : null;
+    if (!counts) {
+      const made = complete(varDCTSteps(img, {countGroups: [0, numGroups]}, shared));
+      counts = made.counts;
+      (shared.countedByOrder ||= new Map()).set(authored, [counts]);
+      shared.blockCounts = made.blockCounts;
+    }
     const {contexts, small, large, totals} = counts;
     let bits = 0, tokens = 0;
     for (let ctx = 0; ctx < contexts; ctx++) {
@@ -297,7 +320,7 @@ const plainLowerBoundBytes = CAPTURE_PHOTO ? null : function plainLowerBoundByte
     }
     const netBits = bits - tokens * 0.02273;
     if (netBits < minAcBits) minAcBits = netBits;
-    if (!authored && orders.length > 1 && Math.floor(minAcBits / 8) <= targetBytes) {
+    if (authored !== orders[orders.length - 1] && Math.floor(minAcBits / 8) <= targetBytes) {
       lfBits = strategyLfLowerBound(image, effort);
       if (Math.floor((lfBits + minAcBits) / 8) <= targetBytes) return Math.floor((lfBits + minAcBits) / 8);
     }
@@ -310,7 +333,7 @@ const plainLowerBoundBytes = CAPTURE_PHOTO ? null : function plainLowerBoundByte
 
 const WANT_S2 = {ssimulacra2: true, butteraugli: false};
 export const LIBJXL_BOUND = 1.0, SEARCH_BOUND = 0.9;
-const DESCENT = 2, DESCENT_MAX = 8, RAISES = 6, SCORE_SLOPE = 0.8;
+const DESCENT = 2, DESCENT_MAX = 8, RAISES = 6, SCORE_SLOPE = 0.8, LAND_BISECT = 3, LAND_GAP = 1;
 const LIBJXL_WANT = {ssimulacra2: true, butteraugli: false, exact: true, arithmetic: 'libjxl'};
 const recipeOf = found => {
   const {candidate, decisions: d, quality} = found;
@@ -362,7 +385,7 @@ const spanned = (steps, from, to) => spannedSteps(steps, from, to);
 function* effortNineSteps(data, width, height, options) {
   const exact = new Set(), facts = new Map(), sink = {record(bytes, passed, measurements) { facts.set(bytes, {passed, measurements}); }};
   const retainFloor = options.retainFloor && function* (bytes, level) { const file = yield* options.retainFloor(bytes, level); if (file) exact.add(file); return file; };
-  const sharedNine = !journaling() && !options.preview ? {probed: new Map()} : null;
+  const sharedNine = !journaling() ? {probed: new Map()} : null;
   let failed = false;
   try {
     const eight = yield* spanned(wholeSteps(data, width, height, {...options, effort: 8, retainFloor, photoAdmission: sink, _sharedNine: sharedNine}), 0, 0.2);
@@ -477,7 +500,6 @@ const effortTenPhotoSteps = (typeof __RAPIER_JXL_EFFORT_TEN__ !== 'undefined' &&
     rebuilt?.settle?.();
     if (pass2?.bytes && pass2.bytes.length < nine.length && pass2.score >= Math.max(nineFloor ?? 0, nineScore)) {
       const measurements = wholePhotoMeasurements(pass2.score, nineFloor);
-      options.preview?.(pass2.bytes, {width, height, measurements});
       options.photoAdmission?.record(pass2.bytes, true, measurements);
       return pass2.bytes;
     }
@@ -542,8 +564,8 @@ function* follow(targetBytes, curve, minQuality, maxQuality) {
   }
 }
 
-function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort, readingIntent, signal,
-  firstEffort = effort, retainFloor = null, photoAdmission = null, photoSearch = null, maxPixels, measureOutput = null, imageMeasure = null, fit = null, preview = null,
+function* wholeSteps(data, width, height, {quality, lowFilteredQuality, colorSpace = 'srgb', effort, readingIntent, signal,
+  firstEffort = effort, retainFloor = null, photoAdmission = null, photoSearch = null, maxPixels, measureOutput = null, imageMeasure = null, fit = null,
   deadzones = null, alpha = false, _sharedNine: sharedNine = null, onRecipes = null, lexer = null, chooseFloorGroup}) {
   const _sharedNine = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) ? null : sharedNine;
   if (quality >= 100) return null;
@@ -613,14 +635,11 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
     });
     check(signal);
     if (want?.ssimulacra2 && !Number.isFinite(scores?.ssimulacra2)) throw fault('JXL_INPUT', 'score: finite number');
-    if ((want?.arithmetic ?? 'binary64') === 'binary64') announce?.(file, scores.ssimulacra2);
     return scores;
   };
   let bytes = null, selectedScore = null, release = null, admittedFloor = null, failed = false, zoned = false;
-  const announce = preview && ((file, score) => preview(file, {width, height, measurements: Number.isFinite(score)
-    ? wholePhotoMeasurements(score, admittedFloor ?? wholePhotoFloor(score, readingIntent,
-      wholePhotoTarget(score, readingIntent, !!measureOutput, smallPicture(width, height))), measureOutput ? 'decoded-output' : 'encoder-reconstruction') : []}));
   const kept = [];
+  const lazyKeep = !CAPTURE_PHOTO && asked >= 8 && !journal && !taught && !measureOutput && !lexes && !fit && width * height > 16384;
   let keptRecipe = null, leanShapedRecipe = null, boundRecipe = null;
   const keepBytes = (candidate, score, recipe = null, more = null) => {
     if ((typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && taught && candidate) taught({decision: 'whole', effort, intent: readingIntent, width, height,
@@ -632,7 +651,8 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
     const lowFiles = new WeakMap();
     const lowRun = function* (q) {
       let image;
-      const file = yield* floorPart(low({quality: q, effort: FLOOR_EFFORT, observe: selected => { image = selected; },
+      const shiftedFiltered = lowFilteredQuality !== undefined ? Math.max(1, Math.min(99.9, Math.round((lowFilteredQuality + q - quality) * 100) / 100)) : undefined;
+      const file = yield* floorPart(low({quality: q, ...(shiftedFiltered !== undefined && {lowFilteredQuality: shiftedFiltered}), effort: FLOOR_EFFORT, observe: selected => { image = selected; },
         chooseLfGroup: chooseFloorGroup}));
       if (!image) throw fault('JXL_INTERNAL', 'photo-whole-search:low');
       lowFiles.set(image, shown(file, image));
@@ -664,8 +684,9 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
     let secondPlan = null;
     if (lexes && effort === 4) {
       ({plan: lexed, second: secondPlan = null} = planGate(lexer, data, width, height, quality, readingIntent, asked));
+      if (!lexed && secondPlan && !(lexer.seed && width * height > SEED_PIXELS)) lexed = secondPlan;
     }
-    const planFirst = !!lexed && effort === 4;
+    const planFirst = !CAPTURE_PHOTO && effort === 4 && readingIntent !== undefined && !measureOutput && !fit && upload && !alpha;
     const requested = {ssimulacra2: noFloor || planFirst ? wholePhotoTarget(0, readingIntent, false) : 0};
     const admit = function* () {
       rebuilt?.settle?.();
@@ -677,7 +698,7 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
       if (readingIntent === undefined || !kept.length) return;
       const t = requested.ssimulacra2, floor = t - SEARCH_BOUND;
       const chosen = progressiveKept(yield* stage('whole-bound', progressiveCarried(function* () {
-        const order = kept.slice().sort((a, b) => a.bytes.length - b.bytes.length);
+        const walk = sizeWalk(kept), order = walk.order;
         const read = function* (c) {
           if (typeof c.score === 'function' && c.score.begin && c.libjxlScore === undefined) {
             yield* c.score.begin();
@@ -691,7 +712,7 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
         };
         let pick = null, near = null, lifted = false;
         const starts = [];
-        for (const c of order) {
+        for (let i = 0, c; (c = yield* walk.at(i)); i++) {
           yield* read(c);
           if (!(c.score >= t)) continue;
           if (c.libjxlScore >= floor) { pick = c; break; }
@@ -742,9 +763,9 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
         const probes = asked >= 9 ? DESCENT_MAX : asked === 8 ? under ? 0 : DESCENT_MAX : asked < 7 && !lifted || asked === 7 && zoned && !(lifted && readingIntent > 0.85) || under ? 0 : DESCENT;
         pick = yield* descend(pick, order, probes, plateau, asked);
         if (!CAPTURE_PHOTO && asked === 8) {
-          const own = order.filter(c => c.lean);
+          const ownWalk = sizeWalk(order.filter(c => c.lean), kept), own = ownWalk.order;
           let start = null;
-          for (const c of own) { yield* read(c); if (c.score >= t && c.libjxlScore >= floor) { start = c; break; } }
+          for (let i = 0, c; (c = yield* ownWalk.at(i)); i++) { yield* read(c); if (c.score >= t && c.libjxlScore >= floor) { start = c; break; } }
           if (start && start !== pick) {
             const low = yield* descend(start, own, start.score - t < 0.1 * SCORE_SLOPE ? 0 : DESCENT, null, 7);
             if (low.bytes.length < pick.bytes.length) pick = low;
@@ -808,26 +829,31 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
     }
     floorImage = null;
     };
-    if (journal) {
+    const journaledFloor = function* () {
+      const before = kept.length;
       const floor = yield* stage('whole-floor', function* () {
         yield* floorSteps();
         const score = c => typeof c.score === 'number' ? c.score : null;
         const files = [];
-        for (const c of kept) files.push({bytes: c.bytes, score: score(c), quality: c.quality, libjxlScore: c.libjxlScore, laid: yield* passesKept(c.bytes, effort)});
-        return {target: requested.ssimulacra2, admittedFloor, bytes, closest, selected: kept.findIndex(c => c.bytes === bytes),
+        for (const c of kept.slice(before)) files.push({bytes: c.bytes, score: score(c), quality: c.quality, libjxlScore: c.libjxlScore, laid: yield* passesKept(c.bytes, effort)});
+        const at = kept.findIndex(c => c.bytes === bytes);
+        return {target: requested.ssimulacra2, admittedFloor, bytes, closest, selected: at >= before ? at - before : -1, earlier: at >= 0 && at < before ? at : -1,
           selectedScore: typeof selectedScore === 'number' ? selectedScore : null, kept: files};
       });
       ({admittedFloor, bytes, closest} = floor);
       requested.ssimulacra2 = floor.target;
-      kept.length = 0;
+      kept.length = before;
       for (const {laid, ...c} of floor.kept) { keptPasses(c.bytes, laid); kept.push({...c, score: c.score ?? lowExact(c.bytes, c.quality), ...lowMore(c.quality)}); }
-      selectedScore = floor.selected >= 0 ? kept[floor.selected].score : floor.selectedScore;
-      if (floor.selected >= 0) bytes = kept[floor.selected].bytes;
-    } else if (planFirst) ownFloor = floorSteps;
+      selectedScore = floor.selected >= 0 ? kept[before + floor.selected].score : floor.earlier >= 0 ? kept[floor.earlier].score : floor.selectedScore;
+      if (floor.selected >= 0) bytes = kept[before + floor.selected].bytes;
+      else if (floor.earlier >= 0) bytes = kept[floor.earlier].bytes;
+    };
+    if (planFirst) ownFloor = journal ? journaledFloor : floorSteps;
+    else if (journal) yield* journaledFloor();
     else yield* floorSteps();
     const maxSecondBpp = width * height > 2000000 ? Math.min(lexer?.bpp ?? LEXER_BPP, 0.35) : (lexer?.bpp ?? LEXER_BPP);
     if (secondPlan && !(lexer.seed && width * height > SEED_PIXELS) && bytes && bytes.length * 8 < maxSecondBpp * width * height) lexed = secondPlan;
-    if (effort === 4 && !lexed) { yield* settle(); yield* admit(); return bytes; }
+    if (effort === 4 && !lexed && (CAPTURE_PHOTO || measureOutput || smallPicture(width, height) || !upload)) { yield* settle(); yield* admit(); return bytes; }
     }
 
     if (_sharedNine?.made) { made = _sharedNine.made; }
@@ -895,27 +921,53 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
       if (!(found.scores.ssimulacra2 >= requested.ssimulacra2) || found.output?.bytes && sameWriteEffort(found.output.effort, effort)) return found;
       return {...found, output: {bytes: yield* writeImage(yield* imageAt(found.quality), effort), effort, unannounced: true}};
     };
-    const keep = function* (imageAt, found, effort) {
+    const keep = function* (imageAt, found, effort, lazy = false) {
       if (!(found.scores.ssimulacra2 >= requested.ssimulacra2)) return found;
+      const selected = bytes;
       if (found.output?.unannounced) {
         const {unannounced: _u, ...output} = found.output;
         found = {...found, output};
         written = {imageAt, quality: found.quality, effort: output.effort, bytes: output.bytes};
-        announce?.(output.bytes, found.scores.ssimulacra2);
       }
       if (!found.output?.bytes || !sameWriteEffort(found.output.effort, effort)) {
         const same = written?.imageAt === imageAt && written.quality === found.quality && sameWriteEffort(written.effort, effort);
         let bytes = same ? written.bytes : null;
+        if (same && written.lazy && lazy) {
+          keepBytes(written.lazy, found.scores.doubt ? exactAt(imageAt, found.quality) : found.scores.ssimulacra2, imageAt.recipe && {...imageAt.recipe, quality: found.quality},
+            keptMore(imageAt, found.quality, null, effort));
+          return {...found, output: {effort}};
+        }
+        if (same && written.lazy) {
+          const made = written.lazy[LAZY_KEPT];
+          if (!made.file) made.file = yield* made.make();
+          bytes = made.file;
+        }
+        if (!bytes && lazy && lazyKeep && selected && !offloading()) {
+          const m = yield* resolve(yield* imageAt(found.quality)), picture = m?.lazyStrategy && !m.lazyStrategy.held?.() ? packedPicture(m) : materialize(m);
+          const lb = plainLowerBoundBytes(picture, effort, selected.length, effort >= 8);
+          if (lb > selected.length) {
+            const quality = found.quality, placeholder = {length: lb, [LAZY_KEPT]: {file: null, *make() { return yield* writeImage(yield* imageAt(quality), effort); }}};
+            written = {imageAt, quality, effort, bytes: null, lazy: placeholder};
+            keepBytes(placeholder, found.scores.doubt ? exactAt(imageAt, quality) : found.scores.ssimulacra2, imageAt.recipe && {...imageAt.recipe, quality},
+              keptMore(imageAt, quality, null, effort));
+            return {...found, output: {effort}};
+          }
+          bytes = yield* writeImage(picture, effort);
+        }
         if (!bytes) bytes = yield* writeImage(yield* imageAt(found.quality), effort);
         written = {imageAt, quality: found.quality, effort, bytes};
         found = {...found, output: {bytes, effort}};
-        announce?.(found.output.bytes, found.scores.ssimulacra2);
       }
       if (found.scores.ssimulacra2 >= requested.ssimulacra2)
         keepBytes(found.output.bytes, found.scores.doubt ? exactAt(imageAt, found.quality) : found.scores.ssimulacra2, !CAPTURE_PHOTO && imageAt.recipe && {...imageAt.recipe, quality: found.quality},
           keptMore(imageAt, found.quality, found.output.bytes, effort));
       return found;
     };
+    const candidateBound = lazyKeep ? function* (image, effort, size) {
+      if (offloading()) return false;
+      const m = yield* resolve(image), picture = m?.lazyStrategy && !m.lazyStrategy.held?.() ? packedPicture(m) : materialize(m);
+      return plainLowerBoundBytes(picture, effort, size - 1, effort >= 8) >= size;
+    } : null;
     const libjxlOfImage = function* (image, file) { return (yield* scoreFile(file, yield* resolve(image), LIBJXL_WANT)).ssimulacra2; };
     const loopMore = found => found.libjxlScore === undefined ? null : {quality: found.quality, libjxl: function* () { return found.libjxlScore; }};
     const keptMore = (imageAt, quality, file, effort) => {
@@ -1111,7 +1163,6 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
         if (file) {
           const smallest = kept.reduce((m, c) => Math.min(m, c.bytes?.length ?? Infinity), Math.min(bytes ? bytes.length : Infinity, closest?.bytes?.length ?? Infinity));
           if (file.length < smallest) {
-            announce?.(file, found.scores.ssimulacra2);
             const at = found.quality;
             if ((typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && taught) taught({decision: 'whole', effort, intent: readingIntent, width, height, quality: at, bytes: file.length, score: found.scores.ssimulacra2});
             kept.push({bytes: file, score: found.scores.doubt ? exactAt(lexAt, at) : found.scores.ssimulacra2, quality: at, lexer: true,
@@ -1122,21 +1173,119 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
         }
         if ((typeof __RAPIER_JXL_TEACH__ === 'undefined' || __RAPIER_JXL_TEACH__ === true) && taught) taught({decision: 'lexer-end', effort: asked});
       };
-      if (effort === 4) {
-        if (planFirst) {
-          const turn = lexerTurn;
-          lexerTurn = null;
-          try { yield* turn(); } finally { lexerDone?.(); lexerDone = null; }
-          if (!kept.length) yield* ownFloor();
+    }
+    if (effort === 4) {
+      if (!CAPTURE_PHOTO && !measureOutput && upload && (bytes || planFirst)) {
+        let sixRecipe = null;
+        const keptFloorAt = kept.reduce((a, b, i) => a < 0 || b.bytes.length < kept[a].bytes.length ? i : a, -1);
+        const six = yield* stage('whole-six', function* () {
+        const t = requested.ssimulacra2, floor = t - SEARCH_BOUND;
+        const keptFloor = keptFloorAt >= 0 ? kept[keptFloorAt] : null;
+        const floorScore = keptFloor && typeof keptFloor.score === 'function' ? yield* keptFloor.score() : undefined;
+        const fQ = keptFloor?.quality ?? quality;
+        const rawQ = (lowFilteredQuality !== undefined ? lowFilteredQuality + fQ - quality : (fQ >= 85 ? fQ - 0.5 : fQ)) - (keptFloor ? 0 : (lexed ? 0.45 : 0.65));
+        const baseQ = Math.max(1, Math.min(99.9, Math.round(rawQ * 100) / 100));
+        const landSix = function* (makeAt, q0, maxUp = 3) {
+          const evalS2 = function* (qTry) {
+            const img = yield* resolve(yield* makeAt(qTry));
+            const s = (yield* scoreFile(null, img, {...WANT_S2, exact: true})).ssimulacra2;
+            return {img, s, q: qTry};
+          };
+          let cur = yield* evalS2(q0), prev = null, under = null;
+          let firstPass = cur.s >= t ? cur : null;
+          if (cur.s < t) {
+            for (let u = 0; cur.s < t && u < maxUp; u++) {
+              const slope = prev && cur.q > prev.q && cur.s > prev.s + 0.02
+                ? Math.max(0.25, Math.min(2.0, (cur.s - prev.s) / (cur.q - prev.q)))
+                : (cur.q > 90 ? 0.50 : 0.70);
+              const qUp = Math.min(99.9, Math.round((cur.q + (t - cur.s + 0.10) / slope) * 100) / 100);
+              if (!(qUp > cur.q + 0.04)) break;
+              prev = cur; under = cur;
+              cur = yield* evalS2(qUp);
+            }
+          } else if (cur.s - t > (lexed ? 0.55 : 0.22)) {
+            const slope = cur.q > 90 ? 0.65 : 0.88;
+            const qDn = Math.max(1, Math.round((cur.q - (cur.s - t - 0.18) / slope) * 100) / 100);
+            if (qDn < cur.q - 0.04) {
+              const dn = yield* evalS2(qDn);
+              if (dn.s >= t) { firstPass = cur; cur = dn; }
+              else under = dn;
+              if (dn.s < t && !lexed) {
+                const secSlope = Math.max(0.30, Math.min(2.0, (cur.s - dn.s) / (cur.q - dn.q)));
+                const qMid = Math.round((dn.q + (t + 0.14 - dn.s) / secSlope) * 100) / 100;
+                if (qMid > dn.q + 0.04 && qMid < cur.q - 0.04) {
+                  const mid = yield* evalS2(qMid);
+                  if (mid.s >= t) { firstPass = cur; cur = mid; }
+                  else under = mid;
+                }
+              }
+            }
+          }
+          if (cur.s < t) return null;
+          let lj = (yield* scoreFile(null, cur.img, LIBJXL_WANT)).ssimulacra2, ljSlope = null;
+          if (lj < floor && firstPass && firstPass !== cur) {
+            const ljFirst = (yield* scoreFile(null, firstPass.img, LIBJXL_WANT)).ssimulacra2;
+            if (firstPass.q > cur.q + 0.04 && ljFirst > lj + 0.01) ljSlope = Math.max(0.25, Math.min(2.0, (ljFirst - lj) / (firstPass.q - cur.q)));
+            if (ljFirst >= lj) { if (lj < floor) under = cur; cur = firstPass; lj = ljFirst; }
+          }
+          if (lj < floor) {
+            const slope = ljSlope ?? (cur.q > 90 ? 0.50 : 0.65);
+            const qFix = Math.min(99.9, Math.round((cur.q + (floor - lj + 0.12) / slope) * 100) / 100);
+            if (qFix > cur.q + 0.04) {
+              const up = yield* evalS2(qFix);
+              if (up.s >= t) {
+                const ljUp = (yield* scoreFile(null, up.img, LIBJXL_WANT)).ssimulacra2;
+                if (ljUp >= floor) { under = cur; cur = up; lj = ljUp; }
+                else under = up;
+              }
+            }
+          }
+          if (cur.s < t || lj < floor) return null;
+          for (let i = 0; under && i < LAND_BISECT && cur.q - under.q > LAND_GAP; i++) {
+            const mid = yield* evalS2(Math.round((under.q + cur.q) / 2 * 100) / 100);
+            const ljMid = mid.s >= t ? (yield* scoreFile(null, mid.img, LIBJXL_WANT)).ssimulacra2 : -Infinity;
+            if (mid.s >= t && ljMid >= floor) { cur = mid; lj = ljMid; } else under = mid;
+          }
+          const file = yield* writeImage(cur.img, 6);
+          return !bytes || file.length < bytes.length ? {file, s: cur.s, lj, q: cur.q} : null;
+        };
+        let varShare = 1, hit = null, lexer = false;
+        if (lexed?.layout) {
+          const lShape = pruneLayout(lexed.layout);
+          if (lShape) {
+            varShare = layoutVarShare ? layoutVarShare(lShape) : 1;
+            const lexAt = memoAt(defer(recipePicture(provider, lexed, lShape, {width, height, quality, journal: false, banded, signal})), NaN, null, 1);
+            try {
+              hit = yield* landSix(lexAt, lexed.quality ?? baseQ, 3);
+              lexer = !!hit;
+            } finally { lexAt.clear(); }
+          }
         }
-        yield* settle(); yield* admit(); return bytes;
+        if (!kept.length && !hit) {
+          const cOpts = {...search.options(data, width, height, v6Options(prepared, quality).deadzone), ids: [4], compactDct8: true, tableBands: 6, dct8Bands: 8, pruneRare: true, ...((readingIntent > 0.85 || baseQ > 85) && {gentleChromaDz: true})};
+          const shaped = yield* shapes(baseQ, cOpts);
+          varShare = layoutVarShare ? layoutVarShare(shaped.at.recipe?.layout) : 1;
+          try {
+            hit = yield* landSix(shaped.at, baseQ, 3);
+            if (hit) sixRecipe = shaped.at.recipe;
+          } finally { shaped.at.dropDct(); }
+        }
+        return {floorScore, hit, lexer, varShare};
+        }, undefined, true);
+        if (six.floorScore !== undefined) kept[keptFloorAt].score = six.floorScore;
+        if (lexed?.layout) lexerTurn = null;
+        const {hit} = six;
+        if (hit) keepBytes(hit.file, hit.s, six.lexer ? {...lexed, quality: hit.q} : sixRecipe && {...sixRecipe, quality: hit.q},
+          {quality: hit.q, ...(six.lexer && {lexer: true}), libjxlScore: hit.lj, libjxl: function* () { return hit.lj; }});
+        if (planFirst && (!kept.length || six.varShare < 0.02)) yield* ownFloor();
       }
+      yield* settle(); yield* admit(); return bytes;
     }
     if (lean) {
       writerEffort = leanWrite;
       yield 0.05 * leanPart;
       const useFastDz = !CAPTURE_PHOTO && deadzones && lean && (quality <= 85 || highDz) && !measureOutput && s2Admitted(plan, width, height);
-      const canDeferPlain = !CAPTURE_PHOTO && !announce && !measureOutput && !journal && leanOnly && !alpha && !useFastDz && !_sharedNine && width * height > 16384;
+      const canDeferPlain = !CAPTURE_PHOTO && !measureOutput && !journal && leanOnly && !alpha && !useFastDz && !_sharedNine && width * height > 16384;
       let plain = null, plainImg = null, plainPacked = null, qSeed = leanStart(quality), shapedAt = null;
       const savedLean = _sharedNine?.lean;
       if (savedLean && savedLean.useFastDz === !!useFastDz) {
@@ -1159,11 +1308,11 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
           if (!CAPTURE_PHOTO) shapedAt.recipe = {layout, options: oZoned};
           shapedAt.lean = true;
           yield 0.5 * leanPart;
-          yield* keep(shapedAt, {...savedLean.zProbed}, leanWrite);
+          yield* keep(shapedAt, {...savedLean.zProbed}, leanWrite, true);
           shapedAt.clear();
           yield 0.8 * leanPart;
-          if (!leanOnly && plain) yield* keep(imageAt, plain, leanWrite);
-          else if (savedLean.keepPlain) yield* keep(imageAt, yield* probe(imageAt, leanStart(quality), LEAN_PROBES, null, seen), leanWrite);
+          if (!leanOnly && plain) yield* keep(imageAt, plain, leanWrite, true);
+          else if (savedLean.keepPlain) yield* keep(imageAt, yield* probe(imageAt, leanStart(quality), LEAN_PROBES, null, seen), leanWrite, true);
           else if (!bytes) yield* keep(imageAt, yield* probe(imageAt, leanStart(quality), LEAN_PROBES, null, seen), leanWrite);
         } else {
           if (savedLean.plainImg) { const seedPlain = memoAt(defer(q => provider.image(q, {filter: 'gaborish'})), savedLean.plainFound.quality, savedLean.plainImg); savedLean.plainImg = null; plain = yield* writtenNow(seedPlain, {...savedLean.plainFound}, leanWrite); seedPlain.clear(); }
@@ -1179,10 +1328,10 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
           if (!CAPTURE_PHOTO) shapedAt.recipe = {layout, options};
           shapedAt.lean = true;
           yield 0.5 * leanPart;
-          yield* keep(shapedAt, {...savedLean.shapedFound}, leanWrite);
+          yield* keep(shapedAt, {...savedLean.shapedFound}, leanWrite, true);
           shapedAt.clear();
           yield 0.8 * leanPart;
-          yield* keep(imageAt, plain, leanWrite);
+          yield* keep(imageAt, plain, leanWrite, true);
         }
       } else {
         if (useFastDz) {
@@ -1282,7 +1431,7 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
             : {aim: 0.035, close: 0.08};
           const zProbed = yield* probe(shapedAt, qStart, 4, null, null, zOpts);
           if (!CAPTURE_PHOTO && (typeof __RAPIER_JXL_EFFORT_TEN__ === 'undefined' || __RAPIER_JXL_EFFORT_TEN__ === true) && onRecipes && shapedAt.recipe && zProbed?.quality !== undefined) leanShapedRecipe = {...shapedAt.recipe, quality: zProbed.quality};
-          yield* keep(shapedAt, zProbed, leanWrite);
+          yield* keep(shapedAt, zProbed, leanWrite, true);
           if (zProbed.earlier && bytes && (yield* writeImage(yield* shapedAt(zProbed.earlier.quality), leanWrite)).length < bytes.length) yield* keep(shapedAt, zProbed.earlier, leanWrite);
           if (_sharedNine) _sharedNine.lean = {useFastDz: true, q0, layout, options, dzMap, oZoned, keepPlain, zProbed: {quality: zProbed.quality, scores: zProbed.quality !== undefined ? zProbed.scores : null, bestObserved: zProbed.bestObserved}, zonedImg: keepWinningMemo ? shapedAt.peek(zProbed.quality) : null};
           const zonedBytes = bytes;
@@ -1292,14 +1441,14 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
           if (_sharedNine?.lean) _sharedNine.lean.keepPlain = keepPlain;
           const keepSmaller = function* (found) {
             const before = kept.length, held = bytes;
-            yield* keep(imageAt, found, leanWrite);
+            yield* keep(imageAt, found, leanWrite, true);
             if (bytes === held && kept.length > before) kept.length = before;
           };
           if (keepPlain && !plain) {
             yield* keepSmaller(yield* probe(imageAt, leanStart(quality), LEAN_PROBES, null, seen));
             if (bytes !== zonedBytes) zoned = false;
           }
-          else if ((!leanOnly || keepPlain) && plain) yield* (leanOnly ? keepSmaller(plain) : keep(imageAt, plain, leanWrite));
+          else if ((!leanOnly || keepPlain) && plain) yield* (leanOnly ? keepSmaller(plain) : keep(imageAt, plain, leanWrite, true));
           else if (!bytes) yield* keep(imageAt, yield* probe(imageAt, leanStart(quality), LEAN_PROBES), leanWrite);
         } else {
           const initial = {v: {quality: plain.quality, image: searched.image, ...yield* qualify(searched.image, first)}};
@@ -1381,14 +1530,14 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
       return [at, yield* probe(at, q, probes, taken(initial))];
     };
     let fine = null, block = null, blockAt = null, block16 = null, block16At = null;
-    const knownField = !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && !journal && !measureOutput && !preview ? {} : null;
+    const knownField = !(typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) && !journal && !measureOutput ? {} : null;
     for (let rung = Math.max(5, firstEffort); !fromLean && rung <= effort; rung++) {
       writerEffort = rung;
-      coarse = yield* keep(imageAt, coarse, rung);
+      coarse = yield* keep(imageAt, coarse, rung, true);
       let best = coarse;
       if (rung >= 6) {
         fine ??= yield* probe(imageAt, quality, 12, null, seen);
-        fine = yield* keep(imageAt, fine, rung);
+        fine = yield* keep(imageAt, fine, rung, rung < 9);
         if (rung === effort) imageAt.clear();
         else if (keepWinningMemo) imageAt.keepOnly(coarse?.quality, fine?.quality);
         best = fine;
@@ -1396,7 +1545,7 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
           if (!keepWinningMemo) imageAt.clear();
           [block16At, block16] = yield* shapeProbe(best.quality, [4], 6);
         }
-        block16 = yield* keep(block16At, block16, rung);
+        block16 = yield* keep(block16At, block16, rung, true);
         if (rung === effort) block16At.clear();
         else if (keepWinningMemo) block16At.keepOnly(block16?.quality);
       }
@@ -1406,21 +1555,21 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
           if (!keepWinningMemo) { imageAt.clear(); block16At?.clear(); }
           [blockAt, block] = yield* shapeProbe(best.quality, undefined, 12);
         }
-        block = yield* keep(blockAt, block, rung);
+        block = yield* keep(blockAt, block, rung, true);
         if (rung === effort) blockAt.clear();
         else if (keepWinningMemo) blockAt.keepOnly(block?.quality);
         yield rungAt(rung, 0.6);
       }
-      const rungQualify = CAPTURE_PHOTO || measureOutput ? probeQualify : preview ? qualify : function* (image, want) {
+      const rungQualify = CAPTURE_PHOTO || measureOutput ? probeQualify : function* (image, want) {
         return {scores: yield* scoreFile(null, image, want.exact ? want : {...want, doubt: true}), output: {effort: writerEffort}};
       };
       for (const [lv, cands, a0, a1] of [[8, ['field'], 0.6, 0.75], [9, search.candidates, 0.75, 1]]) if (rung >= lv) {
-        const gabInit = lv === 9 && !journal && !measureOutput && !preview && fine
+        const gabInit = lv === 9 && !journal && !measureOutput && fine
           ? {quality: fine.quality, scores: fine.scores, ...(fine.output?.effort === rung && fine.output.bytes && {output: fine.output, effort: rung, bytes: fine.output.bytes})}
           : null;
         const found = yield* reported(measured(search.score(provider, requested, {candidates: cands, effort: rung,
-          start: best.quality, initial: gabInit, seen: !journal && !measureOutput && !preview ? seen : null, knownField,
-          aq: search.aq, exactSize: true, measureSteps: rungQualify, libjxlOf: libjxlOfImage}), journal ? measureSteps : measure, signal), rungAt(rung, a0), rungAt(rung, a1));
+          start: best.quality, initial: gabInit, seen: !journal && !measureOutput ? seen : null, knownField,
+          aq: search.aq, exactSize: true, measureSteps: rungQualify, libjxlOf: libjxlOfImage, lowerBound: candidateBound}), journal ? measureSteps : measure, signal), rungAt(rung, a0), rungAt(rung, a1));
         if (found?.pass) keepBytes(found.bytes, found.doubt ? exactOf(() => candidateImageSteps(provider, found.candidate, found.quality, found.decisions), found.bytes) : found.ssimulacra2,
           CAPTURE_PHOTO ? null : recipeOf(found), loopMore(found));
       }
@@ -1445,12 +1594,12 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
           const shape = layout ?? plainLayout(base);
           return journal ? provider.lazy(base, shape, o, keepBand) : (banded || offloading()) && base.rowsRecipe ? yield* provider.lazyLook(base, shape, o, keepBand) : yield* planeLayoutSteps(base, width, height, shape, o, signal);
         };
-        if (zoneEffort === 8 && !journal && !preview && sameZoneRecipe(_sharedNine?.zone8?.recipe, zoneRecipe)) {
+        if (zoneEffort === 8 && !journal && sameZoneRecipe(_sharedNine?.zone8?.recipe, zoneRecipe)) {
           const cached8 = _sharedNine.zone8;
           dz8 = cached8.deadzoneMap;
           const zonedAt = memoAt(defer(make({deadzoneMap: dz8}, true, 1.0)));
           if (!CAPTURE_PHOTO) zonedAt.recipe = {field, layout, ...((typeof __RAPIER_JXL_EFFORT_TEN__ === 'undefined' || __RAPIER_JXL_EFFORT_TEN__ === true) && {transforms, epfScale: 1.0, providerBlocks: !options}), options: {...(options ?? {}), ...(zoneEffort === 8 && quality <= 85 && {compactDct8: true, tableBands: 6, dct8Bands: 8}), deadzoneMap: dz8}};
-          yield* keep(zonedAt, {...cached8.found}, 8);
+          yield* keep(zonedAt, {...cached8.found}, 8, true);
           zonedAt.clear();
           continue;
         }
@@ -1483,11 +1632,11 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
         const firstZoned = !journal && !measureOutput && initObs && !initObs.scores.doubt
           ? {scores: initObs.scores, output: {effort: writerEffort}}
           : yield* qualify(image, first);
-        const zonedMap = !journal && !measureOutput && !preview && zoneEffort >= 9 && quality <= 85 && alreadyCompact ? new Map() : null;
+        const zonedMap = !journal && !measureOutput && zoneEffort >= 9 && quality <= 85 && alreadyCompact ? new Map() : null;
         const zonedSeen = zonedMap && {get: q => { const o = zonedMap.get(q); return o && {scores: o.scores}; }, set: (q, o) => zonedMap.set(q, o)};
         if (zonedMap) zonedMap.set(q0, firstZoned);
         let zFound = yield* keep(zonedAt, yield* probe(zonedAt, q0, zoneEffort >= 9 ? 10 : 6, {quality: q0, image, ...firstZoned}, zonedSeen, zTight), zoneEffort);
-        if (zoneEffort === 8 && _sharedNine && !journal && !preview) _sharedNine.zone8 = {recipe: zoneRecipe, deadzoneMap, found: zFound};
+        if (zoneEffort === 8 && _sharedNine && !journal) _sharedNine.zone8 = {recipe: zoneRecipe, deadzoneMap, found: zFound};
         let bestCompact = zoneEffort === 8 && quality <= 85;
         if (zoneEffort >= 9 && quality <= 85 && zonedMap && zFound?.output?.bytes && zFound.scores.doubt?.ssimulacra2 > 0) {
           const zGap = zFound.scores.ssimulacra2 - requested.ssimulacra2, zDoubt = zFound.scores.doubt.ssimulacra2;
@@ -1508,7 +1657,7 @@ function* wholeSteps(data, width, height, {quality, colorSpace = 'srgb', effort,
             let cProbed = yield* probe(compactAt, cStart, 7, null, zonedSeen, zTight);
             if (zonedMap && cProbed.quality === zFound?.quality && zFound?.output?.effort === zoneEffort && zFound.output.bytes)
               cProbed = {...cProbed, output: zFound.output};
-            const cFound = yield* keep(compactAt, cProbed, zoneEffort);
+            const cFound = yield* keep(compactAt, cProbed, zoneEffort, true);
             if (bytes !== prevBytes) { zFound = cFound; bestCompact = true; }
             compactAt.clear();
           }

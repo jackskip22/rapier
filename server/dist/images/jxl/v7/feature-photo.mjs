@@ -40,14 +40,14 @@ export async function measuredFeatures(picture, features, settings, qualityInten
     const look = measuredTarget(askedLook(qualityIntent));
     const target = {ssimulacra2: look + djxlResidual(look, width * height)};
     let answer = await measuredFileSearch(target, probe, metric.measure,
-      {start: coding.quality, signal: hooks.signal, onProgress: hooks.onProgress, closest: true, preview: hooks.preview, width, height});
+      {start: coding.quality, signal: hooks.signal, onProgress: hooks.onProgress, closest: true});
     if (noise) return answer.exact || !answer.bytes ? answer : {...answer, measurements: answer.measurements.map(m => ({...m, view: 'without-noise'}))};
     if (!(features.upsampling > 1)) return answer;
     check(hooks.signal);
     const floor = target.ssimulacra2, top = answer.measurements[0]?.score;
     if (!answer.exact && answer.bytes && !(top >= floor)) {
       const reachable = await measuredFileSearch({ssimulacra2: top - 0.1}, probe, metric.measure,
-        {start: coding.quality, signal: hooks.signal, onProgress: hooks.onProgress, closest: true, preview: hooks.preview, width, height});
+        {start: coding.quality, signal: hooks.signal, onProgress: hooks.onProgress, closest: true});
       if (reachable.bytes && reachable.bytes.length < answer.bytes.length)
         answer = {...reachable, measurements: photoOutputMeasurements(target, {ssimulacra2: reachable.measurements[0].score}, 'decoded-output')};
       check(hooks.signal);

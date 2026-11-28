@@ -11,6 +11,7 @@ export interface ContainerOptions {
   /** Aborts the call. It throws the signal's reason. */
   signal?: AbortSignal | undefined;
 }
+/** Options for streaming a codestream in a JPEG XL container. */
 export interface ContainerStreamOptions extends ContainerOptions {
   /** Required codestream level. Level 10 writes jxll immediately after ftyp. Defaults to 5. */
   level?: 5 | 10;

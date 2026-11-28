@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {fault} from './fault.mjs';
 export const DECODER_KEY = Symbol.for('rapier-jxl.decoder');
+export const DECODER_SNAPSHOT = /* @__PURE__ */ Symbol.for('rapier-jxl.decoder.snapshot');
 export const configuredDecoder = () => globalThis[DECODER_KEY] ?? null;
 export function setDecoder(decode, restore, recompress) {
   if (decode !== null && typeof decode !== 'function')

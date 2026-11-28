@@ -1,14 +1,15 @@
 import {header} from './jxl/v7/metadata.mjs';
-import {JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS, codecError, byteView, boundedDimensions} from './limits.mjs';
-export {JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS, codecError, byteView, boundedDimensions};
+import {PICTURE_BYTES, PICTURE_EDGE, KEPT_JPEG_PIXELS, JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS, codecError, byteView, boundedDimensions} from './limits.mjs';
+export {PICTURE_BYTES, JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS, codecError, byteView, boundedDimensions};
 
-export function inspectJPEGXL(input, prefix = false) {
+export function inspectJPEGXL(input, prefix = false, {animatedPixels = KEPT_JPEG_PIXELS} = {}) {
   const bytes = byteView(input);
-  if (bytes.length < 3 || bytes.length > JPEG_XL_LIMITS.bytes) throw codecError('JXL_SIZE', 'JPEG XL data is empty or exceeds 16 MiB.');
+  if (bytes.length < 3 || bytes.length > PICTURE_BYTES) throw codecError('JXL_SIZE', 'JPEG XL data is empty or exceeds 16 MiB.');
   if (!prefix) jxlCodestreamParts(bytes);
   const info = header(bytes);
-  const dimensions = boundedDimensions(info.width, info.height, JPEG_XL_PICTURE_LIMITS);
-  for (const size of [info.intrinsicSize, info.preview]) if (size) boundedDimensions(size.width, size.height, JPEG_XL_PICTURE_LIMITS);
+  const limits = info.animation && animatedPixels !== KEPT_JPEG_PIXELS ? {bytes: PICTURE_BYTES, pixels: animatedPixels, edge: PICTURE_EDGE} : JPEG_XL_PICTURE_LIMITS;
+  const dimensions = boundedDimensions(info.width, info.height, limits);
+  for (const size of [info.intrinsicSize, info.preview]) if (size) boundedDimensions(size.width, size.height, limits);
   return {...dimensions, orientation: info.orientation, animated: !!info.animation, reconstruction: info.reconstruction};
 }
 

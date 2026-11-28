@@ -7,6 +7,17 @@ const typedBuffer = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8A
 const typedLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'byteLength').get;
 const consume = promise => { Promise.resolve(promise).catch(() => {}); };
 
+export function originalResponse(response, key, mimeType) {
+  const format = /\.(jpe?g|jpe|jfif|png|webp|avif)$/i.exec(key)?.[1].toLowerCase();
+  const expected = format ? `image/${/^(?:jpe?g|jpe|jfif)$/.test(format) ? 'jpeg' : format}` : mimeType;
+  const type = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  if (!expected || type !== expected || response.headers.has('cf-polished')) {
+    try { consume(response.body?.cancel()); } catch {}
+    throw fail('JXL_INPUT', 'Original image: use the stored file without Polish.');
+  }
+  return expected;
+}
+
 function bufferBytes(value) {
   if (ArrayBuffer.isView(value)) return null;
   try { return bufferLength.call(value); } catch { return null; }

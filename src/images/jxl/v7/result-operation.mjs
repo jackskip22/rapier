@@ -12,7 +12,7 @@ import {RESULT_REFERENCE, RAW_OPERATION, PROFILE_NAMED, DEVICE_RAN, keptOf} from
 export {RESULT_REFERENCE, RAW_OPERATION, resultReference, resultFacts} from './result-reference.mjs';
 
 const CALL_FIELDS = ['fidelity', 'effort', 'progressive', 'firstRegion', 'readAs', 'jpeg', 'webgpu', 'maxPixels', 'maxBytes', 'icc',
-  'signal', 'onProgress', 'onPreview', 'exactRects', 'photoRects', 'textComplete', 'withoutText', 'outputs'];
+  'signal', 'onProgress', 'exactRects', 'photoRects', 'textComplete', 'withoutText', 'outputs'];
 function snapshotFidelity(value) {
   if (!isPlainRecord(value)) return value;
   const fid = snapshotOptions(value, 'fidelity', [], true);
@@ -24,9 +24,8 @@ export function completionOptions(given, capture = false) {
   if ('features' in options) throw fail('JXL_OPTIONS', 'unknown option: features');
   if ('fidelity' in options) options.fidelity = snapshotFidelity(options.fidelity);
   options = publicVocabulary(options);
-  const {signal, onProgress, onPreview} = options;
+  const {signal, onProgress} = options;
   if (onProgress !== undefined && typeof onProgress !== 'function') throw fail('JXL_OPTIONS', 'onProgress: function');
-  if (onPreview !== undefined && typeof onPreview !== 'function') throw fail('JXL_OPTIONS', 'onPreview: function');
   const progress = progressOf(onProgress, signal);
   let encoded;
   if (onProgress) options.onProgress = fraction => { if (fraction < 1) progress(Math.min(0.999, fraction)); };
@@ -39,12 +38,11 @@ export function completionOptions(given, capture = false) {
 }
 
 export const resultOperation = (typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) ? null : (raw, options) => resultOperationWith(imageResult, raw, options);
-export function resultOperationWith(record, raw, {format = 'jxl', fidelity: defaultFidelity = {quality: 90}, kept, capture = false, preview: previewCall, device = false} = {}) {
+export function resultOperationWith(record, raw, {format = 'jxl', fidelity: defaultFidelity = {quality: 90}, kept, capture = false, device = false} = {}) {
   const invoke = async (input, completion, helpers) => {
     const options = completion.options, readAs = options.readAs;
     let reference, readSpace;
     const facts = {...(kept && {kept}), ...(device && {usedWebGPU: false})};
-    const preview = previewCall?.(options, () => { const {width, height, orientation} = reference ?? {}; return {width, height, orientation}; });
     options[RESULT_REFERENCE] = (picture, _original, recorded) => {
       if (picture !== undefined) {
         if (picture?.colorSpace === 'srgb' || picture?.colorSpace === 'display-p3') readSpace = picture.colorSpace;
@@ -54,24 +52,20 @@ export function resultOperationWith(record, raw, {format = 'jxl', fidelity: defa
       if (recorded) Object.assign(facts, recorded);
     };
     if (device) options[DEVICE_RAN] = () => { facts.usedWebGPU = true; };
-    try {
-      const run = helpers && raw[DRIVE];
-      const bytes = await (run ? run(input, options, helpers) : raw(input, options));
-      const fidelity = own(options.fidelity ?? defaultFidelity);
-      check(options.signal);
-      if (!reference) throw fail('JXL_INTERNAL', 'result-operation:dimensions');
-      if (capture) {
-        facts.kept = completion.encoded?.exact ? 'pixels' : 'lossy';
-        if (completion.encoded?.textMarks) facts.textMarks = completion.encoded.textMarks;
-      }
-      if (facts.kept !== undefined) facts.kept = keptOf(facts);
-      delete facts[PROFILE_NAMED];
-      const result = await record(bytes, reference, {fidelity, format, readAs: readAs && (readSpace ?? readAs), ...facts, signal: options.signal, owned: true});
-      if (result.bytes) preview?.offer(bytes, {width: result.width, height: result.height, measurements: result.measurements});
-      await completion.finish();
-      await preview?.finish();
-      return result;
-    } finally { preview?.close(); }
+    const run = helpers && raw[DRIVE];
+    const bytes = await (run ? run(input, options, helpers) : raw(input, options));
+    const fidelity = own(options.fidelity ?? defaultFidelity);
+    check(options.signal);
+    if (!reference) throw fail('JXL_INTERNAL', 'result-operation:dimensions');
+    if (capture) {
+      facts.kept = completion.encoded?.exact ? 'pixels' : 'lossy';
+      if (completion.encoded?.textMarks) facts.textMarks = completion.encoded.textMarks;
+    }
+    if (facts.kept !== undefined) facts.kept = keptOf(facts);
+    delete facts[PROFILE_NAMED];
+    const result = await record(bytes, reference, {fidelity, format, readAs: readAs && (readSpace ?? readAs), ...facts, signal: options.signal, owned: true});
+    await completion.finish();
+    return result;
   };
   const settle = (input, given, helpers) => {
     let completion;

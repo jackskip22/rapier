@@ -6,11 +6,10 @@ import {JOURNAL_FILE} from '../step-journal.mjs';
 import {jpegInfo, jpegBlobInfo, jpegDimensions} from './input-native.mjs';
 import {jpegDisplayDimensions, jpegReconstruction} from './preparation-jpeg.mjs';
 import {kernelsReady} from './kernels-ready.mjs';
-import {drain} from './common.mjs';
+import {drainPlain as drain} from './drain.mjs';
 import {resultReference, RESULT_REFERENCE} from './result-reference.mjs';
 import {check, isCaller, progressOf, blobBytes, isBlob} from './primitives.mjs';
 import {jpegChoiceMode, jpegWins, jpegRequestedIntent} from './jpeg-choice-policy.mjs';
-import {PREVIEW} from './preview.mjs';
 import {jpegPixelsReady} from './jpeg-pixels.mjs';
 import {withArenaLease} from '../call-scope.mjs';
 
@@ -63,7 +62,6 @@ export async function chooseJpeg(source, codec, options, hooks, encodePixels) {
     resultReference(options, display, original,
       {fidelity: 'exact', kept: jpegReconstruction(exact) ? 'jpeg-bytes' : 'pixels', meetsTarget: true,
         measurements: [], originalBytes: jpeg.originalBytes, ...(otherDecoders && {otherDecoders})});
-    options[PREVIEW]?.(exact, {...display, measurements: []});
     progress?.(1); check(hooks.signal);
     return exact;
   };
@@ -73,7 +71,7 @@ export async function chooseJpeg(source, codec, options, hooks, encodePixels) {
     reference?.(picture, input, value);
   }, ...(progress && split && {onProgress: hooks.probes ? progress : fraction => progress(share + fraction * (1 - share))})};
   const intent = jpegRequestedIntent(codec);
-  if (mode === 'weigh' && !hooks.carry && hooks.maxBytes === undefined && !progress && !options[PREVIEW] && !hooks.journal) {
+  if (mode === 'weigh' && !hooks.carry && hooks.maxBytes === undefined && !progress && !hooks.journal) {
     try {
       if (!(original instanceof Uint8Array)) original = isBlob(original)
         ? await blobBytes(original, hooks.signal) : original.subarray(0, original.length);

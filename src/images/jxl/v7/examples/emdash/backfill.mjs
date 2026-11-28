@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // RAPIER_SITE=https://site RAPIER_TOKEN=... node backfill.mjs [--apply] [--page-size=64] [--concurrency=4] [--effort=7] [--cursor=...]
 import {pathToFileURL} from 'node:url';
-import {readAll} from './read-all.mjs';
+import {readAll, originalResponse} from './read-all.mjs';
 import {recompress} from 'rapier-jxl/jpeg';
 import {digest} from './digest.mjs';
 
@@ -34,8 +34,9 @@ export async function backfill({site, token, apply = false, fetch: send = fetch,
   };
   const file = async item => {
     const response = await send(new URL(`/_emdash/api/media/file/${encodeURIComponent(item.storageKey)}`, base),
-      {signal, redirect: 'error', headers: {Authorization: `Bearer ${token}`, Accept: 'image/jpeg'}});
+      {signal, redirect: 'error', headers: {Authorization: `Bearer ${token}`, Accept: 'image/jpeg', 'Cache-Control': 'no-transform'}});
     if (!response.ok) throw new Error(`read ${item.storageKey}: ${response.status}`);
+    originalResponse(response, item.storageKey);
     return readAll(response.body, {maxBytes: 256 * 1024 * 1024, signal});
   };
   const libraryStates = async items => {

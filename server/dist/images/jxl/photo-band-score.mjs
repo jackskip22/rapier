@@ -9,7 +9,7 @@ import {layoutPicture, unpackLayout} from './photo-layout-picture.mjs';
 import {packRow} from './photo-packed-picture.mjs';
 import {maskEnergy} from './photo-mask.mjs';
 import {xybStrategies} from './varblocks.mjs';
-import {restorationSizes, RESTORE_ROWS} from './vardct-inverse.mjs';
+import {restorationSizes, RESTORE_ROWS} from './vardct-restore.mjs';
 import {fault} from './fault.mjs';
 import {scoreBandGeometry, scoreBandFits, SCORE_RECON_ROWS, SCORE_COEFF_ROWS} from './band-geometry.mjs';
 import {scoreBandCapacity} from './photo-band-storage.mjs';

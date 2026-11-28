@@ -34,9 +34,10 @@ export function stream(source: Iterable<EncodedInput | PromiseLike<EncodedInput>
 export interface PlaceholderOptions {
   /** 'jxl' (default): the file's bytes. 'dataUrl' adds a data:image/jxl URL of them. */
   format?: "jxl" | "dataUrl"; }
+/** The extracted 1:8 image and its original and preview dimensions. */
 export interface PlaceholderResult { bytes: Bytes; width: number; height: number; previewWidth: number; previewHeight: number; scale: 8; dataUrl?: string; }
 export interface SliceOptions {
-  /** The size wanted: 1, 2, 4 or 8 (1:8 is every VarDCT file's, 1:4 and 1:2 a progressive file's). A missing one refuses JXL_UNSUPPORTED. */
+  /** The size wanted: 1, 2, 4 or 8. Supported VarDCT stills provide 1:8. Progressive files with those passes also provide 1:4 and 1:2. A missing size refuses JXL_UNSUPPORTED. */
   scale?: 1 | 2 | 4 | 8;
   /** The smallest size at least this many pixels wide. */
   maxWidth?: number;

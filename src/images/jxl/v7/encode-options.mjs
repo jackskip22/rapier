@@ -4,9 +4,8 @@ import {encodeFidelity, encodeEffort, progressiveSetting} from './fidelity.mjs';
 import {refuseDescription} from './describe.mjs';
 import {featureless} from './first-region-option.mjs';
 import {RESULT_REFERENCE, DEVICE_RAN} from './result-reference.mjs';
-import {PREVIEW} from './preview.mjs';
 import {RETAIN_INPUT} from './ownership.mjs';
-const rawKeys = /* @__PURE__ */ new Set(['fidelity','effort','progressive','features','readAs','jpeg','gainMap','webgpu','maxPixels','signal','onProgress','onPreview']);
+const rawKeys = /* @__PURE__ */ new Set(['fidelity','effort','progressive','features','readAs','jpeg','gainMap','webgpu','maxPixels','signal','onProgress']);
 export const ENCODE_FEATURES = /* @__PURE__ */ optionSymbol('encode features');
 export function publicVocabulary(options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) return options;
@@ -22,7 +21,6 @@ export function encodeOptions(value, ten = false, full = false) {
   refuseDescription(options);
   for (const key of Object.keys(options)) if (!rawKeys.has(key)) throw unknownOption(key, options);
   if (options.onProgress !== undefined && typeof options.onProgress !== 'function') throw fail('JXL_OPTIONS', "onProgress: function");
-  if (options.onPreview !== undefined && typeof options.onPreview !== 'function') throw fail('JXL_OPTIONS', "onPreview: function");
   admitSignal(options.signal);
   const {effort: requestedEffort = ten ? 10 : 7} = options;
   const fidelity = encodeFidelity(options.fidelity), effort = encodeEffort(requestedEffort, fidelity, ten);
@@ -46,7 +44,7 @@ export function encodeOptions(value, ten = false, full = false) {
     if (options.features.upsampling !== undefined && fidelity.quality === 100)
       throw fail('JXL_OPTIONS', "upsampling: not with exact");
   }
-  const {[RESULT_REFERENCE]: _reference, [PREVIEW]: _preview, [RETAIN_INPUT]: _retain, [DEVICE_RAN]: _ran, fidelity: _fidelity, signal, onProgress, onPreview, features, readAs, jpeg, gainMap, webgpu, maxPixels, lexer: _lexer, ...codec} = options;
+  const {[RESULT_REFERENCE]: _reference, [RETAIN_INPUT]: _retain, [DEVICE_RAN]: _ran, fidelity: _fidelity, signal, onProgress, features, readAs, jpeg, gainMap, webgpu, maxPixels, lexer: _lexer, ...codec} = options;
   return {...codec, ...fidelity, effort, webgpu, maxPixels};
 }
 

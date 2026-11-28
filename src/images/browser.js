@@ -47,7 +47,6 @@ const _rapierEmbeddedImages = (() => {
   function provideModuleFiles(source) { if (typeof source === 'function') moduleFileSources.push(source); }
   const moduleFile = name => { for (const source of moduleFileSources) { const text = source(name); if (typeof text === 'string') return text; } return null; };
   const codecs = new Map();
-  let decodeJobs = 0, displayCopies = 0;
   let finalDisplays = Promise.resolve();
   async function pageFile(name) {
     pageFiles ||= _rapierWhenRuntime('rapier-jxl-worker').then(() => _rapierInflateVendor('rapier-jxl-worker'));
@@ -105,11 +104,10 @@ const _rapierEmbeddedImages = (() => {
     codecs.set(name, held);
     return held;
   }
-  function moduleJob(name, operation, input, options, {signal, progress, onPreview, optional = false} = {}, display = false) {
+  function moduleJob(name, operation, input, options, {signal, progress, optional = false} = {}, display = false) {
     if (!optional) interruptIdleFinishes();
     synchronizeScope();
     if (!optional) foregroundCodecs++;
-    if (operation === 'decode') decodeJobs++;
     const stamp = epoch, identity = authority;
     const run = async () => {
       signal?.throwIfAborted();
@@ -125,15 +123,10 @@ const _rapierEmbeddedImages = (() => {
       const patience = name === 'rapier-jxl/max' ? 8 : 1;
       const watch = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('Image processing took too long')), (45000 + megapixels * 15000) * patience); };
       const onProgress = fraction => { if (!controller.signal.aborted) watch(); try { progress?.(fraction); } catch (_) {} };
-      const preview = typeof onPreview === 'function' ? value => {
-        if (controller.signal.aborted || stamp !== epoch || identity !== rapier.identity.authority) return;
-        watch();
-        try { return onPreview(value); } catch (_) {}
-      } : null;
       held.jobs++;
       watch();
       try {
-        const value = await held.codec[operation](input, {...options, signal: controller.signal, onProgress, ...(preview && {onPreview: preview})});
+        const value = await held.codec[operation](input, {...options, signal: controller.signal, onProgress});
         assertCurrent(stamp, identity);
         if (operation === 'decode') return value;
         const record = operation === 'variants' ? value?.[0] : value;
@@ -154,7 +147,7 @@ const _rapierEmbeddedImages = (() => {
     };
     const job = display ? run() : queue.then(run, run);
     if (!display) queue = job.catch(() => {});
-    return job.finally(() => { if (!optional) foregroundCodecs--; if (operation === 'decode') decodeJobs--; });
+    return job.finally(() => { if (!optional) foregroundCodecs--; });
   }
   let hdrModule = null;
   async function readHdr(bytes, options, {signal} = {}) {
@@ -224,39 +217,35 @@ const _rapierEmbeddedImages = (() => {
       image.src = url;
     });
   }
-  async function fallbackPixels(bytes, {signal, maxPixels = 64000000, display = false, poster = false} = {}) {
+  async function fallbackPixels(bytes, {signal, maxPixels = assets.KEPT_JPEG_PIXELS, display = false, poster = false} = {}) {
     signal?.throwIfAborted();
-    const info = assets.inspectJPEGXL(bytes), size = assets.imageDimensions(bytes, 'image/jxl');
-    if (bytes.byteLength > assets.IMAGE_LIMITS.bytes || !assets.validCarriedDimensions(size.width, size.height) || size.width * size.height > maxPixels)
+    const info = assets.inspectJPEGXL(bytes), size = poster ? {width: info.orientation >= 5 ? info.height : info.width, height: info.orientation >= 5 ? info.width : info.height} : assets.imageDimensions(bytes, 'image/jxl');
+    if (bytes.byteLength > assets.PICTURE_BYTES || !assets.validCarriedDimensions(size.width, size.height) || size.width * size.height > maxPixels)
       throw Object.assign(new Error('JPEG XL exceeds the picture budget'), {code: 'JXL_LIMIT'});
     if (info.animated && !poster) throw Object.assign(new Error('This JPEG XL needs animation playback'), {code: 'JXL_UNSUPPORTED'});
     const pixels = await moduleJob('rapier-jxl/decode', 'decode', bytes, {format: 'uint8', colorSpace: 'srgb', unpremultiplyAlpha: true,
-      partial: false, maxInputBytes: assets.IMAGE_LIMITS.bytes, maxPixels, maxDimension: assets.IMAGE_LIMITS.dimension}, {signal, optional: display}, display);
+      partial: false, maxInputBytes: assets.PICTURE_BYTES, maxPixels, maxDimension: assets.PICTURE_EDGE}, {signal, optional: display}, display);
     signal?.throwIfAborted();
     if (pixels.width !== size.width || pixels.height !== size.height || !(pixels.data instanceof Uint8ClampedArray || pixels.data instanceof Uint8Array) || pixels.data.length !== size.width * size.height * 4 || pixels.partial)
       throw new Error('JPEG XL decoder returned a different raster');
     return pixels;
   }
-  async function previewBlob(bytes, {signal, optional = false, maxPixels = 64000000} = {}) {
+  async function previewBlob(bytes, {signal, maxPixels = assets.KEPT_JPEG_PIXELS} = {}) {
     signal?.throwIfAborted();
     const native = await displayWait(whenJxlDisplayKnown(), signal);
     signal?.throwIfAborted();
     if (native) return new Blob([bytes], {type: 'image/jxl'});
-    if (optional && (decodeJobs || displayCopies)) return null;
-    displayCopies++;
-    const ahead = optional ? null : finalDisplays;
+    const ahead = finalDisplays;
     const copy = (async () => {
-      try {
-        if (ahead) await displayWait(ahead, signal);
-        const pixels = await fallbackPixels(bytes, {signal, maxPixels, display: true, poster: true});
-        signal?.throwIfAborted();
-        const blob = await canvasBlob(context => context.putImageData(new ImageData(new Uint8ClampedArray(pixels.data.buffer,
-          pixels.data.byteOffset, pixels.data.byteLength), pixels.width, pixels.height), 0, 0), pixels.width, pixels.height);
-        signal?.throwIfAborted();
-        return blob;
-      } finally { displayCopies--; }
+      await displayWait(ahead, signal);
+      const pixels = await fallbackPixels(bytes, {signal, maxPixels, display: true, poster: true});
+      signal?.throwIfAborted();
+      const blob = await canvasBlob(context => context.putImageData(new ImageData(new Uint8ClampedArray(pixels.data.buffer,
+        pixels.data.byteOffset, pixels.data.byteLength), pixels.width, pixels.height), 0, 0), pixels.width, pixels.height);
+      signal?.throwIfAborted();
+      return blob;
     })();
-    if (ahead) finalDisplays = Promise.allSettled([ahead, copy]).then(() => {});
+    finalDisplays = Promise.allSettled([ahead, copy]).then(() => {});
     return displayWait(copy, signal);
   }
   globalThis.RapierImageInspection.configurePaintRasterDecoder(async (bytes, {signal} = {}) => {

@@ -15,7 +15,15 @@ const SANDBOX = "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-
 export const mediaKey = url => FILE.exec(new URL(url).pathname)?.[1] ?? null;
 
 export const acceptsJxl = (value, alternative = 'image/webp') => accepts(value, alternative);
+function varyDelivery(headers) {
+  const parts = String(headers.get('vary') ?? '').split(',').map(value => value.trim()).filter(Boolean);
+  if (parts.includes('*')) return;
+  for (const name of ['Accept', 'User-Agent', 'Purpose', 'Sec-Purpose', 'X-Purpose', 'Range'])
+    if (!parts.some(value => value.toLowerCase() === name.toLowerCase())) parts.push(name);
+  headers.set('vary', parts.join(', '));
+}
 const secure = response => {
+  varyDelivery(response.headers);
   response.headers.set('x-content-type-options', 'nosniff');
   response.headers.set('content-security-policy', SANDBOX);
   response.headers.set('content-disposition', 'inline');
@@ -181,8 +189,7 @@ export async function onRequest(context, next) {
   }
   if (!['GET', 'HEAD'].includes(request.method) || !mediaKey(url) && url.pathname !== '/_image' ||
       url.searchParams.get('f') === 'jxl') return response;
-  const headers = new Headers(response.headers), vary = headers.get('vary');
-  if (!vary?.split(',').some(value => ['*', 'accept'].includes(value.trim().toLowerCase())))
-    headers.set('vary', vary ? vary + ', Accept' : 'Accept');
+  const headers = new Headers(response.headers);
+  varyDelivery(headers);
   return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
 }

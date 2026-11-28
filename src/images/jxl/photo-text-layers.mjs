@@ -9,6 +9,7 @@ import {fault} from './fault.mjs';
 import {fileHeader, boxHeader, CODESTREAM} from './container.mjs';
 import {encodeLayersSteps} from './layers-core.mjs';
 import {fillHoles, maskComponents} from './screen-photo-mask.mjs';
+import {composed, partsOf} from './photo-shown.mjs';
 
 const GAP = 24, SPARSE = 1.65, SLACK = 512, FRAMES = 8, MIN_PREPARED_FREE = 4096;
 
@@ -104,6 +105,11 @@ function splitBoxLevels(effort, top) {
 }
 
 export function* photoTextLayersSteps(data, width, height, mask, quality, effort = 3, tools = CAPTURE_TOOLS_LEAN, base = null, prepared = null) {
+  const held = {};
+  const bytes = yield* partsOf(layeredSteps(held, data, width, height, mask, quality, effort, tools, base, prepared));
+  return bytes && held.image ? composed(bytes, {base: held.image, exact: mask}) : bytes;
+}
+function* layeredSteps(held, data, width, height, mask, quality, effort, tools, base, prepared) {
   const n = width * height;
   let masked = 0;
   for (let i = 0; i < n; i++) {
@@ -122,6 +128,7 @@ export function* photoTextLayersSteps(data, width, height, mask, quality, effort
   const direct = (typeof __RAPIER_JXL_CAPTURE_PHOTO__ !== 'undefined' && __RAPIER_JXL_CAPTURE_PHOTO__ === true) || (typeof __RAPIER_JXL_CAPTURE_PHOTO__ === 'undefined' && !base);
   const image = own ? null : prepared?.image ? {...prepared.image} : complete(photoCoefficientSteps(filled, width, height, quality, 'srgb', false, true));
   if (image) {
+    held.image = image;
     image.alpha = filled;
     if (prepared?.smooth) image.adaptiveLFSmoothing = true;
     if (direct) image.placement = {isLastFrame: false, saveAsReference: 1};

@@ -34,6 +34,13 @@
   Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Robots-Tag: noindex
 
+# Watercolor for Meta Quest (tools/quest-site.mjs): its page loads its own modules and the Water modules it imports from
+# this origin, and registers its own offline worker. No inline script, nothing from another host.
+/quest/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Robots-Tag: noindex
+
 # The editor runtime the site's pages load (tools/door-assets.mjs): named by its hash, so it never changes.
 /rapier-editor-*
   ! Cache-Control

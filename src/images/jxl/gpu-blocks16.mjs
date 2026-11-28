@@ -2,7 +2,7 @@
 import {gpuFloat as b16F, gpuSplit as b16Split, gpuSplits as b16Splits, gpuGroupsX, gpuDestroy, gpuKernel, gpuScoped, gpuAlloc, gpuUpload, gpuUni, gpuStep, gpuStage, gpuRead} from './gpu-kit.mjs';
 export {b16F, b16Split, b16Splits};
 
-export const B16_BOUNDS = Object.freeze({u2: 2 ** -48, u64: 2 ** -53, safety: 8, rel: 32 * 2 ** -48 + 8 * 2 ** -53, floor: 1e-30});
+export const B16_BOUNDS = /* @__PURE__ */ Object.freeze({u2: 2 ** -48, u64: 2 ** -53, safety: 8, rel: 32 * 2 ** -48 + 8 * 2 ** -53, floor: 1e-30});
 export const b16Sum = size => 3 * size * (8 * B16_BOUNDS.u2 + B16_BOUNDS.u64);
 
 const dsLit = v => { const hi = Math.fround(v); return `vec2f(${b16F(hi)}, ${b16F(v - hi)})`; };

@@ -20,15 +20,17 @@ export interface PayloadMediaDoc {
   height?: number | null;
   mimeType?: string | null;
   sizes?: Record<string, PayloadUploadSize | undefined> | null;
+  variants?: Record<string, PayloadUploadSize | undefined> | null;
+  original?: PayloadUploadSize | null;
   jxl?: JxlDocumentMetadata | null;
 }
 
 export interface PictureOptions {
-  /** Render a single named imageSizes rendition instead of all responsive renditions. */
+  /** Render a single named imageSizes or Payload 4.0 variants rendition instead of all responsive renditions. */
   size?: string;
   /** Responsive sizes attribute for the fallback <img>. */
   sizes?: string;
-  /** Custom media query per imageSizes name. Defaults to (max-width: <width>px). */
+  /** Custom media query per imageSizes or variants name. Defaults to (max-width: <width>px). */
   mediaQueries?: Record<string, string>;
   alt?: string;
   className?: string;

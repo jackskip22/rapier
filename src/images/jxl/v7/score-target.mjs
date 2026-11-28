@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {encodeToScoreSteps} from '../score.mjs';
+import {encodeToScoreSteps} from '../score-steps.mjs';
 import {photoOutputMeasurements} from '../photo-output-policy.mjs';
 import {drain, targetSource} from './common.mjs';
 import {acceleration} from './acceleration.mjs';
@@ -17,15 +17,13 @@ import {photoTarget} from '../photo-quality-search.mjs';
 import {guard, answer} from '../admit.mjs';
 import {withProgressive, progressiveProbe, progressiveLayout} from '../coefficient-ans.mjs';
 
-function* exactTargetSteps(data, width, height, effort, preview) {
+function* exactTargetSteps(data, width, height, effort) {
   const exact = effortJob(data, width, height, {quality: 100, effort}, false,
     LIMITS, undefined, undefined, EXACT_LADDER);
   let step, reply;
   try {
     while (!(step = effort > 5 ? guard(() => exact.next(reply)) : exact.next(reply)).done) reply = yield step.value;
-    const bytes = effort > 5 ? answer(step.value) : step.value;
-    preview?.(bytes, {width, height, measurements: []});
-    return bytes;
+    return effort > 5 ? answer(step.value) : step.value;
   } finally { if (!step?.done || effort > 5) exact.return?.(); }
 }
 
@@ -49,8 +47,7 @@ async function lowScoreTarget(data, width, height, effort, target, hooks, progre
     return {quality, bytes, scores: {ssimulacra2: scores.ssimulacra2 - margin}};
   };
   try {
-    const found = await measuredFileSearch(target, probe, null, {...hooks, exact, width, height,
-      domain: 'encoder-reconstruction'});
+    const found = await measuredFileSearch(target, probe, null, {...hooks, exact, domain: 'encoder-reconstruction'});
     const bytes = progressive && !found.exact ? await drain(progressiveLayout(found.bytes, written, effort), hooks) : found.bytes;
     return {bytes, facts: {kept: found.exact ? 'pixels' : 'lossy', measurements: found.measurements}};
   } finally { metric?.destroy(); }
@@ -61,12 +58,12 @@ export async function scoreTarget(data, width, height, source, settings, target,
   await acceleration(webgpu, 0, 0, settings.effort, 'a measured fidelity');
   target = photoTarget(target);
   if (target.ssimulacra2 === 100 && Object.keys(target).length === 1) {
-    const bytes = await drain(exactTargetSteps(data, width, height, settings.effort, settings.effort > 5 ? hooks.preview : undefined), hooks);
+    const bytes = await drain(exactTargetSteps(data, width, height, settings.effort), hooks);
     return {bytes, facts: {kept: 'pixels', measurements: []}};
   }
   if (settings.effort <= 5 && Object.keys(target).length === 1 && target.ssimulacra2 !== undefined)
     return lowScoreTarget(data, width, height, settings.effort, target, hooks, settings.progressive);
-  const answer = await drain(withProgressive(settings.progressive, encodeToScoreSteps(data, width, height, {target, effort: settings.effort, signal: hooks.signal, preview: hooks.preview,
+  const answer = await drain(withProgressive(settings.progressive, encodeToScoreSteps(data, width, height, {target, effort: settings.effort, signal: hooks.signal,
     shownBound: target.ssimulacra2 !== undefined}), settings.effort), hooks);
   return {bytes: answer.bytes, facts: answer.quality === 100 ? {kept: 'pixels', measurements: []}
     : {kept: 'lossy', measurements: photoOutputMeasurements(target, answer, 'encoder-reconstruction')}};

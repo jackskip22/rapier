@@ -6,7 +6,7 @@ import {readDecodeImageHeader,readDecodeFrameHeader,readDecodeTOC,power2} from '
 import {decodeFrameSections,restoreFrame} from './decode-frame.mjs';
 import {part,frameFeatures} from './decode-parts.mjs';
 import {transformColor,convertOutputColor,nativeEncoding,sameEncoding,targetEncoding,xybSrgbConstants,xybToRGBA8,materializePostColor} from './decode-color.mjs';
-import {composeFrame,orientFrame,rgbaPixels,rgbaPixelsRects} from './decode-compose.mjs';
+import {composeFrame,orientFrame,rgbaPixels,rgbaPixelsRects,packComponents} from './decode-compose.mjs';
 import {SIGNATURE, CODESTREAM, PARTIAL, FTYP, LEVEL} from './decode-tables.mjs';
 import {readContainer,readContainerSteps} from './container-advanced.mjs';
 import {canvasArea,misses,emptyFrame,cropFrame} from './decode-region.mjs';
@@ -114,23 +114,28 @@ function renderSections(readers,h,f,refs,lf,options,visibility) {
   return frame;
 }
 
-function frameRecord(width,height,data,format,planes,extraChannels,colorEncoding,icc,rgbaColorEncoding,rgbaICC,h,f,options) {
-  return {width,height,data,format,planes:options.planes?planes:[],extraChannels,
+function frameRecord(width,height,data,format,planes,extraChannels,colorEncoding,icc,rgbaColorEncoding,rgbaICC,h,f,options,components=undefined) {
+  return {width,height,data,format,...(components!==undefined&&{components}),planes:options.planes?planes:[],extraChannels,
     colorEncoding,icc:icc??null,rgbaColorEncoding,rgbaICC:rgbaICC??null,
     duration:f.duration,durationSeconds:h.animation?f.duration*h.animation.denominator/h.animation.numerator:0,
     timecode:f.timecode,name:f.name,alphaPremultiplied:!!extraChannels.find(e=>e.type===0)?.associated&&!options.unpremultiplyAlpha};
 }
 
 function publicFrame(frame,h,f,options) {
-  requireDecode(frame.width*frame.height*(frame.rgba?4+(options.planes?3:0):4+3+frame.extraChannels.length)<=options.maxRetainedSamples,'output: over maxRetainedSamples');
+  const outCh=options.components?(frame.colorEncoding?.space==='cmyk'||frame.colorEncoding?.iccSpace==='CMYK'?4:frame.planes.length):4;
+  requireDecode(frame.width*frame.height*(frame.rgba?outCh+(options.planes?3:0):outCh+3+frame.extraChannels.length)<=options.maxRetainedSamples,'output: over maxRetainedSamples');
   const format=outputFormat(h,options);
-  const quantize=options.planes||options.unpremultiplyAlpha||options.renderSpotColors?0:format==='uint8'?255:format==='uint16'?65535:0;
+  const quantize=options.planes||options.unpremultiplyAlpha||options.renderSpotColors||options.components?0:format==='uint8'?255:format==='uint16'?65535:0;
   frame=convertOutputColor(frame,h,{colorSpace:options.colorSpace,quantize});
   if(options.applyOrientation)frame=orientFrame(frame,h.orientation);
+  if(options.components) {
+    const {data,components}=packComponents(frame,format);
+    return frameRecord(frame.width,frame.height,data,format,frame.planes,frame.extraChannels,frame.colorEncoding,frame.icc,frame.colorEncoding,frame.icc,h,f,options,components);
+  }
   const nativeSpace=frame.colorEncoding.iccSpace;
   const rgbaFrame=frame.colorEncoding.space==='xyb'||nativeSpace&&nativeSpace!=='RGB '&&nativeSpace!=='GRAY'?convertOutputColor(frame,h,{colorSpace:'srgb'}):frame;
   const banded=frame.rgba?.format===format&&frame.rgba.planes.length===rgbaFrame.planes.length&&frame.rgba.planes.every((p,i)=>p===rgbaFrame.planes[i]);
-  const first=rgbaFrame.planes[0],over=!banded&&f.isLast&&!options.planes&&format==='uint8'&&first.byteOffset===0&&first.buffer.byteLength===rgbaFrame.width*rgbaFrame.height*4&&
+  const first=rgbaFrame.planes[0],over=!banded&&(f.isLast||options.firstFrame)&&!options.planes&&format==='uint8'&&first.byteOffset===0&&first.buffer.byteLength===rgbaFrame.width*rgbaFrame.height*4&&
     !rgbaFrame.extraChannels.some(e=>e.data.buffer===first.buffer);
   const data=banded?frame.rgba.data:rgbaPixels(rgbaFrame,format,options.unpremultiplyAlpha,options.renderSpotColors,over?new Uint8Array(first.buffer):null);
   return frameRecord(frame.width,frame.height,data,format,frame.planes,frame.extraChannels,frame.colorEncoding,frame.icc,rgbaFrame.colorEncoding,rgbaFrame.icc,h,f,options);
@@ -157,7 +162,7 @@ function fitPicture(options,h) {
 export function decodeOptions(options) {
   requireDecode(options!==null&&typeof options==='object','options: object');
   const scaled=options.scaled===null?null:SCALED.filter(key=>options[key]===undefined);
-  options={...DECODE_LIMITS,...(scaled?.length&&(floor??=pictureCounters(FLOOR_PIXELS))),scaled,format:'auto',colorSpace:'original',applyOrientation:true,unpremultiplyAlpha:false,renderSpotColors:false,planes:false,...options};
+  options={...DECODE_LIMITS,...(scaled?.length&&(floor??=pictureCounters(FLOOR_PIXELS))),scaled,format:'auto',colorSpace:'original',applyOrientation:true,unpremultiplyAlpha:false,renderSpotColors:false,planes:false,firstFrame:false,components:false,...options};
   requireDecode(['auto','uint8','uint16','float32'].includes(options.format),'format: auto, uint8, uint16 or float32');
   requireDecode(typeof options.planes==='boolean','planes: boolean');
   for(const key of Object.keys(DECODE_LIMITS))requireDecode(Number.isSafeInteger(options[key])&&options[key]>0,key+': positive integer');
@@ -279,7 +284,8 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
       requireSize(totalSamples<=options.maxTotalSamples,'frames: over total sample limit');
       counted.after(f);
       if(f.cut){cut=true;break;}
-      if(f.isLast)break;
+      const firstKey=options.firstFrame&&(f.type===0||f.type===3)&&(f.isLast||f.duration!==0);
+      if(f.isLast||firstKey)break;
       if(options.onFrame&&!options.callerTotalSamples&&(f.type===0||f.type===3)&&f.duration!==0)totalSamples=0;
     }
     if(cut){
@@ -307,7 +313,7 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
   const keep=output=>{if(options.onFrame&&frames.length)return;outputSamples+=retainedSamples(output);frames.push(output);};
   const slots=referenceSlots(shareShown),counted=streamFrames?referenceSlots():null;
   const format=outputFormat(hc,options),original=nativeEncoding(hc);
-  const fastRGBA8=!area&&!options.planes&&format==='uint8'&&!options.unpremultiplyAlpha&&!options.renderSpotColors&&
+  const fastRGBA8=!options.components&&!area&&!options.planes&&format==='uint8'&&!options.unpremultiplyAlpha&&!options.renderSpotColors&&
     (!options.applyOrientation||hc.orientation===1)&&!original.wantICC&&
     (original.space==='rgb'||original.space==='gray')&&
     (!hc.xyb||original.space==='rgb'&&(original.transferFunction??(original.gamma===undefined?'srgb':'gamma'))==='srgb')&&
@@ -331,7 +337,7 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
       counted.after(f);
     }
     const inPlace=slots.inPlace(f);slots.after(f);
-    const normal=f.type===0||f.type===3,keyframe=normal&&(f.isLast||f.duration!==0);
+    const normal=f.type===0||f.type===3,keyframe=normal&&(f.isLast||f.duration!==0),done=f.isLast||!!(options.firstFrame&&keyframe);
     const outside=area&&f.type!==1&&misses(f,area);
     const banded=!outside&&!area&&renderFrame?.bandable?.(h,f),{expandedSamples,canvasSamples}=banded?{expandedSamples:0,canvasSamples:hc.width*hc.height*(4+(options.planes?3:0))}:{...frameSamples(hc,f,inPlace),...(outside&&{expandedSamples:0})};
     requireSize(canvasSamples<=options.maxSamples,'canvas: over maxSamples');
@@ -341,7 +347,7 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
     requireDecode(!f.useLFFrame||lf[f.lfLevel],'missing LF frame',r);
     if(stack){
       admitExpanded(h,f,options);stack.add(readers,f);
-      if(f.isLast){const output=emitShown(publicFrame(stack.frame(),h,f,options));if(options.onFrame)yield [output,shown++];break;}
+      if(done){const output=emitShown(publicFrame(stack.frame(),h,f,options));if(options.onFrame)yield [output,shown++];break;}
       continue;
     }
     let frame=outside?emptyFrame(h,f):null;
@@ -355,14 +361,14 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
     if(!area&&frame.rgba) {
       const output=emitShown(publicFrame(frame,hc,f,options));
       if(options.onFrame){yield [output,shown++];windowSamples=0;}
-      if(f.isLast)break;
+      if(done)break;
       continue;
     }
-    const canReference=!f.isLast&&(f.duration===0||f.saveAsReference!==0);
+    const canReference=!done&&(f.duration===0||f.saveAsReference!==0);
     const beforeColor=canReference&&f.saveBeforeColorTransform?frame:null;
     if(!normal&&f.saveBeforeColorTransform) {
       if(canReference)references[f.saveAsReference]=beforeColor;
-      if(f.isLast)break;
+      if(done)break;
       continue;
     }
     if(fastXYB&&!f.ycbcr&&normal) {
@@ -372,13 +378,13 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
         if(f.saveBeforeColorTransform||!canReference) {
           if(canReference)references[f.saveAsReference]=beforeColor;
           if(keyframe) {
-            const first=frame.planes[0],over=!canReference&&f.isLast&&f.x0===0&&f.y0===0&&frame.width===hc.width&&frame.height===hc.height&&first.byteOffset===0&&first.buffer.byteLength===hc.width*hc.height*4;
+            const first=frame.planes[0],over=!canReference&&done&&f.x0===0&&f.y0===0&&frame.width===hc.width&&frame.height===hc.height&&first.byteOffset===0&&first.buffer.byteLength===hc.width*hc.height*4;
             const data=over?new Uint8Array(first.buffer):new Uint8Array(hc.width*hc.height*4);
             xybToRGBA8(frame.planes,frame.width,-f.x0,-f.y0,hc.width,hc.height,hc,data,hc.width,0,0,xybConsts);
             const output=emitShown(frameRecord(hc.width,hc.height,data,'uint8',[],[],original,null,original,null,hc,f,options));
             if(options.onFrame){yield [output,shown++];windowSamples=0;}
           }
-          if(f.isLast)break;
+          if(done)break;
           continue;
         }
         let xybPlanes=frame.planes;
@@ -398,7 +404,7 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
           const output=emitShown(frameRecord(hc.width,hc.height,canvasRGBA.slice(),'uint8',[],[],original,null,original,null,hc,f,options));
           if(options.onFrame){yield [output,shown++];windowSamples=0;}
         }
-        if(f.isLast)break;
+        if(done)break;
         continue;
       }
       if(f.blending[0].mode===0&&inPlace&&references[f.blending[0].source]?.xybPlanes) {
@@ -416,12 +422,12 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
         }
         if(keyframe) {
           requireDecode(hc.width*hc.height*7<=options.maxRetainedSamples,'output: over maxRetainedSamples');
-          const data=f.isLast?ref.rgba8:ref.rgba8.slice();
-          if(f.isLast)ref.rgba8=null;
+          const data=done?ref.rgba8:ref.rgba8.slice();
+          if(done)ref.rgba8=null;
           const output=emitShown(frameRecord(hc.width,hc.height,data,'uint8',[],[],original,null,original,null,hc,f,options));
           if(options.onFrame){yield [output,shown++];windowSamples=0;}
         }
-        if(f.isLast)break;
+        if(done)break;
         continue;
       }
     }
@@ -455,12 +461,12 @@ export function* decodeImageSteps(bytes,options,renderFrame=null,opened=null) {
         if(options.onFrame){yield [output,shown++];windowSamples=0;}
       }
       if(canReference)references[f.saveAsReference]={...frame,rgba8:canvasRGBA,dirty,saveBeforeColorTransform:false};
-      if(f.isLast)break;
+      if(done)break;
       continue;
     }
     if(canReference)references[f.saveAsReference]=f.saveBeforeColorTransform?beforeColor:{...frame,saveBeforeColorTransform:false};
     if(keyframe){const output=emitShown(publicFrame(frame,hc,f,options));if(options.onFrame){yield [output,shown++];windowSamples=0;}}
-    if(f.isLast)break;
+    if(done)break;
   }
   requireDecode(frames.length>0,'no display frame');
   return decoded(frames,preview,h,input,options,frameHeaders);

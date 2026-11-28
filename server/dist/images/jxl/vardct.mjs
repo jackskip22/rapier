@@ -3,7 +3,7 @@ import {shown} from './photo-shown.mjs';
 import {varDCTField, varDCTDCSpec, copyVarDCTDCRows, copyVarDCTSharpness, copyVarDCTStrategies, copyVarDCTStrategyFields, copyVarDCTFieldRows, copyVarDCTCorrelation, copyVarDCTAlphaRows, copyVarDCTQuantRows, rawStepShift, varDCTLFGeometry, varDCTLFMetadataShape} from './vardct-planes.mjs';
 import {varDCTLayout, writeVarDCTHeader, writeVarDCTDCFields, writeVarDCTOrders, varDCTContextBuckets} from './vardct-header.mjs';
 import {writeQuantParams, photoDCT8Table} from './quantization-params.mjs';
-import {ORDER_STRATEGY_BUCKETS as ORDER_OF} from './coefficient-orders.mjs';
+import {ORDER_STRATEGY_BUCKETS as ORDER_OF} from './coefficient-layout.mjs';
 import {countACRanks, emitACRanks, predictDCT8NonZero} from './vardct-ranks.mjs';
 import {blockContexts, contextsFromThresholds, acContexts, writeBlockContexts, write3DBlockContexts, learn3DBlockContexts, DESIGNS} from './vardct-contexts.mjs';
 export {blockContexts, acContexts} from './vardct-contexts.mjs';
@@ -53,7 +53,7 @@ export function seedLfSections(jpeg, plan, groups) {
   const entry = lfEntryOf(jpeg, plan);
   groups.forEach((group, g) => { entry.sections[g] ||= Object.assign(new BitWriter(0), {bytes: group.bytes, at: group.at, pending: group.pending, acc: group.acc}); entry.wide ||= group.wide; });
 }
-export {ORDER_STRATEGY_BUCKETS as ORDER_OF} from './coefficient-orders.mjs';
+export {ORDER_STRATEGY_BUCKETS as ORDER_OF} from './coefficient-layout.mjs';
 const FAST_CONTEXTS_RGB = blockContexts(new Int32Array(0), 0, false);
 const FAST_CONTEXTS_GREY = blockContexts(new Int32Array(0), 0, true);
 const FAST_HEADER_RGB = (() => { const w = new BitWriter(64); writeBlockContexts(w, FAST_CONTEXTS_RGB); return w; })();

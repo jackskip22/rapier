@@ -43,7 +43,7 @@ function windowSize(source, codec) {
 }
 export const overWindow = (width, height, count, codec) => count > windowSize({width, height}, codec);
 
-async function codeOnce(source, codec, code, {signal, onProgress, preview, ...hooks}) {
+async function codeOnce(source, codec, code, {signal, onProgress, ...hooks}) {
   const {width, height, loops = 0} = source;
   [codec] = windowing(source, codec);
   const size = windowSize(source, codec);
@@ -63,7 +63,7 @@ async function codeOnce(source, codec, code, {signal, onProgress, preview, ...ho
     const last = !next, animation = {width, height, loops: last ? loops : 0, frames: window};
     const progress = report?.(read, at);
     if (last && !windows) {
-      const answer = await code(animation, codec, {...hooks, signal, onProgress: progress, preview});
+      const answer = await code(animation, codec, {...hooks, signal, onProgress: progress});
       return {...answer, durations};
     }
     if (!form) form = {colour: 3};

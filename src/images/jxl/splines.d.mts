@@ -41,5 +41,5 @@ export function splineStroke(controlPoints: readonly SplinePoint[], options: Spl
  * Decoder area budgets are checked before encoding. One-point curves are rejected: libjxl 0.12 skips them,
  * while jxl-oxide 0.12.6 renders them differently. */
 export function encodeSplines(data: Uint8Array | Uint8ClampedArray, width: number, height: number, options: SplineOptions): Bytes;
-/** Same output as encodeSplines. Cancelling leaves bytes null, and hurry retains complete output. */
+/** Same output as encodeSplines. Canceling leaves bytes null, and hurry retains complete output. */
 export function encodeSplinesSteps(data: Uint8Array | Uint8ClampedArray, width: number, height: number, options: SplineOptions): Job;

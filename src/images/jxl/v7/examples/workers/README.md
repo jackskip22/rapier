@@ -1,8 +1,7 @@
 # JPEG XL for a site on Cloudflare
 
 A Worker in front of a site. Browsers that send `Accept: image/jxl` get a picture's JPEG XL file where one exists.
-Every other browser, and every picture without one, gets the site's own response untouched. Never an error, never a
-time-out.
+Other requests keep the site's own response where the original is available. The Space saver section explains restoration of archived JPEGs.
 
 ## Workers Free
 
@@ -32,6 +31,9 @@ when `--keep-extension` is omitted.
 `add workers` writes `jxl-worker.mjs`, `jxl-space-saver.mjs` and a `wrangler.jsonc` (or adds `main` to yours). In a site
 served from Workers static assets, it names the `assets` binding `ASSETS` and sets `run_worker_first`, so the Worker
 reads the pictures from there. In a project with its own Worker, wrap its handler: `export default jxl(handler)`.
+
+Custom handlers must preserve the source request's `cf.polish: 'off'`. If previews fail, serve original JPEGs to the
+Worker and purge cached optimized images.
 
 ## Workers Paid: converting in the Worker
 
@@ -94,7 +96,6 @@ For originals stored in an R2 bucket, call `await restoreOriginals(env)` from `j
 These CPU and memory numbers were measured in Cloudflare's local dev server (`wrangler dev`), not yet on a deployed
 Worker.
 
-A 12 MP phone photograph's JPEG goes out 17% smaller and restores the original JPEG. A screenshot of a page of text
-goes out at a fifth of its PNG, every pixel kept.
+Supported JPEGs restore the original JPEG exactly. PNG conversion keeps every sample by default.
 
 rapier-jxl is the encoder inside rapier.website, the free Markdown editor and painting app.

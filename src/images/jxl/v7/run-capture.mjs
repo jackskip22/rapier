@@ -1,6 +1,7 @@
 import {resultReference, RESULT_REFERENCE, DEVICE_RAN} from './result-reference.mjs';
-import {encodeCaptureBytes, encodeCaptureSteps, captureBandShape, captureBand, captureBandSteps, compileCaptureKernels, image, warmCapture} from './capture-boot.mjs';
-import {CAPTURE_TOOLS, CAPTURE_HELPERS, LEVELS, DEFAULT_EFFORT, captureExact, markCaptureExact} from '../capture-codec.mjs';
+import {encodeCaptureBytes, encodeCaptureSteps, captureBandShape, captureBand, captureBandSteps, compileCaptureKernels, warmCapture,
+  CAPTURE_TOOLS, CAPTURE_HELPERS, LEVELS, DEFAULT_EFFORT, captureExact, markCaptureExact, capturePicture} from '../capture-codec.mjs';
+import {image} from './input-native.mjs';
 import {bandGroupSteps, bandFrameFile, frameBandRows} from '../capture-band-frame.mjs';
 import {GROUPS} from './groups.mjs';
 import {GPU_FROM} from './capture-levels.mjs';
@@ -144,8 +145,10 @@ export async function runCaptureUsing(input, options, hooks, fidelity, coder) {
     const result = await exclusive(async () => {
       check(hooks.signal);
       const answer = helped(coder, await ((typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) ? undefined : coder.answerer?.(coding, width * height, ran)), groups, hooks.signal);
-      return width * height > WHOLE ? captureLarge((y, rows) => data.subarray(y * width * 4, (y + rows) * width * 4), width, height, coding, hooks, coder, answer, data)
-        : answer || hooks.signal ? drive(coder.steps(data, width, height, {...coding, ...answer?.options}), answer, hooks) : coder.whole(data, width, height, coding);
+      if (width * height > WHOLE) return captureLarge((y, rows) => data.subarray(y * width * 4, (y + rows) * width * 4), width, height, coding, hooks, coder, answer, data);
+      const driven = answer || hooks.signal;
+      return capturePicture(coder, data, width, height, driven ? {...coding, ...answer?.options} : coding,
+        driven ? steps => drive(steps, answer, hooks) : null);
     }, hooks.signal);
     if (captureExact(result)) options[CAPTURE_PROTECTION]?.full(result, width, height);
     return finished(result, hooks, facts);
@@ -156,8 +159,9 @@ async function captureLarge(read, width, height, coding, hooks, coder, answer = 
   const rows = bandRows(width), parts = [];
   if (rows >= height) {
     const {signal: _signal, ...options} = coding, data = await read(0, height); check(hooks.signal);
-    return answer || hooks.signal ? drive(coder.steps(data, width, height, {...options, ...answer?.options, signal: hooks.signal}), answer, hooks)
-      : coder.whole(data, width, height, {...options, signal: hooks.signal});
+    const driven = answer || hooks.signal;
+    return capturePicture(coder, data, width, height, driven ? {...options, ...answer?.options, signal: hooks.signal} : {...options, signal: hooks.signal},
+      driven ? steps => drive(steps, answer, hooks) : null);
   }
   const page = (typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) ? null : coder.planBands?.({read, width, height, coding, hooks, coder, answer, whole, rows,
     drive, captureLarge, exactCoder});

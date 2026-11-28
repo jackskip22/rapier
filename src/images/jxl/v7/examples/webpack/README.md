@@ -3,7 +3,7 @@
 A webpack 5 and Rspack plug-in. An image import becomes a JPEG XL file at build. The original stays for browsers that
 do not show JPEG XL.
 
-JPEGs come out about a fifth smaller and restore exactly. rapier-jxl is the encoder inside rapier.website, the free
+Supported JPEGs are recompressed losslessly and restore the original JPEG exactly. rapier-jxl is the encoder inside rapier.website, the free
 Markdown editor and painting app.
 
 ```sh

@@ -4,9 +4,8 @@ The package's browser files run in Tauri 2's system web view as they are: WebVie
 No native codec, no Rust codec crate. Drop or choose a photo to encode, recompress a JPEG and restore the same SHA-256, turn a video
 into an animated JPEG XL, cancel a call, and save with the platform's save dialog. A refusal shows the package's `JXL_` code.
 
-The files under `web/` are 3,358,892 bytes. Brotli 11 module sizes, not install sizes: photos 331,953 B, JPEG 166,269 B,
-animation 495,809 B and its page file 19,719 B. The release binary on Linux x64 is 6,193,864 bytes with the web files inside
-(`tauri build --no-bundle`, Rust 1.97, Tauri 2.x as `Cargo.lock` pins it). Nothing here claims speed.
+Run `npm run assets` to measure the files copied from your package into `web/`.
+The package version, file sizes, hashes, and total are recorded in `web-assets.json`. Measure the app binary after building it for the intended platform.
 
 ## Use
 

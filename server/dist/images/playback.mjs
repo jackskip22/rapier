@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
+import {PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS, PLAYBACK_PIXELS, PICTURE_BASE64_URL_CHARS} from './limits.mjs';
 export function createMediaPlayback(win, inspectGIF) {
   const FRAMES = 3600, LOOP_MS = 3600000;
   const active = new Map(), encode = bytes => bytes.toBase64();
   const bytes = async url => {
     const text = url.slice(url.indexOf(',') + 1), slice = 1 << 20;
     const out = new Uint8Array(text.length / 4 * 3 - (text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0));
-    if (out.length > 16 * 1024 * 1024) throw new Error('Animation exceeds the byte budget');
+    if (out.length > PICTURE_BYTES) throw new Error('Animation exceeds the byte budget');
     for (let i = 0, at = 0; i < text.length; i += slice) {
       if (i) await new Promise(resolve => win.setTimeout(resolve, 0));
       at += out.subarray(at).setFromBase64(text.slice(i, i + slice)).written;
@@ -13,7 +14,7 @@ export function createMediaPlayback(win, inspectGIF) {
     return out;
   };
   function raster(url, canvas, changed = () => {}, dimensions = null) {
-    if (url.length > 24 * 1024 * 1024 || !/^data:image\/(gif|jxl);base64,/i.test(url) || (url.length - url.indexOf(',') - 1) % 4) throw new Error('Unsupported animation source');
+    if (url.length > PICTURE_BASE64_URL_CHARS || !/^data:image\/(gif|jxl);base64,/i.test(url) || (url.length - url.indexOf(',') - 1) % 4) throw new Error('Unsupported animation source');
     const type = url.slice(5, url.indexOf(';')).toLowerCase();
     let data = null, info = null, size = null, decoder = null, timer = 0, closed = false, paused = true, ticket = 0, next = 0, loops = 0, duration = 0, single = false, held = false, due = 0;
     const state = {animated: true, status: 'loading', first: '', frames: 0};
@@ -21,7 +22,7 @@ export function createMediaPlayback(win, inspectGIF) {
       const buffer = await bytes(url); info = type === 'image/gif' ? inspectGIF(buffer) : null;
       size = info || dimensions;
       if (!size || !Number.isInteger(size.width) || !Number.isInteger(size.height) || size.width < 1 || size.height < 1 ||
-          size.width > 16384 || size.height > 16384 || size.width * size.height > 24000000) throw new Error('Animation requires bounded inspected dimensions');
+          size.width > PICTURE_EDGE || size.height > PICTURE_EDGE || size.width * size.height > PLAYBACK_PIXELS) throw new Error('Animation requires bounded inspected dimensions');
       data = buffer; state.animated = info?.animated ?? true; state.frames = info?.frames || 0;
       if (info) state.first = 'data:image/gif;base64,' + encode(info.first);
       if (!closed) changed(state);
@@ -44,7 +45,7 @@ export function createMediaPlayback(win, inspectGIF) {
         }
         if (closed || paused || stamp !== ticket) return;
         if (!decoder) {
-          if ([...active].reduce((sum, [other, pixels]) => sum + (other === canvas ? 0 : pixels), 0) + size.width * size.height > 24000000 || !active.has(canvas) && active.size >= 8) {
+          if ([...active].reduce((sum, [other, pixels]) => sum + (other === canvas ? 0 : pixels), 0) + size.width * size.height > PLAYBACK_PIXELS || !active.has(canvas) && active.size >= 8) {
             state.status = 'playback-budget'; paused = true; changed(state); return;
           }
           active.set(canvas, size.width * size.height);
@@ -93,5 +94,6 @@ export function createMediaPlayback(win, inspectGIF) {
       close() {closed = true; paused = true; closeDecoder(); canvas.width = canvas.height = 0;},
       get paused() {return paused;}};
   }
-  return {raster, inspectGIF, encode, source: '(' + createMediaPlayback.toString() + ')(window, ' + inspectGIF.toString() + ')'};
+  const limitsSource = 'const {PICTURE_BYTES,PICTURE_EDGE,ASSET_PIXELS,PLAYBACK_PIXELS,PICTURE_BASE64_URL_CHARS}=' + JSON.stringify({PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS, PLAYBACK_PIXELS, PICTURE_BASE64_URL_CHARS}) + ';';
+  return {raster, inspectGIF, encode, source: '(()=>{' + limitsSource + 'return (' + createMediaPlayback.toString() + ')(window, ' + inspectGIF.toString() + ');})()'};
 }

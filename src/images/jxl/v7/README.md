@@ -155,7 +155,6 @@ Takes RGBA `{data, width, height}`, `ImageData`, a canvas, an `ImageBitmap`, a `
 - `effort`: 1–9, default 7 (`jpegxl/max` adds effort 10, its default, for a longer search on still pictures). Efforts 4 and up measure the look.
 - `webgpu`: lossy efforts 7–9 (`jpegxl/max` also lossy and 8-bit lossless effort 10) use WebGPU where it can. Phones use the CPU unless `'required'`. `'required'` refuses without a supported device path. `false` turns it off.
 - `progressive: true`: the first bytes show the whole picture, which sharpens as more of the file arrives (about 2 to 5% larger files).
-- `onPreview` receives better files while efforts 6–9 (`6–10` in `jpegxl/max`) search.
 - The host's memory is the limit.
 - A JPEG stays JPEG and restores exactly with `fidelity: 'exact'` or at a quality level when that can be smaller (efforts 6–9, and 10 in `jpegxl/max`). `jpeg: 'pixels'` encodes its pixels.
 - `jpegxl/animation` takes frames, an animated GIF or browser video, `jpegxl/hdr` reads OpenEXR and Radiance files, and `jpegxl/verify` checks a file against its source.

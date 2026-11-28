@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The appendix surface is spec/md-assets.mjs (MIT), re-exported; this file keeps what needs AGPL picture bytes.
-import {inspectJPEGXL, JPEG_XL_PICTURE_LIMITS} from './header.mjs';
+import {inspectJPEGXL} from './header.mjs';
+import {
+  PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS, PLAYBACK_PIXELS, JPEG_XL_ENCODE_PIXELS, KEPT_JPEG_PIXELS,
+  PICTURE_BASE64_URL_CHARS, PICTURE_PERCENT_URL_CHARS, PICTURE_LIMITS, JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS,
+} from './limits.mjs';
 import {inspectRaster, inspectHEIF} from './raster.mjs';
 import {fontCssURL} from '../draw/font.mjs';
 import {
@@ -10,11 +14,15 @@ import {
   escapeImageAlt, serializeAsset, appendAssetText, appendAsset, referenceOccurs, svgDataURL,
 } from '../spec/md-assets.mjs';
 
-export {inspectJPEGXL, inspectRaster, inspectHEIF};
+export {
+  inspectJPEGXL, inspectRaster, inspectHEIF,
+  PICTURE_BYTES, PICTURE_EDGE, ASSET_PIXELS, PLAYBACK_PIXELS, JPEG_XL_ENCODE_PIXELS, KEPT_JPEG_PIXELS,
+  PICTURE_BASE64_URL_CHARS, PICTURE_PERCENT_URL_CHARS, PICTURE_LIMITS, JPEG_XL_LIMITS, JPEG_XL_PICTURE_LIMITS,
+};
 
 export function imageAnimation(url) {
   const info = dataImage(url); if (!info || !['image/gif','image/svg+xml','image/jxl'].includes(info.codec)) return null;
-  const {bytes, codec} = decodeDataImageBytes(url), size = {...(codec === 'image/jxl' ? inspectJPEGXL(bytes) : codec === 'image/gif' ? inspectRaster(bytes) : {}), ...imageDimensions(bytes, codec)};
+  const {bytes, codec} = decodeDataImageBytes(url), size = {...(codec === 'image/jxl' ? inspectJPEGXL(bytes, false, {animatedPixels: PLAYBACK_PIXELS}) : codec === 'image/gif' ? inspectRaster(bytes, {maximumPixels: ASSET_PIXELS}) : {}), ...imageDimensions(bytes, codec)};
   const animated = codec === 'image/svg+xml' ? /<(?:animate\w*|set)\b|@keyframes\b|animation(?:-name)?\s*:/i.test(new TextDecoder().decode(bytes)) : !!size.animated;
   if (!animated) return null;
   const first = size.first ? 'data:image/gif;base64,' + base64(size.first) :
@@ -34,11 +42,11 @@ function bytesOf(value) {
 }
 
 export const UNSTATED_SIZE = Object.freeze({width: 300, height: 150});
-export function validAssetDimensions(width, height, pixels = IMAGE_LIMITS.pixels) {
+export function validAssetDimensions(width, height, pixels = ASSET_PIXELS) {
   return Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0 &&
-    width <= IMAGE_LIMITS.dimension && height <= IMAGE_LIMITS.dimension && width * height <= pixels;
+    width <= PICTURE_EDGE && height <= PICTURE_EDGE && width * height <= pixels;
 }
-export function validCarriedDimensions(width, height) { return validAssetDimensions(width, height, JPEG_XL_PICTURE_LIMITS.pixels); }
+export function validCarriedDimensions(width, height) { return validAssetDimensions(width, height, KEPT_JPEG_PIXELS); }
 export function isJxl(value) {
   const bytes = bytesOf(value);
   if (bytes[0] === 255 && bytes[1] === 10) return true;
@@ -252,7 +260,7 @@ function svgXmlValue(raw, field = 'node_edits') {
   }), field);
 }
 export function svgElements(text, {visit, inspect = true, allowDoctype = false, visitMarkup} = {}) {
-  if (inspect && text.length > IMAGE_LIMITS.bytes) svgNodeFail('node_edits', 'The SVG exceeds the image limit.');
+  if (inspect && text.length > PICTURE_BYTES) svgNodeFail('node_edits', 'The SVG exceeds the image limit.');
   const nodes = [], stack = [], ids = new Set(), idCounts = new Map(), links = [];
   const references = {has: id => { links.push(id); return true; }};
   let at = 0, totalNodes = 0, roots = 0, doctype = false;
@@ -476,7 +484,7 @@ function svgNodeGeometry(node, name, value, field) {
     const multiple = ['text','tspan'].includes(node.local) && ['x','y','dx','dy','rotate'].includes(name);
     if (!multiple && list.length !== 1 || /^(?:r|rx|ry|fr|width|height|markerWidth|markerHeight|textLength)$/.test(name) && list.some(number => number < 0) || name === 'pathLength' && list[0] <= 0)
       svgNodeFail(field, 'Use valid geometry lengths for this element.');
-    if (node.local === 'svg' && node.parentId == null && ['width','height'].includes(name) && (!/^[1-9][0-9]*$/.test(value) || Number(value) > IMAGE_LIMITS.dimension))
+    if (node.local === 'svg' && node.parentId == null && ['width','height'].includes(name) && (!/^[1-9][0-9]*$/.test(value) || Number(value) > PICTURE_EDGE))
       svgNodeFail(field, 'Use a positive whole pixel size within the image limit.');
   }
 }
@@ -596,7 +604,7 @@ export function editSVGNodes(bytes, edits) {
   for (const resource of resourceFields) if (svgCss(resource.value,final.ids) !== resource.value) svgNodeFail(resource.field,'Reference an existing SVG id.');
   if (sanitizeSvgText(next) !== next) svgNodeFail(idFields.at(-1)?.field || patches.at(-1)?.field || 'node_edits','The change must preserve safe SVG references.');
   const result = new TextEncoder().encode(next);
-  if (result.length > IMAGE_LIMITS.bytes) svgNodeFail('node_edits','The SVG exceeds the image limit.');
+  if (result.length > PICTURE_BYTES) svgNodeFail('node_edits','The SVG exceeds the image limit.');
   let normalized;
   try { normalized = svgText(normalizeSVG(result)); } catch (_) { svgNodeFail(patches.at(-1)?.field || 'node_edits','Keep valid image dimensions.'); }
   if (normalized !== next) svgNodeFail(patches.at(-1)?.field || 'node_edits','The change must retain the exact SVG accepted by the image importer.');
@@ -604,17 +612,17 @@ export function editSVGNodes(bytes, edits) {
 }
 export async function hashAsset(value) {
   const bytes = bytesOf(value);
-  if (!bytes.length || bytes.length > IMAGE_LIMITS.bytes) return fail('image_byte_limit');
+  if (!bytes.length || bytes.length > PICTURE_BYTES) return fail('image_byte_limit');
   if (!globalThis.crypto?.subtle) return fail('image_checksum_unavailable');
   const hash = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
   return [...hash].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export function imageDimensions(bytes, codec, prefix = false) {
-  const info = codec === 'image/jxl' ? inspectJPEGXL(bytes, prefix) : codec === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes);
+  const info = codec === 'image/jxl' ? inspectJPEGXL(bytes, prefix, {animatedPixels: PLAYBACK_PIXELS}) : codec === 'image/svg+xml' ? inspectSVG(bytes) : inspectRaster(bytes, {maximumPixels: ASSET_PIXELS});
   if (codec !== 'image/jxl' && info.type !== codec) return fail('image_codec_invalid');
   const width = info.orientation >= 5 ? info.height : info.width, height = info.orientation >= 5 ? info.width : info.height;
-  if (!(codec === 'image/jxl' || codec === 'image/jpeg' ? validCarriedDimensions(width, height) : validAssetDimensions(width, height))) return fail('image_dimensions_invalid');
+  if (!(codec === 'image/jxl' ? validAssetDimensions(width, height, info.animated ? PLAYBACK_PIXELS : KEPT_JPEG_PIXELS) : codec === 'image/jpeg' ? validCarriedDimensions(width, height) : validAssetDimensions(width, height))) return fail('image_dimensions_invalid');
   return {width, height};
 }
 export function imagePlaceholderDimensions(url) {
@@ -706,8 +714,8 @@ function base64(bytes) {
 export {base64 as encodeBase64};
 export async function createAsset(value, dimensions, options = {}) {
   let bytes = bytesOf(value);
-  if (!bytes.length || bytes.length > IMAGE_LIMITS.bytes) return fail('image_byte_limit');
-  const codec = options.codec || (isJxl(bytes) ? 'image/jxl' : inspectRaster(bytes).type);
+  if (!bytes.length || bytes.length > PICTURE_BYTES) return fail('image_byte_limit');
+  const codec = options.codec || (isJxl(bytes) ? 'image/jxl' : inspectRaster(bytes, {maximumPixels: ASSET_PIXELS}).type);
   bytes = codec === 'image/svg+xml' ? normalizeSVG(bytes) : bytes.slice();
   const actual = imageDimensions(bytes, codec);
   if (dimensions && (actual.width !== dimensions.width || actual.height !== dimensions.height)) return fail('image_dimensions_invalid');

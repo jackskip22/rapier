@@ -374,7 +374,6 @@
       "effort",
       "fidelity",
       "maxPixels",
-      "onPreview",
       "onProgress",
       "readAs",
       "signal"
@@ -440,7 +439,6 @@
       "firstRegion",
       "jpeg",
       "maxPixels",
-      "onPreview",
       "onProgress",
       "progressive",
       "readAs",
@@ -1056,9 +1054,6 @@
     ],
     "types/types.d.mts#JPEGOptions": [
       "effort"
-    ],
-    "types/types.d.mts#PreviewOptions": [
-      "onPreview"
     ],
     "types/types.d.mts#SampleDescription": [
       "alphaPremultiplied",

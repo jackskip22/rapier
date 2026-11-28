@@ -37,7 +37,7 @@ export const MA_WINNER_WGSL =  `fn winner(a: Record, b: Record) -> Record {
 }
 `;
 
-const records =  `
+export const MA_RECORDS_WGSL =  `
 struct Record {
   column: u32, bin: u32, loSelected: u32, hiSelected: u32,
   loBits: vec2u, hiBits: vec2u,
@@ -47,7 +47,36 @@ fn invalid() -> Record { return Record(0xfffffffeu, 0u, 0u, 0u, vec2u(0u), vec2u
 fn less64(a: vec2u, b: vec2u) -> bool {
   let ah = bitcast<i32>(a.y); let bh = bitcast<i32>(b.y);
   return ah < bh || (ah == bh && a.x < b.x);
-}` + MA_WINNER_WGSL;
+}
+fn winner(a: Record, b: Record) -> Record {
+  if (a.column == 0xfffffffeu) { return a; }
+  if (b.column == 0xfffffffeu) { return b; }
+  if (a.column == 0xffffffffu) { return b; }
+  if (b.column == 0xffffffffu) { return a; }
+  let ac = add64(a.loBits, a.hiBits); let bc = add64(b.loBits, b.hiBits);
+  if (less64(bc, ac)) { return b; }
+  if (all(ac == bc) && (b.column < a.column || (b.column == a.column && b.bin < a.bin))) { return b; }
+  return a;
+}
+`;
+
+export function packMAPrices(prices, count, alphabet, checkShape) {
+  checkShape(prices?.table instanceof Float64Array && prices.table.length >= count + 1 &&
+    prices.rawPrice instanceof Float64Array && prices.rawPrice.length === alphabet, 'Canonical f64 table/raw arrays are required');
+  const table = prices.table.slice(0, count + 1), raw = prices.rawPrice.slice();
+  const maxQ = (32 - Math.clz32(count)) * 4096 - 1;
+  checkShape(table[0] === 0, 'The canonical entropy table must start at zero');
+  let previousQ = 0;
+  for (let n = 1; n <= count; n++) {
+    const q = table[n] / n;
+    checkShape(Number.isSafeInteger(table[n]) && Number.isInteger(q) && q >= previousQ && q <= maxQ,
+      'Entropy table is outside the monotone exact Q12 integer domain');
+    previousQ = q;
+  }
+  for (const value of raw) checkShape(Number.isSafeInteger(value) && value >= 0 && value <= 30 * 4096 && value % 4096 === 0,
+    'Raw prices are outside the canonical Q12 integer domain');
+  return {packedTable: wordPairs(table), packedRaw: Uint32Array.from(raw)};
+}
 
 const seedShader = workgroup => parameters +  `
 @group(0) @binding(1) var<storage, read> counts: array<u32>;
@@ -122,7 +151,7 @@ fn main(@builtin(global_invocation_id) at: vec3u) {
 }
 `;
 
-const columnShader = workgroup => INT_WGSL + parameters + records +  `
+const columnShader = workgroup => INT_WGSL + parameters + MA_RECORDS_WGSL +  `
 @group(0) @binding(1) var<storage, read> columns: array<vec4u>;
 @group(0) @binding(2) var<storage, read> table: array<vec2u>;
 @group(0) @binding(3) var<storage, read> totals: array<u32>;
@@ -179,7 +208,7 @@ fn main(@builtin(workgroup_id) group: vec3u, @builtin(local_invocation_id) local
 }
 `;
 
-const mergeShader = workgroup => INT_WGSL + parameters + records +  `
+const mergeShader = workgroup => INT_WGSL + parameters + MA_RECORDS_WGSL +  `
 @group(0) @binding(1) var<storage, read> columns: array<Record>;
 @group(0) @binding(2) var<storage, read_write> best: array<Record>;
 var<workgroup> choices: array<Record, ${workgroup}>;
@@ -232,21 +261,7 @@ export async function createMAPricer(device, suppliedLayout, prices, {signal} = 
   let workgroup = 1; while (workgroup * 2 <= available) workgroup *= 2;
   limit(gpuSize((count + 1) * 8) <= storageBytes && gpuSize(alphabet * 4) <= storageBytes && gpuSize(columns.length * 16) <= storageBytes,
     'Canonical table/raw/column buffer exceeds an actual device binding limit');
-  shape(prices?.table instanceof Float64Array && prices.table.length >= count + 1 &&
-    prices.rawPrice instanceof Float64Array && prices.rawPrice.length === alphabet, 'Canonical f64 table/raw arrays are required');
-  const table = prices.table.slice(0, count + 1), raw = prices.rawPrice.slice();
-  const maxQ = (32 - Math.clz32(count)) * 4096 - 1;
-  shape(table[0] === 0, 'The canonical entropy table must start at zero');
-  let previousQ = 0;
-  for (let n = 1; n <= count; n++) {
-    const q = table[n] / n;
-    shape(Number.isSafeInteger(table[n]) && Number.isInteger(q) && q >= previousQ && q <= maxQ,
-      'Entropy table is outside the monotone exact Q12 integer domain');
-    previousQ = q;
-  }
-  for (const value of raw) shape(Number.isSafeInteger(value) && value >= 0 && value <= 30 * 4096 && value % 4096 === 0,
-    'Raw prices are outside the canonical Q12 integer domain');
-  const packedTable = wordPairs(table), packedRaw = Uint32Array.from(raw);
+  const {packedTable, packedRaw} = packMAPrices(prices, count, alphabet, shape);
   const meta = new Uint32Array(Math.max(4, columns.length * 4));
   for (const column of columns) {
     meta.set([column.offset, column.bins, column.priceOffset, column.priceWords], column.column * 4);

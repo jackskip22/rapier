@@ -147,7 +147,7 @@
 		openers.append(qualityOpen, effortOpen);
 		const qualityDrop = switchOf('Quality', 'rapier-jxl-view__drop'), effortDrop = switchOf('Effort', 'rapier-jxl-view__drop');
 		for (const mode of Object.keys(C.QUALITY)) { const button = choose(QUALITY_WORDS[mode]); button.dataset.mode = mode; button.setAttribute('role', 'radio'); qualityDrop.append(button); }
-		for (let level = C.EFFORT.min; level <= C.EFFORT.max; level++) { const button = choose(String(level)); button.dataset.effort = String(level); button.setAttribute('role', 'radio'); effortDrop.append(button); }
+		for (let level = C.STILL_EFFORT.min; level <= C.STILL_EFFORT.max; level++) { const button = choose(String(level)); button.dataset.effort = String(level); button.setAttribute('role', 'radio'); effortDrop.append(button); }
 		qualityDrop.hidden = effortDrop.hidden = true;
 		quick.append(openers, qualityDrop, effortDrop);
 		const effortRow = make('div', 'rapier-jxl-view__effort'), slider = make('input'), seek = make('span', 'rapier-draw-seek'), track = make('span', 'rapier-draw-seek-track'), head = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), level = make('output', 'rapier-jxl-view__effort-level');
@@ -240,8 +240,8 @@
 		if (manual) self.pick.scrollIntoView({block: 'nearest'});
 	}
 	function followPicture(self, row) {
-		if (self !== view || row.removed || row.state !== 'working' || self.following?.run === row.previewRun) return;
-		self.following = {row, run: row.previewRun}; showPicture(self, row);
+		if (self !== view || row.removed || row.state !== 'working' || self.following?.run === row.attempt) return;
+		self.following = {row, run: row.attempt}; showPicture(self, row);
 	}
 	function sourcePicture(row) {
 		if (!row.removed && row.owner === view) void row.picture?.source(row.file);
@@ -338,14 +338,13 @@
 				const row = self.rows.find(each => each.state === 'waiting');
 				if (!row) return;
 				row.state = 'working'; row.progress = 0; row.say = ''; row.stop = new AbortController();
-				const previewRun = row.previewRun = {};
-				const current = () => self === view && row.previewRun === previewRun && row.state === 'working' && !row.removed && !signal.aborted && !row.stop?.signal.aborted;
+				const attempt = row.attempt = {};
+				const current = () => self === view && row.attempt === attempt && row.state === 'working' && !row.removed && !signal.aborted && !row.stop?.signal.aborted;
 				paint(row); overall(self);
 				if (!self.following) followPicture(self, row);
 				try {
 					const key = keyOf(self), {quality, effort, limit, side, location} = self;
 					const made = await C.convert(row.file, {quality, effort, maxBytes: limit, side, location, complete: completeFor(self, row), signal: AbortSignal.any([signal, row.stop.signal]),
-						onPreview: (frame, preview) => { if (!current()) return; followPicture(self, row); return row.picture?.preview(frame, preview); },
 						say: text => { row.say = text; paint(row); follow1(self, row); },
 						progress: value => {
 							if (current() && value > 0 && (!row.progress || !self.following)) followPicture(self, row);
@@ -364,10 +363,10 @@
 					else if (error?.code === 'IMAGE_CANCELLED' && (row.again = (row.again || 0) + 1) <= 3) row.state = 'waiting';
 					else if (C.exhausted(error)) {
 						out = true; row.state = 'stopped'; row.say = 'Not converted: this device ran out of memory';
-						self.help.textContent = 'This device ran out of memory. The files that finished are kept; choose the rest again, a few at a time.';
+						self.help.textContent = 'This device ran out of memory. The files that finished are kept. Choose the rest again, a few at a time.';
 					} else { row.state = 'failed'; row.say = C.refusal(error, row.file); }
 				}
-				row.stop = null; row.previewRun = null;
+				row.stop = null; row.attempt = null;
 				if (row.removed) row.results.clear();
 				paint(row); overall(self); follow1(self, row);
 			}
@@ -377,12 +376,20 @@
 			for (const row of self.rows) if (row.state === 'waiting') { row.picture?.stop(); row.state = 'stopped'; row.say = signal.aborted ? 'Canceled' : 'Not converted'; paint(row); }
 			self.running = false; self.controller = null; overall(self);
 			if (!signal.aborted) document.getElementById('sr-live')?.replaceChildren(document.createTextNode(self.rows.filter(row => row.state === 'done').length + ' files converted'));
-			if (!signal.aborted) try { self.settled?.(self.rows.map(row => ({file: row.file, name: row.name, state: row.state, say: row.say, before: row.result?.before, size: row.result?.size}))); } catch (_) {}
+			if (self === view) try {
+				const settings = settingsOf(self), key = keyOf(self);
+				self.settled?.(self.rows.map(row => {
+					const result = row.state === 'done' && row.result === row.results.get(key) ? row.result : null;
+					return {file: row.file, name: row.name, state: row.state, say: row.say, ...(result ? {before: result.before, size: result.size} : {})};
+				}), {settings, canceled: signal.aborted});
+			} catch (_) {}
 		}
 	}
 
 	const keyOf = (of, quality = of.quality) => [quality, of.effort, of.limit, of.side, of.location].join('|');
+	const settingsOf = of => ({quality: of.quality, effort: of.effort, maxBytes: of.limit, side: of.side, location: of.location});
 	function remake() {
+		try { view.changed?.(settingsOf(view)); } catch (_) {}
 		for (const row of view.rows) {
 			if (row.state === 'working') continue;
 			const hit = row.results.get(keyOf(view));
@@ -529,7 +536,11 @@
 		qualityOpen.addEventListener('click', () => toggle(qualityDrop, qualityOpen));
 		effortOpen.addEventListener('click', () => toggle(effortDrop, effortOpen));
 		qualityDrop.addEventListener('click', event => { const mode = event.target.closest('[data-mode]')?.dataset.mode; if (!mode) return; dropQuick(view); view.modes.find(button => button.dataset.mode === mode)?.click(); });
-		effortDrop.addEventListener('click', event => { const level = event.target.closest('[data-effort]')?.dataset.effort; if (!level) return; dropQuick(view); configure({effort: Number(level)}); });
+		effortDrop.addEventListener('click', event => {
+			const level = Number(event.target.closest('[data-effort]')?.dataset.effort); if (!level) return; dropQuick(view);
+			if (level === C.STILL_EFFORT.slow && level !== view.effort) { const of = view; void slowChosen().then(yes => { if (yes && view === of) configure({effort: level}); }); return; }
+			configure({effort: level});
+		});
 		root.addEventListener('pointerdown', event => { if (!view.quick.root.contains(event.target)) dropQuick(view); });
 		paintQuick(view);
 		view.slider.addEventListener('input', () => seekTo(view));
@@ -686,10 +697,11 @@
 		if (typeof _rapierDoorPathMark === 'function') _rapierDoorPathMark('jxl', false);
 		try { done.wasFocus?.focus({preventScroll: true}); } catch (_) {}
 	}
+	const slowChosen = async () => await rapierConfirm({title: 'Effort 10', message: C.SLOW_WORDS, confirmLabel: 'Use effort 10', plain: true, bare: true}) === true;
 	async function effortChosen(of) {
 		let chosen = C.effortOf(of.slider.value, C.STILL_EFFORT);
 		if (chosen === C.STILL_EFFORT.slow && chosen !== of.effort) {
-			const yes = await rapierConfirm({title: 'Effort 10', message: C.SLOW_WORDS, confirmLabel: 'Use effort 10', plain: true, bare: true}) === true;
+			const yes = await slowChosen();
 			if (view !== of) return;
 			if (!yes) { chosen = C.STILL_EFFORT.slow - 1; of.slider.value = String(chosen); seekTo(of); }
 		}
@@ -745,10 +757,10 @@
 		return was;
 	}
 	const say = text => { if (view) view.help.textContent = text; };
-	const face = Object.freeze({open, close, save, configure, say, settled: fn => { if (view) view.settled = fn; }, add: files => add([...files]), has: file => !!view?.rows.some(row => row.file === file),
+	const face = Object.freeze({open, close, save, configure, say, settled: fn => { if (view) view.settled = fn; }, changed: fn => { if (view) view.changed = fn; }, add: files => add([...files]), has: file => !!view?.rows.some(row => row.file === file),
 		complete: state => completeFor(state, null)(),
 		ownsInputTarget: node => !!view && node instanceof Element && view.root.isConnected && view.root.contains(node) && !node.closest('[inert]'),
-		get state() { return Object.freeze({open: !!view}); }});
+		get state() { return Object.freeze({open: !!view, settings: view ? settingsOf(view) : null}); }});
 	_rapierJxlPart = face;
 	if (_rapierJxlDoor?.born) _rapierBootFactsPublished.then(open, open);
 })();

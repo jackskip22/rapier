@@ -10,7 +10,7 @@ npx rapier-jxl add next --dry-run --json   # what it would change
 npx rapier-jxl add next --json
 ```
 
-It copies `rapier-jxl-next.mjs`, `rapier-jxl-next-proxy.mjs`, `rapier-jxl-next-loader.mjs` and `rapier-jxl-files.mjs`,
+It copies `rapier-jxl-next.mjs`, `rapier-jxl-next-proxy.mjs`, `rapier-jxl-next-loader.mjs`, `rapier-jxl-files.mjs` and `rapier-jxl-accept.mjs`,
 adds `"postbuild": "node rapier-jxl-next.mjs"` to `package.json`, and writes `proxy.js` (Next 16) or `middleware.js`
 (Next 15). No `<Image>` changes. Running it again changes nothing.
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {configuredDecoder, DECODER_SNAPSHOT} from '../shown-picture.mjs';
+import {configuredDecoder, DECODER_SNAPSHOT} from '../decoder-setting.mjs';
 import {captureWith} from './capture-core.mjs';
 import {imageResult} from './result.mjs';
 import {readTexture} from './texture.mjs';

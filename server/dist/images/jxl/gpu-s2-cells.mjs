@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import {SSIMULACRA2_WEIGHTS} from './ssimulacra2.mjs';
 import {s2cLin, S2C_MIX, S2C_TAPS, s2cScales} from './s2-cells.mjs';
-import {cbrtTables, IS_BIAS, BLACK} from './int-spec.mjs';
+import {cbrtTables, IS_BIAS, BLACK} from './int-cbrt.mjs';
 import {INT_WGSL} from './int-ops.mjs';
 import {gpuDestroy, gpuAutoSet, gpuScoped, gpuAlloc, gpuSize, gpuUni, gpuStep, gpuStage} from './gpu-kit.mjs';
 
@@ -170,125 +170,25 @@ const getTableBuf = (device, st) => {
 };
 
 export async function gpuS2Cells(device, {reference, decoded, decodedList = null, decodedBuffer = null, width, height, yOnly = false, held = null}) {
-  if (Array.isArray(decodedList)) {
-    if (!decodedList.length) return [];
-    const limit = Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize);
-    const scales = s2cScales(width, height), stride = Math.ceil(width / 8), rows = Math.ceil(height / 8);
-    if (!scales.length || 9 * stride * rows * 4 > limit) return null;
-    const banded = Math.max(width * height * 4, scales[1] ? 3 * scales[1].w * scales[1].h * 4 : 0) > limit;
-    if (banded) {
-      const seq = [];
-      for (const frame of decodedList) {
-        const one = await gpuS2Cells(device, {reference, decoded: frame, width, height, yOnly, held});
-        if (!one) return null;
-        seq.push(one);
-      }
-      return seq;
-    }
-    const made = [], buf = gpuAlloc(device, made), st = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
-    let pending = null;
-    try {
-      const built = await gpuScoped(device, 's2-cells-batch', async seal => {
-        const pipelines = await gpuS2CellsPipelines(device);
-        const mapped = (bytes, keepList = made) => {
-          const size = gpuSize(bytes.byteLength), b = device.createBuffer({size, usage: st, mappedAtCreation: true});
-          keepList.push(b);
-          new Uint8Array(b.getMappedRange(0, size)).set(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
-          b.unmap();
-          return b;
-        };
-        const T = getTableBuf(device, st);
-        const canHoldRef = held && (!held.device || held.device === device);
-        let refPyramids = canHoldRef && held.width === width && held.height === height ? held.pyramids : null;
-        let refNeedsBuild = false;
-        if (canHoldRef && !refPyramids) {
-          held.release?.();
-          const owned = pending = [];
-          mapped(new Uint8Array(reference.buffer, reference.byteOffset, width * height * 4), owned);
-          for (let k = 1; k < scales.length; k++) owned.push(device.createBuffer({size: gpuSize(3 * scales[k].w * scales[k].h * 4), usage: st}));
-          Object.assign(held, {device, width, height, pyramids: owned, release() { gpuDestroy(owned); held.pyramids = null; }});
-          refPyramids = owned; refNeedsBuild = true;
-        }
-        const localPyramids = refPyramids ?? [mapped(new Uint8Array(reference.buffer, reference.byteOffset, width * height * 4)),
-          ...scales.slice(1).map(({w, h}) => buf(3 * w * h * 4))];
-        const needRefDown = !refPyramids || refNeedsBuild;
-        const frames = decodedList.map(frame => mapped(new Uint8Array(frame.buffer, frame.byteOffset, width * height * 4)));
-        const nextBs = scales.slice(1).map(({w, h}) => buf(3 * w * h * 4));
-        const maxW = scales[0].w, windowRows = Math.min(GSC_BAND, scales[0].h) + 2 * GSC_HALO, plane = windowRows * maxW;
-        const PA = buf(plane * 4), PB = buf(plane * 4), Q = buf(5 * plane * 4);
-        const uniform = params => gpuUni(device, buf, GSC_KEYS.map(k => params[k] ?? 0), null, undefined, 80);
-        const run = (pass, name, threads, bound, u) => gpuStep(device, pass, pipelines[name], [u, ...bound], threads);
-        const downUniforms = scales.map(({w, h}, k) => k ? uniform({w, h, pw: scales[k - 1].w, ph: scales[k - 1].h, mode: k === 1 ? 1 : 0, y0: 0, y1: h, wy: 0, wh: scales[k - 1].h}) : null);
-        const batchOut = [], stageSources = [], stageMeta = [];
-        const encoder = device.createCommandEncoder();
-        const pass = encoder.beginComputePass();
-        for (let m = 0; m < frames.length; m++) {
-          let A = localPyramids[0], B = frames[m], mode = 1;
-          const out = [];
-          for (const [k, {w, h}] of scales.entries()) {
-            if (k) {
-              const nextA = localPyramids[k], nextB = nextBs[k - 1], u = downUniforms[k];
-              if (m === 0 && needRefDown) run(pass, 'down', w * h, [A, nextA, T], u);
-              run(pass, 'down', w * h, [B, nextB, T], u);
-              A = nextA; B = nextB; mode = 0;
-            }
-            const cells = k <= 3, sh = cells ? 3 - k : 0, cstride = cells ? stride : w, n = cells ? stride * rows : w * h, sums = [];
-            const cw = cells ? Math.ceil(w / (1 << sh)) : w;
-            for (let c = yOnly && !k ? 1 : 0; c < (yOnly && !k ? 2 : 3); c++) {
-              const active = [];
-              for (let t = 0; t < 3; t++) for (const p of [1, 4]) {
-                const wi = c * 36 + k * 6 + t + (p === 4 ? 3 : 0);
-                if (SSIMULACRA2_WEIGHTS[wi]) active.push({k: wi, c, t, p});
-              }
-              if (!active.length) continue;
-              const sumsBuffer = buf(9 * n * 4);
-              for (let y0 = 0; y0 < h; y0 += GSC_BAND) {
-                const y1 = Math.min(h, y0 + GSC_BAND), ys = Math.max(0, y0 - GSC_HALO), ye = Math.min(h, y1 + GSC_HALO);
-                const count = ((y1 + (1 << sh) - 1 >> sh) - (y0 >> sh)) * cw;
-                const u = uniform({w, h, y0, y1, ys, ye, c, sh, cstride, n, mode, plane, count, cw, wy: 0, wh: h});
-                run(pass, 'xyb', (ye - ys) * w, [A, B, PA, PB, T], u);
-                run(pass, 'rows', (ye - ys) * w, [PA, PB, Q], u);
-                run(pass, 'cells', count, [PA, PB, Q, sumsBuffer], u);
-              }
-              for (const term of active) {
-                const [first, count] = term.p === 1 ? [term.t * n, n] : [3 * n + term.t * 2 * n, 2 * n];
-                stageSources.push([sumsBuffer, first * 4, count * 4]); stageMeta.push([term, count]);
-              }
-              sums.push(...active);
-            }
-            out.push({w, h, sums});
-          }
-          batchOut.push(out);
-        }
-        pass.end();
-        const [map, take] = gpuStage(device, buf, encoder, stageSources);
-        device.queue.submit([encoder.finish()]);
-        seal();
-        await map();
-        take((mapped, at) => stageMeta.forEach(([term, count], idx) => { term.sum = new Uint32Array(mapped, at[idx], count).slice(); }));
-        return batchOut;
-      }, true, () => null);
-      if (!built) return null;
-      pending = null;
-      return built.map(scalesOut => ({scales: scalesOut, stride, rows}));
-    } catch { return null; }
-    finally {
-      gpuDestroy(made);
-      if (pending) { gpuDestroy(pending); if (held?.pyramids === pending) held.pyramids = null; }
-    }
-  }
-  return singleGpuS2Cells(device, {reference, decoded, decodedBuffer, width, height, yOnly, held});
-}
-
-async function singleGpuS2Cells(device, {reference, decoded, decodedBuffer = null, width, height, yOnly = false, held = null}) {
+  const batch = Array.isArray(decodedList);
+  if (batch && !decodedList.length) return [];
   const limit = Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize);
   const scales = s2cScales(width, height), stride = Math.ceil(width / 8), rows = Math.ceil(height / 8);
   if (!scales.length || 9 * stride * rows * 4 > limit) return null;
-  const banded = Math.max(width * height * 4, decodedBuffer ? decodedBuffer.size : 0, scales[1] ? 3 * scales[1].w * scales[1].h * 4 : 0) > limit;
+  const banded = Math.max(width * height * 4, !batch && decodedBuffer ? decodedBuffer.size : 0, scales[1] ? 3 * scales[1].w * scales[1].h * 4 : 0) > limit;
+  if (batch && banded) {
+    const seq = [];
+    for (const frame of decodedList) {
+      const one = await gpuS2Cells(device, {reference, decoded: frame, width, height, yOnly, held});
+      if (!one) return null;
+      seq.push(one);
+    }
+    return seq;
+  }
   const made = [], buf = gpuAlloc(device, made), st = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
   let pending = null;
   try {
-    const built = await gpuScoped(device, 's2-cells', async seal => {
+    const built = await gpuScoped(device, batch ? 's2-cells-batch' : 's2-cells', async seal => {
       const pipelines = await gpuS2CellsPipelines(device);
       const mapped = (bytes, keepList = made) => {
         const size = gpuSize(bytes.byteLength), b = device.createBuffer({size, usage: st, mappedAtCreation: true});
@@ -309,64 +209,74 @@ async function singleGpuS2Cells(device, {reference, decoded, decodedBuffer = nul
         Object.assign(held, {device, width, height, pyramids: owned, release() { gpuDestroy(owned); held.pyramids = null; }});
         refPyramids = owned; refNeedsBuild = true;
       }
-      let A = refPyramids ? refPyramids[0] : mapped(new Uint8Array(reference.buffer, reference.byteOffset, width * height * 4));
-      let B = decodedBuffer ?? mapped(new Uint8Array(decoded.buffer, decoded.byteOffset, width * height * 4)), mode = 1;
+      const localPyramids = refPyramids ?? [mapped(new Uint8Array(reference.buffer, reference.byteOffset, width * height * 4)),
+        ...scales.slice(1).map(({w, h}) => buf(3 * w * h * 4))];
+      const needRefDown = !refPyramids || refNeedsBuild;
+      const frames = batch ? decodedList.map(frame => mapped(new Uint8Array(frame.buffer, frame.byteOffset, width * height * 4)))
+        : [decodedBuffer ?? mapped(new Uint8Array(decoded.buffer, decoded.byteOffset, width * height * 4))];
+      const nextBs = scales.slice(1).map(({w, h}) => buf(3 * w * h * 4));
       const maxW = scales[0].w, windowRows = Math.min(GSC_BAND, scales[0].h) + 2 * GSC_HALO, plane = windowRows * maxW;
       const PA = buf(plane * 4), PB = buf(plane * 4), Q = buf(5 * plane * 4);
       const uniform = params => gpuUni(device, buf, GSC_KEYS.map(k => params[k] ?? 0), null, undefined, 80);
       const run = (pass, name, threads, bound, u) => gpuStep(device, pass, pipelines[name], [u, ...bound], threads);
-      const out = [], stageSources = [], stageMeta = [];
+      const downUniforms = !banded ? scales.map(({w, h}, k) => k ? uniform({w, h, pw: scales[k - 1].w, ph: scales[k - 1].h, mode: k === 1 ? 1 : 0, y0: 0, y1: h, wy: 0, wh: scales[k - 1].h}) : null) : null;
       const tall = banded ? Math.max(1, Math.floor(limit / (24 * scales[0].w))) : 0;
       const WA = banded ? buf(3 * maxW * windowRows * 4) : null, WB = banded ? buf(3 * maxW * windowRows * 4) : null;
       const SW = banded ? buf(3 * maxW * Math.min(scales[0].h, 2 * tall) * 4) : null, DW = banded ? buf(3 * maxW * tall * 4) : null;
+      const batchOut = [], stageSources = [], stageMeta = [];
       const encoder = device.createCommandEncoder();
       let pass = encoder.beginComputePass();
       const rowsOf = (store, planes, pw, ph, wy, wh, into) => { for (let c = 0; c < planes; c++) encoder.copyBufferToBuffer(store, (c * pw * ph + wy * pw) * 4, into, c * pw * wh * 4, pw * wh * 4); };
       const copies = make => { pass.end(); make(); pass = encoder.beginComputePass(); };
-      for (const [s, {w, h}] of scales.entries()) {
-        if (s) {
-          const p = scales[s - 1], nextA = refPyramids ? refPyramids[s] : buf(3 * w * h * 4), nextB = buf(3 * w * h * 4), planes = mode ? 1 : 3;
-          if (!banded) {
-            const u = uniform({w, h, pw: p.w, ph: p.h, mode, y0: 0, y1: h, wy: 0, wh: p.h});
-            if (!refPyramids || refNeedsBuild) run(pass, 'down', w * h, [A, nextA, T], u);
-            run(pass, 'down', w * h, [B, nextB, T], u);
-          } else for (let y0 = 0; y0 < h; y0 += tall) {
-            const y1 = Math.min(h, y0 + tall), wy = 2 * y0, wh = Math.min(p.h, 2 * y1) - wy, m = w * (y1 - y0);
-            const u = uniform({w, h, pw: p.w, ph: p.h, mode, y0, y1, wy, wh});
-            for (const [from, to] of [[A, nextA], [B, nextB]]) {
-              copies(() => rowsOf(from, planes, p.w, p.h, wy, wh, SW));
-              run(pass, 'down', m, [SW, DW, T], u);
-              copies(() => { for (let c = 0; c < 3; c++) encoder.copyBufferToBuffer(DW, c * m * 4, to, (c * w * h + y0 * w) * 4, m * 4); });
+      for (let m = 0; m < frames.length; m++) {
+        let A = localPyramids[0], B = frames[m], mode = 1;
+        const out = [];
+        for (const [s, {w, h}] of scales.entries()) {
+          if (s) {
+            const p = scales[s - 1], nextA = localPyramids[s], nextB = nextBs[s - 1], planes = mode ? 1 : 3;
+            if (!banded) {
+              const u = downUniforms[s];
+              if (m === 0 && needRefDown) run(pass, 'down', w * h, [A, nextA, T], u);
+              run(pass, 'down', w * h, [B, nextB, T], u);
+            } else for (let y0 = 0; y0 < h; y0 += tall) {
+              const y1 = Math.min(h, y0 + tall), wy = 2 * y0, wh = Math.min(p.h, 2 * y1) - wy, nDown = w * (y1 - y0);
+              const u = uniform({w, h, pw: p.w, ph: p.h, mode, y0, y1, wy, wh});
+              for (const [from, to] of [[A, nextA], [B, nextB]]) {
+                copies(() => rowsOf(from, planes, p.w, p.h, wy, wh, SW));
+                run(pass, 'down', nDown, [SW, DW, T], u);
+                copies(() => { for (let c = 0; c < 3; c++) encoder.copyBufferToBuffer(DW, c * nDown * 4, to, (c * w * h + y0 * w) * 4, nDown * 4); });
+              }
             }
+            A = nextA; B = nextB; mode = 0;
           }
-          A = nextA; B = nextB; mode = 0;
+          const cells = s <= 3, sh = cells ? 3 - s : 0, cstride = cells ? stride : w, n = cells ? stride * rows : w * h, sums = [];
+          const cw = cells ? Math.ceil(w / (1 << sh)) : w;
+          for (let c = yOnly && !s ? 1 : 0; c < (yOnly && !s ? 2 : 3); c++) {
+            const active = [];
+            for (let t = 0; t < 3; t++) for (const p of [1, 4]) {
+              const k = c * 36 + s * 6 + t + (p === 4 ? 3 : 0);
+              if (SSIMULACRA2_WEIGHTS[k]) active.push({k, c, t, p});
+            }
+            if (!active.length) continue;
+            const sumsBuffer = buf(9 * n * 4);
+            for (let y0 = 0; y0 < h; y0 += GSC_BAND) {
+              const y1 = Math.min(h, y0 + GSC_BAND), ys = Math.max(0, y0 - GSC_HALO), ye = Math.min(h, y1 + GSC_HALO);
+              const count = ((y1 + (1 << sh) - 1 >> sh) - (y0 >> sh)) * cw;
+              const u = uniform({w, h, y0, y1, ys, ye, c, sh, cstride, n, mode, plane, count, cw, wy: banded ? ys : 0, wh: banded ? ye - ys : h});
+              if (banded) copies(() => { rowsOf(A, mode ? 1 : 3, w, h, ys, ye - ys, WA); rowsOf(B, mode ? 1 : 3, w, h, ys, ye - ys, WB); });
+              run(pass, 'xyb', (ye - ys) * w, [banded ? WA : A, banded ? WB : B, PA, PB, T], u);
+              run(pass, 'rows', (ye - ys) * w, [PA, PB, Q], u);
+              run(pass, 'cells', count, [PA, PB, Q, sumsBuffer], u);
+            }
+            for (const term of active) {
+              const [first, count] = term.p === 1 ? [term.t * n, n] : [3 * n + term.t * 2 * n, 2 * n];
+              stageSources.push([sumsBuffer, first * 4, count * 4]); stageMeta.push([term, count]);
+            }
+            sums.push(...active);
+          }
+          out.push({w, h, sums});
         }
-        const cells = s <= 3, sh = cells ? 3 - s : 0, cstride = cells ? stride : w, n = cells ? stride * rows : w * h, sums = [];
-        const cw = cells ? Math.ceil(w / (1 << sh)) : w;
-        for (let c = yOnly && !s ? 1 : 0; c < (yOnly && !s ? 2 : 3); c++) {
-          const active = [];
-          for (let t = 0; t < 3; t++) for (const p of [1, 4]) {
-            const k = c * 36 + s * 6 + t + (p === 4 ? 3 : 0);
-            if (SSIMULACRA2_WEIGHTS[k]) active.push({k, c, t, p});
-          }
-          if (!active.length) continue;
-          const sumsBuffer = buf(9 * n * 4);
-          for (let y0 = 0; y0 < h; y0 += GSC_BAND) {
-            const y1 = Math.min(h, y0 + GSC_BAND), ys = Math.max(0, y0 - GSC_HALO), ye = Math.min(h, y1 + GSC_HALO);
-            const count = ((y1 + (1 << sh) - 1 >> sh) - (y0 >> sh)) * cw;
-            const u = uniform({w, h, y0, y1, ys, ye, c, sh, cstride, n, mode, plane, count, cw, wy: banded ? ys : 0, wh: banded ? ye - ys : h});
-            if (banded) copies(() => { rowsOf(A, mode ? 1 : 3, w, h, ys, ye - ys, WA); rowsOf(B, mode ? 1 : 3, w, h, ys, ye - ys, WB); });
-            run(pass, 'xyb', (ye - ys) * w, [banded ? WA : A, banded ? WB : B, PA, PB, T], u);
-            run(pass, 'rows', (ye - ys) * w, [PA, PB, Q], u);
-            run(pass, 'cells', count, [PA, PB, Q, sumsBuffer], u);
-          }
-          for (const term of active) {
-            const [first, count] = term.p === 1 ? [term.t * n, n] : [3 * n + term.t * 2 * n, 2 * n];
-            stageSources.push([sumsBuffer, first * 4, count * 4]); stageMeta.push([term, count]);
-          }
-          sums.push(...active);
-        }
-        out.push({w, h, sums});
+        batchOut.push(out);
       }
       pass.end();
       const [map, take] = gpuStage(device, buf, encoder, stageSources);
@@ -374,11 +284,11 @@ async function singleGpuS2Cells(device, {reference, decoded, decodedBuffer = nul
       seal();
       await map();
       take((mapped, at) => stageMeta.forEach(([term, count], idx) => { term.sum = new Uint32Array(mapped, at[idx], count).slice(); }));
-      return out;
+      return batchOut;
     }, true, () => null);
     if (!built) return null;
     pending = null;
-    return {scales: built, stride, rows};
+    return batch ? built.map(scalesOut => ({scales: scalesOut, stride, rows})) : {scales: built[0], stride, rows};
   } catch { return null; }
   finally {
     gpuDestroy(made);

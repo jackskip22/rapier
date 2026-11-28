@@ -1,10 +1,10 @@
 {
-  "release": "1.2.78",
+  "release": "1.2.81",
   "core": [
     {
       "name": "open",
       "title": "Open Rapier",
-      "description": "Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account. Shows as an editor inside the chat where the host can show one. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page. Otherwise a document map. A browser code goes to show {target:\"pair\", code}. Keep the document private. Share editor_url only when no view shows or the person asks for a browser.",
+      "description": "Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account. Shows as an editor inside the chat where the host can show one. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page. Otherwise a document map. An open confirms the document. Check a current editor report before relying on pixels or selection. A browser code goes to show {target:\"pair\", code}. Keep the document private. Share editor_url only when no view shows or the person asks for a browser.",
       "effect": "create",
       "class": "write",
       "inputSchema": {
@@ -74,7 +74,7 @@
     {
       "name": "read",
       "title": "Read Rapier",
-      "description": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. query finds lines here. search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs.",
+      "description": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. Hosted reads need document from a successful open in this chat. Page tools read their bound page. query finds lines here. search lists Notes and follows the same document rule. Continue next_cursor from the last read with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs.",
       "effect": "read",
       "class": "read",
       "inputSchema": {
@@ -123,7 +123,7 @@
           "search": {
             "type": "string",
             "maxLength": 2048,
-            "description": "Search the Notes store. \"\" lists all."
+            "description": "Search the Notes store. \"\" lists all. Hosted calls also need document from open."
           },
           "as": {
             "type": "string",
@@ -143,7 +143,8 @@
           },
           "cursor": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "The next_cursor from the last read. Continue with cursor alone."
           },
           "limit": {
             "type": "integer",
@@ -947,7 +948,7 @@
     {
       "name": "open",
       "title": "Open Rapier",
-      "description": "Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account. Shows as an editor inside the chat where the host can show one. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page. Otherwise a document map. A browser code goes to show {target:\"pair\", code}. Where the host shows Rapier's view (ChatGPT, Claude), it opens in the chat: stay there, no link. Use fullscreen for writing or painting and return to chat as needed. Keep the private document value for later turns. Offer editor_url only when no view shows or the person asks for a browser.",
+      "description": "Use this when the person wants a document, notes, a list, a table, a diagram they can drag to rearrange or a drawing that they can keep editing by hand, or asks to open or continue one. Use this too when they want to paint in watercolor or learn it: the paint is simulated, so pigment flows, mixes, blooms and dries on textured paper, and they can paint by hand beside your strokes on one sheet. Free, no account. Shows as an editor inside the chat where the host can show one. Not for an answer they will only read. Create {text, filename}, resume {document}, open a Note {document, note}, create one {document, note:\"new\", text, title} (title only there), or import a host file {file}. Put a new document's whole first text in open, drawings and paintings included: one call, no edit (a painting then waits for the person's editor). Returns revision and whole text when it fits a page. Otherwise a document map. An open confirms the document. Check a current editor report before relying on pixels or selection. A browser code goes to show {target:\"pair\", code}. Where the host shows Rapier's view (ChatGPT, Claude), it opens in the chat: stay there, no link. Use fullscreen for writing or painting and return to chat as needed. Keep the private document value for later turns. Offer editor_url only when no view shows or the person asks for a browser.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1038,20 +1039,20 @@
           "resourceUri": "ui://rapier/editor"
         },
         "openai/toolInvocation/invoking": "Opening Rapier",
-        "openai/toolInvocation/invoked": "Rapier is ready"
+        "openai/toolInvocation/invoked": "Document opened"
       }
     },
     {
       "name": "read",
       "title": "Read Rapier",
-      "description": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. query finds lines here. search lists Notes. Continue next_cursor with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs.",
+      "description": "Use this before you change a Rapier document, and when the person asks what it says or what they changed. Read exact text, a heading/fence map (as:\"outline\") or a PNG (as:\"image\") of the page or of the named block, heading or lines. A drawing's block gives it at full detail, even while it is open in Draw. Hosted reads need document from a successful open in this chat. Page tools read their bound page. query finds lines here. search lists Notes and follows the same document rule. Continue next_cursor from the last read with cursor alone. Check human context and omissions before editing. state:true reports pending work and the person’s presence. after_revision with wait_ms waits for their next change. guide returns instructions. guide resource URIs are not document IDs.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "document": {
             "type": "string",
             "maxLength": 256,
-            "description": "From open. Not needed with guide."
+            "description": "Private document value from a successful open in this chat. Omit with guide or a next-page cursor."
           },
           "note": {
             "type": "string",
@@ -1096,7 +1097,7 @@
           "search": {
             "type": "string",
             "maxLength": 2048,
-            "description": "Search the Notes store. \"\" lists all."
+            "description": "Search the Notes store. \"\" lists all. Hosted calls also need document from open."
           },
           "as": {
             "type": "string",
@@ -1116,7 +1117,8 @@
           },
           "cursor": {
             "type": "string",
-            "maxLength": 256
+            "maxLength": 256,
+            "description": "The next_cursor from the last read. Continue with cursor alone."
           },
           "limit": {
             "type": "integer",

@@ -9,11 +9,11 @@ import {plainFrame} from './decode-region.mjs';
 
 const groupRows = f => Math.ceil(f.height / 256);
 const rgbaArray = (format, length) => new (format === 'float32' ? Float32Array : format === 'uint16' ? Uint16Array : Uint8Array)(length);
-const canReference = f => !f.isLast && (f.duration === 0 || f.saveAsReference !== 0);
+const canReference = (f, options) => !f.isLast && !(options?.firstFrame && (f.type === 0 || f.type === 3) && f.duration !== 0) && (f.duration === 0 || f.saveAsReference !== 0);
 
 function bandable(h, f, options) {
-  return !!f && !h.preview && windowable(h, f, options.borrowed && options.withoutNoise) &&
-    (f.isLast || f.duration !== 0) && !canReference(f) && f.blending[0].mode === 0 &&
+  return !!f && !options.components && !h.preview && windowable(h, f, options.borrowed && options.withoutNoise) &&
+    (f.isLast || f.duration !== 0) && !canReference(f, options) && f.blending[0].mode === 0 &&
     !f.x0 && !f.y0 && f.width === h.width && f.height === h.height && directColor(h, options);
 }
 function directColor(h, options) {
@@ -112,7 +112,7 @@ function bandFrame(h, f, planes, data, format) {
 }
 
 function stackable(h, frames, options) {
-  if (h.preview || h.animation || h.extraChannels.length || frames.length < 2 || !directColor(h, options)) return false;
+  if (options.components || h.preview || h.animation || h.extraChannels.length || frames.length < 2 || !directColor(h, options)) return false;
   let y = 0, slot = -1;
   for (const f of frames) {
     if (!windowable(h, f) || f.blending[0].mode !== 0 || slot >= 0 && f.blending[0].source !== slot || f.x0 !== 0 || f.width !== h.width || f.y0 !== y) return false;

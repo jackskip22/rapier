@@ -29,6 +29,7 @@ export interface PolyfillOptions {
    * A value this callback throws or rejects is reported unchanged through the window's reportError. */
   onError?: ((error: unknown, element: Element) => void) | ((error: unknown, element: Element) => PromiseLike<void>) | undefined;
 }
+/** Controls an installed JPEG XL image polyfill. */
 export interface PolyfillController {
   readonly status: 'active' | 'native' | 'probe-blocked' | 'unavailable' | 'closed';
   readonly stats?: {elements: number; resources: number; active: number; queued: number};

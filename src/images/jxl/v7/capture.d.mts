@@ -5,7 +5,6 @@ import type {CodecConfig} from './types.mjs';
 export type {CaptureOptions, CaptureFidelity, MaxError, ImageInput, CapturePixels, Bytes} from './types.mjs';
 /** Input admitted by the lean screenshot encoder. GPU textures belong to capture-complete. */
 export type CaptureInput = Exclude<FullCaptureInput, TextureInput>;
-export type {ImagePreview, PreviewOptions} from './types.mjs';
 /** The screenshot encoder in one file: a page's calls run in its own worker. Calls in a worker, Node and edge hosts run in place. 8-bit sRGB or Display P3 RGBA, exact or within maxError.
  * Efforts 1-5. `jpegxl/capture-complete` adds photographic fidelity, efforts 6-9 and WebGPU. Invalid options refuse JXL_OPTIONS, unsupported efforts and textures JXL_UNSUPPORTED, and unreadable canvas data JXL_PLATFORM.
  * @example const {bytes} = await capture(canvas); // exact */

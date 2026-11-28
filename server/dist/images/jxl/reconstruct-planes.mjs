@@ -7,7 +7,7 @@ export {half, inverseBasis} from './reconstruct-dct8.mjs';
 import {dct8Band, VAR_BASE} from './dct8-band.mjs';
 import {fault} from './fault.mjs';
 
-const BASES = new Map();
+const BASES = /* @__PURE__ */ new Map();
 function basisOf(n) {
   let b = BASES.get(n);
   if (!b) BASES.set(n, b = inverseBasis(n));

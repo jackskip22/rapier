@@ -2,6 +2,7 @@
 import {flatSamples, flatSampleAt, flatSampleX, flatSampleY, FLAT, flatSurround, screenLike} from '../screen.mjs';
 import {screenPhotoRegions, photoCells, photoCellText} from '../screen-photo-regions.mjs';
 import {captureExact} from '../capture-codec.mjs';
+import {MEASURED_EFFORT} from '../effort-level.mjs';
 import {captureBlockHashes} from '../capture-kernels.mjs';
 import {admitSampleFormat} from '../admit-samples.mjs';
 import {lettersFound, findText} from './letters-found.mjs';
@@ -33,7 +34,7 @@ export function pagePicture(data, width, height, settings) {
   const samples = admitSampleFormat(data, settings);
   if (!samples.native8 || samples.iccSpace) return false;
   let smoothText;
-  const smoothPage = () => smoothText ??= !screenPhotoRegions(data, width, height).length && textOnGradient(data, width, height);
+  const smoothPage = () => smoothText ??= textOnGradient(data, width, height) && !screenPhotoRegions(data, width, height).length;
   const clear = s => data[(flatSampleY(height, s) * width + flatSampleX(width, s)) * 4 + 3] === 0;
   let flat = flatSamples(data, width, height);
   if (flat >= SOME_FLAT) for (let s = 0; s < 256; s++) if (clear(s) && flatSampleAt(data, width, height, s) & FLAT) flat--;
@@ -73,12 +74,14 @@ export async function pageFile(run, picture, fidelity, effort, hooks, selected, 
 }
 
 async function pageFileOnce(run, {data, width, height}, fidelity, effort, hooks, selected, webgpu, exact, gradient, exactRects) {
+  let record = null;
   const bytes = await run({data, width, height, colorSpace: 'srgb'}, {fidelity, effort, ...(exactRects.length && {exactRects}), ...(webgpu !== undefined && {webgpu}), ...(hooks.ran && {[DEVICE_RAN]: hooks.ran}), ...(gradient && {[GRADIENT]: true})},
-    {signal: hooks.signal, onProgress: hooks.onProgress, ...(hooks.journal && {journal: hooks.journal})});
+    {signal: hooks.signal, onProgress: hooks.onProgress, onEncoded: found => { record = found; }, ...(hooks.journal && {journal: hooks.journal})});
   if (!captureExact(bytes)) {
-    if (!exact || screenPhotoRegions(data, width, height).length && !photographsRepeat(data, width, height)) return bytes;
+    const lossy = () => { if (effort >= MEASURED_EFFORT && record?.measurements?.length) selected?.({kept: 'lossy', measurements: record.measurements}); return bytes; };
+    if (!exact || screenPhotoRegions(data, width, height).length && !photographsRepeat(data, width, height)) return lossy();
     const own = await exact();
-    if (!(own.length < bytes.length)) return bytes;
+    if (!(own.length < bytes.length)) return lossy();
     selected?.({kept: 'pixels', measurements: []});
     return own;
   }

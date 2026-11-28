@@ -33,7 +33,7 @@
     "platformToolset": "v143",
     "windowsTargetPlatformVersion": "10.0",
     "webview2": "1.0.4258.31",
-    "why": "windows/Rapier.vcxproj's PlatformToolset, WindowsTargetPlatformVersion and pinned WebView2PackageVersion (restored by .github/workflows/rapier.yml before MSBuild)"
+    "why": "windows/Rapier.vcxproj's PlatformToolset, WindowsTargetPlatformVersion and pinned WebView2PackageVersion, also read by windows/open-build/build.sh"
   },
   "setupNodeActionSha": {
     "held": true,

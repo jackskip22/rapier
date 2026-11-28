@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {admitWaterActions, waterPaperById} from './water-data.mjs';
 import {AGENT_PAINT_LIMITS,storedPaintPointCount,PAINT_REPLAY_MAX_BYTES,paintReplayFits} from './paint-limits.mjs';
+import {PICTURE_EDGE} from '../images/limits.mjs';
 export {PAINT_REPLAY_MAX_BYTES,paintReplayFits};
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 const unit = n => finite(n) && n >= 0 && n <= 1;
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const identity = v => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
-const dimensions = v => Array.isArray(v) && v.length === 2 && v.every(n => Number.isSafeInteger(n) && n > 0 && n <= 16384) && v[0] * v[1] <= 12000000;
+const dimensions = v => Array.isArray(v) && v.length === 2 && v.every(n => Number.isSafeInteger(n) && n > 0 && n <= PICTURE_EDGE) && v[0] * v[1] <= 12000000;
 const scale = n => finite(n) && n > 0 && n <= 16;
 const copy = v => structuredClone(v);
 
@@ -71,14 +72,14 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
       if(resumed!=null&&(!object(resumed)||!validRaster(resumed.raster)||!dimensions(resumed.px)||!scale(resumed.scale)||!waterPaperById(resumed.paper)))return null;
       const resume=resumed?{raster:resumed.raster,px:resumed.px.slice(),scale:resumed.scale,paper:resumed.paper}:null;
       if (entry.actor === 'agent') {
-        if (!integer(entry.seed) || entry.seed > 0x7fffffff || !waterPaperById(entry.paper) || !dimensions(entry.px) || !scale(entry.scale) || !Array.isArray(entry.grow) || entry.grow.length !== 4 || !entry.grow.every(n => integer(n) && n <= 16384)) return null;
+        if (!integer(entry.seed) || entry.seed > 0x7fffffff || !waterPaperById(entry.paper) || !dimensions(entry.px) || !scale(entry.scale) || !Array.isArray(entry.grow) || entry.grow.length !== 4 || !entry.grow.every(n => integer(n) && n <= PICTURE_EDGE)) return null;
         const kept = {id: entry.id, actor: 'agent', mode: 'water', actions, seed: entry.seed, paper: entry.paper, px: entry.px.slice(), scale: entry.scale, grow: entry.grow.slice()};
         if(resume)kept.resume=resume;
         if (entry.removed != null) {if (typeof entry.removed !== 'boolean') return null; kept.removed = entry.removed;}
         entries.push(kept); continue;
       }
       const sheet = entry.sheet, crop = entry.crop;
-      if (!object(sheet) || !(identity(sheet.id) || Number.isSafeInteger(sheet.id) && sheet.id > 0) || !dimensions([sheet.width, sheet.height]) || !Array.isArray(sheet.offset) || sheet.offset.length !== 2 || !sheet.offset.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 16384) || !scale(sheet.scale) || !object(sheet.options) || sheet.options.mode !== 'water' || !waterPaperById(sheet.options.paper) || !dataOnly(sheet)) return null;
+      if (!object(sheet) || !(identity(sheet.id) || Number.isSafeInteger(sheet.id) && sheet.id > 0) || !dimensions([sheet.width, sheet.height]) || !Array.isArray(sheet.offset) || sheet.offset.length !== 2 || !sheet.offset.every(n => Number.isSafeInteger(n) && Math.abs(n) <= PICTURE_EDGE) || !scale(sheet.scale) || !object(sheet.options) || sheet.options.mode !== 'water' || !waterPaperById(sheet.options.paper) || !dataOnly(sheet)) return null;
       if (!Array.isArray(crop) || crop.length !== 4 || !crop.every(integer) || crop[2] < crop[0] || crop[3] < crop[1] || !dimensions([crop[2]-crop[0]+1,crop[3]-crop[1]+1])) return null;
       entries.push({id:entry.id,actor:'human',mode:'water',sheet:copy(sheet),actions,crop:crop.slice(),
         ...(resume?{resume}:{}),
@@ -88,7 +89,7 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
     if (entry.actor === 'agent') {
       const strokes = admitPaintStrokeRecords(entry.strokes);
       if (!strokes || !integer(entry.seed) || entry.seed > 0x7fffffff || !dimensions(entry.px) || !scale(entry.scale) ||
-          !Array.isArray(entry.grow) || entry.grow.length !== 4 || !entry.grow.every(n => integer(n) && n <= 16384)) return null;
+          !Array.isArray(entry.grow) || entry.grow.length !== 4 || !entry.grow.every(n => integer(n) && n <= PICTURE_EDGE)) return null;
       const kept = {id: entry.id, actor: 'agent', strokes, seed: entry.seed, px: entry.px.slice(), scale: entry.scale, grow: entry.grow.slice()};
       if (entry.gpu !== undefined) {if (typeof entry.gpu !== 'boolean') return null; kept.gpu = entry.gpu;}
       if (entry.removed != null) {if (typeof entry.removed !== 'boolean') return null; kept.removed = entry.removed;}
@@ -98,7 +99,7 @@ export function admitPaintReplay(raw, validRaster = value => typeof value === 's
     if (entry.actor !== 'human' || !object(entry.sheet) || !Array.isArray(entry.brushes) || !Array.isArray(entry.commands)) return null;
     const sheet = entry.sheet;
     if (!(identity(sheet.id) || Number.isSafeInteger(sheet.id) && sheet.id > 0) || !dimensions([sheet.width, sheet.height])) return null;
-    if (!Array.isArray(sheet.offset) || sheet.offset.length !== 2 || !sheet.offset.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 16384)) return null;
+    if (!Array.isArray(sheet.offset) || sheet.offset.length !== 2 || !sheet.offset.every(n => Number.isSafeInteger(n) && Math.abs(n) <= PICTURE_EDGE)) return null;
     if (sheet.scale != null && !scale(sheet.scale) || sheet.toothOX != null && !finite(sheet.toothOX) || sheet.toothOY != null && !finite(sheet.toothOY)) return null;
     if (sheet.options != null && (!object(sheet.options) || !dataOnly(sheet.options)) || sheet.paper != null && !dataOnly(sheet.paper)) return null;
     const brushIds = new Set();

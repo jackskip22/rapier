@@ -1417,6 +1417,8 @@ function _rapierProFeatures() {
 		['defaultDocumentFont', 'Default document font'],
 		['presets', 'Personal starters, passages and styles'],
 		['video', 'Time-lapse video'], ['palettes', 'Saved palettes'], ['trace', 'Watercolor tracing'],
+		['watercolorColors', 'Every watercolor color'], ['watercolorBrushes', 'Every watercolor brush'],
+		['mixing', 'Watercolor mixing'], ['values', 'Watercolor values'],
 		['sync', 'Rapier Sync (coming soon)'], ['compare.full', 'Full Compare'],
 		['focus', 'Sentence focus'], ['readingTime', 'Reading time'],
 		['typewriter', 'Typewriter scrolling'],
@@ -1426,7 +1428,7 @@ function _rapierProFeatures() {
 function _rapierProFeaturesHere() {
 	const windows = window.RapierPlatform?.environment?.id === 'windows';
 	return _rapierProFeatures().filter(feature => !(windows && ['widget', 'icon'].includes(feature.id)) &&
-		(_rapierPaints() || !['video', 'palettes', 'trace'].includes(feature.id)));
+		(_rapierPaints() || !['video', 'palettes', 'trace', 'watercolorColors', 'watercolorBrushes', 'mixing', 'values'].includes(feature.id)));
 }
 function _rapierProStore() { return window.RapierPlatform?.environment?.id === 'windows' ? 'the Microsoft Store' : 'Google Play'; }
 
@@ -4566,7 +4568,6 @@ function rapierWelcomeMarkdown() {
 		"",
 		"- **[The Rapier app for Android.](https://play.google.com/store/apps/details?id=app.rapier)** No internet permission. Nothing leaves your phone. This is the best way to use Rapier.",
 		"- **[rapier.website](https://rapier.website)** in any browser. On a phone, tap **Add to home screen** and it opens like an app, offline too.",
-		"- **[Rapier for Windows](https://github.com/jackskip22/rapier/raw/main/Rapier.exe)** (beta).",
 		"- **[Rapier for Linux](https://github.com/jackskip22/rapier/raw/main/rapier-linux)** (beta). It follows your Omarchy theme.",
 		"- **With Claude, ChatGPT, Grok Bot, Muse or any agent that speaks MCP.** Add Rapier as a connector and say \"open Rapier\". It puts the page in front of you and works on it with you.",
 		"",
@@ -22901,8 +22902,10 @@ async function _rapierPlatformCloseRequested() {
 	const android = _rapierUiAndroid();
 	const notes = _rapierNotesPart?.state;
 	const capture = notes?.captureToken;
-	const canClose = () => !_rapierDialogRuntime.isolation.length && !document.querySelector('dialog[open]') &&
-		!_rapierDrawShown() && !_rapierNotesPart?.backOver(true) && (!android || (_rapierNotesPart?.state === notes && notes?.captureToken === capture &&
+	let drawLeft = false;
+	const popups = () => _rapierDialogRuntime.isolation.filter(node => node !== _rapierDrawPart?.state?.surface).length;
+	const canClose = () => !(drawLeft ? popups() : _rapierDialogRuntime.isolation.length) && !document.querySelector('dialog[open]') &&
+		(drawLeft || !_rapierDrawShown()) && !_rapierNotesPart?.backOver(true) && (!android || (_rapierNotesPart?.state === notes && notes?.captureToken === capture &&
 		(capture || notes?.open && notes.surface && !notes.surface.hidden) &&
 		!notes.noteOpening && !notes.opening && !notes.returning));
 	if (android) {
@@ -22913,6 +22916,15 @@ async function _rapierPlatformCloseRequested() {
 		}
 	}
 	_rapierLifecycleRuntime.departing = true;
+	if (!android) try {
+		for (let step = 0; step < 8 && (_rapierDialogRuntime.isolation.at(-1) && _rapierDialogRuntime.isolation.at(-1) !== _rapierDrawPart?.state?.surface ||
+				document.querySelector('dialog[open]')) && _rapierDialogsHandleBack(); step++)
+			await new Promise(done => requestAnimationFrame(() => done()));
+		if (_rapierDrawShown() && typeof _rapierDrawPart?.leaveForClose === 'function') {
+			if (!await _rapierDrawPart.leaveForClose()) { _rapierLifecycleRuntime.departing = false; return; }
+			drawLeft = true;
+		}
+	} catch (error) { _rapierLifecycleRuntime.departing = false; showToast('Couldn’t leave.', 'error', null, error); return; }
 	try {
 		const departure = await _rapierKeepForNativeClose('close', canClose);
 		if (!departure.kept) return;
@@ -24459,7 +24471,6 @@ async function rapierCopy(kind, suppliedCapture = null) {
 
 const RAPIER_DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const RAPIER_DOCX_EMBEDDED_IMAGE_WARN_BYTES = 8 * 1024 * 1024;
-const RAPIER_DOCX_IMAGE_MAX_BYTES = 16 * 1024 * 1024;
 const _rapierDocxRuntime = Object.seal({
 	generationPromise: null,
 	actionPromise: null,
@@ -24573,7 +24584,7 @@ async function _rapierBuildDocxHtml(context) {
 			await globalThis.RapierExportFonts.embedDiagramFonts(svg, globalThis.RapierDocxFonts.DOCX_FONTS);
 		}
 		const bytes = new TextEncoder().encode(new XMLSerializer().serializeToString(svg));
-		if (bytes.length > RAPIER_DOCX_IMAGE_MAX_BYTES) throw new Error('SVG picture is too large');
+		if (bytes.length > globalThis.RapierImageAssets.PICTURE_BYTES) throw new Error('SVG picture is too large');
 		const image = document.createElement('img');
 		image.setAttribute('alt', alt);
 		image.setAttribute('src', await _rapierBlobDataUrl(new Blob([bytes], {type: 'image/svg+xml'})));
@@ -24608,10 +24619,9 @@ async function _rapierBuildDocxHtml(context) {
 	portableRoot.querySelectorAll('img').forEach(_rapierDocxReplaceImage);
 	let imageBytes = 0;
 	for (const image of portableRoot.querySelectorAll('img')) {
-		const value = image.getAttribute('src') || '', payload = value.slice(value.indexOf(',') + 1);
-		const bytes = Math.floor(payload.length * .75) - (payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0);
+		const bytes = globalThis.RapierImageAssets.dataImage(image.getAttribute('src') || '')?.byteLength || 0;
 		imageBytes += bytes;
-		if (bytes > RAPIER_DOCX_IMAGE_MAX_BYTES) throw Object.assign(new Error(
+		if (bytes > globalThis.RapierImageAssets.PICTURE_BYTES) throw Object.assign(new Error(
 			'A picture is over 16 MiB. Try HTML or PDF.'), {code: 'DOCX_IMAGE_SIZE_LIMIT'});
 	}
 	stats.embeddedImageBytes = imageBytes;
@@ -28722,7 +28732,7 @@ function _rapierBlobDataUrl(blob) {
 }
 async function _rapierReadImageFileBytes(file) {
     const assets = globalThis.RapierImageAssets;
-    if (!file || !file.size || file.size > assets.IMAGE_LIMITS.bytes) throw new Error('Pictures must be under 16 MiB.');
+    if (!file || !file.size || file.size > assets.PICTURE_BYTES) throw new Error('Pictures must be under 16 MiB.');
     try { return new Uint8Array(await file.arrayBuffer()); }
     catch (error) { throw Object.assign(new Error('Couldn’t read that picture. Save it on this device first.'), {cause: error}); }
 }
@@ -28731,8 +28741,8 @@ async function _rapierReadRasterFile(file) {
     const bytes = await _rapierReadImageFileBytes(file);
     const isJxl = assets.isJxl(bytes);
     let info, converted = false;
-    try { info = isJxl ? assets.inspectJPEGXL(bytes) : assets.inspectRaster(bytes); }
-    catch (error) { if (error?.code !== 'RASTER_SIGNATURE') throw error; info = assets.inspectHEIF(bytes); converted = true; }
+    try { info = isJxl ? assets.inspectJPEGXL(bytes, false, {animatedPixels: assets.PLAYBACK_PIXELS}) : assets.inspectRaster(bytes, {maximumPixels: assets.ASSET_PIXELS}); }
+    catch (error) { if (error?.code !== 'RASTER_SIGNATURE') throw error; info = assets.inspectHEIF(bytes, {maximumPixels: assets.ASSET_PIXELS}); converted = true; }
     const mime = isJxl ? 'image/jxl' : info.type;
     return {bytes, isJxl, info, mime, converted};
 }
@@ -36219,7 +36229,7 @@ function _rapierEmbedFeatureAllowed(name) {
 	return !_rapierEmbed.active || !_rapierEmbed.settings || _rapierEmbed.settings.features.includes(name);
 }
 function _rapierEmbedPictureLimit(bytes) {
-	const limit = _rapierEmbed.active && _rapierEmbed.settings?.limits.pictureBytes || globalThis.RapierImageAssets.IMAGE_LIMITS.bytes;
+	const limit = _rapierEmbed.active && _rapierEmbed.settings?.limits.pictureBytes || globalThis.RapierImageAssets.PICTURE_BYTES;
 	if (bytes > limit) throw globalThis.RapierEmbedContract.refusal('picture_too_large', 'This picture exceeds the host picture limit (' + limit + ' bytes).');
 }
 function _rapierEmbedAssetSource(url) {
@@ -36437,7 +36447,7 @@ function _rapierEmbedConnect(event) {
 				!['draw', 'paint'].includes(name) || _rapierDrawOffered())
 				.filter(name => name !== 'notes' || _rapierNotesPart || _rapierPartAvailable('notes')),
 			accents: RAPIER_ACCENT_PRESETS.map(preset => preset.name),
-			limits: {documentBytes: RapierTextCodec.maxDocumentBytes, pictureBytes: globalThis.RapierImageAssets.IMAGE_LIMITS.bytes},
+			limits: {documentBytes: RapierTextCodec.maxDocumentBytes, pictureBytes: globalThis.RapierImageAssets.PICTURE_BYTES},
 		});
 	} catch (error) { refuse(error.code || 'settings_invalid'); return; }
 	if (_rapierEmbed.settings && JSON.stringify(_rapierEmbed.settings) !== JSON.stringify(settings)) {
@@ -48722,7 +48732,6 @@ function _rapierUiApplyReadOnly() {
 
 function _rapierUiPlatformFacts() {
 	const p = window.RapierPlatform;
-	const installation = p && p.installation.state ? p.installation.state() : null;
 	return {
 		recents: !!(p && p.files.showsRecentFilesUi),
 		upload: !!(p && p.files.showsUploadUi),
@@ -48731,9 +48740,6 @@ function _rapierUiPlatformFacts() {
 			(p && p.environment.allowsWebShareFallback === true &&
 			 typeof navigator !== 'undefined' && typeof navigator.share === 'function')),
 		saveAs: !!(p && p.files.canSaveInPlace && typeof p.files.saveAs === 'function'),
-		windows: !!(p && p.environment.id === 'windows' && p.installation.supported),
-		windowsInstalled: !!(installation && installation.installed === true),
-		windowsUpdate: !!(installation && installation.updateAvailable === true),
 		icon: !!(p && _rapierUiAndroid() &&
 			p.pro && p.pro.supported === true &&
 			typeof p.installation.launcherIcon === 'function' &&
@@ -48951,16 +48957,8 @@ function renderSettings() {
 	refs.uploadSection.hidden = !facts.upload || embedded;
 	refs.docxExportBtn.disabled = _rapierUiDocx.generationBusy;
 
-	refs.windowsSection.hidden = !facts.windows;
 	const storageSection = _rapierStorageSection();
 	if (storageSection) storageSection.hidden = !facts.storage;
-	refs.windowsInstall.hidden = facts.windowsInstalled;
-	refs.windowsUpdate.hidden = !facts.windowsUpdate;
-	refs.windowsUninstall.hidden = !facts.windowsInstalled;
-	refs.windowsDefaults.hidden = !facts.windowsInstalled;
-	for (const button of [refs.windowsInstall, refs.windowsUpdate, refs.windowsUninstall, refs.windowsDefaults]) {
-		button.disabled = _rapierUiPlatform.windowsBusy;
-	}
 
 	refs.proSection.hidden = !facts.androidPro;
 	refs.proControls.dataset.open = _rapierUi.proOpen ? 'true' : 'false';
@@ -50694,7 +50692,7 @@ function _rapierUiCircleGrowth(panel, opening, circle_) {
 }
 
 
-const _rapierUiPlatform = { windowsBusy: false, recents: [] };
+const _rapierUiPlatform = { recents: [] };
 
 
 async function _rapierUiBeginOpenDocument(event) {
@@ -50730,45 +50728,6 @@ function _rapierUiBeginUploadDocument() {
 		showToast('Couldn’t upload that file.', 'error');
 	});
 }
-
-async function _rapierUiInstallWindows() {
-	const platform = window.RapierPlatform;
-	if (!platform || !platform.installation.install) return;
-	const updating = _rapierUiPlatformFacts().windowsUpdate;
-	_rapierUiPlatform.windowsBusy = true;
-	renderSettings();
-	try {
-		await platform.installation.install();
-		showToast(updating ? 'Rapier updated' : 'Rapier installed', 'success');
-	} catch (_) {
-		showToast(updating ? 'Couldn’t update Rapier.' : 'Couldn’t install Rapier.', 'error');
-	} finally {
-		_rapierUiPlatform.windowsBusy = false;
-		renderSettings();
-	}
-}
-
-async function _rapierUiUninstallWindows() {
-	const platform = window.RapierPlatform;
-	if (!platform || !platform.installation.uninstall) return;
-	const transitionGuard = await _rapierConfirmDirtyTransition({
-		title: 'uninstall Rapier',
-		message: 'Save changes before uninstalling Rapier?',
-		discardLabel: 'uninstall without saving',
-	});
-	if (!transitionGuard || !_rapierMutationStampIsCurrent(transitionGuard)) return;
-	_rapierUiPlatform.windowsBusy = true;
-	renderSettings();
-	try { await platform.installation.uninstall(); }
-	catch (_) { showToast('Couldn’t uninstall Rapier.', 'error'); }
-	finally {
-		_rapierUiPlatform.windowsBusy = false;
-		renderSettings();
-	}
-}
-
-
-
 
 function _rapierUiSwitchView(control, view) {
 	if (control.closest('.theme-switcher') && control.hasAttribute('data-active')) view = view === 'source' ? 'wysiwyg' : 'source';
@@ -50975,15 +50934,6 @@ const _RAPIER_UI_ACTIONS = Object.freeze({
 	'close-copy': () => closeDialog(_rapierUi.refs.copyOverlay),
 	'close-share': () => closeDialog(_rapierUi.refs.shareOverlay),
 
-	'windows-install': () => _rapierUiInstallWindows(),
-	'windows-uninstall': () => _rapierUiUninstallWindows(),
-	'windows-defaults': () => {
-		const platform = window.RapierPlatform;
-		if (platform && platform.installation.openDefaultApps) {
-			Promise.resolve(platform.installation.openDefaultApps()).catch(() => {});
-		}
-	},
-
 	'pro-open': () => _rapierUiOpenProSheet({ feature: '' }),
 	'pro-buy': () => _rapierUiPro.purchase(),
 	'pro-restore': () => _rapierUiPro.restore(),
@@ -51080,9 +51030,6 @@ const _RAPIER_UI_REFS = Object.freeze({
 	savePair: 'settings-save-pair', saveBtn: 'settings-save-btn', saveAsBtn: 'settings-save-as-btn',
 	shareBtn: 'settings-share-btn', uploadSection: 'settings-upload-section',
 	docxExportBtn: 'settings-export-docx-btn',
-	windowsSection: 'settings-windows-section', windowsInstall: 'settings-windows-install',
-	windowsUpdate: 'settings-windows-update', windowsUninstall: 'settings-windows-uninstall',
-	windowsDefaults: 'settings-windows-defaults',
 	codeControls: 'settings-code-controls',
 	iconSwatches: 'icon-swatches',
 	focusSwitch: 'switch-focus', typewriterSwitch: 'switch-typewriter', proSection: 'settings-pro-section', proTitle: 'settings-pro-title', proControls: 'settings-pro-controls',
@@ -51384,7 +51331,6 @@ function _rapierUiMount() {
 		_rapierUiPro.apply(_rapierUiPro.read());
 		renderSettings();
 	});
-	window.addEventListener('rapier:installation-changed', () => renderSettings());
 	window.addEventListener('rapier:launcher-icon-changed', event => _rapierUiPro.applyIconState(event.detail));
 	window.addEventListener('rapier:pro-changed', event => _rapierUiPro.apply(event.detail));
 	window.rapierProOpen = feature => _rapierUiOpenProSheet({ feature: String(feature || ''), source: 'native' });

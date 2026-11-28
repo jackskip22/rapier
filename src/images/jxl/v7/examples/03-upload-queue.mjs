@@ -19,8 +19,8 @@ export async function run({dist, observe}) {
     const progress = [];
     const first = queue.encode(input, {effort: 1, fidelity: {quality: 90}, onProgress: n => progress.push(n)});
     const controller = new AbortController();
-    const cancelled = queue.encode(input, {effort: 3, signal: controller.signal});
-    const cancellation = assert.rejects(cancelled, {name: 'AbortError'});
+    const canceled = queue.encode(input, {effort: 3, signal: controller.signal});
+    const cancellation = assert.rejects(canceled, {name: 'AbortError'});
     controller.abort();
     const last = queue.encode(input, {effort: 3, fidelity: {quality: 90}});
     const [a, b] = await Promise.all([first, last]); await cancellation;
@@ -31,6 +31,6 @@ export async function run({dist, observe}) {
     assert.ok(progress.every((n, i) => i === 0 || n >= progress[i - 1]));
     await observe?.(input, a, 'effort-1');
     await observe?.(input, b, 'effort-3');
-    return {firstBytes: a.bytes.length, lastBytes: b.bytes.length, cancelledQueuedJob: true, retainedBytes: 0};
+    return {firstBytes: a.bytes.length, lastBytes: b.bytes.length, canceledQueuedJob: true, retainedBytes: 0};
   } finally { await upload.close(); upload.configure(); }
 }

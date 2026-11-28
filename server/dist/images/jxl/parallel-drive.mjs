@@ -213,6 +213,7 @@ function driver(owner, gpu = null, dispatch) {
     },
     placed(image) { gates.get(image)?.resolve(); },
     async run(task) {
+      if (task.kind === 'm') return task.u ? owner.unlease(task.u) : ended ? [] : (owner.warm(), await owner.loaded(), owner.lease());
       if (task.kind === 'count') return this.count(task);
       if (task.kind === 'vardct') await learnedWait.get(task.image);
       const key = taskKey(task, idOf);
@@ -243,7 +244,7 @@ export function parallelJob(steps, {signal, gpu, pool = null, kept = null, stage
     finally {
       pool?.release(!ended);
       const stays = kept && !kept.once, retired = stays ? pool.retired() : pool?.close();
-      try { if (retired) await (ended ? retired : retired.catch(() => {})); }
+      try { if (stays && pool.dropped) await pool.dropped; if (retired) await (ended ? retired : retired.catch(() => {})); }
       finally {
         if (kept) kept.busy = false;
         if (stays) pool.idle();

@@ -3,7 +3,7 @@ import {traced, tracing} from './stage-trace.mjs';
 import {fault} from './fault.mjs';
 import {GC_DS} from './gpu-arithmetic.mjs';
 import {XFMA, gpuS2Prepare, gpuS2Record, gpuS2Decode, gpuS2Pipelines} from './gpu-s2.mjs';
-import {gpuMap, gpuSplits as split, gpuDestroy, gpuModule, gpuComputeSet, gpuScoped, gpuWrite, gpuAlloc, gpuStep, gpuRead, gpuHeld} from './gpu-kit.mjs';
+import {gpuFloat as f, gpuMap, gpuSplits as split, gpuDestroy, gpuModule, gpuComputeSet, gpuScoped, gpuWrite, gpuAlloc, gpuStep, gpuRead, gpuHeld} from './gpu-kit.mjs';
 import {TRANSFORMS, basis, basisT, llfDivisors} from './vardct-bases.mjs';
 import {scaledBasis, restorePlanes} from './vardct-inverse.mjs';
 const prefSeen = new WeakMap();
@@ -13,7 +13,6 @@ const SPECIAL = id => id === 1 || id === 2 || id === 3 || id >= 12 && id <= 17;
 const BW = 20;
 const P_COEF = [-5.135152395e-4, 5.287254571e-3, 3.903842876e-1, 1.474205315, 7.352629620e-1];
 const Q_COEF = [1.004519624e-2, 3.036675394e-1, 1.340816930, 9.258482155e-1, 2.424867759e-2];
-const f = v => { const s = Math.fround(v).toString(); return /[.eE]/.test(s) ? s : s + '.0'; };
 
 const EPF_WINDOW = [[0, -2], [-1, -1], [0, -1], [1, -1], [-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0], [-1, 1], [0, 1], [1, 1], [0, 2]];
 

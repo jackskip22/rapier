@@ -4,6 +4,7 @@ import { RAPIER_PAINT_BRUSHES, paintBrushById } from './brushes.mjs';
 import {oilTimedArgs} from './oil-material.mjs';
 import {admitPaintReplay, paintReplayFits, PAINT_REPLAY_MAX_BYTES} from './paint-history.mjs';
 import {AGENT_PAINT_LIMITS, storedPaintPointCount} from './paint-limits.mjs';
+import {PICTURE_EDGE} from '../images/limits.mjs';
 export {PAINT_REPLAY_MAX_BYTES, paintReplayFits};
 export {AGENT_PAINT_LIMITS};
 import {canonicalJSON} from '../kit/ledger/data.mjs';
@@ -11,6 +12,7 @@ import {WaterSurface, waterReady} from './water.mjs';
 import {sha256} from '../kit/ledger/hash.mjs';
 import {sha256Yielding, sha256TextOffThread} from '../notes/integrity.mjs';
 import {admitWaterActions, admitWaterPigment, waterPaperById, waterRadius, WATER_BRUSHES, WATER_STRENGTHS, WATER_PIGMENTS, WATER_PAPERS, WATER_TOOLS, WATER_CONTROLS, WATER_ACTION_MAX_POINTS, WATER_SOURCE_MAX_BYTES, WATER_TIP_MAX_PIXELS} from './water-data.mjs';
+import {watercolorOrdered} from './watercolor-order.mjs';
 import {encode as encodeJXL} from '../images/jxl/v7/still.mjs';
 import {GpuPaintSurface, paintGpuFits} from './paint-gpu.mjs';
 import './paint-gpu-flat.mjs';
@@ -45,7 +47,7 @@ export {configurePaintRasterDecoder, decodePaintRaster, decodeNativePaintJXL, va
 
 // The paint tool's own numbers (draw/paint-tool.js: RAPIER_PAINT_GRAIN, RAPIER_PAINT_WET, the Dip's range,
 export const AGENT_PAINT_GRAIN = 3;
-const PAINT_SHEET_LIMITS = Object.freeze({pixels: 12000000, side: 16384});
+const PAINT_SHEET_LIMITS = Object.freeze({pixels: 12000000, side: PICTURE_EDGE});
 export const AGENT_PAINT_WET = Object.freeze({dryingTime: 1600, cell: 3, maxBytes: 64000000, film: true, filmGain: 0.55,
 	flow: 0.55, pin: 1.2, bleed: 0.6, grain: 1, granulation: 0.2, tooth: 0.85, edgeDarkening: 1});
 const HAND_PACE = 200;
@@ -120,7 +122,7 @@ export function waterPaintingIsLive(shape, session = waterSession()) {
 export function forgetWaterSession(session) { waterPublications.delete(session); waterHeld.delete(session); }
 
 export function agentPaintBrushRegistry() {
-	return {modes: ['paint', 'water'], limits: {paint: {...AGENT_PAINT_LIMITS}, water: {pointsPerAction: WATER_ACTION_MAX_POINTS, retainedSourceBytes: WATER_SOURCE_MAX_BYTES, tipPixels: WATER_TIP_MAX_PIXELS, sheetPixels: PAINT_SHEET_LIMITS.pixels, sheetSidePixels: PAINT_SHEET_LIMITS.side, newLayerPixelsPerUnit: AGENT_PAINT_GRAIN}}, controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.filter(entry => entry.selectable !== false).map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id), pigment: (entry.myb.settings.paint_mode?.base_value ?? 1) > 0})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: WATER_PIGMENTS.map(({id,name,colour})=>({id,name,colour})), strengths: WATER_STRENGTHS.map(({id,name,load,water})=>({id,name,load,water})), actions: WATER_AGENT_ACTIONS, figure: {kind: 'paint', mode: 'water', seed: 1, paper: 'cold-press', actions: [WATER_AGENT_ACTIONS.stroke]}};
+	return {modes: ['paint', 'water'], limits: {paint: {...AGENT_PAINT_LIMITS}, water: {pointsPerAction: WATER_ACTION_MAX_POINTS, retainedSourceBytes: WATER_SOURCE_MAX_BYTES, tipPixels: WATER_TIP_MAX_PIXELS, sheetPixels: PAINT_SHEET_LIMITS.pixels, sheetSidePixels: PAINT_SHEET_LIMITS.side, newLayerPixelsPerUnit: AGENT_PAINT_GRAIN}}, controls: {...PAINT_BRUSH_CONTROLS, modes:{water:WATER_CONTROLS}}, brushes: [...RAPIER_PAINT_BRUSHES.filter(entry => entry.selectable !== false).map(entry => ({id: entry.id, name: entry.name, mode: 'paint', kind: entry.myb.settings.rapier_op?.base_value ? 'material' : 'brush', size: paintSizeDefault(entry.id), pigment: (entry.myb.settings.paint_mode?.base_value ?? 1) > 0})), ...WATER_BRUSHES.map(({id,name,size,water,load,description}) => ({id,name,size,water,load,description,mode:'water'}))], tools: WATER_TOOLS, papers: WATER_PAPERS.map(({id,name})=>({id,name})), pigments: watercolorOrdered(WATER_PIGMENTS).map(({id,name,colour})=>({id,name,colour})), strengths: WATER_STRENGTHS.map(({id,name,load,water})=>({id,name,load,water})), actions: WATER_AGENT_ACTIONS, figure: {kind: 'paint', mode: 'water', seed: 1, paper: 'cold-press', actions: [WATER_AGENT_ACTIONS.stroke]}};
 }
 
 const WATER_AGENT_ACTIONS = Object.freeze({
@@ -793,7 +795,7 @@ export async function observeAgentPainting(shape,{settle=false,signal}={}) {
 	cancelled(signal);
 	if (shape?.paint?.mode !== 'water') return null;
 	shape = {...shape,geom:shape.geom && copy(shape.geom),paint:{...shape.paint,px:Array.isArray(shape.paint.px) ? shape.paint.px.slice() : shape.paint.px}};
-	const replay = admitPaintReplay(shape.paint.replay), sheet = replay && replayPaintSheet(replay), map = layerMap(shape,16384);
+	const replay = admitPaintReplay(shape.paint.replay), sheet = replay && replayPaintSheet(replay), map = layerMap(shape,PAINT_SHEET_LIMITS.side);
 	if (!replay || replay.mode !== 'water' || !sheet || !map || sheet.px.some((n,i) => n !== shape.paint.px[i]) || !sameScale(sheet.scale,shape.paint.scale)) return settle ? {unavailable:'water_replay_unavailable'} : {raster:shape.raster,state:'stored',projection:'stored'};
 	let result;
 	try {
@@ -816,7 +818,7 @@ export async function observeAgentPainting(shape,{settle=false,signal}={}) {
 }
 
 export async function sampleAgentPainting(shape,point,options={}) {
-	const map=layerMap(shape,16384);
+	const map=layerMap(shape,PAINT_SHEET_LIMITS.side);
 	if(!map || !Array.isArray(point) || point.length!==2 || !point.every(finite))return null;
 	cancelled(options.signal);
 	const pixels=await decodePaintRaster(shape.raster,options);
@@ -846,7 +848,7 @@ async function paintAgentWater(raw,seed,target,options) {
 	const paper=options.paper || target?.paint?.paper || 'cold-press';
 	const session=options.waterSession || waterSession();
 	if(!actions || !actions.length || !waterPaperById(paper) || !Number.isInteger(seed) || seed<0 || seed>0x7fffffff)return null;
-	const map=target&&layerMap(target,16384);
+	const map=target&&layerMap(target,PAINT_SHEET_LIMITS.side);
 	if(target&&!map)return null;
 	if(target && options.paper && options.paper!==target.paint?.paper) actions=[{kind:'paper',paper},...actions];
 	if(map)actions=waterActionMap(actions,map.local);

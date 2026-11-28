@@ -75,13 +75,12 @@ function formatFidelity(kind, options) {
     ? {fidelity: {maxError: bound}, kept: 'lossy'} : {fidelity: 'exact'};
 }
 
-export {configureDecoder} from '../shown-picture.mjs';
+export {setDecoder as configureDecoder} from '../decoder-setting.mjs';
 
 import {serveRole, ownFile, roleName} from './module-roles.mjs';
 import {moduleRuntime} from './module-runtime.mjs';
 import {requireWebGPU, CONFIGURED_WEBGPU} from './webgpu.mjs';
 import {install, workerPort} from './worker-runtime.mjs';
-import {previewHub} from './preview-relay.mjs';
 import * as pool from '../helper-pool.mjs';
 import {serveHelper} from '../helper-runtime.mjs';
 import {WORKER_PROTOCOL} from './protocol.mjs';
@@ -89,7 +88,7 @@ import {serveBlockSplit} from '../block-split.mjs';
 import {serveParallel} from '../parallel-serve.mjs';
 const NAME = 'rapier-jxl/format', raw = {format, encode, prepare};
 serveRole(NAME, {
-  worker: () => install(workerPort(), [], moduleRuntime(raw, {name: NAME, gpu: requireWebGPU, helpers: async () => pool, helper: ownFile(roleName(NAME, 'helper'))}), previewHub),
+  worker: () => install(workerPort(), [], moduleRuntime(raw, {name: NAME, gpu: requireWebGPU, helpers: async () => pool, helper: ownFile(roleName(NAME, 'helper'))})),
   helper: () => {
     const runtime = moduleRuntime(raw, {name: NAME, gpu: requireWebGPU});
     serveHelper(() => ({name: NAME, protocol: WORKER_PROTOCOL, run: (...call) => runtime.run(...call), serveSplit: serveBlockSplit, serveParallel}));

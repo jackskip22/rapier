@@ -11,14 +11,12 @@ type Effort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 export interface StillOptions extends CallOptions {
   /** 1 to 100. Default 80. */
   quality?: number;
-  /** 1 to 3. Default 3. */
-  effort?: 1 | 2 | 3;
+  /** 1 to 9. Default 3. */
+  effort?: Effort;
   /** The input's type. Default: read from its first bytes. */
   mime?: string;
 }
-export interface AnimationOptions extends Omit<StillOptions, 'effort'> {
-  /** 1 to 9. Default 3. */
-  effort?: Effort;
+export interface AnimationOptions extends StillOptions {
   /** 0 to 1, as frames are read and encoded. */
   onProgress?: (fraction: number) => void;
 }

@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: MIT
 import {complete} from './bits.mjs';
-import {admitPixels, fault} from './admit.mjs';
+import {admitPixels, fault, checkInteger as whole} from './admit.mjs';
 import {admitAnimation} from './animation-frames.mjs';
 
 const MAX_POSITIONS = 262144, MAX_CANDIDATES = 65536;
 const pixel = (data, at) => data[at] + data[at + 1] * 256 + data[at + 2] * 65536 + data[at + 3] * 16777216;
-const whole = (value, min, max, name) => {
-  if (!Number.isInteger(value) || value < min || value > max) throw fault('JXL_INPUT', name + ': integer ' + min + '-' + max);
-  return value;
-};
 
 export function atlasSearchOptions(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw fault('JXL_INPUT', 'options: object');

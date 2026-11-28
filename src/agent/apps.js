@@ -404,7 +404,7 @@
       if (!event.isTrusted || firstTouchRefused || firstTouchAsking || closed || pairedId || context.displayMode === 'fullscreen') return;
       if (event.target.closest?.('.rapier-jxl-view, .rapier-app-fullscreen, .rapier-app-pop')) return;
       firstTouchAsking = true;
-      void requestDisplayMode('fullscreen').then(granted => { if (!granted) firstTouchRefused = true; })
+      void requestDisplayMode('fullscreen').then(granted => { if (granted === false) firstTouchRefused = true; })
         .finally(() => { firstTouchAsking = false; });
     }, {capture: true, signal: listeners.signal});
     const quiet = document.createElement('style');
@@ -521,15 +521,15 @@
     }
   }
 
-  let displayModeIntent = 0;
+  let displayModeIntent = {};
   async function requestDisplayMode(mode) {
     if (!['inline', 'fullscreen'].includes(mode)) return false;
-    const intent = ++displayModeIntent;
+    const intent = displayModeIntent = {};
     let result = await request('ui/request-display-mode', {mode}).catch(() => null);
-    if (intent !== displayModeIntent) return result?.mode === mode;
-    if (result?.mode !== mode && typeof window.openai?.requestDisplayMode === 'function')
+    if (intent === displayModeIntent && !intent.hostMode && result?.mode !== mode && typeof window.openai?.requestDisplayMode === 'function')
       result = await window.openai.requestDisplayMode({mode}).catch(() => null) || result;
-    if (intent !== displayModeIntent) return result?.mode === mode;
+    if (intent !== displayModeIntent) return;
+    if (intent.hostMode) return intent.hostMode === mode ? true : undefined;
     if (['inline', 'fullscreen'].includes(result?.mode)) updateContext({displayMode: result.mode});
     if (result?.mode !== mode && mode === 'fullscreen') host.notify('Fullscreen isn\u2019t available here.', 'info');
     return result?.mode === mode;
@@ -2160,14 +2160,29 @@
 
   async function saveFile(blob, filename) {
     if (closed || !(blob instanceof Blob) || typeof filename !== 'string' || !filename) return false;
-    if (object(capabilities.downloadFile)) return exportFile(blob, filename);
-    if (!canUpload()) return false;
+    const destination = object(capabilities.downloadFile) ? 'download' : canUpload() ? 'chatgpt_file' : 'unavailable';
+    if (!converterArtifacts.has(blob)) converterArtifacts.set(blob, ++converterArtifact);
+    const saving = converterSaving = {artifact: converterArtifacts.get(blob), operation: converterRun, stage: 'made', current_results: 'unverified',
+      status: 'pending', destination, name: filename, bytes: blob.size, mimeType: blob.type || 'application/octet-stream'};
+    const report = status => {
+      if (closed || converterSaving !== saving) return;
+      converterSave = {...saving, status, stage: status === 'confirmed' ? 'saved' : 'made'};
+      if (converterState) tellConverter(converterState);
+    };
+    report('pending');
     try {
+      if (destination === 'download') {
+        const sent = await exportFile(blob, filename);
+        report(sent ? 'dispatched' : 'refused');
+        return sent;
+      }
+      if (destination === 'unavailable') { report('refused'); return false; }
       const result = await window.openai.uploadFile(new File([blob], filename, {type: blob.type || 'application/octet-stream'}), {library: true});
-      if (typeof result?.fileId !== 'string' || !result.fileId) return false;
+      if (typeof result?.fileId !== 'string' || !result.fileId) { report('unconfirmed'); return false; }
+      report('confirmed');
       if (!closed) host.notify('Saved ' + filename + ' to ChatGPT Files.', 'info');
       return true;
-    } catch (_) { return false; }
+    } catch (_) { report('unconfirmed'); return false; }
   }
 
   function fileOriginAllowed(url, allowed, fromHost) {
@@ -2259,41 +2274,111 @@
   const CHAT_PICTURE_BYTES = 256 * 1024 * 1024, CHAT_PICTURE_STALL_MS = 20000, CHAT_PICTURE_MS = 300000;
   const PICTURE_TYPES = Object.freeze({'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/avif': '.avif', 'image/jxl': '.jxl', 'image/heic': '.heic'});
   const chatPictures = new Map(), chatLinks = new Map();
-  let converterRun = 0;
+  let converterRun = 0, converterState = null, converterArtifact = 0, converterSaving = null, converterSave = {status: 'not_requested'};
+  const converterArtifacts = new WeakMap();
   function rememberChatLinks(args) {
     for (const file of Array.isArray(args?.files) ? args.files : [])
       if (object(file) && typeof file.file_id === 'string' && file.file_id && typeof file.download_url === 'string' && file.download_url) chatLinks.set(file.file_id, file.download_url);
   }
-  function tellAssistant(text) {
-    if (initialized && modelAvailable && !pairedId) void request('ui/update-model-context', {content: [{type: 'text', text, _meta: {'openai/title': 'Rapier converter'}}]}, 5000).catch(() => {});
+  const converterReports = {context: {pending: null, running: false}, widget: {pending: null, running: false}};
+  function deliverConverter(slot, value, send) {
+    slot.pending = value;
+    if (slot.running) return;
+    slot.running = true;
+    void (async () => {
+      while (slot.pending && !closed) {
+        const next = slot.pending; slot.pending = null;
+        try { await send(next); } catch (_) {}
+      }
+    })().finally(() => {
+      slot.running = false;
+      if (slot.pending && !closed) deliverConverter(slot, slot.pending, send);
+    });
+  }
+  function tellAssistant(text, receipt) {
+    const value = {text, converter: structuredClone(receipt)};
+    if (initialized && modelAvailable && !pairedId) deliverConverter(converterReports.context, value, value => request('ui/update-model-context', {
+      structuredContent: {converter: value.converter}, content: [{type: 'text', text: value.text, _meta: {'openai/title': 'Rapier converter'}}]}, 5000));
     const api = window.openai;
     if (typeof api?.setWidgetState !== 'function') return;
-    const state = object(api.widgetState) ? api.widgetState : {};
-    try { void Promise.resolve(api.setWidgetState({...state, modelContent: text})).catch(() => {}); } catch (_) {}
+    deliverConverter(converterReports.widget, value, value => {
+      const state = object(api.widgetState) ? api.widgetState : {};
+      return api.setWidgetState({...state, modelContent: value});
+    });
   }
   const megabytes = bytes => (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0) + ' MB';
+  const converterFiles = rows => rows.map(row => ({name: row.name,
+      status: row.state === 'done' ? Number.isSafeInteger(row.size) && row.size > 0 ? 'encoded' : 'unconfirmed' : row.state,
+      ...(Number.isSafeInteger(row.before) && row.before >= 0 ? {before: row.before} : {}),
+      ...(row.state === 'done' && Number.isSafeInteger(row.size) && row.size > 0 ? {bytes: row.size} : {})}));
+  function tellConverter(state) {
+    if (closed || converterState !== state) return;
+    const files = converterFiles(state.rows);
+    const stage = files.some(row => row.status === 'encoded') ? 'encoded' : state.opened ? 'rendered' : 'handed_off';
+    const receipt = {operation: state.run, stage, files, ...(state.settings ? {settings: state.settings} : {}), save: {...converterSave}, ...(state.earlier.length ? {earlierFiles: converterFiles(state.earlier)} : {}),
+      ...(state.reason ? {reason: state.reason} : {}),
+      ...(state.missed.length ? {unread: state.missed.map(row => ({name: row.name,
+        reason: row.refused ? 'origin_refused' : row.late ? 'timeout' : row.name ? 'file_unavailable' : 'missing_file'}))} : {})};
+    const made = state.rows.map((row, index) => files[index].status === 'encoded'
+      ? row.name + ' converted, ' + megabytes(row.before) + ' to ' + megabytes(row.size)
+      : row.name + ': ' + (row.say || 'not converted'));
+    let text = !state.opened ? 'Rapier received the converter handoff, but the converter is unavailable. This call made no file.'
+      : made.length ? 'Rapier’s converter on the person’s device: ' + made.join('. ') + '.'
+      : state.reason === 'converter_closed' ? 'Rapier’s converter closed.'
+      : 'Rapier’s converter is open on the person’s device. No encoded file is confirmed yet.';
+    if (state.got.length) text += ' It got ' + state.got.join(', ') + ' from the chat.';
+    if (state.missed.length) text += ' ' + missedWords(state.missed, true);
+    if (state.reason === 'converter_closed') text += ' The converter closed before the remaining pictures were read.';
+    if (state.reason === 'canceled') text += ' The converter run was canceled.';
+    if (state.earlier.length) text += ' Earlier converter results are retained in earlierFiles; they are not confirmed for this call’s settings.';
+    const save = converterSave;
+    text += save.status === 'confirmed' ? ' The host confirmed ' + save.name + ' was uploaded to ChatGPT Files.'
+      : save.status === 'dispatched' ? ' The host accepted the download of ' + save.name + '. Saving it on the person’s device is not confirmed.'
+      : save.status === 'pending' ? ' Saving ' + save.name + ' is pending.'
+      : save.status === 'unconfirmed' ? ' Saving ' + save.name + ' is unconfirmed. Check the destination before trying again.'
+      : save.status === 'refused' ? ' The host did not accept a save of ' + save.name + '. No save was confirmed.'
+      : files.some(row => row.status === 'encoded') ? ' A save of these encoded results is not confirmed.' : '';
+    if (save.status !== 'not_requested') text += ' This save receipt identifies the submitted artifact; whether it matches the current converter results is unverified.';
+    tellAssistant(text, receipt);
+  }
   async function openConverter(data) {
-    if (typeof _rapierPartAvailable !== 'function' || !_rapierPartAvailable('jxl') || !await _rapierPartReady('jxl') || closed) return;
-    const run = ++converterRun, view = _rapierJxlPart;
+    const earlier = converterState?.rows.length ? converterState.rows : converterState?.earlier || [];
+    const run = ++converterRun, state = converterState = {run, opened: false, rows: [], earlier, got: [], missed: []};
+    const unavailable = reason => { state.reason = reason; tellConverter(state); };
+    if (typeof _rapierPartAvailable !== 'function' || !_rapierPartAvailable('jxl')) { unavailable('converter_unavailable'); return; }
+    let ready;
+    try { ready = await _rapierPartReady('jxl'); }
+    catch (error) { unavailable('converter_unavailable'); throw error; }
+    if (run !== converterRun || closed) return;
+    if (!ready) { unavailable('converter_unavailable'); return; }
+    const view = _rapierJxlPart;
     view.open();
-    if (!view.state.open) return;
+    if (!view.state.open) { unavailable('converter_unavailable'); return; }
+    state.opened = true; state.settings = view.state.settings;
+    view.changed(settings => {
+      if (run !== converterRun || closed) return;
+      if (state.rows.length) state.earlier = state.rows;
+      state.rows = []; state.settings = settings; delete state.reason;
+      tellConverter(state);
+    });
+    view.settled((rows, {settings, canceled}) => {
+      if (run !== converterRun || closed || ['quality', 'effort', 'maxBytes', 'side', 'location'].some(key => settings[key] !== state.settings?.[key])) return;
+      state.rows = rows; state.earlier = []; state.settings = settings;
+      if (canceled) state.reason = 'canceled'; else delete state.reason;
+      tellConverter(state);
+    });
+    tellConverter(state);
     view.configure({quality: data.quality, effort: data.effort, ...(data.max_bytes !== undefined ? {maxBytes: data.max_bytes} : {}),
       ...(data.longer_side !== undefined ? {side: data.longer_side} : {}), ...(data.remove_location !== undefined ? {location: !data.remove_location} : {})});
     rememberChatLinks(window.openai?.toolInput);
     const passed = Array.isArray(data.files) ? data.files.filter(object) : [];
     const chat = passed.filter(file => typeof file.file_id === 'string' && file.file_id).slice(0, 32);
     const unpassed = Number.isInteger(data.unpassed) && data.unpassed > 0 ? data.unpassed : 0;
-    const got = [], missed = [];
-    view.settled(rows => {
-      if (run !== converterRun) return;
-      const told = rows.map(row => row.state === 'done' ? row.name + ' converted, ' + megabytes(row.before) + ' to ' + megabytes(row.size) :
-        row.name + ': ' + (row.say || 'not converted'));
-      tellAssistant('Rapier’s converter on the person’s device: ' + told.join('; ') + '.' + (missed.length ? ' ' + missedWords(missed, true) : '') +
-        (rows.some(row => row.state === 'done') ? ' The person saves the results from the converter.' : ''));
-    });
+    const got = state.got, missed = state.missed;
     if (!chat.length && !unpassed) return;
     for (const file of chat) {
-      if (run !== converterRun || closed || !view.state.open) return;
+      if (run !== converterRun || closed) return;
+      if (!view.state.open) { unavailable('converter_closed'); return; }
       const known = chatPictures.get(file.file_id);
       if (known && view.has(known)) continue;
       const type = typeof file.mime_type === 'string' && PICTURE_TYPES[file.mime_type] ? file.mime_type : '';
@@ -2306,23 +2391,25 @@
       try {
         const parts = await hostDownload(file.file_id, CHAT_PICTURE_BYTES, controller.signal, seen => { origin = seen; },
           {fallback: chatLinks.get(file.file_id) || '', alive: () => { clearTimeout(stall); stall = setTimeout(stop, CHAT_PICTURE_STALL_MS); }});
-        if (run !== converterRun || closed || !view.state.open) return;
+        if (run !== converterRun || closed) return;
+        if (!view.state.open) { unavailable('converter_closed'); return; }
         const picture = new File(parts, name, type ? {type} : {});
         chatPictures.set(file.file_id, picture);
-        got.push(name);
         view.add([picture]);
+        got.push(name);
       } catch (error) {
+        if (run !== converterRun || closed) return;
         chatPictures.delete(file.file_id);
         const refused = error?.message === 'FILE_ORIGIN_REFUSED';
         if (refused) console.warn('Rapier: this deployment does not allow chat files from', origin);
         missed.push({name, host: origin ? new URL(origin).host : '', refused, late: error?.message === 'FILE_TIMEOUT'});
       } finally { clearTimeout(stall); clearTimeout(whole); }
     }
-    if (run !== converterRun || closed || !view.state.open) return;
+    if (run !== converterRun || closed) return;
+    if (!view.state.open) { unavailable('converter_closed'); return; }
     for (let k = 0; k < unpassed; k++) missed.push({name: '', host: '', refused: false, late: false});
     view.say(missed.length ? missedWords(missed) : '');
-    tellAssistant('Rapier’s converter is open on the person’s device. ' + (got.length ? 'It got ' + got.join(', ') + ' from the chat; ' + (got.length === 1 ? 'it converts' : 'they convert') + ' there now. ' : '') +
-      (missed.length ? missedWords(missed, true) : ''));
+    tellConverter(state);
   }
   function missedWords(missed, assistant = false) {
     const hosts = [...new Set(missed.filter(each => each.host).map(each => each.host + (each.refused ? ' (not allowed yet)' : each.late ? ' (no answer)' : '')))];
@@ -2753,8 +2840,10 @@
       else post({id: value.id, error: {code: -32601, message: 'Method not supported'}});
       return;
     }
-    if (value.method === 'ui/notifications/host-context-changed') updateContext(value.params);
-    else if (value.method === 'notifications/resources/updated' &&
+    if (value.method === 'ui/notifications/host-context-changed') {
+      if (['inline', 'fullscreen', 'pip'].includes(value.params?.displayMode)) displayModeIntent.hostMode = value.params.displayMode;
+      updateContext(value.params);
+    } else if (value.method === 'notifications/resources/updated' &&
         typeof value.params?.uri === 'string' && value.params.uri === activeFile()?.file.resourceUri) void refreshHostFile();
     else if (value.method === 'ui/notifications/tool-result') { finishHostWork(); notePairing(value.params); void receive(value.params).catch(failed); }
     else if (value.method === 'ui/notifications/tool-input-partial') streamHostWork(value.params);

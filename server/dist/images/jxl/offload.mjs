@@ -6,5 +6,5 @@ export function stepOffloaded(steps, reply, count = 1, only = null) {
   const outer = [workers, stage]; depth++; workers = count; stage = only;
   try { return steps.next(reply); } finally { depth--; [workers, stage] = outer; }
 }
-export const sharing = () => offloading() && typeof SharedArrayBuffer === 'function' && globalThis.crossOriginIsolated !== false;
+export const sharing = kind => offloading(kind) && typeof SharedArrayBuffer === 'function' && globalThis.crossOriginIsolated !== false;
 export const shareable = (Type, length) => sharing() ? new Type(new SharedArrayBuffer(length * Type.BYTES_PER_ELEMENT)) : new Type(length);

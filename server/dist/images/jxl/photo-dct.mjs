@@ -9,7 +9,7 @@ import {bandScratch} from './band-scratch.mjs';
 
 export const bandCoefficients = (options, c, length) => options?.bandScratch ? bandScratch(Int16Array, 'band-coeffs' + c, length).fill(0) : new Int16Array(length);
 
-const COSINES = Float64Array.of(0.3535533905932738, 0.3535533905932738, 0.3535533905932738, 0.3535533905932738,
+const COSINES = /* @__PURE__ */ Float64Array.of(0.3535533905932738, 0.3535533905932738, 0.3535533905932738, 0.3535533905932738,
   0.3535533905932738, 0.3535533905932738, 0.3535533905932738, 0.3535533905932738, 0.4903926402016152,
   0.4157348061512726, 0.27778511650980114, 0.09754516100806417, -0.0975451610080641, -0.277785116509801,
   -0.4157348061512727, -0.4903926402016152, 0.46193976625564337, 0.19134171618254492, -0.19134171618254486,
@@ -29,7 +29,7 @@ const radial = (position, rate) => Float64Array.from({length: 64}, (_, k) => {
   for (let n = 1; n < 30; n++) sum += term = term * y / n;
   return sum;
 });
-export const QUANT_SHAPE = radial(r => r * 5 / Math.sqrt(98), 0.26236426446749106);
+export const QUANT_SHAPE = /* @__PURE__ */ radial(r => r * 5 / Math.sqrt(98), 0.26236426446749106);
 
 export function transformDCT8(block, sums, offset = 0) {
   sums.set(block.subarray(offset, offset + 192));
@@ -57,7 +57,7 @@ const regionTable = rows => rows.map(([first, falls, dc]) => {
     });
     return {first, bits, shape, dc};
   });
-const REGION_TABLE = regionTable([[10, [0, -0.3, -0.3, -0.3, -0.3], 2.5], [18, [0, -0.3, -0.3, -0.3, -0.3], 4.5], [18, [0, -0.3, -0.3, -0.3, -0.3], 4.5]]);
+const REGION_TABLE = /* @__PURE__ */ regionTable([[10, [0, -0.3, -0.3, -0.3, -0.3], 2.5], [18, [0, -0.3, -0.3, -0.3, -0.3], 4.5], [18, [0, -0.3, -0.3, -0.3, -0.3], 4.5]]);
 const RGB_TABLE = /* @__PURE__ */ regionTable([[30, [0, -0.3, -0.3, -0.3, -0.3], 4.5], [10, [0, -0.3, -0.3, -0.3, -0.3], 2.5], [30, [0, -0.3, -0.3, -0.3, -0.3], 4.5]]);
 export const strengthOf = quality => Math.max(0, Math.min(1, (90 - quality) / 15));
 const distanceOf = (quality, kind) => Math.max(0.1, calibration(quality, kind) * (quality >= 30 ? 0.1 + (100 - quality) * 0.09 : 53 / 3000 * quality * quality - 23 / 20 * quality + 25));
@@ -337,7 +337,7 @@ function clQuantSpec(q, pictureOpts) {
   return { q, steps, invSteps, thr, epf, is90 };
 }
 
-export function coeffLookBatch(data, width, height, candidates, makePictureOpts, flat) {
+export function coeffLookBatch(data, width, height, candidates, makePictureOpts, flat, samplePixels = 1048576) {
   const {memory, exports} = kernelInstance();
   if (!exports.coeffLookTile || !exports.coeffGatherTile || !exports.coeffLookPow) return null;
   clHolder ||= arenaHolder(() => { clTablesReady = false; });
@@ -350,7 +350,14 @@ export function coeffLookBatch(data, width, height, candidates, makePictureOpts,
 
   const stride = Math.ceil(width / 8), rows = Math.ceil(height / 8);
   const tileCols = Math.ceil(stride / 8), tileRows = Math.ceil(rows / 8);
-  const rowStep = width * height > 1650000 ? Math.max(1, Math.floor(tileRows / Math.max(4, Math.floor(1048576 / (width * 64))))) : 1;
+  let rowStep = 1, colStep = 1;
+  if (samplePixels < 1048576) {
+    rowStep = tileRows > 4 ? Math.max(1, Math.floor(tileRows / 4)) : 1;
+    const sampledRows = Math.ceil(tileRows / rowStep);
+    colStep = Math.max(1, Math.round(tileCols / Math.max(4, samplePixels / (sampledRows * 4096))));
+  } else if (width * height > 1650000) {
+    rowStep = Math.max(1, Math.floor(tileRows / Math.max(4, Math.floor(1048576 / (width * 64)))));
+  }
 
   const BASE = 65536;
   const LIN = BASE, MIX = LIN + 1024, SCALE = MIX + 64, BMAP = SCALE + 256, CFL_OUT = BMAP + 64;
@@ -420,7 +427,7 @@ export function coeffLookBatch(data, width, height, candidates, makePictureOpts,
       }
     }
 
-    for (let tx = 0; tx < tileCols; tx++) {
+    for (let tx = 0; tx < tileCols; tx += colStep) {
       const bw = Math.min(8, stride - tx * 8);
       if (needLow) {
         exports.coeffGatherTile(lowInto, lowInto + planeBytes, lowInto + 2 * planeBytes, W, y0 - s0, tx * 64, bw, bh, TILE_AT, SCALE, c84, CFL_OUT);
@@ -448,11 +455,11 @@ export function coeffLookBatch(data, width, height, candidates, makePictureOpts,
   });
 }
 
-export function coeffLookSettle(data, width, height, aim, startQ, makePictureOpts, flat) {
+export function coeffLookSettle(data, width, height, aim, startQ, makePictureOpts, flat, samplePixels = 1048576) {
   const qMid = Math.max(58, Math.min(95.5, Math.round((startQ - 2.5) * 100) / 100));
   const qLo = Math.max(50, Math.round((qMid - 8.0) * 100) / 100);
   const qHi = Math.min(99.2, Math.round((qMid + 6.5) * 100) / 100);
-  const pts = coeffLookBatch(data, width, height, [qLo, qMid, qHi], makePictureOpts, flat);
+  const pts = coeffLookBatch(data, width, height, [qLo, qMid, qHi], makePictureOpts, flat, samplePixels);
   if (!pts) return null;
 
   const q0 = pts[0].q, q1 = pts[1].q, q2 = pts[2].q;

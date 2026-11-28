@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import {cpuMeasure} from './photo-measure.mjs';
+import {cpuMeasure, worseScores} from './photo-measure.mjs';
 import {bandedRGBA, bandedOutputs} from './photo-reconstruct-bands.mjs';
 import {linearFromRGBA} from './ssimulacra2.mjs';
 import {linearFromTransform, codedBytesFromLinear} from './color-bytes.mjs';
@@ -12,16 +12,6 @@ import {fault} from './fault.mjs';
 import {offloading, offloadWorkers} from './offload.mjs';
 
 const ROWS = 256, BACKGROUNDS = [255, 0];
-
-function worse(a, b) {
-  const out = {...a, ssimulacra2: Math.min(a.ssimulacra2, b.ssimulacra2)};
-  if (a.nativeScores && b.nativeScores) {
-    const low = key => Math.min(a.nativeScores[key], b.nativeScores[key]);
-    out.nativeScores = {package: low('package'), native: low('native'), minimum: low('minimum')};
-  }
-  for (const key of ['cells', 'blocks']) if (a[key] && b[key]) out[key] = a[key].map((value, i) => Math.max(value, b[key][i]));
-  return out;
-}
 
 export function alphaRebuildMeasure(data, width, height, color, signal, plan) {
   const n = width * height, check = () => { if (signal?.aborted) throw signal.reason; };
@@ -59,7 +49,7 @@ export function alphaRebuildMeasure(data, width, height, color, signal, plan) {
   }));
   const measure = (image, want = {}) => {
     const asked = {...want, butteraugli: false}, banded = !transform && (plan?.banded || image.coefficientRows || image.ycbcr);
-    try { return worse(...looks.map(look => banded ? look.banded(image, asked) : look(image, asked))); }
+    try { return worseScores(...looks.map(look => banded ? look.banded(image, asked) : look(image, asked))); }
     finally { shared = null; }
   };
   return {

@@ -4,7 +4,7 @@ import {ANIMATION_SPEC} from './queue-spec-animation.mjs';
 import {helperReservation} from './helper-reservation.mjs';
 import {webgpuUsable} from './webgpu.mjs';
 import {readTexture} from './texture.mjs';
-import {surfaceCall, doorPreviews, checkFrames, admitEncodeDoor, admitEncodePlain, jpegSourceKeys} from './door-session.mjs';
+import {surfaceCall, checkFrames, admitEncodeDoor, admitEncodePlain, jpegSourceKeys} from './door-session.mjs';
 import {isVideo, videoHead} from './video.mjs';
 import {videoFrames} from './video-clip.mjs';
 import {frameBridge, admitWindow} from './frame-source.mjs';
@@ -13,7 +13,7 @@ import {fail, progressOf, isBlob, dimensions} from './primitives.mjs';
 import {measure} from './ownership.mjs';
 import {originalByteFacts} from './result-record.mjs';
 const rules = {texture: readTexture, plain: admitEncodePlain, jpeg: jpegSourceKeys, admit: (_n, opt) => admitEncodeDoor(opt).maxPixels, video: (input, options, maxPixels) => acquireVideo(input, options, maxPixels) ?? acquireStream(input, options, maxPixels)};
-const door = queueDoor(ANIMATION_SPEC, {result: isResult, previews: doorPreviews, helpers: helperReservation, lanes: helperLanes(), gpu: webgpuUsable, frames: checkFrames, expand: inputExpansion});
+const door = queueDoor(ANIMATION_SPEC, {result: isResult, helpers: helperReservation, lanes: helperLanes(), gpu: webgpuUsable, frames: checkFrames, expand: inputExpansion});
 function acquireVideo(input, options, maxPixels) {
   const element = isVideo(input), blob = isBlob(input);
   if (!element && !blob) return;

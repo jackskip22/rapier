@@ -23,7 +23,7 @@ import {foldReached} from './jxl-fold-reached.mjs';
 import {foldedButCalled, lostThrows, refuseAssumingOptions, provenDead, declarationLayouts, importCalls} from './jxl-bundle-checks.mjs';
 import {UNSTEPPED, entryDefines} from './jxl-build-defines.mjs';
 import {jpegaMeasurementSource} from './jxl-jpega-measure.mjs';
-import {reservedProperties} from './jxl-property-mangle.mjs';
+import {reservedProperties, scriptReserved, MODULE_CROSSING_RESERVED, crossingSeedEntries, verifyCrossingNames} from './jxl-property-mangle.mjs';
 import {fillReadmeSizes} from './jxl-readme-sizes.mjs';
 import {PROJECT_PARTS} from './jxl-package-files.mjs';
 import {verifyWasmAssets} from './jxl-wasm-assets.mjs';
@@ -138,7 +138,7 @@ const unsteppedFor = (entry = '') => ({name: 'unstepped', setup(build) {
     return next !== text ? {contents: next, loader: 'js', resolveDir: dirname(path)} : undefined;
   });
 }});
-const CLI_MODULES = ['emdash', 'astro', 'payload', 'add', 'workers', 'cloudflare', 'servers', 'places', 'site', 'selftest'], CLI_MODULE = new RegExp('^\\./cli-(' + CLI_MODULES.join('|') + ')\\.mjs$');
+const CLI_MODULES = ['emdash', 'astro', 'payload', 'add', 'workers', 'cloudflare', 'servers', 'places', 'site', 'selftest', 'epub'], CLI_MODULE = new RegExp('^\\./cli-(' + CLI_MODULES.join('|') + ')\\.mjs$');
 const CLI_PARSER = './cli-acorn.mjs';
 const cliParser = {name: 'cli-parser', setup(build) {
   build.onResolve({filter: /[\\/]agent[\\/]vendor[\\/]acorn\.mjs$/}, () => ({path: CLI_PARSER, external: true}));
@@ -332,13 +332,24 @@ async function sourceOf(message) {
 // The license line, and the two words that tell webpack and Vite to leave a module's import of its own file to the host
 const KEPT_COMMENTS = /^!|^ (webpackIgnore: true|@vite-ignore) $/;
 const scripts = (await readdir(dist)).filter(file => /\.m?js$/.test(file)).sort();
-const PROPERTIES = {reserved: await reservedProperties(repo, await Promise.all(scripts.map(file => readFile(join(dist, file), 'utf8')))), cache: {}};
-const properties = file => /^cli/.test(file) ? false : {reserved: [...PROPERTIES.reserved], keep_quoted: 'strict', cache: PROPERTIES.cache};
+const baseReserved = await reservedProperties(repo, []);
+const scriptSources = new Map(await Promise.all(scripts.map(async file => [file, await readFile(join(dist, file), 'utf8')])));
+const scriptResByFile = new Map([...scriptSources].map(([file, text]) => [file, scriptReserved(text)]));
+verifyCrossingNames(scriptSources, baseReserved, scriptResByFile);
+const seededEntries = crossingSeedEntries(), shortenedProperties = new Map(seededEntries);
+const propertiesFor = (file, raw) => {
+  if (/^cli/.test(file)) return {options: false, cache: null};
+  const cache = {props: new Map(seededEntries)};
+  const reserved = [...new Set([...baseReserved, ...MODULE_CROSSING_RESERVED, ...(scriptResByFile.get(file) ?? scriptReserved(raw))])];
+  return {options: {reserved, keep_quoted: 'strict', cache}, cache};
+};
 for (const file of [...scripts, ...(await readdir(dist)).filter(file => !scripts.includes(file))]) {
   const path = join(dist, file), module = file.endsWith('.mjs');
-  const command = file === 'cli.mjs', unstripped = await readFile(path, 'utf8'), source = unstripped.replace(/^#![^\n]*\n/, '');
-  let {code, map} = await terser.minify(source, {module, ecma: 2020, compress: PACKED.test(file) ? PACKED_COMPRESS : COMPRESSED.test(file) && (CAPTURE_COMPRESSED.test(file) ? CAPTURE_COMPRESS : SAFE_COMPRESS), mangle: {properties: properties(file)}, format: {comments: KEPT_COMMENTS},
+  const command = file === 'cli.mjs', unstripped = scriptSources.get(file) ?? await readFile(path, 'utf8'), source = unstripped.replace(/^#![^\n]*\n/, '');
+  const {options: propOptions, cache: fileCache} = propertiesFor(file, unstripped);
+  let {code, map} = await terser.minify(source, {module, ecma: 2020, compress: PACKED.test(file) ? PACKED_COMPRESS : COMPRESSED.test(file) && (CAPTURE_COMPRESSED.test(file) ? CAPTURE_COMPRESS : SAFE_COMPRESS), mangle: {properties: propOptions}, format: {comments: KEPT_COMMENTS},
     ...(finalMaps && {sourceMap: finalMaps.options(file, source !== unstripped)})});
+  if (fileCache?.props) for (const [name, mangled] of fileCache.props) if (!shortenedProperties.has(name)) shortenedProperties.set(name, mangled);
   const mappedCode = finalMaps && code;
   if (module && (PACKED.test(file) || CAPTURE_COMPRESSED.test(file))) await assertSameAnswers(source, file, module, PACKED.test(file) ? PACKED_COMPRESS : CAPTURE_COMPRESS);
   if (module) {
@@ -588,7 +599,7 @@ await writeFile(join(out, 'sizes.json'), JSON.stringify(sizes, null, 1) + '\n');
   if (rebuilt.length) throw new Error('A capture module carries the encoders\' rebuild: ' + named(rebuilt));
 }
 built.metafile.distributionSha256 = sizes.distribution.sha256;
-built.metafile.shortenedProperties = Object.fromEntries([...PROPERTIES.cache.props].sort());
+built.metafile.shortenedProperties = Object.fromEntries([...shortenedProperties].sort());
 {
   const {runtimeNames} = await import('./jxl-runtime-names.mjs'), shortened = runtimeNames(codec).filter(name => Object.hasOwn(built.metafile.shortenedProperties, name));
   if (shortened.length) throw new Error('The build shortened names the codec reads by a runtime string: ' + shortened.join(', '));

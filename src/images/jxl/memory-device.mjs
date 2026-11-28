@@ -2,6 +2,8 @@ import {LIMITS} from './limits.mjs';
 export const WHOLE = 40000000;
 export const BAND_PIXELS = 4194304;
 export const COMPACT_WHOLE = 16777216;
+export const largePhoto = (width, height) => Math.min(width, height) >= 2048 &&
+  width * height > BAND_PIXELS && width * height <= WHOLE;
 export const BANDED_LIMITS = LIMITS;
 export const bandRows = width => Math.max(64, Math.floor(BAND_PIXELS / width / 64) * 64);
 

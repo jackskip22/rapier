@@ -1,38 +1,11 @@
 // SPDX-License-Identifier: MIT
-export const roleName = (module, role) => module + ' ' + role;
-
-function workerRole() {
-  if (typeof WorkerGlobalScope === 'function' && globalThis instanceof WorkerGlobalScope) return typeof globalThis.name === 'string' ? globalThis.name : '';
-  let threads;
-  try { threads = globalThis.process?.getBuiltinModule?.('node:worker_threads'); } catch {}
-  if (!threads || threads.isMainThread) return '';
-  return typeof threads.workerData === 'string' ? threads.workerData : typeof threads.threadName === 'string' ? threads.threadName : '';
-}
-
-const classic = () => { try { globalThis.importScripts('about:blank'); return true; } catch (error) { return !(error instanceof TypeError); } };
-
-const here = () => globalThis.location && globalThis.location.protocol !== 'blob:' ? globalThis.location.href : import.meta.url;
-const served = url => () => {
-  const found = url();
-  return found.protocol === 'file:' && globalThis.location && !['file:', 'blob:'].includes(globalThis.location.protocol) ? new URL(globalThis.location.href) : found;
-};
-export const ownFile = (role, given = () => new URL(here())) => {
-  const url = served(given);
-  return Object.freeze({role, url, worker: () => new Worker(url(), {type: classic() ? 'classic' : 'module', name: role})});
-};
-
-export function serveRole(module, roles) {
-  const role = workerRole();
-  if (!role.startsWith(module + ' ')) return;
-  const serve = roles[role.slice(module.length + 1)];
-  if (serve) serve();
-}
-
 import {moduleRuntime} from './module-runtime.mjs';
 import {helperReservation} from './helper-reservation.mjs';
 import {fail, object, snapshotOptions, pixelLimit, webgpuSetting, blobHead, abortable, callers, admitSignal, check, isBlob} from './primitives.mjs';
 import {configuredDecoder} from '../decoder-setting.mjs';
 import {liveView, arrayBufferBytes} from './bytes.mjs';
+import {roleName, ownFile, serveRole} from './module-role.mjs';
+export {roleName, ownFile, serveRole};
 const MOVES = ['encode', 'fit', 'variants', 'capture'];
 const ownValue = (target, key) => {
   if (!target || typeof target !== 'object') return undefined;
@@ -155,7 +128,7 @@ export function inPlace(name, raw, {gpu = false, webgpu = !!gpu, pool, url, prep
       admissions.add(admission);
       return (async () => {
         try {
-          options = snapshotOptions(options, 'Options', ['signal', 'onProgress', 'onPreview', 'onEncoded']);
+          options = snapshotOptions(options, 'Options', ['signal', 'onProgress', 'onEncoded']);
           admitSignal(options.signal); check(options.signal);
           if (canceled) throw canceled;
           let hostRead = false;
@@ -172,7 +145,7 @@ export function inPlace(name, raw, {gpu = false, webgpu = !!gpu, pool, url, prep
             lane = op !== 'prepare' && helps && !!helpers && !first && !alone && lanes < helpers.count && !hostRead;
             if (lane) lanes++;
           }
-          const hooks = {signal: options.signal, onProgress: options.onProgress, onPreview: options.onPreview, onEncoded: options.onEncoded,
+          const hooks = {signal: options.signal, onProgress: options.onProgress, onEncoded: options.onEncoded,
             maxPixels: config.maxPixels, webgpu: config.webgpu, helpers, owner: heldOwner, owned: false, lane, alone};
           const result = await (!configured ? fn.call(this, input, options) : op !== 'prepare' ? live().run(op, input, options, hooks) : !(typeof __RAPIER_JXL_CAPTURE_LEAN__ !== 'undefined' && __RAPIER_JXL_CAPTURE_LEAN__ === true) && (helps && helpers || gpu && config.webgpu === 'required')
             ? live().prepare(input ?? prepareOp, {webgpu: config.webgpu, owner: heldOwner, helpers}) : fn.call(this, input));

@@ -2,7 +2,7 @@ import {offloading} from './offload.mjs';
 // SPDX-License-Identifier: MIT
 import {BitWriter, part, scaled, complete} from './bits.mjs';
 import {writeModularFrameHeader, groupLayout, groupRect, groupPass, assembleCodestream, GROUP_DIM} from './frame.mjs';
-import {writeImageHeader} from './icc-write.mjs';
+import {writeImageHeader, withProfileHeader} from './icc-write.mjs';
 import {buildCode, writePrefixCode, jobSmall, setJobSmall} from './prefix.mjs';
 import {AVERAGE_PREDICTOR, GRADIENT_PREDICTOR, ALPHABET, leaf, split, channelTree, writeTree, writeModularHeader, writeChannelHistograms} from './modular.mjs';
 import {codeChannel} from './modular-channel.mjs';
@@ -407,26 +407,11 @@ export function* exactCapture(request) {
   const floor = {...shapeFloors.get(data), ...request.floor, colour: colorSpace.colorChannels ?? 3};
   const bytes = yield {capture: {...request, colorSpace: 'srgb', floor}};
   if (!(bytes instanceof Uint8Array)) return null;
-  const profiled = withProfile(bytes, width, height, colorSpace);
+  const profiled = withProfileHeader(bytes, width, height, colorSpace);
   if (profiled && sizes) for (const key of Object.keys(sizes)) sizes[key] += profiled.length - bytes.length;
   return profiled;
 }
 
-function withProfile(bytes, width, height, space) {
-  const colour = space.colorChannels ?? 3;
-  for (const alpha of [false, true]) {
-    const plain = new BitWriter(64);
-    writeImageHeader(plain, width, height, colour, alpha, {colorSpace: 'srgb'});
-    const head = plain.finish();
-    if (head.length >= bytes.length || head.some((byte, i) => byte !== bytes[i])) continue;
-    const profiled = new BitWriter(1024);
-    writeImageHeader(profiled, width, height, colour, alpha, {colorSpace: space});
-    const out = profiled.finish(), file = new Uint8Array(out.length + bytes.length - head.length);
-    file.set(out); file.set(bytes.subarray(head.length), out.length);
-    return file;
-  }
-  return null;
-}
 export function* losslessCapture(data, width, height, colorSpace, level, smallFloor = null, limit = 0) {
   const ownSteps = losslessFile(data, width, height, colorSpace, level, jobSmall(), false, limit);
   const own = yield* (smallFloor ? within(ownSteps, 0, 1 / 2) : ownSteps);
@@ -440,7 +425,7 @@ export function* losslessCapture(data, width, height, colorSpace, level, smallFl
 function* losslessFile(data, width, height, colorSpace, level, small, localOnly = false, limit = 0) {
   if (typeof colorSpace === 'object') {
     const bytes = yield* losslessFile(data, width, height, 'srgb', level, small, localOnly);
-    return bytes && withProfile(bytes, width, height, colorSpace);
+    return bytes && withProfileHeader(bytes, width, height, colorSpace);
   }
   while (captureBusy() || exclusiveActive()) if (yield 0) return null;
   const rowSource = journaling() && journalFact(data, JOIN);

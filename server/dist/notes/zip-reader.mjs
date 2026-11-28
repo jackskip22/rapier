@@ -1,5 +1,6 @@
 import {crc32} from '../images/crc32.mjs';
 import {attachmentSizeWords} from './size-words.mjs';
+import {PICTURE_BYTES} from '../images/limits.mjs';
 export {crc32};
 
 export const ZIP_READ_MAX_BYTES = 512 * 1024 * 1024;
@@ -228,7 +229,7 @@ export async function readZip(bytes, options = {}) {
 }
 
 
-export const ZIP_ENTRY_MEMORY_BYTES = 16 * 1024 * 1024;
+export const ZIP_ENTRY_MEMORY_BYTES = PICTURE_BYTES;
 export const ZIP_IO_BYTES = 64 * 1024;
 const zipAbort = signal => { if (signal?.aborted) throw signal.reason || new Error('readZip: canceled'); };
 

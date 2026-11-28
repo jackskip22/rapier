@@ -3,6 +3,7 @@ import {cardHead, cardSource, sectionOf, isCodeFile, projectCard, cutText, graph
 import {recordingsOf} from './audio.mjs';
 import {attachmentsOf} from './attachments.mjs';
 import {scanLinks, linkMask, hasHtmlTag, headingAnchors, isLineStart, asMap, projectLinks, stageLinkIndex, stageLinkNote, packLinkProjection} from './links.mjs';
+import {PICTURE_BYTES} from '../images/limits.mjs';
 import {documentAssets, IMAGE_LIMITS, markdownParser, configureParser, installMarkdownImages} from '../spec/md-assets.mjs';
 import {RAPIER_MARKDOWN_SPEC, applyMarkdownSpec, installMarkdownMath, splitOpeningFrontmatter} from '../agent/markdown-spec.mjs';
 
@@ -53,7 +54,7 @@ export function projectSearchBytes(input, {file = '', parser, decode = bytes => 
 		let padding = 0, padAt = end;
 		while (padAt > start && bytes[padAt - 1] === 61) { padAt--; padding++; }
 		const length = end - start;
-		if (length <= BYTE_PAYLOAD_STUB.length || length % 4 || padding > 2 || length / 4 * 3 - padding > IMAGE_LIMITS.bytes) continue;
+		if (length <= BYTE_PAYLOAD_STUB.length || length % 4 || padding > 2 || length / 4 * 3 - padding > PICTURE_BYTES) continue;
 		candidates.push({start, end, urlStart}); colon = end - 1;
 	}
 	let accepted = candidates;

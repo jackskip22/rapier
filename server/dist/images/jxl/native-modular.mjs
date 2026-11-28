@@ -49,12 +49,12 @@ export function metaTableModel(table) {
   return {kind: 'smooth', tree, leaves, classes, width: n, height: 1, stride: n, origin: 0, plane: table, minimum: 4, count: n, pieceValue: values, pieceDistance: new Int32Array(n), pieceContext: contexts};
 }
 
-function scanCompaction(words, width, height, channels, samples) {
+function scanCompaction(words, width, height, {channels, colour}, samples) {
   const tables = [], indices = [], all = words.subarray(0, width * height * 4);
   const order = keys => Int32Array.from([...keys].sort((a, b) => orderKey(a, samples) - orderKey(b, samples)));
   let maxLen = 0;
   for (let c = 0; c < channels; c++) {
-    const found = captureDistinct(all, c, samples.exponentBits ? COMPACT_RAW_LIMIT : COMPACT_INT_LIMIT, order, new Int16Array(width * height));
+    const found = captureDistinct(all, c === colour ? 3 : c, samples.exponentBits ? COMPACT_RAW_LIMIT : COMPACT_INT_LIMIT, order, new Int16Array(width * height));
     if (!found) return null;
     const {table, plane} = found, meta = metaTableModel(table);
     if (!meta) return null;
@@ -103,7 +103,7 @@ function buildModels(planes, w, h, rung) {
 function encodeCompactedFrame(words, width, height, shape, samples, effort, bestLen, deepTools) {
   const {channels, colour, alpha} = shape, shift = width * height * channels > 2000000 ? 2 : 3, dim = 128 << shift, layout = groupLayout(width, height, dim), groups = layout.groupsX * layout.groupsY;
   const level = samples.level === 10 || samples.bitDepth > 12 || samples.exponentBits ? 10 : 5;
-  const comp = scanCompaction(words, width, height, channels, samples);
+  const comp = scanCompaction(words, width, height, shape, samples);
   if (!comp) return null;
   const canRct = colour === 3 && comp.maxLen <= COMPACT_RCT_LIMIT;
   const colourTransform = deepTools?.transform ?? null;

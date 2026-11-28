@@ -282,3 +282,8 @@ export function callHooks(options) {
   if (onProgress !== undefined && typeof onProgress !== 'function') throw fail('JXL_OPTIONS', 'onProgress: function');
   return {signal, progress: progressOf(onProgress, signal) ?? (() => {})};
 }
+export const bounded = (client, name) => (input, options) => {
+  try { if (options && typeof options === 'object' && options.maxPixels !== undefined) pixelLimit(options.maxPixels); }
+  catch (error) { return Promise.reject(error); }
+  return client[name](input, options);
+};

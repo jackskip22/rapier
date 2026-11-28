@@ -558,7 +558,6 @@ export class GpuCore {
 
 const gcCores = new WeakMap();
 const gcSettled = new WeakMap();
-const gcPhoneReady = new WeakMap();
 export function gpuCorePrewarmCells(device) {
   Promise.resolve().then(() => gpuS2CellsPipelines(device)).catch(() => {});
 }
@@ -670,7 +669,6 @@ async function gcAnswer(device, request, strict) {
       if (pictures.band) pictures.band = await pictures.band;
       return pictures;
     }
-    if (request.kind === 's2-cells') return await gpuS2Cells(device, request);
     if (request.kind === 'audit-failed') throw new GpuCoreAuditError('gpu-blocks16 audit');
     if (!gcGabPlan(request.options)) return null;
     const energy = request.energy ? await gpuBlocks16EnergyHook(device, GC_DS, request.width, request.height, B.plane) : null;
