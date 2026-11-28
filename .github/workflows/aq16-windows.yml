@@ -21,8 +21,8 @@ jobs:
       - name: Exercise exact MSIX and real NTFS as a standard user
         shell: pwsh
         env:
-          AQ16_SOURCE: 11269e6f9f8c4b067175f797349db92ee7f53c47
-          AQ16_BUNDLE_SHA256: 98700a644b4dcd9e33b74f3f5f620171758e2fe0e1cd249ac6d4ddbd1b8a8199
+          AQ16_SOURCE: 7fb400c6962c0aa9102377ca35ea8b385a242326
+          AQ16_BUNDLE_SHA256: 32c0f89ede632e140e7b7e1a58fddf167ab93f1dfda415645c3bbbed5504a887
         run: |
           & .\ci\aq16\run-windows.ps1 -Bundle .\ci\aq16\handoff.zip -BundleSha256 $env:AQ16_BUNDLE_SHA256 -Source $env:AQ16_SOURCE
           if ($LASTEXITCODE -ne 0) { throw 'AQ16 Windows qualification failed' }
