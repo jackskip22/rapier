@@ -14,8 +14,11 @@ function Run([string]$Name,[string[]]$Arguments,[int]$Seconds=60){
   $log=Join-Path $out ($Name+'.jsonl');$errors=Join-Path $out ($Name+'.stderr.txt')
   $argLine=($Arguments | ForEach-Object {'"'+$_.Replace('"','\"')+'"'}) -join ' '
   $p=Start-Process -FilePath $helper -ArgumentList $argLine -PassThru -RedirectStandardOutput $log -RedirectStandardError $errors
+  # Read the handle at once: without it a -PassThru process reports a null ExitCode after a timed wait.
+  $null=$p.Handle
   $complete=$p.WaitForExit($Seconds*1000)
-  if(-not $complete){Stop-Process -Id $p.Id -Force;$p.WaitForExit()}
+  if(-not $complete){Stop-Process -Id $p.Id -Force}
+  $p.WaitForExit()
   $p.Refresh()
   $rows=@(Get-Content $log | Where-Object {$_} | ForEach-Object {$_ | ConvertFrom-Json})
   $pass=$complete -and $p.ExitCode -eq 0 -and $rows.Count -gt 0 -and @($rows | Where-Object {$_.pass -ne $true}).Count -eq 0
@@ -93,7 +96,9 @@ try{
     $nodeArgs=@('C:\ci\aq16\installed-archive.mjs','9226',$library,$caseOut,$mode)
     $nodeLine=($nodeArgs | ForEach-Object {'"'+$_+'"'}) -join ' '
     $driver=Start-Process (Join-Path $work 'node.exe') -ArgumentList $nodeLine -PassThru -RedirectStandardOutput (Join-Path $caseOut 'driver.log') -RedirectStandardError (Join-Path $caseOut 'driver.stderr.txt')
+    $null=$driver.Handle
     if(-not $driver.WaitForExit(360000)){Stop-Process -Id $driver.Id -Force;throw 'Installed Archive driver timeout'}
+    $driver.WaitForExit()
     if($driver.ExitCode -ne 0){throw 'Installed Archive driver failed'}
     $receipt=Get-Content (Join-Path $caseOut 'installed-archive.json') -Raw | ConvertFrom-Json
     if($receipt.status -ne 'PASS'){throw 'Installed Archive has no PASS receipt'}
@@ -120,7 +125,9 @@ try{
   $pluginArgs=@('C:\ci\aq16\installed-plugins.mjs',(Join-Path $inputs $manifest.rapierMsix),(Join-Path $inputs $manifest.optionalMsix),$pluginOut,$manifest.rapierExecutableSha256,$manifest.source)
   $pluginLine=($pluginArgs | ForEach-Object {'"'+$_+'"'}) -join ' '
   $plugins=Start-Process (Join-Path $work 'node.exe') -ArgumentList $pluginLine -PassThru -RedirectStandardOutput (Join-Path $pluginOut 'driver.log') -RedirectStandardError (Join-Path $pluginOut 'driver.stderr.txt')
+  $null=$plugins.Handle
   if(-not $plugins.WaitForExit(600000)){Stop-Process -Id $plugins.Id -Force;throw 'Installed Rapier/optional package driver timeout'}
+  $plugins.WaitForExit()
   if($plugins.ExitCode -ne 0){throw 'Installed Rapier/optional package driver failed'}
   $pluginResult=Get-Content (Join-Path $pluginOut 'installed-plugins.json') -Raw | ConvertFrom-Json
   if($pluginResult.status -ne 'PASS'){throw 'No passing installed Rapier/optional package receipt'}
